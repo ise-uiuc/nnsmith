@@ -146,6 +146,21 @@ class Reshape(AbsOpBase):
         return [shape_var]
 
 
+class Transpose(AbsOpBase):
+    def __init__(self, dim0: int, dim1: int):
+        """See https://pytorch.org/docs/stable/generated/torch.transpose.html
+        """
+        self.dim0 = dim0
+        self.dim1 = dim1
+
+    def shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        assert len(input_shapes) == 1
+        assert len(input_shapes[0].shape) >= max(self.dim0, self.dim1) + 1
+        shape_var = input_shapes[0]
+        shape_var.shape[self.dim0], shape_var.shape[self.dim1] = shape_var.shape[self.dim1], shape_var.shape[self.dim0]
+        return [shape_var]
+
+
 if __name__ == '__main__':
     # Test shape functions
 
@@ -180,3 +195,7 @@ if __name__ == '__main__':
         [ShapeVar([2, 3, 4, 5])])[0].torch()
     print(Reshape(
         [1, -1, 5]).shape_function([ShapeVar([2, z3.Int('x'), 4, 5])])[0])
+
+    # Transpose
+    assert a.transpose(0, 3).shape == Transpose(0, 3).shape_function(
+        [ShapeVar([2, 3, 4, 5])])[0].torch()
