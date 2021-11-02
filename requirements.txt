@@ -1,4 +1,5 @@
 torch
 onnx
 z3-solver
-
+wget
+onnx-simplifier
