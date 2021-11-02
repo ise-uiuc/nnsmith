@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from functools import reduce
+from sys import path
 from typing import List, Union
 
 import torch
@@ -43,15 +44,89 @@ class AbsOpBase(ABC):
         return []
 
 
-class Input(AbsOpBase):
-    def shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        return [input_shapes[0]]
-
-
-class ReLU(AbsOpBase):
+class ElementWiseUnaryOp(AbsOpBase):
     def shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         assert len(input_shapes) == 1
         return [input_shapes[0]]
+
+
+class Input(ElementWiseUnaryOp):
+    pass
+
+
+class ReLU(ElementWiseUnaryOp):
+    pass
+
+
+class LeakyReLU(ElementWiseUnaryOp):
+    """See https://pytorch.org/docs/stable/generated/torch.nn.LeakyReLU.html
+    """
+
+    def __init__(self, negative_slope=0.01) -> None:
+        self.negative_slope = negative_slope
+
+
+class PReLU(ElementWiseUnaryOp):
+    pass
+
+
+class Sigmoid(ElementWiseUnaryOp):
+    pass
+
+
+class Sin(ElementWiseUnaryOp):
+    pass
+
+
+class Cos(ElementWiseUnaryOp):
+    pass
+
+
+class Asin(ElementWiseUnaryOp):
+    pass
+
+
+class Acos(ElementWiseUnaryOp):
+    pass
+
+
+class Tan(ElementWiseUnaryOp):
+    pass
+
+
+class Atan(ElementWiseUnaryOp):
+    pass
+
+
+class Abs(ElementWiseUnaryOp):
+    pass
+
+
+class Ceil(ElementWiseUnaryOp):
+    pass
+
+
+class Clip(ElementWiseUnaryOp):
+    pass
+
+
+class Round(ElementWiseUnaryOp):
+    pass
+
+
+class Sqrt(ElementWiseUnaryOp):
+    pass
+
+
+class Log(ElementWiseUnaryOp):
+    def __init__(self, base):
+        if not isinstance(base, z3.ArithRef):
+            assert base > 0
+        self.base = base
+
+
+class Not(ElementWiseUnaryOp):
+    pass
 
 
 class Add(AbsOpBase):
