@@ -13,6 +13,8 @@ import z3
 # 2. Shape variable must avoid devision by 0;
 # 3. Extra constraints introduced by individual operators;
 
+# TODO: Make operator's parameters symbolic.
+
 
 class ShapeVar:
     def __init__(self, shape: List[Union[int, z3.ArithRef]]):
@@ -27,6 +29,9 @@ class ShapeVar:
     def torch(self):
         # NOTE: Only for concrete shapes.
         return torch.Size(self.shape)
+
+    def constains_symbol(self) -> bool:
+        return any(isinstance(s, z3.ArithRef) for s in self.shape)
 
 
 class AbsOpBase(ABC):
@@ -94,15 +99,27 @@ class NCHWConv2d(AbsOpBase):
     def shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         assert len(input_shapes) == 1
         assert len(input_shapes[0].shape) == 4  # NCHW please.
-        assert input_shapes[0].shape[1] == self.in_channels
+        # not symbolic
+        if not isinstance(self.in_channels, z3.ArithRef) and not isinstance(input_shapes[0].shape[1], z3.ArithRef):
+            assert input_shapes[0].shape[1] == self.in_channels
+
+        is_symbolic_inp = input_shapes[0].constains_symbol() or isinstance(
+            self.kernel_size, z3.ArithRef) or isinstance(self.stride, z3.ArithRef) or isinstance(self.padding, z3.ArithRef)
+
         shape_var = ShapeVar([])
         # Batch dim: just copy
         shape_var.shape.append(input_shapes[0].shape[0])
         shape_var.shape.append(self.out_channels)        # Output channels
-        shape_var.shape.append(
-            (input_shapes[0].shape[2] - self.kernel_size[0] + 2 * self.padding) // self.stride + 1)
-        shape_var.shape.append(
-            (input_shapes[0].shape[3] - self.kernel_size[0] + 2 * self.padding) // self.stride + 1)
+        if not is_symbolic_inp:
+            shape_var.shape.append(
+                (input_shapes[0].shape[2] - self.kernel_size[0] + 2 * self.padding) // self.stride + 1)
+            shape_var.shape.append(
+                (input_shapes[0].shape[3] - self.kernel_size[0] + 2 * self.padding) // self.stride + 1)
+        else:
+            shape_var.shape.append(
+                (input_shapes[0].shape[2] - self.kernel_size[0] + 2 * self.padding) / self.stride + 1)
+            shape_var.shape.append(
+                (input_shapes[0].shape[3] - self.kernel_size[0] + 2 * self.padding) / self.stride + 1)
         return [shape_var]
 
 
@@ -188,6 +205,8 @@ if __name__ == '__main__':
     a = torch.randn(2, 3, 24, 24)
     assert torch.conv2d(a, torch.randn(3, 3, 3, 3), stride=1, padding=1).shape == NCHWConv2d(
         3, 3, (3, 3), 1, 1).shape_function([ShapeVar([2, 3, 24, 24])])[0].torch()
+    print(NCHWConv2d(
+        3, 3, (3, 3), 1, 1).shape_function([ShapeVar([2, *z3.Ints('c h w')])])[0])
 
     # Reshape
     a = torch.randn(2, 3, 4, 5)
