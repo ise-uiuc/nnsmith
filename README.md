@@ -13,5 +13,23 @@ This project is under heavy development at this point.
     - [x] Many-to-many: Conv ([[torch]](https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html) [[onnx]](https://github.com/onnx/onnx/blob/master/docs/Operators.md#Conv))
     - [x] Reorganize: Reshape ([[torch]](https://pytorch.org/docs/stable/generated/torch.reshape.html) [[onnx]](https://github.com/onnx/onnx/blob/master/docs/Operators.md#reshape))
     - [x] Shuffle: Transpose ([[torch]](https://pytorch.org/docs/stable/generated/torch.transpose.html) [[onnx]](https://github.com/onnx/onnx/blob/master/docs/Operators.md#transpose))
-- [ ] β function to map abstract domain to concrete domain (PyTorch's `nn.Module`).
-- [ ] Random type-wise graph generation.
+- [ ] β function to map abstract domain to concrete domain (PyTorch's `nn.Module`). @jiawei
+- [ ] Random type-wise graph generation. @jiawei
+- [ ] Differential testing candidates: Given an ONNX model, get results from DNN libraries/compilers:
+    - [ ] Specification: @jinkun
+        - Output: Pickle containing Dict[Array]; (naming convension: ${MODEL_NAME}.${FRAMEWORK}.pickle)
+        - Input: ONNX model; Ones(shape);
+        - Bug report: ptr->model, input;
+    - [ ] Oracles:
+        - Result consistency (allclose);
+        - Performance degradation;
+        - Crash;
+    - [ ] Differential testing comparison (allclose); @jinkun
+    - [ ] TVM (dynamic models: VM/Debug; & graph); @jiawei
+    - [ ] ONNXRuntime (new); @jiawei
+    - [ ] XLA (ONNX to TF. Compile in XLA mode); @jinkun
+    - [ ] TensorRT; @jiawei
+    - [ ] Glow; @jinkun
+- [ ] Dynamic model testing;
+- [ ] Mutating input tensors;
+
