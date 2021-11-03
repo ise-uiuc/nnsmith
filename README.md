@@ -29,7 +29,7 @@ This project is under heavy development at this point.
 - [ ] Random type-wise graph generation. @jiawei
 - [ ] Differential testing candidates: Given an ONNX model, get results from DNN libraries/compilers:
     - Specification: @jinkun @jiawei See `nnsmith/backends/__init__.py` for the specification.
-        - Output: Output tensors (`Dict[np.ndarray`);
+        - Output: Output tensors (`Dict[np.ndarray]`);
         - Input: ONNX model; Input tensors (`Dict[np.ndarray]`);
         - Bug report: ptr->model, input tensors;
     - [ ] Oracles:
@@ -42,6 +42,7 @@ This project is under heavy development at this point.
     - [ ] XLA (ONNX to TF. Compile in XLA mode); @jinkun
     - [ ] TensorRT; @jiawei
     - [ ] Glow; @jinkun
+- [ ] Model parameters to operator constructors; @jiawei
 - [ ] Dynamic model testing;
 - [ ] Mutating input tensors;
 
