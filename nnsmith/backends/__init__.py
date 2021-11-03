@@ -29,7 +29,7 @@ class DiffTestBackend(ABC):
         """See https://deeplearning4j.org/api/latest/onnx/Onnx.TensorProto.DataType.html
         """
         if id == 1:
-            return 'float'
+            return 'float32'
         elif id == 2:
             return 'uint8'
         elif id == 3:
