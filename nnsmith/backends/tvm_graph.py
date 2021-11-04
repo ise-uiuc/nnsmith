@@ -72,4 +72,8 @@ if __name__ == '__main__':
     backend = TVMExecutor()
     sim_model, check = simplify(DiffTestBackend.get_onnx_proto(
         filename), input_shapes={'input': [1, 3, 224, 224]})
-    backend.predict(sim_model, {'input': np.zeros((1, 3, 224, 224))})
+    output = backend.predict(
+        sim_model, {'input': np.zeros((1, 3, 224, 224))})['output']
+    assert output.shape == (1, 1000), "{} != {}".format(
+        output.shape, (1, 1000))
+    assert output[0, 233] - (-1.34753) < 1e-3

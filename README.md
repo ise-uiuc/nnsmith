@@ -12,6 +12,7 @@ This project is under heavy development at this point.
     - [PyTorch-ONNX Coverage](https://github.com/pytorch/pytorch/blob/master/caffe2/python/onnx/ONNXOpCoverage.md)
     - [TensorFlow-ONNX Coverage](https://github.com/onnx/onnx-tensorflow/blob/master/doc/support_status.md)
     - [Glow-ONNX Coverage](https://github.com/pytorch/glow/tree/d7bd6c59e68a105edafe094ee77c987903eb24a5/tests/models/onnxModels)
+    - [TensorRT-ONNX Coverage](https://github.com/onnx/onnx-tensorrt/blob/master/docs/operators.md)
     - TVM-ONNX Coverage: N/A
 - To use ONNXRuntime on GPU & ONNX Simplifier:
 ```shell
@@ -46,7 +47,7 @@ pip install onnxruntime-gpu # the order matters; and you have to split the insta
     - [x] TVM (dynamic models: VM/Debug; & graph); @jiawei
     - [x] ONNXRuntime (new); @jiawei
     - [x] XLA (ONNX to TF. Compile in XLA mode); @jinkun refined@jiawei
-    - [ ] TensorRT; @jiawei
+    - [x] TensorRT; @jiawei
     - [ ] Glow; @jinkun
 - [ ] Model parameters to operator constructors; @jiawei
 - [ ] Dynamic model testing;

@@ -1,6 +1,7 @@
 import os
 # TODO: Ensure XLA is enabled
-os.environ['TF_XLA_FLAGS']="--tf_xla_auto_jit=2 --tf_xla_cpu_global_jit" # Enable XLA JIT
+# Enable XLA JIT
+os.environ['TF_XLA_FLAGS'] = "--tf_xla_auto_jit=2 --tf_xla_cpu_global_jit"
 
 # See https://github.com/onnx/onnx-tensorflow/blob/master/doc/API.md
 from onnx_tf.backend import prepare, supports_device
@@ -14,7 +15,8 @@ class XLAExecutor(DiffTestBackend):
             device (str, optional): 'CPU' or 'CUDA'. Defaults to 'CPU'.
         """
         self.device = device
-        assert supports_device(self.device), "Device {} not supported by ONNX-TF".format(self.device)
+        assert supports_device(
+            self.device), "Device {} not supported by ONNX-TF".format(self.device)
 
     def predict(self, model, inputs):
         onnx_model = self.get_onnx_proto(model)
@@ -53,4 +55,8 @@ if __name__ == '__main__':
     backend = XLAExecutor()
     sim_model, check = simplify(DiffTestBackend.get_onnx_proto(
         filename), input_shapes={'input': [1, 3, 224, 224]})
-    backend.predict(sim_model, {'input': np.zeros((1, 3, 224, 224))})
+    output = backend.predict(
+        sim_model, {'input': np.zeros((1, 3, 224, 224))})['output']
+    assert output.shape == (1, 1000), "{} != {}".format(
+        output.shape, (1, 1000))
+    assert output[0, 233] - (-1.34753) < 1e-3
