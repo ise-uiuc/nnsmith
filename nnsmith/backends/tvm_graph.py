@@ -7,6 +7,14 @@ import tvm
 from tvm import relay
 
 
+def list_eq(a, b):
+    if len(a) != len(b):
+        return False
+    for i in range(len(a)):
+        if a[i] != b[i]:
+            return False
+    return True
+
 class TVMExecutor(DiffTestBackend):
     def __init__(self, opt_level=4, target="llvm", executor="graph"):
         self.opt_level = opt_level
@@ -19,6 +27,20 @@ class TVMExecutor(DiffTestBackend):
         if self.target.export()['kind'] == 'rocm':
             return tvm.rocm()
         return tvm.cpu()
+
+    def cvt_result(self, output, out_shape):
+        """Pack output tensor(s) into a list
+        """
+        # TODO(jinkun): may not work for nested list / dynamic shape
+        if isinstance(output, (tvm.runtime.container.ADT, list)):
+            output = [r.numpy() for r in output]
+            out_shape = [tuple(r.shape) for r in out_shape.fields]
+        elif output is not None:
+            output = [output.numpy()]
+            out_shape = [tuple(out_shape.shape)]
+        else:
+            assert False, "output is None"
+        return output, out_shape
 
     def predict(self, model, inputs):
         onnx_model = self.get_onnx_proto(model)
@@ -33,16 +55,15 @@ class TVMExecutor(DiffTestBackend):
         mod, params = relay.frontend.from_onnx(onnx_model, shape_dict)
         mod = relay.transform.InferType()(mod)
 
-        # FIXME: Enable multiple outputs
-        assert len(out_names) == 1, "Only support single output at this moment"
-        out_shape = tuple(mod['main'].ret_type.shape)
+        out_shape = mod['main'].ret_type
 
         with tvm.transform.PassContext(opt_level=self.opt_level):
             executor = relay.build_module.create_executor(
                 self.executor, mod, self.get_device(), self.target, params
             ).evaluate()
             output = executor(
-                **{iname: inputs[iname].astype(inp_spec[iname].dtype) for iname in inputs}).numpy()
+                **{iname: inputs[iname].astype(inp_spec[iname].dtype) for iname in inputs})
+            output, out_shape = self.cvt_result(output, out_shape)
 
         # with tvm.transform.PassContext(opt_level=self.opt_level):
         #     lib = relay.build(mod, self.target, params=params)
@@ -54,12 +75,36 @@ class TVMExecutor(DiffTestBackend):
         #     m.run()
         #     # get outputs
         #     output = m.get_output(0, tvm.nd.empty(out_shape)).asnumpy()
-
-        assert out_shape == output.shape, f"{out_shape} != {output.shape}"
-        return {out_names[0]: output}
+        output_shape = list(map(lambda x: x.shape, output))
+        assert list_eq(out_shape, output_shape),\
+            f"Shape mismatch between {out_shape} and {output_shape}"
+        return dict(zip(out_names, output))
 
 
 if __name__ == '__main__':
+    import wget
+    import os
+    import numpy as np
+    from onnxsim import simplify
+    from tvm.contrib.target.onnx import to_onnx
+
+    # 2-input & 2-output static model.
+    def get_model():
+        x = relay.var("x", shape=(1, 3, 224, 224))
+        y = relay.var("y", shape=(1, 2))
+        mod = tvm.IRModule.from_expr(relay.Function([x, y], relay.Tuple([x, y])))
+        return to_onnx(mod, {}, 'model')
+
+    backend = TVMExecutor()
+    model = get_model()
+    input_spec, onames = DiffTestBackend.analyze_onnx_io(model)
+    sim_model, check = simplify(
+        model, input_shapes={'x': [1, 3, 224, 224], 'y': [1, 2]})
+    res = backend.predict(model, {'x': np.zeros(
+        (1, 3, 224, 224), dtype='float32'), 'y': np.array([[1, 2]], dtype='float32')})
+    print('test1 pass')
+
+
     import wget
     import os
     import numpy as np
@@ -77,3 +122,4 @@ if __name__ == '__main__':
     assert output.shape == (1, 1000), "{} != {}".format(
         output.shape, (1, 1000))
     assert output[0, 233] - (-1.34753) < 1e-3
+    print('test2 pass')

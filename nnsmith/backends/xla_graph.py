@@ -1,4 +1,5 @@
 import os
+from collections import Counter
 # TODO: Ensure XLA is enabled
 # Enable XLA JIT
 os.environ['TF_XLA_FLAGS'] = "--tf_xla_auto_jit=2 --tf_xla_cpu_global_jit"
@@ -24,22 +25,18 @@ class XLAExecutor(DiffTestBackend):
         tf_rep = prepare(onnx_model, device=self.device)
 
         inp_spec, out_names = self.analyze_onnx_io(onnx_model)
-        shape_dict = {name: inp_spec[name].shape for name in inp_spec}
-        for name in shape_dict:
-            if shape_dict[name][0] == -1:  # Freeze batch size
-                shape_dict[name][0] = 1
-                # (JK) I think this should not occur after the concretization?
-                print("Freezing batch size to 1 for {}".format(name))
-
-        # FIXME: Enable multiple outputs
-        assert len(out_names) == 1, "Only support single output at this moment"
+        # TODO(JK): decouple concretization and this function. Ideally, we would
+        # do so for every backend.
+        # shape_dict = {name: inp_spec[name].shape for name in inp_spec}
+        # for name in shape_dict:
+        #     if shape_dict[name][0] == -1:  # Freeze batch size
+        #         shape_dict[name][0] = 1
+        #         print("Freezing batch size to 1 for {}".format(name))
 
         outputs = tf_rep.run(
             {iname: inputs[iname].astype(inp_spec[iname].dtype) for iname in inputs})
-        assert len(outputs) == 1
-        output = outputs[0]
-
-        return {out_names[0]: output}
+        assert Counter(out_names) == Counter(outputs._fields), "Output names don't match"
+        return {oname: outputs[oname] for oname in out_names}
 
 
 if __name__ == '__main__':
