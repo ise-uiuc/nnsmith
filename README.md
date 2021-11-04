@@ -13,6 +13,12 @@ This project is under heavy development at this point.
     - [TensorFlow-ONNX Coverage](https://github.com/onnx/onnx-tensorflow/blob/master/doc/support_status.md)
     - [Glow-ONNX Coverage](https://github.com/pytorch/glow/tree/d7bd6c59e68a105edafe094ee77c987903eb24a5/tests/models/onnxModels)
     - TVM-ONNX Coverage: N/A
+- To use ONNXRuntime on GPU & ONNX Simplifier:
+```shell
+pip uninstall -y onnxruntime onnxruntime-gpu
+pip install onnxruntime 
+pip install onnxruntime-gpu # the order matters; and you have to split the install steps;
+```
 
 ## Progress & TODOs
 
@@ -38,7 +44,7 @@ This project is under heavy development at this point.
         - Crash;
     - [ ] Differential testing comparison (allclose); @jinkun
     - [x] TVM (dynamic models: VM/Debug; & graph); @jiawei
-    - [ ] ONNXRuntime (new); @jiawei
+    - [x] ONNXRuntime (new); @jiawei
     - [x] XLA (ONNX to TF. Compile in XLA mode); @jinkun refined@jiawei
     - [ ] TensorRT; @jiawei
     - [ ] Glow; @jinkun
