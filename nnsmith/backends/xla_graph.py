@@ -1,22 +1,25 @@
-# To install tvm with pip:
-# pip install tlcpack-nightly-cu102 -f https://tlcpack.ai/wheels
-
-from nnsmith.backends import DiffTestBackend
 import os
 # TODO: Ensure XLA is enabled
 os.environ['TF_XLA_FLAGS']="--tf_xla_auto_jit=2 --tf_xla_cpu_global_jit" # Enable XLA JIT
 
-import tensorflow as tf
-from onnx_tf.backend import prepare
+# See https://github.com/onnx/onnx-tensorflow/blob/master/doc/API.md
+from onnx_tf.backend import prepare, supports_device
+from nnsmith.backends import DiffTestBackend
 
 
 class XLAExecutor(DiffTestBackend):
-    def __init__(self, device='cpu'):
+    def __init__(self, device: str = 'CPU'):
+        """
+        Args:
+            device (str, optional): 'CPU' or 'CUDA'. Defaults to 'CPU'.
+        """
         self.device = device
+        assert supports_device(self.device), "Device {} not supported by ONNX-TF".format(self.device)
 
     def predict(self, model, inputs):
         onnx_model = self.get_onnx_proto(model)
-        tf_rep = prepare(onnx_model)  # prepare tf representation
+        # prepare tf representation
+        tf_rep = prepare(onnx_model, device=self.device)
 
         inp_spec, out_names = self.analyze_onnx_io(onnx_model)
         shape_dict = {name: inp_spec[name].shape for name in inp_spec}
@@ -29,14 +32,13 @@ class XLAExecutor(DiffTestBackend):
         # FIXME: Enable multiple outputs
         assert len(out_names) == 1, "Only support single output at this moment"
 
-        executor = tf_rep.run
-
-        outputs = executor(
+        outputs = tf_rep.run(
             {iname: inputs[iname].astype(inp_spec[iname].dtype) for iname in inputs})
         assert len(outputs) == 1
         output = outputs[0]
 
         return {out_names[0]: output}
+
 
 if __name__ == '__main__':
     import wget

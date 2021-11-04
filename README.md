@@ -39,7 +39,7 @@ This project is under heavy development at this point.
     - [ ] Differential testing comparison (allclose); @jinkun
     - [x] TVM (dynamic models: VM/Debug; & graph); @jiawei
     - [ ] ONNXRuntime (new); @jiawei
-    - [ ] XLA (ONNX to TF. Compile in XLA mode); @jinkun
+    - [x] XLA (ONNX to TF. Compile in XLA mode); @jinkun refined@jiawei
     - [ ] TensorRT; @jiawei
     - [ ] Glow; @jinkun
 - [ ] Model parameters to operator constructors; @jiawei

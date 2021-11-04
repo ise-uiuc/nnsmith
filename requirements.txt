@@ -3,3 +3,4 @@ onnx
 z3-solver
 wget
 onnx-simplifier
+onnx-tf
