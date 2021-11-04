@@ -15,6 +15,7 @@ import z3
 # 3. Extra constraints introduced by individual operators;
 
 # TODO: Make operator's parameters symbolic.
+# FIXME: Z3 solving is way slower than numerical computing. Try to use exceptions to reject invalid inputs;
 
 
 class ShapeVar:
@@ -37,20 +38,32 @@ class ShapeVar:
 
 def check_shape_fn(func):
     def wrapper_check_shape_fn(self, input_shapes):
-        assert len(input_shapes) == self.n_inp, "Requires {} inputs, but got {}".format(
-            self.n_inp, len(input_shapes))
+        assert len(input_shapes) == len(self.inp_dims), "Requires {} inputs, but got {}".format(
+            len(self.inp_dims), len(input_shapes))
         res = func(self, input_shapes)
-        assert len(res) == self.n_out, "Requires {} outputs, but got {}".format(
-            self.n_out, len(res))
+        assert len(res) == len(self.out_dims), "Requires {} outputs, but got {}".format(
+            len(self.out_dims), len(res))
         return res
     return wrapper_check_shape_fn
 
 
+def check_require_fn(func):
+    def wrapper_check_require_fn(self, input_shapes):
+        assert len(input_shapes) == len(self.inp_dims), "Requires {} inputs, but got {}".format(
+            len(self.inp_dims), len(input_shapes))
+        return func(self, input_shapes)
+    return wrapper_check_require_fn
+
+
 class AbsOpBase(ABC):
-    n_inp = None
-    n_out = None
+    # `[3, 3]` this means this op requires 2 inputs. Where the 1st one has 2 dimensions, and the 2nd one has 3 dimensions.
+    # `-1` means arbitrary dimantions.
+    inp_dims = []
+    # NOTE: the concrete values of out_dims are not useful. Just make sure the length is correct.
+    out_dims = []
 
     @abstractmethod  # Overload me!
+    # Exception means rejection.
     def _shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         raise NotImplementedError
 
@@ -58,20 +71,29 @@ class AbsOpBase(ABC):
     def shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         return self._shape_function(input_shapes)
 
-    def extra_constraints(self):
+    # Overload me!
+    # Extra constraints for the input tensors.
+    # Exception means rejection.
+    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
         return []
+
+    @check_require_fn  # Public API.
+    def requires(self, input_shapes):
+        return self._requires(input_shapes)
 
 
 class UnaryOpBase(AbsOpBase):
-    n_inp = n_out = 1
+    out_dims = [-1]
 
 
 class BinaryOpBase(AbsOpBase):
-    n_inp = 2
-    n_out = 1
+    out_dims = [-1]
 
 
 class ElementWiseUnaryOp(UnaryOpBase):
+    inp_dims = [-1]
+    out_dims = [-1]
+
     def _shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         return [input_shapes[0]]
 
@@ -156,12 +178,26 @@ class Not(ElementWiseUnaryOp):
 
 
 class Add(BinaryOpBase):
+    inp_dims = [-1, -1]
+
     def _shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
         return [input_shapes[0]]
 
+    def _requires(self, input_shapes):
+        assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
+        ret = []
+        for l, r in zip(input_shapes[0].shape, input_shapes[1].shape):
+            if isinstance(l, z3.ArithRef) or isinstance(r, z3.ArithRef):
+                ret.append(l == r)
+            else:
+                assert l == r
+        return ret
+
 
 class Expand(UnaryOpBase):
+    inp_dims = [-1]
+
     def __init__(self, target_shape: List[int]):
         """See https://pytorch.org/docs/stable/generated/torch.Tensor.expand.html
         """
@@ -181,6 +217,8 @@ class Expand(UnaryOpBase):
 
 
 class NCHWConv2d(UnaryOpBase):
+    inp_dims = [4]  # NCHW
+
     def __init__(self,
                  in_channels: int,
                  out_channels: int,
@@ -222,6 +260,8 @@ class NCHWConv2d(UnaryOpBase):
 
 
 class Reshape(UnaryOpBase):
+    inp_dims = [-1]
+
     def __init__(self, target_shape: List[int]):
         """See https://pytorch.org/docs/stable/generated/torch.reshape.html
         """
@@ -259,8 +299,21 @@ class Reshape(UnaryOpBase):
 
         return [shape_var]
 
+    def _requires(self, input_shapes):
+        # If your target shape is concrete, then your output shape's total pixels must be the same as the input shape's.
+        if -1 not in self.target_shape:
+            total_pixels = reduce(lambda x, y: x * y, self.target_shape)
+            return [total_pixels == reduce(lambda x, y: x * y, input_shapes[0].shape)]
+        else:
+            # If you use auto mode (specifying -1 for some dimensions), then the total number of input pixels must be exactly divisible by that of the output shape.
+            minimul_pixels = reduce(
+                lambda x, y: x * y, [v for v in self.target_shape if v != -1])
+            return [minimul_pixels % reduce(lambda x, y: x * y, input_shapes[0].shape) == 0]
+
 
 class Transpose(UnaryOpBase):
+    inp_dims = [-1]
+
     def __init__(self, dim0: int, dim1: int):
         """See https://pytorch.org/docs/stable/generated/torch.transpose.html
         """
