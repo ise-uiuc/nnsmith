@@ -37,8 +37,8 @@ if __name__ == '__main__':
     backend = ORTExecutor()
     model = DiffTestBackend.get_onnx_proto(filename)
     input_spec, onames = DiffTestBackend.analyze_onnx_io(model)
-    # sim_model, check = simplify(
-    #     model, input_shapes={'input_1': [1, 3, 224, 224], 'image_shape': [1, 2]})
+    sim_model, check = simplify(
+        model, input_shapes={'input_1': [1, 3, 224, 224], 'image_shape': [1, 2]})
     res = backend.predict(model, {'input_1': np.zeros(
         (1, 3, 224, 224), dtype='float32'), 'image_shape': np.array([[224, 224]], dtype='float32')})
     print(res)
