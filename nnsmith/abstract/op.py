@@ -35,18 +35,44 @@ class ShapeVar:
         return any(isinstance(s, z3.ArithRef) for s in self.shape)
 
 
+def check_shape_fn(func):
+    def wrapper_check_shape_fn(self, input_shapes):
+        assert len(input_shapes) == self.n_inp, "Requires {} inputs, but got {}".format(
+            self.n_inp, len(input_shapes))
+        res = func(self, input_shapes)
+        assert len(res) == self.n_out, "Requires {} outputs, but got {}".format(
+            self.n_out, len(res))
+        return res
+    return wrapper_check_shape_fn
+
+
 class AbsOpBase(ABC):
-    @abstractmethod
-    def shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    n_inp = None
+    n_out = None
+
+    @abstractmethod  # Overload me!
+    def _shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         raise NotImplementedError
+
+    @check_shape_fn  # Public API.
+    def shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        return self._shape_function(input_shapes)
 
     def extra_constraints(self):
         return []
 
 
-class ElementWiseUnaryOp(AbsOpBase):
-    def shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        assert len(input_shapes) == 1
+class UnaryOpBase(AbsOpBase):
+    n_inp = n_out = 1
+
+
+class BinaryOpBase(AbsOpBase):
+    n_inp = 2
+    n_out = 1
+
+
+class ElementWiseUnaryOp(UnaryOpBase):
+    def _shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         return [input_shapes[0]]
 
 
@@ -129,21 +155,19 @@ class Not(ElementWiseUnaryOp):
     pass
 
 
-class Add(AbsOpBase):
-    def shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        assert len(input_shapes) == 2
+class Add(BinaryOpBase):
+    def _shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
         return [input_shapes[0]]
 
 
-class Expand(AbsOpBase):
+class Expand(UnaryOpBase):
     def __init__(self, target_shape: List[int]):
         """See https://pytorch.org/docs/stable/generated/torch.Tensor.expand.html
         """
         self.target_shape = target_shape
 
-    def shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        assert len(input_shapes) == 1
+    def _shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         shape_var = ShapeVar([])
         for i, v in enumerate(self.target_shape):
             if v == -1:
@@ -156,7 +180,7 @@ class Expand(AbsOpBase):
         return [shape_var]
 
 
-class NCHWConv2d(AbsOpBase):
+class NCHWConv2d(UnaryOpBase):
     def __init__(self,
                  in_channels: int,
                  out_channels: int,
@@ -171,8 +195,7 @@ class NCHWConv2d(AbsOpBase):
         self.stride = stride
         self.padding = padding
 
-    def shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        assert len(input_shapes) == 1
+    def _shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         assert len(input_shapes[0].shape) == 4  # NCHW please.
         # not symbolic
         if not isinstance(self.in_channels, z3.ArithRef) and not isinstance(input_shapes[0].shape[1], z3.ArithRef):
@@ -198,14 +221,13 @@ class NCHWConv2d(AbsOpBase):
         return [shape_var]
 
 
-class Reshape(AbsOpBase):
+class Reshape(UnaryOpBase):
     def __init__(self, target_shape: List[int]):
         """See https://pytorch.org/docs/stable/generated/torch.reshape.html
         """
         self.target_shape = target_shape
 
-    def shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        assert len(input_shapes) == 1
+    def _shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         if -1 not in self.target_shape:
             return [ShapeVar(self.target_shape)]
         # else
@@ -238,15 +260,14 @@ class Reshape(AbsOpBase):
         return [shape_var]
 
 
-class Transpose(AbsOpBase):
+class Transpose(UnaryOpBase):
     def __init__(self, dim0: int, dim1: int):
         """See https://pytorch.org/docs/stable/generated/torch.transpose.html
         """
         self.dim0 = dim0
         self.dim1 = dim1
 
-    def shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        assert len(input_shapes) == 1
+    def _shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         assert len(input_shapes[0].shape) >= max(self.dim0, self.dim1) + 1
         shape_var = input_shapes[0]
         shape_var.shape[self.dim0], shape_var.shape[self.dim1] = shape_var.shape[self.dim1], shape_var.shape[self.dim0]
