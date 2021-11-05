@@ -32,6 +32,7 @@ pip install onnxruntime-gpu # the order matters; and you have to split the insta
     - [x] Many-to-many: Conv ([[torch]](https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html) [[onnx]](https://github.com/onnx/onnx/blob/master/docs/Operators.md#Conv))
     - [x] Reorganize: Reshape ([[torch]](https://pytorch.org/docs/stable/generated/torch.reshape.html) [[onnx]](https://github.com/onnx/onnx/blob/master/docs/Operators.md#reshape))
     - [x] Shuffle: Transpose ([[torch]](https://pytorch.org/docs/stable/generated/torch.transpose.html) [[onnx]](https://github.com/onnx/onnx/blob/master/docs/Operators.md#transpose))
+- [x] Make operator's parameters also symbolic. @jiawei
 - [ ] γ function to map abstract domain to concrete domain (PyTorch's `nn.Module`). @jiawei
 - [ ] Random type-wise graph generation. @jiawei
 - [ ] Differential testing candidates: Given an ONNX model, get results from DNN libraries/compilers:
