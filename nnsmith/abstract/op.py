@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from functools import reduce
-from sys import path
 from typing import List, Union
 
 import torch
@@ -468,16 +467,19 @@ if __name__ == '__main__':
     assert a.reshape(*target_shape).shape == Reshape5D(*target_shape).shape_fn(
         [ShapeVar(source_shape)])[0].torch()
 
-    s = z3.Solver()
-    v = z3.Ints('a b c d e')
-    abs_op = Reshape5D(*v)
-    cons = abs_op.requires([ShapeVar(source_shape)])
-    for c in cons:
-        s.add(c)
-    for c in abs_op.shape_fn([ShapeVar(source_shape)])[0].gt_zero():
-        s.add(c)
-    assert s.check() == z3.sat
-    print(s.model())
+    # Dirty fix for z3 bug by wrapping the context using seprated functions.
+    def test_reshape_symbol():  # See https://github.com/Z3Prover/z3/issues/989
+        s = z3.Solver()
+        v = z3.Ints('a b c d e')
+        abs_op = Reshape5D(*v)
+        cons = abs_op.requires([ShapeVar(source_shape)])
+        for c in cons:
+            s.add(c)
+        for c in abs_op.shape_fn([ShapeVar(source_shape)])[0].gt_zero():
+            s.add(c)
+        assert s.check() == z3.sat
+        print(s.model())
+    test_reshape_symbol()
 
     # Transpose
     source_shape = (2, 3, 4)
