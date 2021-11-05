@@ -17,6 +17,8 @@ from pathlib import Path
 def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarray], obtained_name: str, oracle_name: str):
     try:
         index = -1
+        assert obtained is not None, f'{obtained_name} crashed'
+        assert desired is not None, f'{oracle_name} crashed'
         assert set(obtained.keys()) == set(desired.keys())
         index = 0
         for key in obtained:
@@ -46,7 +48,7 @@ def run_backend(model_root: Path, backend: DiffTestBackend, output_dir: Path):
             p.start()
             p.join()
             if p.exitcode != 0:
-                pickle.dump({'exit_code': p.exitcode, 'outputs': []}, out_path.open('wb'))
+                pickle.dump({'exit_code': p.exitcode, 'outputs': None}, out_path.open('wb'))
 
 def difftest(model_root: str, backends: Union[List[DiffTestBackend], None] = None,
     output_dir: str = None):
@@ -79,15 +81,17 @@ def difftest(model_root: str, backends: Union[List[DiffTestBackend], None] = Non
             out_path = output_dir / f'{model_name}/{backend_name}.output.{idx}.pkl'
             return pickle.load(out_path.open('rb'))['outputs'], str(out_path)
 
+        # TODO(JK): use more advanced oracle (e.g., clustering?) if this does not work well
         # read oracle's data (assume first backend as oracle)
         prefix = output_dir / model_name
         backend_name = backends[0].__class__.__name__
         num_out = len(list(prefix.glob(f'{backend_name}.output.*.pkl')))
-        oracle, oracle_path = [], []
+        oracle, oracle_path, oracle_name = [], [], []
         for i in range(num_out):
             output, out_path = get_output(backend_name, i)
             oracle.append(output)
             oracle_path.append(out_path)
+            oracle_name.append(backend_name)
 
         for backend in backends[1:]:
             for i in range(num_out):
@@ -98,8 +102,8 @@ def difftest(model_root: str, backends: Union[List[DiffTestBackend], None] = Non
                     report.append({
                         'model_path': str(model_path), 
                         'backend': backend.__class__.__name__, 
+                        'oracle': oracle_name[i],
                         'input_idx': i,
-                        'oracle': oracle_path[i],
                         'error': str(err)})
                     print(err)
     import json

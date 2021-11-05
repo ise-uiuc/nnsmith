@@ -9,7 +9,9 @@ from onnxsim import simplify
 from tvm.contrib.target.onnx import to_onnx
 import tempfile
 
-
+class CrashExecutor(DiffTestBackend):
+    def predict(self, model, inputs):
+        assert False
 def dump_model_input(
     model: ModelProto, model_root: Path, model_name: str, num_inputs=2):
     model_path = model_root / model_name
@@ -49,4 +51,4 @@ model, check = simplify(DiffTestBackend.get_onnx_proto(
 dump_model_input(model, model_root, 'm1')
 
 
-difftest(str(model_root), [TVMExecutor(), ORTExecutor()], str(output_dir))
+difftest(str(model_root), [TVMExecutor(), ORTExecutor(), CrashExecutor()], str(output_dir))
