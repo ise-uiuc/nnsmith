@@ -78,6 +78,7 @@ class TVMExecutor(DiffTestBackend):
         output_shape = list(map(lambda x: x.shape, output))
         assert list_eq(out_shape, output_shape),\
             f"Shape mismatch between {out_shape} and {output_shape}"
+        # TODO(JK): make sure the order matches (not sure how to do so with TVM)
         return dict(zip(out_names, output))
 
 
