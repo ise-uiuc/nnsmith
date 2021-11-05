@@ -63,12 +63,12 @@ class AbsOpBase(ABC):
 
     @abstractmethod  # Overload me!
     # Exception means rejection.
-    def _shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         raise NotImplementedError
 
     @check_shape_fn  # Public API.
-    def shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        return self._shape_function(input_shapes)
+    def shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        return self._shape_fn(input_shapes)
 
     # Overload me!
     # Extra constraints for the input tensors.
@@ -93,7 +93,7 @@ class ElementWiseUnaryOp(UnaryOpBase):
     inp_dims = [-1]
     out_dims = [-1]
 
-    def _shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         return [input_shapes[0]]
 
 
@@ -179,7 +179,7 @@ class Not(ElementWiseUnaryOp):
 class Add(BinaryOpBase):
     inp_dims = [-1, -1]
 
-    def _shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
         return [input_shapes[0]]
 
@@ -204,7 +204,7 @@ class Expand(UnaryOpBase, ABC):
         self.expand_last_dim = expand_last_dim
         self.expand_n = expand_n
 
-    def _shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         if self.expand_last_dim <= len(input_shapes):
             input_shapes[0].shape[-self.expand_last_dim] = self.expand_n
             return input_shapes
@@ -266,7 +266,7 @@ class NCHWConv2d(UnaryOpBase):
         self.stride = stride
         self.padding = padding
 
-    def _shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         # not symbolic
         if not isinstance(self.in_channels, z3.ArithRef) and not isinstance(input_shapes[0].shape[1], z3.ArithRef):
             assert input_shapes[0].shape[1] == self.in_channels
@@ -311,7 +311,7 @@ class NCHWConv2d(UnaryOpBase):
 class Reshape(UnaryOpBase, ABC):
     target_shape: List[Union[int, z3.ArithRef]]
 
-    def _shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         if -1 not in self.target_shape:
             return [ShapeVar(self.target_shape)]
         # else
@@ -410,7 +410,7 @@ class Transpose(UnaryOpBase):
         self.dim0 = dim0
         self.dim1 = dim1
 
-    def _shape_function(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         assert len(input_shapes[0].shape) >= max(self.dim0, self.dim1) + 1
         shape_var = input_shapes[0]
         shape_var.shape[self.dim0], shape_var.shape[self.dim1] = shape_var.shape[self.dim1], shape_var.shape[self.dim0]
@@ -429,14 +429,14 @@ if __name__ == '__main__':
 
     # ReLU
     lhs = torch.relu(torch.randn(1, 1, 1, 1)).shape
-    rhs = torch.Size(ReLU().shape_function([ShapeVar([1, 1, 1, 1])])[0].shape)
+    rhs = torch.Size(ReLU().shape_fn([ShapeVar([1, 1, 1, 1])])[0].shape)
     assert lhs == rhs, f"{lhs} != {rhs}"
 
     # Add
     a = torch.randn(2, 3, 4, 5)
     b = torch.randn(2, 3, 4, 5)
     c = a + b
-    assert c.shape == torch.Size(Add().shape_function(
+    assert c.shape == torch.Size(Add().shape_fn(
         [ShapeVar([2, 3, 4, 5]), ShapeVar([2, 3, 4, 5])])[0].shape)
 
     # Expand
@@ -444,10 +444,10 @@ if __name__ == '__main__':
     a = torch.randn(source_shape)
     abs_op = ExpandLast4(expand_n=2)
     assert a.expand(2, 1, *source_shape).shape == torch.Size(
-        abs_op.shape_function([ShapeVar(source_shape)])[0].shape)
+        abs_op.shape_fn([ShapeVar(source_shape)])[0].shape)
 
     abs_op = ExpandLast1(expand_n=2)
-    rhs = torch.Size(abs_op.shape_function(
+    rhs = torch.Size(abs_op.shape_fn(
         [ShapeVar(list(source_shape))])[0].shape)
     lhs = a.expand(4, 2).shape
     assert lhs == rhs, f"{lhs} != {rhs}"
@@ -457,15 +457,15 @@ if __name__ == '__main__':
     a = torch.randn(*source_shape)
     out = torch.conv2d(a, torch.randn(3, 3, 3, 4), stride=1, padding=1)
     assert out.shape == NCHWConv2d(
-        3, 3, 3, 4, 1, 1).shape_function([ShapeVar(source_shape)])[0].torch()
+        3, 3, 3, 4, 1, 1).shape_fn([ShapeVar(source_shape)])[0].torch()
     print(NCHWConv2d(
-        3, 3, 3, 4, 1, 1).shape_function([ShapeVar([2, *z3.Ints('c h w')])])[0])
+        3, 3, 3, 4, 1, 1).shape_fn([ShapeVar([2, *z3.Ints('c h w')])])[0])
 
     # Reshape
     source_shape = (2, 3, 4)
     target_shape = (1, 2, 3, 2, 2)
     a = torch.randn(*source_shape)
-    assert a.reshape(*target_shape).shape == Reshape5D(*target_shape).shape_function(
+    assert a.reshape(*target_shape).shape == Reshape5D(*target_shape).shape_fn(
         [ShapeVar(source_shape)])[0].torch()
 
     s = z3.Solver()
@@ -474,7 +474,7 @@ if __name__ == '__main__':
     cons = abs_op.requires([ShapeVar(source_shape)])
     for c in cons:
         s.add(c)
-    for c in abs_op.shape_function([ShapeVar(source_shape)])[0].gt_zero():
+    for c in abs_op.shape_fn([ShapeVar(source_shape)])[0].gt_zero():
         s.add(c)
     assert s.check() == z3.sat
     print(s.model())
@@ -482,5 +482,5 @@ if __name__ == '__main__':
     # Transpose
     source_shape = (2, 3, 4)
     a = torch.randn(*source_shape)
-    assert a.transpose(0, 2).shape == Transpose(0, 2).shape_function(
+    assert a.transpose(0, 2).shape == Transpose(0, 2).shape_fn(
         [ShapeVar(source_shape)])[0].torch()
