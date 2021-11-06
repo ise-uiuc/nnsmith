@@ -7,7 +7,10 @@ import os
 import numpy as np
 from onnxsim import simplify
 from tvm.contrib.target.onnx import to_onnx
-import tempfile
+from nnsmith.backends.ort_graph import ORTExecutor
+# from nnsmith.backends.trt_graph import ORTExecutor
+from nnsmith.backends.tvm_graph import TVMExecutor
+from nnsmith.backends.xla_graph import XLAExecutor
 
 class CrashExecutor(DiffTestBackend):
     def predict(self, model, inputs):
@@ -41,14 +44,20 @@ model, check = simplify(
     model, input_shapes={'x': [1, 3, 224, 224], 'y': [1, 2]})
 dump_model_input(model, model_root, 'm0')
 
-
 filename = 'mobilenetv2.onnx'
 if not os.path.exists('mobilenetv2.onnx'):
     filename = wget.download(
         'https://github.com/onnx/models/raw/master/vision/classification/mobilenet/model/mobilenetv2-7.onnx', out='mobilenetv2.onnx')
 model, check = simplify(DiffTestBackend.get_onnx_proto(
-    filename), input_shapes={'input': [1, 3, 224, 224]})
+        filename), input_shapes={'input': [1, 3, 224, 224]})
 dump_model_input(model, model_root, 'm1')
+for i in range(3):
+    os.system(f'cp -r {model_root}/m1 {model_root}/m{i+2}')
 
+################# run each backend #################
+run_backend(str(model_root), XLAExecutor('CUDA'))
+run_backend(str(model_root), TVMExecutor(target='cuda'))
+run_backend(str(model_root), ORTExecutor())
 
-difftest(str(model_root), [TVMExecutor(), ORTExecutor(), CrashExecutor()], str(output_dir))
+################# compare result and generate report #################
+difftest(model_root.parent)

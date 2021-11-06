@@ -16,10 +16,11 @@ class XLAExecutor(DiffTestBackend):
             device (str, optional): 'CPU' or 'CUDA'. Defaults to 'CPU'.
         """
         self.device = device
-        assert supports_device(
-            self.device), "Device {} not supported by ONNX-TF".format(self.device)
 
     def predict(self, model, inputs):
+        # Fix fork error
+        assert supports_device(
+            self.device), "Device {} not supported by ONNX-TF".format(self.device)
         onnx_model = self.get_onnx_proto(model)
         # prepare tf representation
         tf_rep = prepare(onnx_model, device=self.device)
