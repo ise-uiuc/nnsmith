@@ -26,16 +26,18 @@ def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarr
             f'{obtained_name} v.s. {oracle_name} mismatch in #{index} tensor:')
 
 
-def run_backend(model_root: str, backend: DiffTestBackend):
+def run_backend(root: str, backend: DiffTestBackend):
     def run(model: Path):
         inputs = pickle.load(inp_path.open('rb')) # type: List[Dict[str, np.ndarray]]
         outputs = backend.predict(model, inputs)
         pickle.dump({'exit_code': 0, 'outputs': outputs}, out_path.open('wb'))
 
-    model_root = Path(model_root) # type: Path
-    output_dir = model_root.parent/'output'
+    model_root = Path(root) / 'model_input'
+    output_dir = Path(root) / 'output'
     output_dir.mkdir(parents=True, exist_ok=True)
-    for model_path in model_root.glob('*/'):
+    model_paths = list(model_root.glob('*/'))
+    print(f'Found {len(model_paths)} models at {model_root}')
+    for model_path in model_paths:
         model_name = model_path.name
         for inp_path in model_path.glob(f'input.*.pkl'):
             idx = inp_path.stem.split('.')[-1]
@@ -79,6 +81,9 @@ def difftest(root: str):
             a = list(model_path.glob(f'*.output.*.pkl'))
             bknd_names = set(map(lambda x: x.name.split('.')[0], a))
             num_out = len(a) // len(bknd_names)
+            assert num_out == len(list(
+                (output_dir.parent/'model_input'/model_name).glob(f'input.*.pkl')
+                )), 'inputs and outputs are not matched. Do you forget to run_backends?'
             assert len(a) % len(bknd_names) == 0, \
                 f'{model_name} has {len(a)} outputs, but {len(bknd_names)} backends which cannot divide'
             return num_out, bknd_names
@@ -111,3 +116,10 @@ def difftest(root: str):
                     print(err)
     import json
     json.dump(report, open(root /'report.json', 'w'), indent=2)
+
+if __name__ == '__main__': # generate bug reports.
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--root', type=str, default='./tmp')
+    args = parser.parse_args()
+    difftest(args.root)
