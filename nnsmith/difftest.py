@@ -9,6 +9,8 @@ import glob
 import pickle
 import multiprocessing
 from pathlib import Path
+import threading
+
 
 def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarray], obtained_name: str, oracle_name: str):
     try:
@@ -27,10 +29,31 @@ def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarr
 
 
 def run_backend(root: str, backend: DiffTestBackend):
-    def run(model: Path):
-        inputs = pickle.load(inp_path.open('rb')) # type: List[Dict[str, np.ndarray]]
-        outputs = backend.predict(model, inputs)
-        pickle.dump({'exit_code': 0, 'outputs': outputs}, out_path.open('wb'))
+    def run():
+        while True:
+            task = q.get()
+            q.task_done()
+            if task is None:
+                break
+            # add a placeholder for the output. If the backend crashes, the output will be None
+            model, inp_path, out_path = task
+            pickle.dump({'exit_code': 1, 'outputs': None}, out_path.open('wb'))
+            inputs = pickle.load(inp_path.open('rb')) # type: List[Dict[str, np.ndarray]]
+            outputs = backend.predict(model, inputs)
+            pickle.dump({'exit_code': 0, 'outputs': outputs}, out_path.open('wb'))
+    
+    def monitor():
+        """Simple monitor thread that restarts a dead worker process"""
+        while True:
+            p = multiprocessing.Process(target=run)
+            p.start()
+            p.join()
+            if p.exitcode == 0:
+                break
+
+    q = multiprocessing.JoinableQueue()
+    t = threading.Thread(target=monitor)
+    t.start()
 
     model_root = Path(root) / 'model_input'
     output_dir = Path(root) / 'output'
@@ -43,13 +66,10 @@ def run_backend(root: str, backend: DiffTestBackend):
             idx = inp_path.stem.split('.')[-1]
             out_path = output_dir / f'{model_name}/{backend.__class__.__name__}.output.{idx}.pkl'
             out_path.parent.mkdir(parents=True, exist_ok=True)
-            # TODO(JK): reuse process, redirect stdout/stderr to file?
-            p = multiprocessing.Process(target=run, 
-                args=(str(model_path/'model.onnx'),))
-            p.start()
-            p.join()
-            if p.exitcode != 0:
-                pickle.dump({'exit_code': p.exitcode, 'outputs': None}, out_path.open('wb'))
+            q.put((str(model_path/'model.onnx'), inp_path, out_path))
+    q.put(None)
+    q.join()
+    t.join()
 
 def difftest(root: str):
     """
@@ -95,14 +115,14 @@ def difftest(root: str):
         # TODO(JK): use more advanced oracle (e.g., clustering?) if this does not work well
         num_out, bknd_names = get_meta_info()
         for i in range(num_out):
-            oracle = None
+            oracle_path = None
             for backend in bknd_names:
                 output, out_path = get_output(backend, i)
-                if oracle is None:
+                if oracle_path is None:
                     # read oracle's data (assume first backend as oracle)
                     oracle = output
                     oracle_path = out_path
-                    oracle_name = out_path.split('.')[0]
+                    oracle_name = Path(out_path).name.split('.')[0]
                     continue
                 try:
                     assert_allclose(output, oracle, out_path, oracle_path)
