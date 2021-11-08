@@ -8,12 +8,14 @@ import z3
 # Another plausible tool (Interval Analysis): https://simon-rohou.fr/research/tubex-lib/doc/toctree.html
 # Please follow the PyTorch API conventions: https://pytorch.org/docs/stable/nn.html
 
-# There are 3 types of constraints at this point:
+# There are following types of constraints at this point:
 # 1. Shape variables must be greater than 0;
-# 2. Shape variable must avoid devision by 0;
-# 3. Extra constraints introduced by individual operators;
+# 2. Shape variables must avoid devision by 0;
+# 3. Intra-input shape constraints; e.g., add(x, y) where x.shape() must be equal to y.shape();
+# 4. Extra constraints introduced by individual operators;
 
 # FIXME: Z3 solving is way slower than numerical computing. Try to use exceptions to reject invalid inputs;
+# TODO: add interval analysis for shape dimension size;
 
 
 class ShapeVar:
@@ -24,7 +26,13 @@ class ShapeVar:
         return str(self.shape)
 
     def gt_zero(self):
-        return [s > 0 for s in self.shape if isinstance(s, z3.ArithRef)]
+        ret = []
+        for s in self.shape:
+            if isinstance(s, z3.ArithRef):
+                ret.append(s > 0)
+            else:
+                assert s > 0
+        return ret
 
     def torch(self):
         # NOTE: Only for concrete shapes.
@@ -55,10 +63,14 @@ def check_require_fn(func):
 
 class AbsOpBase(ABC):
     # `[3, 3]` this means this op requires 2 inputs. Where the 1st one has 2 dimensions, and the 2nd one has 3 dimensions.
-    # `-1` means arbitrary dimantions.
+    # `-1` means arbitrary dimantions; NOTE: but should be concretized during execution.
     inp_dims = []
     # NOTE: the concrete values of out_dims are not useful. Just make sure the length is correct.
+    # NOTE: the output shape of input dimensions should be concretized during the execution.
     out_dims = []
+    # Require the input dimension sizes to be equivalent.
+    same_inp_dims = False
+    # NOTE: the input of operator constructors are all Union[int, z3.ArithRef].
 
     @abstractmethod  # Overload me!
     # Exception means rejection.
@@ -107,9 +119,7 @@ class ReLU(ElementWiseUnaryOp):
 class LeakyReLU(ElementWiseUnaryOp):
     """See https://pytorch.org/docs/stable/generated/torch.nn.LeakyReLU.html
     """
-
-    def __init__(self, negative_slope=0.01) -> None:
-        self.negative_slope = negative_slope
+    negative_slope = 0.01
 
 
 class PReLU(ElementWiseUnaryOp):
@@ -177,6 +187,7 @@ class Not(ElementWiseUnaryOp):
 
 class Add(BinaryOpBase):
     inp_dims = [-1, -1]
+    same_inp_dims = True
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
@@ -423,8 +434,25 @@ class Transpose(UnaryOpBase):
         return []
 
 
+def _glob_leaf_op_classes():
+    ret = []
+
+    def _glob_leaf_op_classes_rec(cls):
+        nonlocal ret
+        for c in cls.__subclasses__():
+            if c.__subclasses__():
+                _glob_leaf_op_classes_rec(c)
+            else:
+                ret.append(c)
+    _glob_leaf_op_classes_rec(AbsOpBase)
+    return ret
+
+
+ALL_OP_TYPES = _glob_leaf_op_classes()
+
 if __name__ == '__main__':
     # Test shape functions
+    print(ALL_OP_TYPES)
 
     # ReLU
     lhs = torch.relu(torch.randn(1, 1, 1, 1)).shape

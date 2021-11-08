@@ -39,18 +39,18 @@ python -m nnsmith.difftest --root $root
 
 ## Progress & TODOs
 
-- [x] Export pytorch models to ONNX format; @jiawei
+- [x] Export pytorch models to ONNX format (`nnsmith/export.py`); @jiawei
     - Actually PyTorch is not suitable for graph generation. It requires some effort to have an IR from our own and parse it to run in the `forward` function.
-- [x] Data structure of abstract domain of shape analysis (regard it as an abstract interpretation problem). @jiawei
+- [x] Data structure of abstract domain of shape analysis (regard it as an abstract interpretation problem) (`nnsmith/abstract/op.py`). @jiawei
 - [x] Shape function and constraints with the following operators (See [Tab. 2](https://dl.acm.org/doi/pdf/10.1145/3453483.3454083)): @jiawei
     - [x] One-to-one: ReLU ([[torch]](https://pytorch.org/docs/stable/generated/torch.nn.ReLU.html) [[onnx]](https://github.com/onnx/onnx/blob/master/docs/Operators.md#relu)) & Add ([[torch]](https://pytorch.org/docs/stable/generated/torch.add.html) [[onnx]](https://github.com/onnx/onnx/blob/master/docs/Operators.md#add)) & LeakyReLU & PReLU & Sigmoid & Sin & Cos & Asin & Acos & Tan & Atan & Abs & Ceil & Clip & Round & Sqrt & Log & Not
     - [x] One-to-many: Expand ([[torch]](https://pytorch.org/docs/stable/generated/torch.Tensor.expand.html) [[onnx]](https://github.com/onnx/onnx/blob/master/docs/Operators.md#Expand))
     - [x] Many-to-many: Conv ([[torch]](https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html) [[onnx]](https://github.com/onnx/onnx/blob/master/docs/Operators.md#Conv))
     - [x] Reorganize: Reshape ([[torch]](https://pytorch.org/docs/stable/generated/torch.reshape.html) [[onnx]](https://github.com/onnx/onnx/blob/master/docs/Operators.md#reshape))
     - [x] Shuffle: Transpose ([[torch]](https://pytorch.org/docs/stable/generated/torch.transpose.html) [[onnx]](https://github.com/onnx/onnx/blob/master/docs/Operators.md#transpose))
-- [x] Make operator's parameters also symbolic. @jiawei
+- [x] Make operator's parameters also symbolic (`nnsmith/abstract/op.py`). @jiawei
+- [x] Random type-wise graph generation (`nnsmith/gen.py`). @jiawei
 - [ ] γ function to map abstract domain to concrete domain (PyTorch's `nn.Module`). @jiawei
-- [ ] Random type-wise graph generation. @jiawei
 - [ ] Differential testing candidates: Given an ONNX model, get results from DNN libraries/compilers:
     - Specification: @jinkun @jiawei See `nnsmith/backends/__init__.py` for the specification.
         - Output: Output tensors (`Dict[np.ndarray]`);
