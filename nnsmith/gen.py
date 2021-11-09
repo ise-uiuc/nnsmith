@@ -1,12 +1,13 @@
-from nnsmith.abstract.op import *
-
-import z3
+import z3  # Always import z3 first to avoid incompatibility issue.
+# See https://github.com/Z3Prover/z3/issues/5656
 import networkx as nx
 
 from typing import Dict, Tuple, List
 from inspect import signature
 import random
 import time
+
+from nnsmith.abstract.op import *
 
 
 class RequiredDimNotFound(Exception):
@@ -180,10 +181,9 @@ if __name__ == '__main__':
     print(f'{time.time() - strt_time}s to generate a graph w/ {len(gen.abstract_graph.nodes())} nodes')
 
     G = gen.abstract_graph
-
-    A = nx.drawing.nx_agraph.to_agraph(G)
-    A.layout('dot')
-    A.draw('graph_dot.png')
+    nx.drawing.nx_pydot.write_dot(G, 'graph.dot')
+    import os
+    os.system('dot -Tpng graph.dot > graph.png')
 
     # Draw with NetworkX
     # import matplotlib.pyplot as plt

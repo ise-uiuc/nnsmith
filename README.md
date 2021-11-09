@@ -12,7 +12,6 @@ This project is under heavy development at this point.
     - [PyTorch-ONNX Coverage](https://github.com/pytorch/pytorch/blob/master/caffe2/python/onnx/ONNXOpCoverage.md)
     - [TensorFlow-ONNX Coverage](https://github.com/onnx/onnx-tensorflow/blob/master/doc/support_status.md)
     - [Glow-ONNX Coverage](https://github.com/pytorch/glow/tree/d7bd6c59e68a105edafe094ee77c987903eb24a5/tests/models/onnxModels)
-    - [TensorRT-ONNX Coverage](https://github.com/onnx/onnx-tensorrt/blob/master/docs/operators.md)
     - TVM-ONNX Coverage: N/A
 - To use ONNXRuntime on GPU & ONNX Simplifier:
 ```shell
@@ -36,6 +35,7 @@ python -m nnsmith.backend_executor --root $root --backend xla
 # compare the result (all close)
 python -m nnsmith.difftest --root $root
 ```
+- To visualize generated graph: `python nnsmith/gen.py --max_nodes 30` (note that you need to install [graphviz](https://graphviz.org/download/#executable-packages) first)
 
 ## Progress & TODOs
 
@@ -65,7 +65,8 @@ python -m nnsmith.difftest --root $root
     - [x] ONNXRuntime (new); @jiawei
     - [x] XLA (ONNX to TF. Compile in XLA mode); @jinkun refined@jiawei
     - [x] TensorRT; @jiawei
-    - [ ] Glow; @jinkun
+    - [ ] Glow (not prioritized); @jinkun
 - [ ] Dynamic model testing;
+- [ ] Enable multiple inputs;
 - [ ] Mutating input tensors;
 

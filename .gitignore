@@ -2,6 +2,7 @@
 *.onnx
 tmp/
 *.png
+*.dot
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

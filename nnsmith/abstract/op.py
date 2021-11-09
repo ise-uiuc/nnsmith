@@ -3,8 +3,9 @@ from functools import reduce
 from typing import List, Union
 import random
 
-import torch
+# Import z3 ahead of torch (See https://github.com/Z3Prover/z3/issues/5656)
 import z3
+import torch
 # Recommended resources: https://theory.stanford.edu/~nikolaj/programmingz3.html
 # Another plausible tool (Interval Analysis): https://simon-rohou.fr/research/tubex-lib/doc/toctree.html
 # Please follow the PyTorch API conventions: https://pytorch.org/docs/stable/nn.html
