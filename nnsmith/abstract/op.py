@@ -100,6 +100,9 @@ class AbsOpBase(ABC):
     def requires(self, input_shapes):
         return self._requires(input_shapes)
 
+    def __repr__(self) -> str:
+        return self.__class__.__name__
+
 
 class UnaryOpBase(AbsOpBase):
     def __init__(self):

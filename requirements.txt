@@ -7,3 +7,4 @@ onnx-tf
 onnxruntime-gpu
 nvidia-pyindex
 nvidia-tensorrt
+pydot
