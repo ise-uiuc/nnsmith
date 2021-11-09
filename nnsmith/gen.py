@@ -22,10 +22,10 @@ class SimpleGenerator:
 
         # Node -> op: AbsOpBase
         # Edge -> shape_idx:-> self.alive_shapes
-        self.abstract_graph = nx.DiGraph()
+        self.abstract_graph = nx.MultiDiGraph()
 
-        # <op idx, shape variable>
-        self.alive_shapes: List[Tuple[int, ShapeVar]] = []
+        # <op idx, shape variable, output operand idx>
+        self.alive_shapes: List[Tuple[int, ShapeVar, int]] = []
         # dim size -> list[shape idx -> output_tensor_pool]
         self.dim2shape_idx: Dict[int, List[int]] = {}
 
@@ -63,7 +63,7 @@ class SimpleGenerator:
         return random.choice(self.op_candidates)
 
     def insert_node(self, node: AbsOpBase, oshapes: List[ShapeVar], ishape_indices: List[int]):
-        node_idx = len(self.abstract_graph.nodes)
+        new_node_idx = len(self.abstract_graph.nodes)
         for i, shape_var in enumerate(oshapes):
             if node.out_dims[i] == -1:
                 node.out_dims[i] = len(shape_var.shape)
@@ -71,15 +71,17 @@ class SimpleGenerator:
                 assert node.out_dims[i] == len(shape_var.shape), "{}'s dimension size is not {} in {}".format(
                     shape_var.shape, node.out_dims[i], node.__class__.__name__)
             shape_idx = len(self.alive_shapes)
-            self.alive_shapes.append((node_idx, shape_var))
+            self.alive_shapes.append((new_node_idx, shape_var, i))
             self.dim2shape_idx.setdefault(
                 len(shape_var.shape), []).append(shape_idx)
 
         self.abstract_graph.add_node(
-            node_idx, op=node, label=str(node))
-        for idx in ishape_indices:
-            self.abstract_graph.add_edge(
-                self.shape_idx_to_op_idx(idx), node_idx, shape_idx=idx, label=str(self.alive_shapes[idx][1]))
+            new_node_idx, op=node, label=str(node))
+
+        for in_operand_idx, idx in enumerate(ishape_indices):
+            old_node_idx, _, out_operand_idx = self.alive_shapes[idx]
+            self.abstract_graph.add_edge(old_node_idx, new_node_idx, shape_idx=idx, operand_idx=(
+                out_operand_idx, in_operand_idx), label=f'{out_operand_idx}-{in_operand_idx}: {self.alive_shapes[idx][1]}')
 
     def try_insert_node_type(self, node_t, max_shape_var_pick_time=5) -> bool:
         op_param_n = signature(node_t).parameters
@@ -179,6 +181,7 @@ if __name__ == '__main__':
     gen.abstract_gen(max_node_size=args.max_nodes,
                      max_gen_millisec=args.timeout)
     print(f'{time.time() - strt_time}s to generate a graph w/ {len(gen.abstract_graph.nodes())} nodes')
+    print(gen.solver.model())
 
     G = gen.abstract_graph
     nx.drawing.nx_pydot.write_dot(G, 'graph.dot')
