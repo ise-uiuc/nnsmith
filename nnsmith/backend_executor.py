@@ -1,4 +1,15 @@
+from nnsmith.backends import DiffTestBackend
 from nnsmith.difftest import run_backend
+
+# for testing
+class CrashExecutor(DiffTestBackend):
+    def predict(self, model, inputs):
+        return inputs
+
+class HangExecutor(DiffTestBackend):
+    def predict(self, model, inputs):
+        while True:
+            pass
 
 if __name__ == '__main__':
     import argparse
@@ -19,6 +30,11 @@ if __name__ == '__main__':
         elif name == 'xla':
             from nnsmith.backends.xla_graph import XLAExecutor
             return XLAExecutor(device='CUDA')
+        elif name == 'crash':
+            return CrashExecutor()
+        elif name == 'hang':
+            from nnsmith.backends.xla_graph import XLAExecutor
+            return HangExecutor()
         else:
             raise ValueError(f'unknown backend: {name}')
 

@@ -44,13 +44,12 @@ def run_backend(root: str, backend: DiffTestBackend):
     
     def monitor():
         """Simple monitor thread that restarts a dead worker process"""
-        while True:
+        while not all_tasks_done:
             p = multiprocessing.Process(target=run)
             p.start()
             p.join()
-            if p.exitcode == 0:
-                break
 
+    all_tasks_done = False
     q = multiprocessing.JoinableQueue()
     t = threading.Thread(target=monitor)
     t.start()
@@ -69,6 +68,7 @@ def run_backend(root: str, backend: DiffTestBackend):
             q.put((str(model_path/'model.onnx'), inp_path, out_path))
     q.put(None)
     q.join()
+    all_tasks_done = True
     t.join()
 
 def difftest(root: str):
