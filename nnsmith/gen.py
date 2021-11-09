@@ -173,10 +173,11 @@ if __name__ == '__main__':
     parser.add_argument('--timeout', type=int, default=2000)
     args = parser.parse_args()
 
+    strt_time = time.time()
     gen = SimpleGenerator(init_dim_size=args.dim_size)
     gen.abstract_gen(max_node_size=args.max_nodes,
                      max_gen_millisec=args.timeout)
-    print(gen.abstract_graph.nodes)
+    print(f'{time.time() - strt_time}s to generate a graph w/ {len(gen.abstract_graph.nodes())} nodes')
 
     G = gen.abstract_graph
 
