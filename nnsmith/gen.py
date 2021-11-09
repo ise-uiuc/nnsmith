@@ -32,7 +32,7 @@ class SimpleGenerator:
         input_node.inp_dims = input_node.out_dims = [init_dim_size]
         input_tensor_shape = ShapeVar(
             shape=[z3.Int('i%s' % k) for k in range(init_dim_size)])
-        self.insert_node(input_node, input_tensor_shape, ishape_indices=[])
+        self.insert_node(input_node, [input_tensor_shape], ishape_indices=[])
         for c in input_tensor_shape.gt_zero():
             self.solver.add(c)
 
@@ -67,13 +67,14 @@ class SimpleGenerator:
             if node.out_dims[i] == -1:
                 node.out_dims[i] = len(shape_var.shape)
             else:
-                assert node.out_dims[i] == len(shape_var.shape)
+                assert node.out_dims[i] == len(shape_var.shape), "{}'s dimension size is not {} in {}".format(
+                    shape_var.shape, node.out_dims[i], node.__class__.__name__)
             shape_idx = len(self.alive_shapes)
             self.alive_shapes.append((node_idx, shape_var))
             self.dim2shape_idx.setdefault(
                 len(shape_var.shape), []).append(shape_idx)
 
-        self.abstract_graph.add_node(node_idx, node=node)
+        self.abstract_graph.add_node(node_idx, op=node)
         for idx in ishape_indices:
             self.abstract_graph.add_edge(
                 self.shape_idx_to_op_idx(idx), node_idx, shape_idx=idx)
@@ -83,6 +84,7 @@ class SimpleGenerator:
         op_id = len(self.abstract_graph.nodes)
         op_params = [z3.Int('op%s_%s' % (op_id, k))
                      for k in range(len(op_param_n))]
+
         op: AbsOpBase = node_t(*op_params)
 
         n_inp = len(op.inp_dims)
@@ -98,6 +100,8 @@ class SimpleGenerator:
                         final_dim = dim
                     else:
                         assert final_dim == dim
+            if final_dim == -1:
+                final_dim = random.choice(list(self.dim2shape_idx.keys()))
             dim_spec_list = [final_dim] * n_inp
         else:  # inputs have different dimension sizes.
             dim_spec_list = op.inp_dims
@@ -124,7 +128,8 @@ class SimpleGenerator:
         shape_var_candidates = []
         for dim_size in dim_size_list:
             if dim_size == -1:  # Arbitrary dimension size.
-                pass
+                shape_var_candidates.append(
+                    random.randint(0, len(self.alive_shapes) - 1))
             elif dim_size in self.dim2shape_idx:
                 shape_var_candidates.append(
                     random.choice(self.dim2shape_idx[dim_size]))
@@ -156,3 +161,18 @@ class SimpleGenerator:
 
         self.insert_node(node, output_shapes, ishape_indices)
         return True
+
+
+if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--max_nodes', type=int, default=10)
+    parser.add_argument('--dim_size', type=int, default=4)
+    parser.add_argument('--timeout', type=int, default=2000)
+    args = parser.parse_args()
+
+    gen = SimpleGenerator(init_dim_size=args.dim_size)
+    gen.abstract_gen(max_node_size=args.max_nodes,
+                     max_gen_millisec=args.timeout)
+    print(gen.abstract_graph.nodes)

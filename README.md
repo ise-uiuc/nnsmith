@@ -66,7 +66,6 @@ python -m nnsmith.difftest --root $root
     - [x] XLA (ONNX to TF. Compile in XLA mode); @jinkun refined@jiawei
     - [x] TensorRT; @jiawei
     - [ ] Glow; @jinkun
-- [ ] Model parameters to operator constructors; @jiawei
 - [ ] Dynamic model testing;
 - [ ] Mutating input tensors;
 

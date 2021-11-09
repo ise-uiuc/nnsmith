@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from functools import reduce
 from typing import List, Union
+import random
 
 import torch
 import z3
@@ -44,10 +45,12 @@ class ShapeVar:
 
 def check_shape_fn(func):
     def wrapper_check_shape_fn(self, input_shapes):
-        assert len(input_shapes) == len(self.inp_dims), "Requires {} inputs, but got {}".format(
+        assert len(input_shapes) == len(self.inp_dims), "{} requires {} inputs, but got {}".format(
+            self.__class__.__name__,
             len(self.inp_dims), len(input_shapes))
         res = func(self, input_shapes)
-        assert len(res) == len(self.out_dims), "Requires {} outputs, but got {}".format(
+        assert len(res) == len(self.out_dims), "{} requires {} outputs, but got {}".format(
+            self.__class__.__name__,
             len(self.out_dims), len(res))
         return res
     return wrapper_check_shape_fn
@@ -55,7 +58,8 @@ def check_shape_fn(func):
 
 def check_require_fn(func):
     def wrapper_check_require_fn(self, input_shapes):
-        assert len(input_shapes) == len(self.inp_dims), "Requires {} inputs, but got {}".format(
+        assert len(input_shapes) == len(self.inp_dims), "{} requires {} inputs, but got {}".format(
+            self.__class__.__name__,
             len(self.inp_dims), len(input_shapes))
         return func(self, input_shapes)
     return wrapper_check_require_fn
@@ -259,6 +263,7 @@ class ExpandLast4(Expand):
 
 class NCHWConv2d(UnaryOpBase):
     inp_dims = [4]  # NCHW
+    out_dims = [4]  # NCHW
 
     def __init__(self,
                  in_channels: Union[int, z3.ArithRef],
@@ -319,6 +324,7 @@ class NCHWConv2d(UnaryOpBase):
 
 
 class Reshape(UnaryOpBase, ABC):
+    inp_dims = [-1]
     target_shape: List[Union[int, z3.ArithRef]]
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
@@ -366,7 +372,7 @@ class Reshape(UnaryOpBase, ABC):
 
 # Expand 6 times.
 class Reshape1D(Reshape):
-    inp_dims = [1]
+    out_dims = [1]
 
     # Inputs are target shape.
     def __init__(self, dim0: Union[int, z3.ArithRef]):
@@ -374,21 +380,21 @@ class Reshape1D(Reshape):
 
 
 class Reshape2D(Reshape):
-    inp_dims = [2]
+    out_dims = [2]
 
     def __init__(self, dim0: Union[int, z3.ArithRef], dim1: Union[int, z3.ArithRef]):
         self.target_shape = [dim0, dim1]
 
 
 class Reshape3D(Reshape):
-    inp_dims = [3]
+    out_dims = [3]
 
     def __init__(self, dim0: Union[int, z3.ArithRef], dim1: Union[int, z3.ArithRef], dim2: Union[int, z3.ArithRef]):
         self.target_shape = [dim0, dim1, dim2]
 
 
 class Reshape4D(Reshape):
-    inp_dims = [4]
+    out_dims = [4]
 
     def __init__(self, dim0: Union[int, z3.ArithRef], dim1: Union[int, z3.ArithRef], dim2: Union[int, z3.ArithRef],
                  dim3: Union[int, z3.ArithRef]):
@@ -396,7 +402,7 @@ class Reshape4D(Reshape):
 
 
 class Reshape5D(Reshape):
-    inp_dims = [5]
+    out_dims = [5]
 
     def __init__(self, dim0: Union[int, z3.ArithRef], dim1: Union[int, z3.ArithRef], dim2: Union[int, z3.ArithRef],
                  dim3: Union[int, z3.ArithRef], dim4: Union[int, z3.ArithRef]):
@@ -404,32 +410,35 @@ class Reshape5D(Reshape):
 
 
 class Reshape6D(Reshape):
-    inp_dims = [6]
+    out_dims = [6]
 
     def __init__(self, dim0: Union[int, z3.ArithRef], dim1: Union[int, z3.ArithRef], dim2: Union[int, z3.ArithRef],
                  dim3: Union[int, z3.ArithRef], dim4: Union[int, z3.ArithRef], dim5: Union[int, z3.ArithRef]):
         self.target_shape = [dim0, dim1, dim2, dim3, dim4, dim5]
 
 
-class Transpose(UnaryOpBase):
+class Transpose(UnaryOpBase, ABC):
     inp_dims = [-1]
 
-    def __init__(self, dim0: Union[int, z3.ArithRef], dim1: Union[int, z3.ArithRef]):
-        """See https://pytorch.org/docs/stable/generated/torch.transpose.html
-        """
-        self.dim0 = dim0
-        self.dim1 = dim1
+    """See https://pytorch.org/docs/stable/generated/torch.transpose.html
+    """
+    dim0: int = None
+    dim1: int = None
+
+    def _init_swap_dims(self, input_shapes):
+        assert len(input_shapes[0].shape) >= 1
+        max_dim = len(input_shapes[0].shape) - 1
+        self.dim0 = random.randint(0, max_dim)
+        self.dim1 = random.randint(0, max_dim)
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        assert len(input_shapes[0].shape) >= max(self.dim0, self.dim1) + 1
+        self._init_swap_dims(input_shapes)
         shape_var = input_shapes[0]
         shape_var.shape[self.dim0], shape_var.shape[self.dim1] = shape_var.shape[self.dim1], shape_var.shape[self.dim0]
         return [shape_var]
 
     def _requires(self, input_shapes):
-        if isinstance(self.dim0, z3.ArithRef) or isinstance(self.dim1, z3.ArithRef):
-            max_dim = z3.If(self.dim0 > self.dim1, self.dim0, self.dim1)
-            return [len(input_shapes[0].shape) >= max_dim + 1, max_dim >= 0]
+        self._init_swap_dims(input_shapes)
         assert len(input_shapes[0].shape) >= max(self.dim0, self.dim1) + 1
         return []
 
@@ -442,7 +451,7 @@ def _glob_leaf_op_classes():
         for c in cls.__subclasses__():
             if c.__subclasses__():
                 _glob_leaf_op_classes_rec(c)
-            else:
+            elif c is not Input:
                 ret.append(c)
     _glob_leaf_op_classes_rec(AbsOpBase)
     return ret
