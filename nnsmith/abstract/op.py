@@ -45,6 +45,10 @@ class ShapeVar:
 
 def check_shape_fn(func):
     def wrapper_check_shape_fn(self, input_shapes):
+        assert self.inp_dims, "Empty input dimensions in {}".format(
+            self.__class__.__name__)
+        assert self.out_dims, "Empty output dimensions in {}".format(
+            self.__class__.__name__)
         assert len(input_shapes) == len(self.inp_dims), "{} requires {} inputs, but got {}".format(
             self.__class__.__name__,
             len(self.inp_dims), len(input_shapes))
@@ -66,15 +70,16 @@ def check_require_fn(func):
 
 
 class AbsOpBase(ABC):
-    # `[3, 3]` this means this op requires 2 inputs. Where the 1st one has 2 dimensions, and the 2nd one has 3 dimensions.
-    # `-1` means arbitrary dimantions; NOTE: but should be concretized during execution.
-    inp_dims = []
-    # NOTE: the concrete values of out_dims are not useful. Just make sure the length is correct.
-    # NOTE: the output shape of input dimensions should be concretized during the execution.
-    out_dims = []
-    # Require the input dimension sizes to be equivalent.
-    same_inp_dims = False
-    # NOTE: the input of operator constructors are all Union[int, z3.ArithRef].
+    def __init__(self):
+        # `[3, 3]` this means this op requires 2 inputs. Where the 1st one has 2 dimensions, and the 2nd one has 3 dimensions.
+        # `-1` means arbitrary dimantions; NOTE: but should be concretized during execution.
+        self.inp_dims = []
+        # NOTE: the concrete values of out_dims are not useful. Just make sure the length is correct.
+        # NOTE: the output shape of input dimensions should be concretized during the execution.
+        self.out_dims = []
+        # Require the input dimension sizes to be equivalent.
+        self.same_inp_dims = False
+        # NOTE: the input of operator constructors are all Union[int, z3.ArithRef].
 
     @abstractmethod  # Overload me!
     # Exception means rejection.
@@ -97,101 +102,126 @@ class AbsOpBase(ABC):
 
 
 class UnaryOpBase(AbsOpBase):
-    out_dims = [-1]
+    def __init__(self):
+        super().__init__()
+        self.out_dims = [-1]
 
 
 class BinaryOpBase(AbsOpBase):
-    out_dims = [-1]
+    def __init__(self):
+        super().__init__()
+        self.out_dims = [-1]
 
 
 class ElementWiseUnaryOp(UnaryOpBase):
-    inp_dims = [-1]
-    out_dims = [-1]
+    def __init__(self):
+        super().__init__()
+        self.inp_dims = [-1]
+        self.out_dims = [-1]
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        assert len(input_shapes) == 1
         return [input_shapes[0]]
 
 
 class Input(ElementWiseUnaryOp):
-    pass
+    def __init__(self):
+        super().__init__()
 
 
 class ReLU(ElementWiseUnaryOp):
-    pass
+    def __init__(self):
+        super().__init__()
 
 
 class LeakyReLU(ElementWiseUnaryOp):
-    """See https://pytorch.org/docs/stable/generated/torch.nn.LeakyReLU.html
-    """
-    negative_slope = 0.01
+    def __init__(self):
+        """See https://pytorch.org/docs/stable/generated/torch.nn.LeakyReLU.html
+        """
+        super().__init__()
+        self.negative_slope = 0.01
 
 
 class PReLU(ElementWiseUnaryOp):
-    pass
+    def __init__(self):
+        super().__init__()
 
 
 class Sigmoid(ElementWiseUnaryOp):
-    pass
+    def __init__(self):
+        super().__init__()
 
 
 class Sin(ElementWiseUnaryOp):
-    pass
+    def __init__(self):
+        super().__init__()
 
 
 class Cos(ElementWiseUnaryOp):
-    pass
+    def __init__(self):
+        super().__init__()
 
 
 class Asin(ElementWiseUnaryOp):
-    pass
+    def __init__(self):
+        super().__init__()
 
 
 class Acos(ElementWiseUnaryOp):
-    pass
+    def __init__(self):
+        super().__init__()
 
 
 class Tan(ElementWiseUnaryOp):
-    pass
+    def __init__(self):
+        super().__init__()
 
 
 class Atan(ElementWiseUnaryOp):
-    pass
+    def __init__(self):
+        super().__init__()
 
 
 class Abs(ElementWiseUnaryOp):
-    pass
+    def __init__(self):
+        super().__init__()
 
 
 class Ceil(ElementWiseUnaryOp):
-    pass
+    def __init__(self):
+        super().__init__()
 
 
 class Clip(ElementWiseUnaryOp):
-    pass
+    def __init__(self):
+        super().__init__()
 
 
 class Round(ElementWiseUnaryOp):
-    pass
+    def __init__(self):
+        super().__init__()
 
 
 class Sqrt(ElementWiseUnaryOp):
-    pass
+    def __init__(self):
+        super().__init__()
 
 
-class Log(ElementWiseUnaryOp):
-    def __init__(self, base):
-        if not isinstance(base, z3.ArithRef):
-            assert base > 0
-        self.base = base
+class Log2(ElementWiseUnaryOp):
+    def __init__(self):
+        super().__init__()
 
 
 class Not(ElementWiseUnaryOp):
-    pass
+    def __init__(self):
+        super().__init__()
 
 
 class Add(BinaryOpBase):
-    inp_dims = [-1, -1]
-    same_inp_dims = True
+    def __init__(self):
+        super().__init__()
+        self.inp_dims = [-1, -1]
+        self.same_inp_dims = True
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
@@ -209,17 +239,17 @@ class Add(BinaryOpBase):
 
 
 class Expand(UnaryOpBase, ABC):
-    inp_dims = [-1]
-
     # expand_dim cannot be symbolic. So just expand it.
     def __init__(self, expand_last_dim: int, expand_n: Union[int, z3.ArithRef]):
         """See https://pytorch.org/docs/stable/generated/torch.Tensor.expand.html
         """
+        super().__init__()
+        self.inp_dims = [-1]
         self.expand_last_dim = expand_last_dim
         self.expand_n = expand_n
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        if self.expand_last_dim <= len(input_shapes):
+        if self.expand_last_dim <= len(input_shapes[0].shape):
             input_shapes[0].shape[-self.expand_last_dim] = self.expand_n
             return input_shapes
         else:  # expand it;
@@ -262,8 +292,6 @@ class ExpandLast4(Expand):
 
 
 class NCHWConv2d(UnaryOpBase):
-    inp_dims = [4]  # NCHW
-    out_dims = [4]  # NCHW
 
     def __init__(self,
                  in_channels: Union[int, z3.ArithRef],
@@ -274,12 +302,16 @@ class NCHWConv2d(UnaryOpBase):
                  padding: Union[int, z3.ArithRef]):
         """See https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
         """
+        super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.kernel_w_size = kernel_w_size
         self.kernel_h_size = kernel_h_size
         self.stride = stride
         self.padding = padding
+
+        self.inp_dims = [4]  # NCHW
+        self.out_dims = [4]  # NCHW
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         # not symbolic
@@ -324,8 +356,10 @@ class NCHWConv2d(UnaryOpBase):
 
 
 class Reshape(UnaryOpBase, ABC):
-    inp_dims = [-1]
-    target_shape: List[Union[int, z3.ArithRef]]
+    def __init__(self):
+        super().__init__()
+        self.inp_dims = [-1]
+        self.target_shape: List[Union[int, z3.ArithRef]]
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         if -1 not in self.target_shape:
@@ -372,58 +406,59 @@ class Reshape(UnaryOpBase, ABC):
 
 # Expand 6 times.
 class Reshape1D(Reshape):
-    out_dims = [1]
-
     # Inputs are target shape.
     def __init__(self, dim0: Union[int, z3.ArithRef]):
+        super().__init__()
         self.target_shape = [dim0]
+        self.out_dims = [1]
 
 
 class Reshape2D(Reshape):
-    out_dims = [2]
-
     def __init__(self, dim0: Union[int, z3.ArithRef], dim1: Union[int, z3.ArithRef]):
+        super().__init__()
         self.target_shape = [dim0, dim1]
+        self.out_dims = [2]
 
 
 class Reshape3D(Reshape):
-    out_dims = [3]
-
     def __init__(self, dim0: Union[int, z3.ArithRef], dim1: Union[int, z3.ArithRef], dim2: Union[int, z3.ArithRef]):
+        super().__init__()
         self.target_shape = [dim0, dim1, dim2]
+        self.out_dims = [3]
 
 
 class Reshape4D(Reshape):
-    out_dims = [4]
-
     def __init__(self, dim0: Union[int, z3.ArithRef], dim1: Union[int, z3.ArithRef], dim2: Union[int, z3.ArithRef],
                  dim3: Union[int, z3.ArithRef]):
+        super().__init__()
         self.target_shape = [dim0, dim1, dim2, dim3]
+        self.out_dims = [4]
 
 
 class Reshape5D(Reshape):
-    out_dims = [5]
-
     def __init__(self, dim0: Union[int, z3.ArithRef], dim1: Union[int, z3.ArithRef], dim2: Union[int, z3.ArithRef],
                  dim3: Union[int, z3.ArithRef], dim4: Union[int, z3.ArithRef]):
+        super().__init__()
         self.target_shape = [dim0, dim1, dim2, dim3, dim4]
+        self.out_dims = [5]
 
 
 class Reshape6D(Reshape):
-    out_dims = [6]
-
     def __init__(self, dim0: Union[int, z3.ArithRef], dim1: Union[int, z3.ArithRef], dim2: Union[int, z3.ArithRef],
                  dim3: Union[int, z3.ArithRef], dim4: Union[int, z3.ArithRef], dim5: Union[int, z3.ArithRef]):
+        super().__init__()
         self.target_shape = [dim0, dim1, dim2, dim3, dim4, dim5]
+        self.out_dims = [6]
 
 
 class Transpose(UnaryOpBase, ABC):
-    inp_dims = [-1]
-
-    """See https://pytorch.org/docs/stable/generated/torch.transpose.html
-    """
-    dim0: int = None
-    dim1: int = None
+    def __init__(self):
+        """See https://pytorch.org/docs/stable/generated/torch.transpose.html
+        """
+        super().__init__()
+        self.inp_dims = [-1]
+        self.dim0: int = None
+        self.dim1: int = None
 
     def _init_swap_dims(self, input_shapes):
         assert len(input_shapes[0].shape) >= 1
