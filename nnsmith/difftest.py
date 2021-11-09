@@ -1,3 +1,4 @@
+from queue import Empty
 from typing import List, Union, Dict, Tuple
 import onnx
 import numpy as np
@@ -9,7 +10,7 @@ import glob
 import pickle
 import multiprocessing
 from pathlib import Path
-import threading
+import time
 
 
 def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarray], obtained_name: str, oracle_name: str):
@@ -28,12 +29,13 @@ def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarr
             f'{obtained_name} v.s. {oracle_name} mismatch in #{index} tensor:')
 
 
-def run_backend(root: str, backend: DiffTestBackend):
-    def run():
+def run_backend(root: str, backend: DiffTestBackend, timeout: int):
+    def run(q: multiprocessing.Queue, r: multiprocessing.Queue):
         while True:
             task = q.get()
-            q.task_done()
+            # q.task_done()
             if task is None:
+                r.put(True)
                 break
             # add a placeholder for the output. If the backend crashes, the output will be None
             model, inp_path, out_path = task
@@ -41,19 +43,42 @@ def run_backend(root: str, backend: DiffTestBackend):
             inputs = pickle.load(inp_path.open('rb')) # type: List[Dict[str, np.ndarray]]
             outputs = backend.predict(model, inputs)
             pickle.dump({'exit_code': 0, 'outputs': outputs}, out_path.open('wb'))
+            r.put(True)
     
-    def monitor():
-        """Simple monitor thread that restarts a dead worker process"""
-        while not all_tasks_done:
-            p = multiprocessing.Process(target=run)
-            p.start()
+    def re_start_worker():
+        """(Re)start a (dead) worker process"""
+        nonlocal p, q, r
+        q = multiprocessing.Queue()
+        r = multiprocessing.Queue()
+        if p is not None:
+            p.kill()
             p.join()
+        p = multiprocessing.Process(target=run, args=(q, r))
+        p.start()
 
-    all_tasks_done = False
-    q = multiprocessing.JoinableQueue()
-    t = threading.Thread(target=monitor)
-    t.start()
+    def run_task(task):
+        assert q.empty()
+        q.put(task)
+        st_time = time.time()
+        done = False
+        while st_time + timeout > time.time():
+            try:
+                done = r.get(block=False)
+            except Empty:
+                pass
+            if done:
+                break
+            if not p.is_alive():
+                break
+            time.sleep(0.1)
+        # timeout; skip this task and restart the worker
+        if not done:
+            re_start_worker()
 
+    p = None # type: multiprocessing.Process
+    q = None # type: multiprocessing.Queue
+    r = None # type: multiprocessing.Queue
+    re_start_worker()
     model_root = Path(root) / 'model_input'
     output_dir = Path(root) / 'output'
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -65,11 +90,12 @@ def run_backend(root: str, backend: DiffTestBackend):
             idx = inp_path.stem.split('.')[-1]
             out_path = output_dir / f'{model_name}/{backend.__class__.__name__}.output.{idx}.pkl'
             out_path.parent.mkdir(parents=True, exist_ok=True)
-            q.put((str(model_path/'model.onnx'), inp_path, out_path))
-    q.put(None)
-    q.join()
-    all_tasks_done = True
-    t.join()
+            task = (str(model_path/'model.onnx'), inp_path, out_path) 
+            print(f'testing {model_path}')
+            run_task(task)
+
+    run_task(None)
+    p.join()
 
 def difftest(root: str):
     """
