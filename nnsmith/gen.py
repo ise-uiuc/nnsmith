@@ -74,10 +74,11 @@ class SimpleGenerator:
             self.dim2shape_idx.setdefault(
                 len(shape_var.shape), []).append(shape_idx)
 
-        self.abstract_graph.add_node(node_idx, op=node)
+        self.abstract_graph.add_node(
+            node_idx, op=node, label=str(node))
         for idx in ishape_indices:
             self.abstract_graph.add_edge(
-                self.shape_idx_to_op_idx(idx), node_idx, shape_idx=idx)
+                self.shape_idx_to_op_idx(idx), node_idx, shape_idx=idx, label=str(self.alive_shapes[idx][1]))
 
     def try_insert_node_type(self, node_t, max_shape_var_pick_time=5) -> bool:
         op_param_n = signature(node_t).parameters
@@ -176,3 +177,26 @@ if __name__ == '__main__':
     gen.abstract_gen(max_node_size=args.max_nodes,
                      max_gen_millisec=args.timeout)
     print(gen.abstract_graph.nodes)
+
+    G = gen.abstract_graph
+
+    A = nx.drawing.nx_agraph.to_agraph(G)
+    A.layout('dot')
+    A.draw('graph_dot.png')
+
+    # Draw with NetworkX
+    # import matplotlib.pyplot as plt
+    # import pygraphviz as pgv
+
+    # fig_size = max(8, args.max_nodes)
+    # plt.figure(figsize=(fig_size, fig_size * 1.2))
+
+    # pos = nx.drawing.nx_pydot.pydot_layout(G, prog='dot')
+
+    # nx.draw(G, pos, node_size=fig_size * 500)
+    # node_labels = nx.get_node_attributes(G, 'label')
+    # nx.draw_networkx_labels(G, pos, labels=node_labels)
+    # edge_labels = nx.get_edge_attributes(G, 'label')
+    # nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
+
+    # plt.savefig("graph_nx.png")
