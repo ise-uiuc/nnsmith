@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from functools import reduce
-from typing import List, Union
+from typing import List, Union, Callable
 import random
 
 # Import z3 ahead of torch (See https://github.com/Z3Prover/z3/issues/5656)
@@ -42,6 +42,10 @@ class ShapeVar:
 
     def constains_symbol(self) -> bool:
         return any(isinstance(s, z3.ArithRef) for s in self.shape)
+
+    @staticmethod
+    def from_torch(torch_shape):
+        return ShapeVar([torch_shape[i] for i in range(len(torch_shape))])
 
 
 def check_shape_fn(func):
@@ -97,6 +101,10 @@ class AbsOpBase(ABC):
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
         return []
 
+    @abstractmethod
+    def torch(self) -> Callable[..., torch.Tensor]:
+        raise NotImplementedError
+
     @check_require_fn  # Public API.
     def requires(self, input_shapes):
         return self._requires(input_shapes)
@@ -132,10 +140,16 @@ class Input(ElementWiseUnaryOp):
     def __init__(self):
         super().__init__()
 
+    def torch(self):
+        return lambda x: x
+
 
 class ReLU(ElementWiseUnaryOp):
     def __init__(self):
         super().__init__()
+
+    def torch(self):
+        return torch.relu
 
 
 class LeakyReLU(ElementWiseUnaryOp):
@@ -145,80 +159,130 @@ class LeakyReLU(ElementWiseUnaryOp):
         super().__init__()
         self.negative_slope = 0.01
 
+    def torch(self):
+        return torch.nn.LeakyReLU(self.negative_slope)
+
 
 class PReLU(ElementWiseUnaryOp):
     def __init__(self):
         super().__init__()
+
+    def torch(self):
+        return torch.nn.PReLU
 
 
 class Sigmoid(ElementWiseUnaryOp):
     def __init__(self):
         super().__init__()
 
+    def torch(self):
+        return torch.sigmoid
+
 
 class Sin(ElementWiseUnaryOp):
     def __init__(self):
         super().__init__()
+
+    def torch(self):
+        return torch.sin
 
 
 class Cos(ElementWiseUnaryOp):
     def __init__(self):
         super().__init__()
 
+    def torch(self):
+        return torch.cos
+
 
 class Asin(ElementWiseUnaryOp):
     def __init__(self):
         super().__init__()
+
+    def torch(self):
+        return torch.asin
 
 
 class Acos(ElementWiseUnaryOp):
     def __init__(self):
         super().__init__()
 
+    def torch(self):
+        return torch.acos
+
 
 class Tan(ElementWiseUnaryOp):
     def __init__(self):
         super().__init__()
+
+    def torch(self):
+        return torch.tan
 
 
 class Atan(ElementWiseUnaryOp):
     def __init__(self):
         super().__init__()
 
+    def torch(self):
+        return torch.atan
+
 
 class Abs(ElementWiseUnaryOp):
     def __init__(self):
         super().__init__()
+
+    def torch(self):
+        return torch.abs
 
 
 class Ceil(ElementWiseUnaryOp):
     def __init__(self):
         super().__init__()
 
+    def torch(self):
+        return torch.ceil
+
 
 class Clip(ElementWiseUnaryOp):
     def __init__(self):
         super().__init__()
+        self.min = -1
+        self.max = 1
+
+    def torch(self):
+        return lambda x: torch.clip(x, self.min, self.max)
 
 
 class Round(ElementWiseUnaryOp):
     def __init__(self):
         super().__init__()
 
+    def torch(self):
+        return torch.round
+
 
 class Sqrt(ElementWiseUnaryOp):
     def __init__(self):
         super().__init__()
+
+    def torch(self):
+        return torch.sqrt
 
 
 class Log2(ElementWiseUnaryOp):
     def __init__(self):
         super().__init__()
 
+    def torch(self):
+        return torch.log2
+
 
 class Not(ElementWiseUnaryOp):
     def __init__(self):
         super().__init__()
+
+    def torch(self):
+        return torch.logical_not
 
 
 class Add(BinaryOpBase):
@@ -240,6 +304,9 @@ class Add(BinaryOpBase):
             else:
                 assert l == r
         return ret
+
+    def torch(self):
+        return torch.add
 
 
 class Expand(UnaryOpBase, ABC):
@@ -273,6 +340,9 @@ class Expand(UnaryOpBase, ABC):
             # It is also valid to expand to 0. But just too tricky...
             assert self.expand_n >= 1
         return []
+
+    def torch(self):
+        return lambda x: x.expand(*self.shape_fn(ShapeVar.from_torch(x.shape)))
 
 
 class ExpandLast1(Expand):
@@ -358,6 +428,10 @@ class NCHWConv2d(UnaryOpBase):
                 assert c
         return ret
 
+    def torch(self):
+        return torch.nn.Conv2d(self.in_channels, self.out_channels, kernel_size=(self.kernel_h_size, self.kernel_w_size), stride=self.stride,
+                               padding=self.padding)
+
 
 class Reshape(UnaryOpBase, ABC):
     def __init__(self):
@@ -406,6 +480,9 @@ class Reshape(UnaryOpBase, ABC):
             minimul_pixels = reduce(
                 lambda x, y: x * y, [v for v in self.target_shape if v != -1])
             return [minimul_pixels % reduce(lambda x, y: x * y, input_shapes[0].shape) == 0]
+
+    def torch(self):
+        return lambda x: x.reshape(*self.target_shape)
 
 
 # Expand 6 times.
@@ -466,6 +543,8 @@ class Transpose(UnaryOpBase, ABC):
 
     def _init_swap_dims(self, input_shapes):
         assert len(input_shapes[0].shape) >= 1
+        if self.dim0 is not None and self.dim1 is not None:
+            return
         max_dim = len(input_shapes[0].shape) - 1
         self.dim0 = random.randint(0, max_dim)
         self.dim1 = random.randint(0, max_dim)
@@ -480,6 +559,12 @@ class Transpose(UnaryOpBase, ABC):
         self._init_swap_dims(input_shapes)
         assert len(input_shapes[0].shape) >= max(self.dim0, self.dim1) + 1
         return []
+
+    def torch(self):
+        def f(x):
+            self._init_swap_dims()
+            return x.transpose(self.dim0, self.dim1)
+        return lambda x: f(x)
 
 
 def _glob_leaf_op_classes():
