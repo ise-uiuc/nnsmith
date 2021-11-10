@@ -500,6 +500,7 @@ ALL_OP_TYPES = _glob_leaf_op_classes()
 
 if __name__ == '__main__':
     # Test shape functions
+    print(len(ALL_OP_TYPES), 'operators supported:')
     print(ALL_OP_TYPES)
 
     # ReLU
@@ -556,9 +557,3 @@ if __name__ == '__main__':
         assert s.check() == z3.sat
         print(s.model())
     test_reshape_symbol()
-
-    # Transpose
-    source_shape = (2, 3, 4)
-    a = torch.randn(*source_shape)
-    assert a.transpose(0, 2).shape == Transpose(0, 2).shape_fn(
-        [ShapeVar(source_shape)])[0].torch()

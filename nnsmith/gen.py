@@ -6,6 +6,7 @@ from typing import Dict, Tuple, List
 from inspect import signature
 import random
 import time
+import os
 
 from nnsmith.abstract.op import *
 
@@ -15,7 +16,7 @@ class RequiredDimNotFound(Exception):
 
 
 class SimpleGenerator:
-    def __init__(self, init_dim_size=4, skip=[]):
+    def __init__(self, init_dim_size=4, skip=[], viz=False):
         # TODO: all operator types.
         self.op_candidates = [op for op in ALL_OP_TYPES if op not in skip]
         self.solver = z3.Solver()
@@ -28,6 +29,8 @@ class SimpleGenerator:
         self.alive_shapes: List[Tuple[int, ShapeVar, int]] = []
         # dim size -> list[shape idx -> output_tensor_pool]
         self.dim2shape_idx: Dict[int, List[int]] = {}
+        self.viz_cnt = 0
+        self.is_viz = viz
 
         input_node = Input()
         input_node.inp_dims = input_node.out_dims = [init_dim_size]
@@ -36,6 +39,7 @@ class SimpleGenerator:
         self.insert_node(input_node, [input_tensor_shape], ishape_indices=[])
         for c in input_tensor_shape.gt_zero():
             self.solver.add(c)
+        self.input_node = input_node  # TODO: multiple input/output.
 
     def extra_exit_check(self) -> bool:
         """
@@ -82,6 +86,9 @@ class SimpleGenerator:
             old_node_idx, _, out_operand_idx = self.alive_shapes[idx]
             self.abstract_graph.add_edge(old_node_idx, new_node_idx, shape_idx=idx, operand_idx=(
                 out_operand_idx, in_operand_idx), label=f'{out_operand_idx}-{in_operand_idx}: {self.alive_shapes[idx][1]}')
+
+        if self.is_viz:
+            self.viz()
 
     def try_insert_node_type(self, node_t, max_shape_var_pick_time=5) -> bool:
         op_param_n = signature(node_t).parameters
@@ -166,6 +173,14 @@ class SimpleGenerator:
         self.insert_node(node, output_shapes, ishape_indices)
         return True
 
+    def viz(self, filename: str = None):
+        if filename is None:
+            filename = f'step{self.viz_cnt}.png'
+        G = self.abstract_graph
+        nx.drawing.nx_pydot.write_dot(G, 'graph.dot')
+        os.system(f'dot -Tpng graph.dot > {filename}')
+        self.viz_cnt += 1
+
 
 if __name__ == '__main__':
     import argparse
@@ -173,20 +188,20 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--max_nodes', type=int, default=10)
     parser.add_argument('--dim_size', type=int, default=4)
-    parser.add_argument('--timeout', type=int, default=2000)
+    parser.add_argument('--timeout', type=int, default=10000)
+    parser.add_argument('--viz', type=bool, default=False)
     args = parser.parse_args()
 
     strt_time = time.time()
-    gen = SimpleGenerator(init_dim_size=args.dim_size)
+    gen = SimpleGenerator(init_dim_size=args.dim_size, viz=args.viz)
     gen.abstract_gen(max_node_size=args.max_nodes,
                      max_gen_millisec=args.timeout)
     print(f'{time.time() - strt_time}s to generate a graph w/ {len(gen.abstract_graph.nodes())} nodes')
-    print(gen.solver.model())
+    solution = gen.solver.model()
+    print(f'{len(solution)} symbols and {len(gen.solver.assertions())} constraints.')
+    print(solution)
 
-    G = gen.abstract_graph
-    nx.drawing.nx_pydot.write_dot(G, 'graph.dot')
-    import os
-    os.system('dot -Tpng graph.dot > graph.png')
+    gen.viz('final_graph.png')
 
     # Draw with NetworkX
     # import matplotlib.pyplot as plt
