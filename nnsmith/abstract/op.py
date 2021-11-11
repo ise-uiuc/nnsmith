@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from functools import reduce
 from typing import List, Union, Callable
+from inspect import signature
 import random
 
 # Import z3 ahead of torch (See https://github.com/Z3Prover/z3/issues/5656)
@@ -78,6 +79,7 @@ class AbsOpBase(ABC):
     def __init__(self):
         # `[3, 3]` this means this op requires 2 inputs. Where the 1st one has 2 dimensions, and the 2nd one has 3 dimensions.
         # `-1` means arbitrary dimantions; NOTE: but should be concretized during execution.
+        # All symbols of correponding operator must be the constructor's parameters.
         self.inp_dims = []
         # NOTE: the concrete values of out_dims are not useful. Just make sure the length is correct.
         # NOTE: the output shape of input dimensions should be concretized during the execution.
@@ -85,6 +87,7 @@ class AbsOpBase(ABC):
         # Require the input dimension sizes to be equivalent.
         self.same_inp_dims = False
         # NOTE: the input of operator constructors are all Union[int, z3.ArithRef].
+        self.extra_attrs = {}
 
     @abstractmethod  # Overload me!
     # Exception means rejection.
@@ -111,6 +114,27 @@ class AbsOpBase(ABC):
 
     def __repr__(self) -> str:
         return self.__class__.__name__
+
+
+def concretize(op: AbsOpBase, model: z3.ModelRef) -> AbsOpBase:
+    construct_param_dict = signature(op.__init__).parameters
+    values = []
+    symbolic_idx = []
+    for idx, key in enumerate(construct_param_dict):
+        param = getattr(op, key)
+        values.append(param)
+        if isinstance(param, z3.ArithRef):
+            symbolic_idx.append(idx)
+    for idx in symbolic_idx:
+        values[idx] = model.eval(values[idx]).as_long()
+
+    concrete_op = op.__class__(*values)
+    concrete_op.inp_dims = op.inp_dims
+    concrete_op.out_dims = op.out_dims
+    concrete_op.same_inp_dims = op.same_inp_dims
+    concrete_op.extra_attrs = op.extra_attrs
+
+    return concrete_op
 
 
 class UnaryOpBase(AbsOpBase):
@@ -379,8 +403,8 @@ class NCHWConv2d(UnaryOpBase):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.kernel_w_size = kernel_w_size
         self.kernel_h_size = kernel_h_size
+        self.kernel_w_size = kernel_w_size
         self.stride = stride
         self.padding = padding
 
@@ -538,33 +562,31 @@ class Transpose(UnaryOpBase, ABC):
         """
         super().__init__()
         self.inp_dims = [-1]
-        self.dim0: int = None
-        self.dim1: int = None
 
-    def _init_swap_dims(self, input_shapes):
+    def _init_swap_dims(self, input_shapes: List[ShapeVar]):
         assert len(input_shapes[0].shape) >= 1
-        if self.dim0 is not None and self.dim1 is not None:
-            return
-        max_dim = len(input_shapes[0].shape) - 1
-        self.dim0 = random.randint(0, max_dim)
-        self.dim1 = random.randint(0, max_dim)
+        if 'dim0' not in self.extra_attrs or 'dim1' not in self.extra_attrs:
+            max_dim = len(input_shapes[0].shape) - 1
+            self.extra_attrs['dim0'] = random.randint(0, max_dim)
+            self.extra_attrs['dim1'] = random.randint(0, max_dim)
+        return self.extra_attrs['dim0'], self.extra_attrs['dim1']
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        self._init_swap_dims(input_shapes)
+        dim0, dim1 = self._init_swap_dims(input_shapes)
         shape_var = input_shapes[0]
-        shape_var.shape[self.dim0], shape_var.shape[self.dim1] = shape_var.shape[self.dim1], shape_var.shape[self.dim0]
+        shape_var.shape[dim0], shape_var.shape[dim1] = shape_var.shape[dim1], shape_var.shape[dim0]
         return [shape_var]
 
     def _requires(self, input_shapes):
-        self._init_swap_dims(input_shapes)
-        assert len(input_shapes[0].shape) >= max(self.dim0, self.dim1) + 1
+        dim0, dim1 = self._init_swap_dims(input_shapes)
+        assert len(input_shapes[0].shape) >= max(dim0, dim1) + 1
         return []
 
     def torch(self):
-        def f(x):
-            self._init_swap_dims()
-            return x.transpose(self.dim0, self.dim1)
-        return lambda x: f(x)
+        def f(x: torch.Tensor):
+            dim0, dim1 = self._init_swap_dims(x.shape)
+            return x.transpose(dim0, dim1)
+        return f
 
 
 def _glob_leaf_op_classes():
@@ -642,3 +664,22 @@ if __name__ == '__main__':
         assert s.check() == z3.sat
         print(s.model())
     test_reshape_symbol()
+
+    # Test `concrete` function.
+    p0, p1, p2, p3, p4, p5 = z3.Ints('p0 p1 p2 p3 p4 p5')
+    op = NCHWConv2d(p0, p1, p2, p3, p4, p5)
+    s = z3.Solver()
+    shape = ShapeVar([1, 3, 224, 224])
+    for c in op.requires([shape]):
+        s.add(c)
+    for c in op.shape_fn([shape])[0].gt_zero():
+        s.add(c)
+    assert s.check() == z3.sat
+    model = s.model()
+    concrete_op = concretize(op, model)
+    assert concrete_op.in_channels == model[p0].as_long()
+    assert concrete_op.out_channels == model[p1].as_long()
+    assert concrete_op.kernel_h_size == model[p2].as_long()
+    assert concrete_op.kernel_w_size == model[p3].as_long()
+    assert concrete_op.stride == model[p4].as_long()
+    assert concrete_op.padding == model[p5].as_long()
