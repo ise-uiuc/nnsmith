@@ -52,8 +52,9 @@ class TVMExecutor(DiffTestBackend):
                 shape_dict[name][0] = 1
                 print("Freezing batch size to 1 for {}".format(name))
 
-        mod, params = relay.frontend.from_onnx(onnx_model, shape_dict)
+        mod, params = relay.frontend.from_onnx(onnx_model, shape_dict, freeze_params=True)
         mod = relay.transform.InferType()(mod)
+        self.mod = mod # for debugging purposes
 
         out_shape = mod['main'].ret_type
 
