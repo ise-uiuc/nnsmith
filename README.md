@@ -50,7 +50,8 @@ python -m nnsmith.difftest --root $root
     - [x] Shuffle: Transpose ([[torch]](https://pytorch.org/docs/stable/generated/torch.transpose.html) [[onnx]](https://github.com/onnx/onnx/blob/master/docs/Operators.md#transpose))
 - [x] Make operator's parameters also symbolic (`nnsmith/abstract/op.py`). @jiawei
 - [x] Random type-wise graph generation (`nnsmith/gen.py`). @jiawei
-- [ ] γ function to map abstract domain to concrete domain (PyTorch's `nn.Module`). @jiawei
+- [x] γ function to map abstract domain to concrete domain (PyTorch's `nn.Module`). @jiawei (NOTE: Jiawei tried to convert abstract graph into PyTorch's `nn.Module` and it works. However, due to the implementation issues of PyTorch's JIT tracing, we cannot export the `nn.Module` we created into ONNX model. Therefore, our next plan is to support Keras model generation and then export keras model into ONNX.)
+- [ ] γ function to map abs. domain to Keras model and convert Keras model into ONNX model.
 - [ ] Differential testing candidates: Given an ONNX model, get results from DNN libraries/compilers:
     - Specification: @jinkun @jiawei See `nnsmith/backends/__init__.py` for the specification.
         - Output: Output tensors (`Dict[np.ndarray]`);

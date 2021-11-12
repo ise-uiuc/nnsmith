@@ -11,6 +11,7 @@ import time
 import os
 
 from nnsmith.abstract.op import *
+from nnsmith.export import torch2onnx
 
 
 class RequiredDimNotFound(Exception):
@@ -23,6 +24,7 @@ class SymbolNet(nn.Module):
         self.tensors = []  # 1) edges; 2) leaf nodes; 3) input -> 0;
         self.ref_cnt = []  # ref cnt -> tensors; erased on 0;
         self.instructions = []  # <Func, <input idx>, <output idx>>
+        self.n_output = 0
         # NOTE: All leaf nodes are output tensors.
 
         tmp_op_output_map = {}  # node id -> output idx in tensors;
@@ -53,6 +55,7 @@ class SymbolNet(nn.Module):
                     tmp_op_output_map[node_id], tmp_op_output_map[node_id] + n_out))
                 for out_idx in output_idx:
                     self.ref_cnt[out_idx] += 1
+                    self.n_output += 1
             else:
                 for _, _, (out_idx, in_idx) in out_edges:
                     output_idx[out_idx] = tmp_op_output_map[node_id] + out_idx
@@ -84,6 +87,10 @@ class SymbolNet(nn.Module):
                 if local_ref_cnt[idx] > 0:  # Will be used.
                     self.tensors[idx] = output
         return (t for t in self.tensors if t is not None)
+
+    # TODO: Support multiple & dynamic inputs
+    def set_input_spec(self, input_shape):
+        self.plausible_input_shape = self.input_spec = {'i0': input_shape}
 
 
 class SimpleGenerator:
@@ -287,7 +294,9 @@ if __name__ == '__main__':
     print(f'Input shape: {input_shape}')
 
     net = SymbolNet(gen.abstract_graph, solution)
-    out = net(torch.zeros(*input_shape))
+    net.eval()
+    net.set_input_spec(input_shape)
+    torch2onnx(model=net, filename='output.onnx')
 
     # Draw with NetworkX
     # import matplotlib.pyplot as plt

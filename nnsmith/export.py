@@ -13,15 +13,16 @@ def torch2onnx(model, filename):
 
     input_names = list(model.input_spec.keys())
     for name in input_names:
-        dshape = [i for i, v in enumerate(model.input_spec[name]) if v != -1]
+        dshape = [i for i, v in enumerate(model.input_spec[name]) if v == -1]
         if len(dshape) > 0:
             dynamic_axes[name] = dshape
 
-    output_names = list(model.output_spec.keys())
-    for name in output_names:
-        dshape = [i for i, v in enumerate(model.output_spec[name]) if v != -1]
-        if len(dshape) > 0:
-            dynamic_axes[name] = dshape
+    # TODO: explicitly model outputs.
+    # output_names = list(model.output_spec.keys())
+    # for name in output_names:
+    #     dshape = [i for i, v in enumerate(model.output_spec[name]) if v != -1]
+    #     if len(dshape) > 0:
+    #         dynamic_axes[name] = dshape
 
     # Dummy inputs
     dummy_inputs = []
@@ -32,7 +33,7 @@ def torch2onnx(model, filename):
         model, tuple(dummy_inputs),
         filename,
         input_names=input_names,
-        output_names=output_names,
+        output_names=[f'o{i}' for i in range(model.n_output)],
         verbose=True,
         dynamic_axes=dynamic_axes)
 
@@ -53,7 +54,7 @@ if __name__ == "__main__":
             # Following attributes are required to export ONNX model.
             self.plausible_input_shape = {"i0": [1, 1, 3], "i1": [2, 3, 3]}
             self.input_spec = {"i0": [-1, -1, 3], "i1": [2, 3, 3]}
-            self.output_spec = {"o0": [-1, -1, 3], "o1": [2, 3, 3]}
+            self.n_output = 2
 
         @torch.no_grad()
         def forward(self, x, y):
@@ -67,7 +68,7 @@ if __name__ == "__main__":
             # Following attributes are required to export ONNX model.
             self.plausible_input_shape = {"i0": [1, 1, 3], "i1": [1, 1, 3]}
             self.input_spec = {"i0": [1, 1, 3], "i1": [1, 1, 3]}
-            self.output_spec = {"o0": [11, 1, 3]}
+            self.n_output = 1
 
         @torch.no_grad()
         def forward(self, x, y):
