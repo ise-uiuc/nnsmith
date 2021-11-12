@@ -24,8 +24,8 @@ def dump_model_input(
         pickle.dump(inp, (model_path/f'input.{i}.pkl').open("wb"))
 
 ################# construct models #################
-model_root = Path('./tmp/model_input')
-output_dir = Path('./tmp/output')
+model_root = Path('./tmp/tmp1/model_input')
+output_dir = Path('./tmp/tmp1/output')
 model_root.mkdir(exist_ok=True, parents=True)
 # 2-input & 2-output static model.
 def get_model():

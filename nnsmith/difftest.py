@@ -28,6 +28,16 @@ def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarr
         raise IncorrectResult(
             f'{obtained_name} v.s. {oracle_name} mismatch in #{index} tensor:')
 
+def run_backend_same_proc(model_path: str, backend: DiffTestBackend):
+    """This function is for debugging purpose.
+    Run the backend on the same process.
+    """
+    model_path = Path(model_path)
+    model_name = model_path.name
+    model = str(model_path/'model.onnx')
+    for inp_path in model_path.glob(f'input.*.pkl'):
+        inputs = pickle.load(inp_path.open('rb')) # type: List[Dict[str, np.ndarray]]
+        outputs = backend.predict(model, inputs)
 
 def run_backend(root: str, backend: DiffTestBackend, timeout: int):
     def run(q: multiprocessing.Queue, r: multiprocessing.Queue):
@@ -162,6 +172,10 @@ def difftest(root: str):
                     print(err)
     import json
     json.dump(report, open(root /'report.json', 'w'), indent=2)
+    if len(report) > 0:
+        print(f'{len(report)} differences found!!!')
+    else:
+        print('No differences found!')
 
 if __name__ == '__main__': # generate bug reports.
     import argparse

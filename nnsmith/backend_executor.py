@@ -1,5 +1,5 @@
 from nnsmith.backends import DiffTestBackend
-from nnsmith.difftest import run_backend
+from nnsmith.difftest import run_backend, run_backend_same_proc
 
 # for testing
 class CrashExecutor(DiffTestBackend):
@@ -19,6 +19,9 @@ if __name__ == '__main__':
         help='One of ort, trt, tvm, and xla')
     parser.add_argument('--timeout', type=int, default=5*60, 
         help='timeout in seconds')
+    parser.add_argument('--model', type=str,
+        help='For debugging purpose: when specified (e.g., tmp/tmp2/model_input/m1), '
+        'run the backend only on this model (on the same process)')
     # TODO: Add support for passing backend-specific options
     args = parser.parse_args()
 
@@ -40,4 +43,7 @@ if __name__ == '__main__':
             raise ValueError(f'unknown backend: {name}')
 
     bknd = get_backend(args.backend)
-    run_backend(args.root, bknd, args.timeout)
+    if args.model is None:
+        run_backend(args.root, bknd, args.timeout)
+    else:
+        run_backend_same_proc(args.model, bknd)
