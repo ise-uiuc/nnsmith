@@ -25,7 +25,8 @@ class SymbolNet(nn.Module):
         self.ref_cnt = []  # ref cnt -> tensors; erased on 0;
         self.instructions = []  # <Func, <input idx>, <output idx>>
         self.n_output = 0
-        self.mlist = nn.ModuleList() # keep track of layers and weights so that the tracing can work properly
+        # keep track of layers and weights so that the tracing can work properly
+        self.mlist = nn.ModuleList()
         # NOTE: All leaf nodes are output tensors.
 
         tmp_op_output_map = {}  # node id -> output idx in tensors;
@@ -281,10 +282,9 @@ if __name__ == '__main__':
     parser.add_argument('--dim_size', type=int, default=4)
     parser.add_argument('--timeout', type=int, default=10000)
     parser.add_argument('--viz', type=bool, default=False)
-    parser.add_argument('--output_path')
+    parser.add_argument('--output_path', type=str, default='output.onnx')
     args = parser.parse_args()
 
-    output_path = './output.onnx' if args.output_path is None else args.output_path
     strt_time = time.time()
     gen = SimpleGenerator(init_dim_size=args.dim_size, viz=args.viz)
     gen.abstract_gen(max_node_size=args.max_nodes,
@@ -294,7 +294,7 @@ if __name__ == '__main__':
     print(f'{len(solution)} symbols and {len(gen.solver.assertions())} constraints.')
     print(solution)
 
-    gen.viz(os.path.join(output_path, '../final_graph.png'))
+    gen.viz(args.output_path + '.png')
 
     input_shape = gen.concretize_input_shape(solution)
     print(f'Input shape: {input_shape}')
@@ -302,7 +302,7 @@ if __name__ == '__main__':
     net = SymbolNet(gen.abstract_graph, solution)
     net.eval()
     net.set_input_spec(input_shape)
-    torch2onnx(model=net, filename=output_path)
+    torch2onnx(model=net, filename=args.output_path)
 
     # Draw with NetworkX
     # import matplotlib.pyplot as plt
