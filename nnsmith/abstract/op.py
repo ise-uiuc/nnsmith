@@ -173,7 +173,7 @@ class ReLU(ElementWiseUnaryOp):
         super().__init__()
 
     def torch(self):
-        return torch.relu
+        return torch.nn.ReLU()
 
 
 class LeakyReLU(ElementWiseUnaryOp):
@@ -192,7 +192,7 @@ class PReLU(ElementWiseUnaryOp):
         super().__init__()
 
     def torch(self):
-        return torch.nn.PReLU
+        return torch.nn.PReLU()
 
 
 class Sigmoid(ElementWiseUnaryOp):
@@ -301,12 +301,12 @@ class Log2(ElementWiseUnaryOp):
         return torch.log2
 
 
-class Not(ElementWiseUnaryOp):
+class Neg(ElementWiseUnaryOp):
     def __init__(self):
         super().__init__()
 
     def torch(self):
-        return torch.logical_not
+        return torch.neg
 
 
 class Add(BinaryOpBase):
@@ -366,7 +366,7 @@ class Expand(UnaryOpBase, ABC):
         return []
 
     def torch(self):
-        return lambda x: x.expand(*self.shape_fn(ShapeVar.from_torch(x.shape)))
+        return lambda x: x.expand(*self.shape_fn([ShapeVar.from_torch(x.shape)])[0].shape)
 
 
 class ExpandLast1(Expand):
@@ -514,6 +514,7 @@ class Reshape1D(Reshape):
     # Inputs are target shape.
     def __init__(self, dim0: Union[int, z3.ArithRef]):
         super().__init__()
+        self.dim0 = dim0
         self.target_shape = [dim0]
         self.out_dims = [1]
 
@@ -521,6 +522,8 @@ class Reshape1D(Reshape):
 class Reshape2D(Reshape):
     def __init__(self, dim0: Union[int, z3.ArithRef], dim1: Union[int, z3.ArithRef]):
         super().__init__()
+        self.dim0 = dim0
+        self.dim1 = dim1
         self.target_shape = [dim0, dim1]
         self.out_dims = [2]
 
@@ -528,6 +531,9 @@ class Reshape2D(Reshape):
 class Reshape3D(Reshape):
     def __init__(self, dim0: Union[int, z3.ArithRef], dim1: Union[int, z3.ArithRef], dim2: Union[int, z3.ArithRef]):
         super().__init__()
+        self.dim0 = dim0
+        self.dim1 = dim1
+        self.dim2 = dim2
         self.target_shape = [dim0, dim1, dim2]
         self.out_dims = [3]
 
@@ -536,6 +542,10 @@ class Reshape4D(Reshape):
     def __init__(self, dim0: Union[int, z3.ArithRef], dim1: Union[int, z3.ArithRef], dim2: Union[int, z3.ArithRef],
                  dim3: Union[int, z3.ArithRef]):
         super().__init__()
+        self.dim0 = dim0
+        self.dim1 = dim1
+        self.dim2 = dim2
+        self.dim3 = dim3
         self.target_shape = [dim0, dim1, dim2, dim3]
         self.out_dims = [4]
 
@@ -544,6 +554,11 @@ class Reshape5D(Reshape):
     def __init__(self, dim0: Union[int, z3.ArithRef], dim1: Union[int, z3.ArithRef], dim2: Union[int, z3.ArithRef],
                  dim3: Union[int, z3.ArithRef], dim4: Union[int, z3.ArithRef]):
         super().__init__()
+        self.dim0 = dim0
+        self.dim1 = dim1
+        self.dim2 = dim2
+        self.dim3 = dim3
+        self.dim4 = dim4
         self.target_shape = [dim0, dim1, dim2, dim3, dim4]
         self.out_dims = [5]
 
@@ -552,6 +567,12 @@ class Reshape6D(Reshape):
     def __init__(self, dim0: Union[int, z3.ArithRef], dim1: Union[int, z3.ArithRef], dim2: Union[int, z3.ArithRef],
                  dim3: Union[int, z3.ArithRef], dim4: Union[int, z3.ArithRef], dim5: Union[int, z3.ArithRef]):
         super().__init__()
+        self.dim0 = dim0
+        self.dim1 = dim1
+        self.dim2 = dim2
+        self.dim3 = dim3
+        self.dim4 = dim4
+        self.dim5 = dim5
         self.target_shape = [dim0, dim1, dim2, dim3, dim4, dim5]
         self.out_dims = [6]
 
@@ -563,28 +584,28 @@ class Transpose(UnaryOpBase, ABC):
         super().__init__()
         self.inp_dims = [-1]
 
-    def _init_swap_dims(self, input_shapes: List[ShapeVar]):
-        assert len(input_shapes[0].shape) >= 1
+    def _init_swap_dims(self, input_shape: List[Union[int, z3.ArithRef]]):
+        assert len(input_shape) >= 1
         if 'dim0' not in self.extra_attrs or 'dim1' not in self.extra_attrs:
-            max_dim = len(input_shapes[0].shape) - 1
+            max_dim = len(input_shape) - 1
             self.extra_attrs['dim0'] = random.randint(0, max_dim)
             self.extra_attrs['dim1'] = random.randint(0, max_dim)
         return self.extra_attrs['dim0'], self.extra_attrs['dim1']
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        dim0, dim1 = self._init_swap_dims(input_shapes)
+        dim0, dim1 = self._init_swap_dims(input_shapes[0].shape)
         shape_var = input_shapes[0]
         shape_var.shape[dim0], shape_var.shape[dim1] = shape_var.shape[dim1], shape_var.shape[dim0]
         return [shape_var]
 
     def _requires(self, input_shapes):
-        dim0, dim1 = self._init_swap_dims(input_shapes)
+        dim0, dim1 = self._init_swap_dims(input_shapes[0].shape)
         assert len(input_shapes[0].shape) >= max(dim0, dim1) + 1
         return []
 
     def torch(self):
         def f(x: torch.Tensor):
-            dim0, dim1 = self._init_swap_dims(x.shape)
+            dim0, dim1 = self._init_swap_dims([x.shape])
             return x.transpose(dim0, dim1)
         return f
 

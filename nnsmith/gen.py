@@ -1,6 +1,8 @@
 import z3  # Always import z3 first to avoid incompatibility issue.
 # See https://github.com/Z3Prover/z3/issues/5656
 import networkx as nx
+import torch
+from torch import nn
 
 from typing import Dict, Tuple, List
 from inspect import signature
@@ -13,6 +15,75 @@ from nnsmith.abstract.op import *
 
 class RequiredDimNotFound(Exception):
     pass
+
+
+class SymbolNet(nn.Module):
+    def __init__(self, graph: nx.MultiDiGraph, model: z3.ModelRef):
+        super(SymbolNet, self).__init__()
+        self.tensors = []  # 1) edges; 2) leaf nodes; 3) input -> 0;
+        self.ref_cnt = []  # ref cnt -> tensors; erased on 0;
+        self.instructions = []  # <Func, <input idx>, <output idx>>
+        # NOTE: All leaf nodes are output tensors.
+
+        tmp_op_output_map = {}  # node id -> output idx in tensors;
+        for node_id in nx.topological_sort(graph):
+            n_inp = graph.nodes[node_id]['nin']
+            n_out = graph.nodes[node_id]['nout']
+
+            tmp_op_output_map[node_id] = len(self.tensors)
+            for _ in range(n_out):
+                self.tensors.append(None)
+                self.ref_cnt.append(0)
+
+            input_idx = [None] * n_inp
+            output_idx = [None] * n_out
+            op = concretize(graph.nodes[node_id]['op'], model)
+
+            # Glob inputs
+            for from_node, _, (out_idx, in_idx) in graph.in_edges(node_id, data='operand_idx'):
+                required = tmp_op_output_map[from_node] + out_idx
+                input_idx[in_idx] = required
+                self.ref_cnt[required] += 1
+
+            # Glob outputs
+            out_edges = graph.out_edges(node_id, data='operand_idx')
+            if len(out_edges) == 0:  # leaf node
+                # create fake output indices
+                output_idx = list(range(
+                    tmp_op_output_map[node_id], tmp_op_output_map[node_id] + n_out))
+                for out_idx in output_idx:
+                    self.ref_cnt[out_idx] += 1
+            else:
+                for _, _, (out_idx, in_idx) in out_edges:
+                    output_idx[out_idx] = tmp_op_output_map[node_id] + out_idx
+
+            if len(input_idx) != 0:
+                self.instructions.append((op.torch(), input_idx, output_idx))
+            else:  # Should be input node
+                assert type(op) is Input
+
+    # TODO: Support multiple inputs.
+
+    @torch.no_grad()
+    def forward(self, x):
+        local_ref_cnt = self.ref_cnt.copy()
+        self.tensors[0] = x
+        for inst, inps, outs in self.instructions:
+            # print()
+            # print(inst, inps, outs)
+            outputs = inst(*[self.tensors[idx] for idx in inps])
+            if not isinstance(outputs, list):
+                outputs = [outputs]
+            for idx in inps:
+                local_ref_cnt[idx] -= 1
+                if local_ref_cnt[idx] == 0:
+                    self.tensors[idx] = None
+            for idx, output in zip(outs, outputs):
+                assert self.tensors[idx] is None, 'tensor[{}] is not None.'.format(
+                    idx)
+                if local_ref_cnt[idx] > 0:  # Will be used.
+                    self.tensors[idx] = output
+        return (t for t in self.tensors if t is not None)
 
 
 class SimpleGenerator:
@@ -39,7 +110,16 @@ class SimpleGenerator:
         self.insert_node(input_node, [input_tensor_shape], ishape_indices=[])
         for c in input_tensor_shape.gt_zero():
             self.solver.add(c)
-        self.input_node = input_node  # TODO: multiple input/output.
+        self.input_shape = input_tensor_shape  # TODO: multiple input/output.
+
+    def concretize_input_shape(self, model):
+        shape = []
+        for s in self.input_shape.shape:
+            if isinstance(s, z3.ArithRef):
+                shape.append(model.eval(s).as_long())
+            else:
+                shape.append(s)
+        return shape
 
     def extra_exit_check(self) -> bool:
         """
@@ -80,7 +160,7 @@ class SimpleGenerator:
                 len(shape_var.shape), []).append(shape_idx)
 
         self.abstract_graph.add_node(
-            new_node_idx, op=node, label=str(node))
+            new_node_idx, op=node, nin=len(ishape_indices), nout=len(oshapes), label=str(node))
 
         for in_operand_idx, idx in enumerate(ishape_indices):
             old_node_idx, _, out_operand_idx = self.alive_shapes[idx]
@@ -202,6 +282,12 @@ if __name__ == '__main__':
     print(solution)
 
     gen.viz('final_graph.png')
+
+    input_shape = gen.concretize_input_shape(solution)
+    print(f'Input shape: {input_shape}')
+
+    net = SymbolNet(gen.abstract_graph, solution)
+    out = net(torch.zeros(*input_shape))
 
     # Draw with NetworkX
     # import matplotlib.pyplot as plt
