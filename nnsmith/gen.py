@@ -25,6 +25,7 @@ class SymbolNet(nn.Module):
         self.ref_cnt = []  # ref cnt -> tensors; erased on 0;
         self.instructions = []  # <Func, <input idx>, <output idx>>
         self.n_output = 0
+        self.mlist = nn.ModuleList() # keep track of layers and weights so that the tracing can work properly
         # NOTE: All leaf nodes are output tensors.
 
         tmp_op_output_map = {}  # node id -> output idx in tensors;
@@ -61,7 +62,10 @@ class SymbolNet(nn.Module):
                     output_idx[out_idx] = tmp_op_output_map[node_id] + out_idx
 
             if len(input_idx) != 0:
-                self.instructions.append((op.torch(), input_idx, output_idx))
+                cur_op = op.torch()
+                if isinstance(cur_op, nn.Module):
+                    self.mlist.append(cur_op)
+                self.instructions.append((cur_op, input_idx, output_idx))
             else:  # Should be input node
                 assert type(op) is Input
 
@@ -81,12 +85,12 @@ class SymbolNet(nn.Module):
                 local_ref_cnt[idx] -= 1
                 if local_ref_cnt[idx] == 0:
                     self.tensors[idx] = None
-            for idx, output in zip(outs, outputs):
+            for idx, output in list(zip(outs, outputs)):
                 assert self.tensors[idx] is None, 'tensor[{}] is not None.'.format(
                     idx)
                 if local_ref_cnt[idx] > 0:  # Will be used.
                     self.tensors[idx] = output
-        return (t for t in self.tensors if t is not None)
+        return tuple(t for t in self.tensors if t is not None)
 
     # TODO: Support multiple & dynamic inputs
     def set_input_spec(self, input_shape):

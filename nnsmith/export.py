@@ -28,14 +28,15 @@ def torch2onnx(model, filename):
     dummy_inputs = []
     for _, v in model.plausible_input_shape.items():
         dummy_inputs.append(torch.zeros(v))
-
+    print(model)
     torch.onnx.export(
         model, tuple(dummy_inputs),
         filename,
         input_names=input_names,
         output_names=[f'o{i}' for i in range(model.n_output)],
         verbose=True,
-        dynamic_axes=dynamic_axes)
+        dynamic_axes=dynamic_axes,
+        opset_version=11)
 
 
 if __name__ == "__main__":
