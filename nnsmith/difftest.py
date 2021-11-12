@@ -11,6 +11,7 @@ import pickle
 import multiprocessing
 from pathlib import Path
 import time
+from tqdm import tqdm
 
 
 def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarray], obtained_name: str, oracle_name: str):
@@ -98,17 +99,17 @@ def run_backend(root: str, backend: DiffTestBackend, timeout: int):
     model_root = Path(root) / 'model_input'
     output_dir = Path(root) / 'output'
     output_dir.mkdir(parents=True, exist_ok=True)
-    model_paths = list(model_root.glob('*/'))
+    model_paths = sorted(list(model_root.glob('*/')))
     print(f'Found {len(model_paths)} models at {model_root}')
-    for model_path in model_paths:
+    for model_path in tqdm(model_paths):
         model_name = model_path.name
-        for inp_path in model_path.glob(f'input.*.pkl'):
+        for inp_path in sorted(list(model_path.glob(f'input.*.pkl'))):
             idx = inp_path.stem.split('.')[-1]
             out_path = output_dir / \
                 f'{model_name}/{backend.__class__.__name__}.output.{idx}.pkl'
             out_path.parent.mkdir(parents=True, exist_ok=True)
             task = (str(model_path / 'model.onnx'), inp_path, out_path)
-            print(f'testing {model_path}')
+            print(f'testing {model_path} on input {inp_path}')
             run_task(task)
 
     run_task(None)
