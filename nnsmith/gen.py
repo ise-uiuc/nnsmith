@@ -281,8 +281,10 @@ if __name__ == '__main__':
     parser.add_argument('--dim_size', type=int, default=4)
     parser.add_argument('--timeout', type=int, default=10000)
     parser.add_argument('--viz', type=bool, default=False)
+    parser.add_argument('--output_path')
     args = parser.parse_args()
 
+    output_path = './output.onnx' if args.output_path is None else args.output_path
     strt_time = time.time()
     gen = SimpleGenerator(init_dim_size=args.dim_size, viz=args.viz)
     gen.abstract_gen(max_node_size=args.max_nodes,
@@ -292,7 +294,7 @@ if __name__ == '__main__':
     print(f'{len(solution)} symbols and {len(gen.solver.assertions())} constraints.')
     print(solution)
 
-    gen.viz('final_graph.png')
+    gen.viz(os.path.join(output_path, '../final_graph.png'))
 
     input_shape = gen.concretize_input_shape(solution)
     print(f'Input shape: {input_shape}')
@@ -300,7 +302,7 @@ if __name__ == '__main__':
     net = SymbolNet(gen.abstract_graph, solution)
     net.eval()
     net.set_input_spec(input_shape)
-    torch2onnx(model=net, filename='output.onnx')
+    torch2onnx(model=net, filename=output_path)
 
     # Draw with NetworkX
     # import matplotlib.pyplot as plt

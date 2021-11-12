@@ -19,17 +19,18 @@ pip uninstall -y onnxruntime onnxruntime-gpu
 pip install onnxruntime 
 pip install onnxruntime-gpu # the order matters; and you have to split the install steps;
 ```
-- To launch differential testing:
+- To generate models && inputs and launch differential testing:
 ```shell
-root='./tmp' # the path storing (to store) the model and inputs (outputs and bug reports)
+root='./tmp/seed1' # the path storing (to store) the model and inputs (outputs and bug reports)
 # See difftest.py for the spec of the file structure
-# You can execute python ./tests/difftest_test.py to generate a 
-# sample set of models and inputs at ./tmp
 
-# setup your enviroment for ort
-python -m nnsmith.backend_executor --root $root --backend ort
-# setup your enviroment for xla
-python -m nnsmith.backend_executor --root $root --backend xla
+python ./nnsmith/model_input_gen.py --root ./tmp/seed1 # generate models and inputs
+
+... # setup your enviroment for ort
+python -m nnsmith.backend_executor --root $root --backend ort # test
+
+... # setup your enviroment for xla
+python -m nnsmith.backend_executor --root $root --backend xla # test
 # ...
 
 # compare the result (all close)
