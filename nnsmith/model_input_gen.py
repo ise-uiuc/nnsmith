@@ -4,6 +4,8 @@ from pathlib import Path
 from nnsmith.difftest import DiffTestBackend
 import pickle
 from subprocess import check_call
+from tqdm import tqdm
+
 
 def gen_inputs(model, num_inputs):
     inp_spec = DiffTestBackend.analyze_onnx_io(model)
@@ -18,12 +20,14 @@ def gen_inputs(model, num_inputs):
 
 
 def gen_inputs_for_all(root, num_inputs=2):
-    for model in Path(root).glob('model_input/*/*.onnx'):
+    for model in tqdm(Path(root).glob('model_input/*/*.onnx')):
         print(model)
-        inps = gen_inputs(DiffTestBackend.get_onnx_proto(str(model)), num_inputs)
+        inps = gen_inputs(
+            DiffTestBackend.get_onnx_proto(str(model)), num_inputs)
         for i, inp in enumerate(inps):
             model_path = Path(model).parent
-            pickle.dump(inp, (model_path/f'input.{i}.pkl').open("wb"))
+            pickle.dump(inp, (model_path / f'input.{i}.pkl').open("wb"))
+
 
 def gen_models(root: str, num_models):
     root = Path(root)
@@ -31,10 +35,11 @@ def gen_models(root: str, num_models):
         raise Exception(f'Folder {root} already exists')
     model_root = root / 'model_input'
     model_root.mkdir(exist_ok=True, parents=True)
-    for i in range(num_models):
+    for i in tqdm(range(num_models)):
         model = model_root / f'{i}' / 'model.onnx'
         model.parent.mkdir(exist_ok=True, parents=True)
         check_call(f'python -m nnsmith.gen --output_path {model}', shell=True)
+
 
 if __name__ == '__main__':
     import argparse

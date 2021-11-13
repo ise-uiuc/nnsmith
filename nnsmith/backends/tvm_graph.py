@@ -15,6 +15,7 @@ def list_eq(a, b):
             return False
     return True
 
+
 class TVMExecutor(DiffTestBackend):
     def __init__(self, opt_level=4, target="llvm", executor="graph"):
         self.opt_level = opt_level
@@ -42,29 +43,39 @@ class TVMExecutor(DiffTestBackend):
             assert False, "output is None"
         return output, out_shape
 
-    def predict(self, model, inputs):
+    def load_model(self, model):
+        if self.cache_hit_or_install(model):
+            return
+
         onnx_model = self.get_onnx_proto(model)
 
         inp_spec, out_names = self.analyze_onnx_io(onnx_model)
+        self.inp_spec, self.out_names = inp_spec, out_names
         shape_dict = {name: inp_spec[name].shape for name in inp_spec}
         for name in shape_dict:
             if shape_dict[name][0] == -1:  # Freeze batch size
                 shape_dict[name][0] = 1
                 print("Freezing batch size to 1 for {}".format(name))
 
-        mod, params = relay.frontend.from_onnx(onnx_model, shape_dict, freeze_params=True)
+        mod, params = relay.frontend.from_onnx(
+            onnx_model, shape_dict, freeze_params=True)
         mod = relay.transform.InferType()(mod)
-        self.mod = mod # for debugging purposes
+        self.mod = mod  # for debugging purposes
 
-        out_shape = mod['main'].ret_type
+        self.out_shape = mod['main'].ret_type
 
         with tvm.transform.PassContext(opt_level=self.opt_level):
             executor = relay.build_module.create_executor(
                 self.executor, mod, self.get_device(), self.target, params
             ).evaluate()
-            output = executor(
-                **{iname: inputs[iname].astype(inp_spec[iname].dtype) for iname in inputs})
-            output, out_shape = self.cvt_result(output, out_shape)
+        self.sess = executor
+
+    def predict(self, model, inputs):
+        self.load_model(model)
+        with tvm.transform.PassContext(opt_level=self.opt_level):
+            output = self.sess(
+                **{iname: inputs[iname].astype(self.inp_spec[iname].dtype) for iname in inputs})
+            output, out_shape = self.cvt_result(output, self.out_shape)
 
         # with tvm.transform.PassContext(opt_level=self.opt_level):
         #     lib = relay.build(mod, self.target, params=params)
@@ -80,7 +91,7 @@ class TVMExecutor(DiffTestBackend):
         assert list_eq(out_shape, output_shape),\
             f"Shape mismatch between {out_shape} and {output_shape}"
         # TODO(JK): make sure the order matches (not sure how to do so with TVM)
-        return dict(zip(out_names, output))
+        return dict(zip(self.out_names, output))
 
 
 if __name__ == '__main__':
@@ -94,7 +105,8 @@ if __name__ == '__main__':
     def get_model():
         x = relay.var("x", shape=(1, 3, 224, 224))
         y = relay.var("y", shape=(1, 2))
-        mod = tvm.IRModule.from_expr(relay.Function([x, y], relay.Tuple([x, y])))
+        mod = tvm.IRModule.from_expr(
+            relay.Function([x, y], relay.Tuple([x, y])))
         return to_onnx(mod, {}, 'model')
 
     backend = TVMExecutor()
@@ -105,7 +117,6 @@ if __name__ == '__main__':
     res = backend.predict(model, {'x': np.zeros(
         (1, 3, 224, 224), dtype='float32'), 'y': np.array([[1, 2]], dtype='float32')})
     print('test1 pass')
-
 
     import wget
     import os

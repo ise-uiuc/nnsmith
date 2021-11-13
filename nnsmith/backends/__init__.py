@@ -11,6 +11,14 @@ ShapeType = namedtuple('ShapeType', ['shape', 'dtype'])
 
 
 class DiffTestBackend(ABC):
+    # provide an option to lazily load models: call to predict will call this method, which caches the model. True means a hit
+    # see e.g. load_model in xla_graph.py
+    def cache_hit_or_install(self, model: Union[onnx.ModelProto, str]) -> bool:
+        if hasattr(self, 'last_loaded_model') and self.last_loaded_model == model:
+            return True  # hit
+        self.last_loaded_model = model
+        return False
+
     @abstractmethod
     def predict(self, model: Union[onnx.ModelProto, str], inputs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
         raise NotImplementedError

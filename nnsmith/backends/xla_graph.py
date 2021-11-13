@@ -17,7 +17,9 @@ class XLAExecutor(DiffTestBackend):
         """
         self.device = device
 
-    def predict(self, model, inputs):
+    def load_model(self, model):
+        if self.cache_hit_or_install(model):
+            return
         # Fix fork error
         assert supports_device(
             self.device), "Device {} not supported by ONNX-TF".format(self.device)
@@ -25,7 +27,7 @@ class XLAExecutor(DiffTestBackend):
         # prepare tf representation
         tf_rep = prepare(onnx_model, device=self.device)
 
-        inp_spec, out_names = self.analyze_onnx_io(onnx_model)
+        self.inp_spec, self.out_names = self.analyze_onnx_io(onnx_model)
         # TODO(JK): decouple concretization and this function. Ideally, we would
         # do so for every backend.
         # shape_dict = {name: inp_spec[name].shape for name in inp_spec}
@@ -34,10 +36,16 @@ class XLAExecutor(DiffTestBackend):
         #         shape_dict[name][0] = 1
         #         print("Freezing batch size to 1 for {}".format(name))
 
+        self.cvtd_model = tf_rep
+
+    def predict(self, model, inputs):
+        self.load_model(model)
+        tf_rep = self.cvtd_model
         outputs = tf_rep.run(
-            {iname: inputs[iname].astype(inp_spec[iname].dtype) for iname in inputs})
-        assert Counter(out_names) == Counter(outputs._fields), "Output names don't match"
-        return {oname: outputs[oname] for oname in out_names}
+            {iname: inputs[iname].astype(self.inp_spec[iname].dtype) for iname in inputs})
+        assert Counter(self.out_names) == Counter(
+            outputs._fields), "Output names don't match"
+        return {oname: outputs[oname] for oname in self.out_names}
 
 
 if __name__ == '__main__':

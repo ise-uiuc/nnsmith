@@ -15,10 +15,32 @@ from tqdm import tqdm
 
 
 def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarray], obtained_name: str, oracle_name: str):
+    err_msg = ''
+    if obtained is None:
+        err_msg += f'{obtained_name} crashed'
+    if desired is None:
+        err_msg += f'{oracle_name} crashed'
+    if err_msg != '':
+        raise CrashError(err_msg)
+
+    if set(obtained.keys()) != set(desired.keys()):
+        print('Key sets differ')
+        raise IncorrectResult(
+            f'{obtained_name} v.s. {oracle_name} have different output tensor names')
+
+    for index, key in enumerate(obtained):
+        err_msg = ''
+        if np.isnan(obtained[key]).any():
+            err_msg += f'{obtained_name} has NaN, '
+        if np.isnan(desired[key]).any():
+            err_msg += f'{oracle_name} has NaN'
+        if err_msg != '':
+            err_msg = f'At tensor #{index}: ' + err_msg
+            print(err_msg)
+            raise NaNError(err_msg)
+
     try:
         index = -1
-        assert obtained is not None, f'{obtained_name} crashed'
-        assert desired is not None, f'{oracle_name} crashed'
         assert set(obtained.keys()) == set(desired.keys())
         index = 0
         for key in obtained:
@@ -28,7 +50,7 @@ def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarr
     except AssertionError as err:
         print(err)
         raise IncorrectResult(
-            f'{obtained_name} v.s. {oracle_name} mismatch in #{index} tensor:')
+            f'{obtained_name} v.s. {oracle_name} mismatch in #{index} tensor: {str(err)}')
 
 
 def run_backend_same_proc(model_path: str, backend: DiffTestBackend):
@@ -87,7 +109,7 @@ def run_backend(root: str, backend: DiffTestBackend, timeout: int):
                 break
             if not p.is_alive():
                 break
-            time.sleep(0.1)
+            time.sleep(0.01)
         # timeout; skip this task and restart the worker
         if not done:
             re_start_worker()
@@ -139,7 +161,7 @@ def difftest(root: str):
     output_dir = root / 'output'
     # numerical consistency check
     report = []
-    for model_path in output_dir.glob('*/'):
+    for model_path in sorted(output_dir.glob('*/')):  # reproducibility
         model_name = model_path.name
 
         def get_meta_info():
@@ -161,6 +183,7 @@ def difftest(root: str):
 
         # TODO(JK): use more advanced oracle (e.g., clustering?) if this does not work well
         num_out, bknd_names = get_meta_info()
+        bknd_names = sorted(bknd_names)  # sort for reproducibility
         for i in range(num_out):
             oracle_path = None
             for backend in bknd_names:
@@ -173,7 +196,7 @@ def difftest(root: str):
                     continue
                 try:
                     assert_allclose(output, oracle, out_path, oracle_path)
-                except IncorrectResult as err:
+                except ModeledError as err:
                     report.append({
                         'model_idx': model_path.name,
                         'input_path': str(output_dir.parent / 'model_input' / model_name / f'input.{i}.pkl'),
@@ -182,9 +205,12 @@ def difftest(root: str):
                         'input_idx': i,
                         'output_backend': out_path,
                         'output_oracle': oracle_path,
-                        'error': str(err)})
+                        'error': err})
                     print(err)
     import json
+    pickle.dump(report, open(root / 'report.pkl', 'wb'))
+    for i in report:
+        i['error'] = str(i['error'])
     json.dump(report, open(root / 'report.json', 'w'), indent=2)
     if len(report) > 0:
         print(f'{len(report)} differences found!!!')
