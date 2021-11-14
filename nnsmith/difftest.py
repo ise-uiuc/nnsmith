@@ -66,6 +66,14 @@ def run_backend_same_proc(model_path: str, backend: DiffTestBackend):
         outputs = backend.predict(model, inputs)
 
 
+def summarize(outputs: Dict[str, np.ndarray]):
+    m = {k + '_mean': np.mean(o) for k, o in outputs.items()}
+    # TODO(JK): figure out how to deal with nan
+    m.update({k + '_nanmean': np.nanmean(o) for k, o in outputs.items()})
+    m.update({k + '_num_nan': np.sum(np.isnan(o)) for k, o in outputs.items()})
+    return m
+
+
 def run_backend(root: str, backend: DiffTestBackend, timeout: int):
     def run(q: multiprocessing.Queue, r: multiprocessing.Queue):
         while True:
@@ -80,6 +88,7 @@ def run_backend(root: str, backend: DiffTestBackend, timeout: int):
             # type: List[Dict[str, np.ndarray]]
             inputs = pickle.load(inp_path.open('rb'))
             outputs = backend.predict(model, inputs)
+            outputs = summarize(outputs)
             pickle.dump({'exit_code': 0, 'outputs': outputs},
                         out_path.open('wb'))
             r.put(True)

@@ -11,7 +11,7 @@ from nnsmith.backends.ort_graph import ORTExecutor
 import pandas as pd
 import time
 
-MAX_TRIALS = 100
+MAX_TRIALS = 20
 
 
 def gen_one_input(inp_spec):
@@ -19,7 +19,7 @@ def gen_one_input(inp_spec):
     for name, shape in inp_spec.items():
         # random range is [-0.5, 0.5]
         inp[name] = np.random.rand(
-            *shape.shape).astype(shape.dtype) * 2 - 0.5
+            *shape.shape).astype(shape.dtype)  # * 2 - 0.5
     return inp
 
 
@@ -31,12 +31,11 @@ def has_nan(output: Dict[str, np.ndarray]):
     return False
 
 
-def gen_inputs(model, num_inputs):
+def gen_inputs(model, num_inputs, model_path):
     rf_model = ORTExecutor(opt_level=0)  # reference model
     inp_spec = DiffTestBackend.analyze_onnx_io(model)[0]
-    inps = []
     trials, succ = 0, 0
-    for i in range(num_inputs):
+    for i in tqdm(range(num_inputs)):
         for ntrials in range(MAX_TRIALS):
             inp = gen_one_input(inp_spec)
             out = rf_model.predict(model, inp)
@@ -44,22 +43,20 @@ def gen_inputs(model, num_inputs):
                 break
         trials += ntrials + 1
         succ += not has_nan(out)
-        inps.append(inp)
+        pickle.dump(inp, (Path(model_path) / f'input.{i}.pkl').open("wb"))
+
     print('succ rate:', np.mean(succ / trials))
-    return inps, succ, trials
+    return succ, trials
 
 
 def gen_inputs_for_all(root, num_inputs=2, models=None):
     profile = []
-    models = models or Path(root).glob('model_input/*/*.onnx')
+    models = models or sorted(list(Path(root).glob('model_input/*/*.onnx')))
     for model in tqdm(models):
         print(model)
-        inps, succ, trials = gen_inputs(
-            DiffTestBackend.get_onnx_proto(str(model)), num_inputs)
+        succ, trials = gen_inputs(
+            DiffTestBackend.get_onnx_proto(str(model)), num_inputs, Path(model).parent)
         profile.append((model, succ, trials, succ / trials))
-        for i, inp in enumerate(inps):
-            model_path = Path(model).parent
-            pickle.dump(inp, (model_path / f'input.{i}.pkl').open("wb"))
     profile = sorted(profile, key=lambda x: x[-1])
     profile = pd.DataFrame(
         profile, columns=['model', 'succ', 'trials', 'succ_rate'])
