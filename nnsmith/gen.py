@@ -100,7 +100,8 @@ class SymbolNet(nn.Module):
 
 
 class SimpleGenerator:
-    def __init__(self, init_dim_size=4, skip=[], viz=False, min_size_rng=[10, 100], seed=None):
+    def __init__(self, init_dim_size=4, skip=[], viz=False, min_size_rng=[10, 100], seed=None, verbose=False):
+        self.verbose = verbose
         if seed is not None:
             random.seed(seed)
         min_sizes = [random.randint(
@@ -160,7 +161,12 @@ class SimpleGenerator:
         return self.alive_shapes[shape_idx][0]
 
     def check_sat(self) -> bool:
-        return self.solver.check() == z3.sat
+        if self.verbose:
+            print('checking...')
+        res = self.solver.check() == z3.sat
+        if self.verbose:
+            print('done')
+        return res
 
     def pick_next_op_type(self):
         return random.choice(self.op_candidates)
@@ -251,7 +257,9 @@ class SimpleGenerator:
     def try_insert_node(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
         input_shapes = [self.alive_shapes[idx][1] for idx in ishape_indices]
         constraints0 = node.requires(input_shapes)
-        print(node, constraints0)
+        if self.verbose:
+            print(node, constraints0)
+            self.viz('currentgraph.png')
         self.solver.push()
         for c in constraints0:
             self.solver.add(c)
@@ -293,11 +301,12 @@ if __name__ == '__main__':
     parser.add_argument('--viz', type=bool, default=False)
     parser.add_argument('--output_path', type=str, default='output.onnx')
     parser.add_argument('--seed', type=int)
+    parser.add_argument('--verbose', action='store_true')
     args = parser.parse_args()
 
     strt_time = time.time()
     gen = SimpleGenerator(init_dim_size=args.dim_size,
-                          viz=args.viz, seed=args.seed)
+                          viz=args.viz, seed=args.seed, verbose=args.verbose)
     gen.abstract_gen(max_node_size=args.max_nodes,
                      max_gen_millisec=args.timeout)
     print(f'{time.time() - strt_time}s to generate a graph w/ {len(gen.abstract_graph.nodes())} nodes')
