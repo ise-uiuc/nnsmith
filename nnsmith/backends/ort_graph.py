@@ -9,18 +9,39 @@ providers = [
     'CUDAExecutionProvider',
     # 'CPUExecutionProvider',
 ]
+OPT_LEVELS = [
+    ort.GraphOptimizationLevel.ORT_DISABLE_ALL,
+    ort.GraphOptimizationLevel.ORT_ENABLE_BASIC,
+    ort.GraphOptimizationLevel.ORT_ENABLE_EXTENDED,
+    ort.GraphOptimizationLevel.ORT_ENABLE_ALL,
+]
 
 
 class ORTExecutor(DiffTestBackend):
-    def predict(self, model, inputs):
+    def __init__(self, opt_level=3):
+        """opt_level ranges from 0 to 3, stands for ORT_DISABLE_ALL, ORT_ENABLE_BASIC, ORT_ENABLE_EXTENDED and ORT_ENABLE_ALL. 
+        See https://onnxruntime.ai/docs/performance/graph-optimizations.html for detail"""
+        self._opt_level = OPT_LEVELS[opt_level]
+
+    def get_sess_opt(self):
+        sess_options = ort.SessionOptions()
+        sess_options.graph_optimization_level = self._opt_level
+        return sess_options
+
+    def load_model(self, model):
+        if self.cache_hit_or_install(model):
+            return
         onnx_model = self.get_onnx_proto(model)
-        sess = ort.InferenceSession(
-            onnx._serialize(onnx_model), providers=providers)
+        sess_options = self.get_sess_opt()
+        self.sess = ort.InferenceSession(
+            onnx._serialize(onnx_model), providers=providers, sess_options=sess_options)
+        _, self.out_names = self.analyze_onnx_io(onnx_model)
 
-        _, out_names = self.analyze_onnx_io(onnx_model)
-        res = sess.run(out_names, inputs)
+    def predict(self, model, inputs):
+        self.load_model(model)
+        res = self.sess.run(self.out_names, inputs)
 
-        return {n: r for n, r in zip(out_names, res)}
+        return {n: r for n, r in zip(self.out_names, res)}
 
 
 if __name__ == '__main__':
