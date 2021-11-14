@@ -9,6 +9,7 @@ import torch
 from typing import List, Dict
 from nnsmith.backends.ort_graph import ORTExecutor
 import pandas as pd
+import time
 
 MAX_TRIALS = 100
 
@@ -75,7 +76,10 @@ def gen_models(root: str, num_models):
     for i in tqdm(range(num_models)):
         model = model_root / f'{i}' / 'model.onnx'
         model.parent.mkdir(exist_ok=True, parents=True)
-        check_call(f'python -m nnsmith.gen --output_path {model}', shell=True)
+        seed = int(time.time() * 1000)
+        print(f'seeding {seed}')
+        check_call(
+            f'python -m nnsmith.gen --output_path {model} --seed {seed}', shell=True)
 
 
 if __name__ == '__main__':

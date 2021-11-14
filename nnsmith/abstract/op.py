@@ -357,9 +357,17 @@ class Expand(UnaryOpBase, ABC):
     def _requires(self, input_shapes):
         assert self.expand_last_dim > 0
 
+        input_shape = input_shapes[0].shape
         if isinstance(self.expand_n, z3.ArithRef):
-            if self.expand_last_dim <= len(input_shapes):  # index valid
-                return [input_shapes[-self.expand_last_dim] == 1, self.expand_n >= 1]
+            if self.expand_last_dim <= len(input_shape):  # index valid
+                # TODO(JK) unittest for expand an original dim with size>1
+                return [z3.Or(
+                    z3.And(input_shape[-self.expand_last_dim]
+                           == 1, self.expand_n >= 1),
+                    z3.And(input_shape[-self.expand_last_dim]
+                           == self.expand_n),
+                    self.expand_n == -1),
+                ]
         else:
             # It is also valid to expand to 0. But just too tricky...
             assert self.expand_n >= 1
@@ -443,6 +451,9 @@ class NCHWConv2d(UnaryOpBase):
         cons.append(self.out_channels >= 1)
         cons.append(self.kernel_h_size >= 1)
         cons.append(self.kernel_w_size >= 1)
+        # TODO(JK): fix the dialation case for the kernel size constraints.
+        cons.append(self.kernel_h_size < input_shapes[0].shape[2])
+        cons.append(self.kernel_w_size < input_shapes[0].shape[3])
         cons.append(self.stride >= 1)
         cons.append(self.padding >= 0)
         for c in cons:

@@ -12,6 +12,7 @@ import os
 
 from nnsmith.abstract.op import *
 from nnsmith.export import torch2onnx
+import copy
 
 
 class RequiredDimNotFound(Exception):
@@ -99,7 +100,11 @@ class SymbolNet(nn.Module):
 
 
 class SimpleGenerator:
-    def __init__(self, init_dim_size=4, skip=[], viz=False):
+    def __init__(self, init_dim_size=4, skip=[], viz=False, min_size_rng=[10, 100], seed=None):
+        if seed is not None:
+            random.seed(seed)
+        min_sizes = [random.randint(
+            min_size_rng[0], min_size_rng[1]) for i in range(init_dim_size)]
         # TODO: all operator types.
         self.op_candidates = [op for op in ALL_OP_TYPES if op not in skip]
         self.solver = z3.Solver()
@@ -122,6 +127,8 @@ class SimpleGenerator:
         self.insert_node(input_node, [input_tensor_shape], ishape_indices=[])
         for c in input_tensor_shape.gt_zero():
             self.solver.add(c)
+        for i, c in enumerate(input_tensor_shape.shape):
+            self.solver.add(c > min_sizes[i])
         self.input_shape = input_tensor_shape  # TODO: multiple input/output.
 
     def concretize_input_shape(self, model):
@@ -244,6 +251,7 @@ class SimpleGenerator:
     def try_insert_node(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
         input_shapes = [self.alive_shapes[idx][1] for idx in ishape_indices]
         constraints0 = node.requires(input_shapes)
+        print(node, constraints0)
         self.solver.push()
         for c in constraints0:
             self.solver.add(c)
@@ -251,7 +259,8 @@ class SimpleGenerator:
             self.solver.pop()
             return False
 
-        output_shapes = node.shape_fn(input_shapes)
+        # make a copy
+        output_shapes = node.shape_fn(copy.deepcopy(input_shapes))
 
         self.solver.push()
         for shape in output_shapes:
@@ -283,10 +292,12 @@ if __name__ == '__main__':
     parser.add_argument('--timeout', type=int, default=10000)
     parser.add_argument('--viz', type=bool, default=False)
     parser.add_argument('--output_path', type=str, default='output.onnx')
+    parser.add_argument('--seed', type=int)
     args = parser.parse_args()
 
     strt_time = time.time()
-    gen = SimpleGenerator(init_dim_size=args.dim_size, viz=args.viz)
+    gen = SimpleGenerator(init_dim_size=args.dim_size,
+                          viz=args.viz, seed=args.seed)
     gen.abstract_gen(max_node_size=args.max_nodes,
                      max_gen_millisec=args.timeout)
     print(f'{time.time() - strt_time}s to generate a graph w/ {len(gen.abstract_graph.nodes())} nodes')
