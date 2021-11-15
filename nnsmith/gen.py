@@ -104,9 +104,7 @@ class SimpleGenerator:
         self.verbose = verbose
         if seed is not None:
             random.seed(seed)
-        min_sizes = [random.randint(
-            min_size_rng[0], min_size_rng[1]) for i in range(init_dim_size)]
-        # TODO: all operator types.
+
         self.op_candidates = [op for op in ALL_OP_TYPES if op not in skip]
         self.solver = z3.Solver()
 
@@ -128,8 +126,12 @@ class SimpleGenerator:
         self.insert_node(input_node, [input_tensor_shape], ishape_indices=[])
         for c in input_tensor_shape.gt_zero():
             self.solver.add(c)
-        for i, c in enumerate(input_tensor_shape.shape):
-            self.solver.add(c > min_sizes[i])
+
+        # FIXME: Apply concolic execution when concretizing the symbols.
+        # The batch size should not have a big min size (avoid unnecessary computation);
+        for i in range(1, len(input_tensor_shape.shape)):
+            self.solver.add(input_tensor_shape.shape[i] > random.randint(
+                min_size_rng[0], min_size_rng[1]))
         self.input_shape = input_tensor_shape  # TODO: multiple input/output.
 
     def concretize_input_shape(self, model):
