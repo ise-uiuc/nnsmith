@@ -42,7 +42,7 @@ python -m nnsmith.difftest --root $root
 - [x] Export pytorch models to ONNX format (`nnsmith/export.py`); @jiawei
     - Actually PyTorch is not suitable for graph generation. It requires some effort to have an IR from our own and parse it to run in the `forward` function.
 - [x] Data structure of abstract domain of shape analysis (regard it as an abstract interpretation problem) (`nnsmith/abstract/op.py`). @jiawei
-- [x] Shape function and constraints with the following operators (See [Tab. 2](https://dl.acm.org/doi/pdf/10.1145/3453483.3454083)): @jiawei
+- [x] **Op Batch 1** Shape function and constraints with the following operators (See [Tab. 2](https://dl.acm.org/doi/pdf/10.1145/3453483.3454083)): @jiawei
     - [x] One-to-one: ReLU ([[torch]](https://pytorch.org/docs/stable/generated/torch.nn.ReLU.html) [[onnx]](https://github.com/onnx/onnx/blob/master/docs/Operators.md#relu)) & Add ([[torch]](https://pytorch.org/docs/stable/generated/torch.add.html) [[onnx]](https://github.com/onnx/onnx/blob/master/docs/Operators.md#add)) & LeakyReLU & PReLU & Sigmoid & Sin & Cos & Asin & Acos & Tan & Atan & Abs & Ceil & Clip & Round & Sqrt & Log & Not
     - [x] One-to-many: Expand ([[torch]](https://pytorch.org/docs/stable/generated/torch.Tensor.expand.html) [[onnx]](https://github.com/onnx/onnx/blob/master/docs/Operators.md#Expand))
     - [x] Many-to-many: Conv ([[torch]](https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html) [[onnx]](https://github.com/onnx/onnx/blob/master/docs/Operators.md#Conv))
@@ -68,7 +68,11 @@ python -m nnsmith.difftest --root $root
     - [x] XLA (ONNX to TF. Compile in XLA mode); @jinkun refined@jiawei
     - [x] TensorRT; @jiawei
     - [ ] Glow (not prioritized); @jinkun
+- [x] Search-based input generation; @jinkun
+- [ ] Add branch coverage guidance and TVM fuzzing loop; @jiawei
+- [ ] **Op Batch 2**: Focuse on multi-input & complex-shape-transfer-func models;
+    - [ ] multi-input: And, Sub, Mul, Concat, Div, Greater;
+    - [ ] complex-shape-func: Sum, Min, Max, Mean, ArgMin, ArgMax, Squeeze, Size;
 - [ ] Dynamic model testing;
 - [ ] Enable multiple inputs;
-- [ ] Mutating input tensors;
 
