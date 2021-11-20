@@ -107,7 +107,6 @@ class SimpleGenerator:
         self.solver = z3.Solver()
 
         self.solver.set("threads", 4)
-
         # 4 bytes per float (assume we use float32)
         self.limit_float = 1024**2 * megabyte_lim / 4
 
@@ -131,7 +130,6 @@ class SimpleGenerator:
         self.insert_node(input_node, [input_tensor_shape], ishape_indices=[])
         for c in input_tensor_shape.gt_zero():
             self.solver.add(c)
-        self.solver.add(self.n_floats <= self.limit_float)
 
         # The batch size should not have a big min size (avoid unnecessary computation);
         random_sizes = [random.randint(
@@ -174,8 +172,8 @@ class SimpleGenerator:
     def shape_idx_to_op_idx(self, shape_idx: int) -> int:
         return self.alive_shapes[shape_idx][0]
 
-    def check_sat(self) -> bool:
-        timeout = max(1000, len(self.solver.assertions()) * 65)
+    def check_sat(self, *assumptions) -> bool:
+        timeout = max(1500, len(self.solver.assertions()) * 100)
         self.solver.set('timeout', timeout)
 
         if self.verbose:
@@ -183,13 +181,15 @@ class SimpleGenerator:
                 f'checking {len(self.solver.assertions())} constraints w/ timeout {timeout} ms...')
 
         start = time.time()
-        cres = self.solver.check()
+        cres = self.solver.check(*assumptions)
         if self.verbose:
             print(cres, '<-- checking time:',
                   int((time.time() - start) * 1000), 'ms')
 
         if cres == z3.unknown:
             print(f'Timeout on operator! ~ {timeout}ms')
+        elif cres == z3.unsat:
+            print(f'Unsat core: {self.solver.unsat_core()}')
 
         return cres == z3.sat
 
@@ -220,7 +220,7 @@ class SimpleGenerator:
         if self.is_viz_sbs:
             self.viz()
 
-    def try_insert_node_type(self, node_t, max_shape_var_pick_time=5) -> bool:
+    def try_insert_node_type(self, node_t, max_shape_var_pick_time=3) -> bool:
         op_param_n = signature(node_t).parameters
         op_id = len(self.abstract_graph.nodes)
         op_params = [z3.Int('op%s_%s' % (op_id, k))
@@ -254,6 +254,8 @@ class SimpleGenerator:
                     return True
         except RequiredDimNotFound:
             return False
+        except AssertionError:
+            return False
 
         return False
 
@@ -281,32 +283,27 @@ class SimpleGenerator:
 
     def try_insert_node(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
         input_shapes = [self.alive_shapes[idx][1] for idx in ishape_indices]
-        constraints0 = node.requires(input_shapes)
+        constraints = node.requires(input_shapes)
+
         if self.verbose:
-            print('---> Trying to solve: ', node, constraints0)
+            print('---> Trying to solve: ', node, constraints)
             print('---> total constraints: ', self.solver.assertions())
             # self.viz('currentgraph.png')
-        self.solver.push()
-        for c in constraints0:
-            self.solver.add(c)
-        if not self.check_sat():
-            self.solver.pop()
-            return False
 
         # make a copy
         output_shapes = node.shape_fn(copy.deepcopy(input_shapes))
 
-        self.solver.push()
         for shape in output_shapes:
             for c in shape.gt_zero():
-                self.solver.add(c)
+                constraints.append(c)
 
         self.n_floats += sum(s.nelement() for s in output_shapes)
-        self.solver.add(self.n_floats <= self.limit_float)
 
-        if not self.check_sat():
-            self.solver.pop()
+        if not self.check_sat(*constraints, self.n_floats <= self.limit_float):
             return False
+
+        for c in constraints:
+            self.solver.add(c)
 
         self.insert_node(node, output_shapes, ishape_indices)
         return True
@@ -326,7 +323,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--max_nodes', type=int, default=5)
     parser.add_argument('--dim_size', type=int, default=4)
-    parser.add_argument('--timeout', type=int, default=25000)
+    parser.add_argument('--timeout', type=int, default=50000)
     parser.add_argument('--viz_sbs', type=bool, default=False,
                         help='visualize the step by step')
     parser.add_argument('--output_path', type=str, default='output.onnx')
@@ -340,6 +337,9 @@ if __name__ == '__main__':
     gen.abstract_gen(max_node_size=args.max_nodes,
                      max_gen_millisec=args.timeout)
     print(f'{time.time() - strt_time}s to generate a graph w/ {len(gen.abstract_graph.nodes())} nodes')
+
+    gen.solver.set('timeout', 1000 * 60)
+    assert gen.solver.check() == z3.sat
     solution = gen.solver.model()
     print(f'{len(solution)} symbols and {len(gen.solver.assertions())} constraints.')
     print(solution)
