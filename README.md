@@ -24,7 +24,7 @@ pip install onnxruntime-gpu # the order matters; and you have to split the insta
 root='./tmp/seed1' # the path storing (to store) the model and inputs (outputs and bug reports)
 # See difftest.py for the spec of the file structure
 
-python ./nnsmith/model_input_gen.py --root ./tmp/seed1 # generate models and inputs
+python ./nnsmith/input_gen.py --root ./tmp/seed1 # generate models and inputs
 
 ... # setup your enviroment for ort
 python -m nnsmith.backend_executor --root $root --backend ort # test
@@ -49,7 +49,7 @@ python -m nnsmith.difftest --root $root
     - [x] Reorganize: Reshape ([[torch]](https://pytorch.org/docs/stable/generated/torch.reshape.html) [[onnx]](https://github.com/onnx/onnx/blob/master/docs/Operators.md#reshape))
     - [x] Shuffle: Transpose ([[torch]](https://pytorch.org/docs/stable/generated/torch.transpose.html) [[onnx]](https://github.com/onnx/onnx/blob/master/docs/Operators.md#transpose))
 - [x] Make operator's parameters also symbolic (`nnsmith/abstract/op.py`). @jiawei
-- [x] Random type-wise graph generation (`nnsmith/gen.py`). @jiawei
+- [x] Random type-wise graph generation (`nnsmith/graph_gen.py`). @jiawei
 - [x] γ function to map abstract domain to concrete domain (PyTorch's `nn.Module`). @jiawei @jinkun
     - NOTE: Jiawei tried to convert abstract graph into PyTorch's `nn.Module` and it works. However, due to the implementation issues of PyTorch's JIT tracing, we cannot export the `nn.Module` we created into ONNX model. Therefore, our next plan is to support Keras model generation and then export keras model into ONNX.
     - FIXED: Jinkun added `nn.ModuleList` to trace the layers as a workaround.
