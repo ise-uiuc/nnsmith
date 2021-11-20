@@ -9,10 +9,10 @@ from inspect import signature
 import random
 import time
 import os
+import copy
 
 from nnsmith.abstract.op import *
 from nnsmith.export import torch2onnx
-import copy
 
 
 class RequiredDimNotFound(Exception):
@@ -78,8 +78,6 @@ class SymbolNet(nn.Module):
         local_ref_cnt = self.ref_cnt.copy()
         self.tensors[0] = x
         for inst, inps, outs in self.instructions:
-            # print()
-            # print(inst, inps, outs)
             outputs = inst(*[self.tensors[idx] for idx in inps])
             if not isinstance(outputs, list):
                 outputs = [outputs]
@@ -100,13 +98,18 @@ class SymbolNet(nn.Module):
 
 
 class SimpleGenerator:
-    def __init__(self, init_dim_size=4, skip=[], viz=False, min_size_rng=[10, 100], seed=None, verbose=False):
+    def __init__(self, init_dim_size=4, skip=[], viz_sbs=False, min_size_rng=[10, 100], megabyte_lim=6 * 1024, seed=None, verbose=False):
         self.verbose = verbose
         if seed is not None:
             random.seed(seed)
 
         self.op_candidates = [op for op in ALL_OP_TYPES if op not in skip]
         self.solver = z3.Solver()
+
+        self.solver.set("threads", 4)
+
+        # 4 bytes per float (assume we use float32)
+        self.limit_float = 1024**2 * megabyte_lim / 4
 
         # Node -> op: AbsOpBase
         # Edge -> shape_idx:-> self.alive_shapes
@@ -117,15 +120,18 @@ class SimpleGenerator:
         # dim size -> list[shape idx -> output_tensor_pool]
         self.dim2shape_idx: Dict[int, List[int]] = {}
         self.viz_cnt = 0
-        self.is_viz = viz
+        self.is_viz_sbs = viz_sbs
 
         input_node = Input()
         input_node.inp_dims = input_node.out_dims = [init_dim_size]
         input_tensor_shape = ShapeVar(
             shape=[z3.Int('i%s' % k) for k in range(init_dim_size)])
+        self.n_floats = input_tensor_shape.nelement()
+
         self.insert_node(input_node, [input_tensor_shape], ishape_indices=[])
         for c in input_tensor_shape.gt_zero():
             self.solver.add(c)
+        self.solver.add(self.n_floats <= self.limit_float)
 
         # FIXME: Apply concolic execution when concretizing the symbols.
         # The batch size should not have a big min size (avoid unnecessary computation);
@@ -163,11 +169,20 @@ class SimpleGenerator:
         return self.alive_shapes[shape_idx][0]
 
     def check_sat(self) -> bool:
+        timeout = max(1000, len(self.solver.assertions()) * 75)
+        self.solver.set('timeout', timeout)
+
         if self.verbose:
-            print('checking...')
-        res = self.solver.check() == z3.sat
+            print(f'checking w/ timeout {timeout} ms...')
+
+        start = time.time()
+        cres = self.solver.check()
+        res = cres == z3.sat
         if self.verbose:
-            print('done')
+            print(cres)
+        if (time.time() - start) * 1000 > timeout:
+            print(f'Timeout on operator! ~ {timeout}ms')
+            res = False
         return res
 
     def pick_next_op_type(self):
@@ -190,11 +205,11 @@ class SimpleGenerator:
             new_node_idx, op=node, nin=len(ishape_indices), nout=len(oshapes), label=str(node))
 
         for in_operand_idx, idx in enumerate(ishape_indices):
-            old_node_idx, _, out_operand_idx = self.alive_shapes[idx]
+            old_node_idx, svar, out_operand_idx = self.alive_shapes[idx]
             self.abstract_graph.add_edge(old_node_idx, new_node_idx, shape_idx=idx, operand_idx=(
-                out_operand_idx, in_operand_idx), label=f'{out_operand_idx}-{in_operand_idx}: {self.alive_shapes[idx][1]}')
+                out_operand_idx, in_operand_idx), label=f'{out_operand_idx}-{in_operand_idx}: {svar}')
 
-        if self.is_viz:
+        if self.is_viz_sbs:
             self.viz()
 
     def try_insert_node_type(self, node_t, max_shape_var_pick_time=5) -> bool:
@@ -260,8 +275,9 @@ class SimpleGenerator:
         input_shapes = [self.alive_shapes[idx][1] for idx in ishape_indices]
         constraints0 = node.requires(input_shapes)
         if self.verbose:
-            print(node, constraints0)
-            self.viz('currentgraph.png')
+            print('---> Trying to solve: ', node, constraints0)
+            print('---> total constraints: ', self.solver.assertions())
+            # self.viz('currentgraph.png')
         self.solver.push()
         for c in constraints0:
             self.solver.add(c)
@@ -276,6 +292,9 @@ class SimpleGenerator:
         for shape in output_shapes:
             for c in shape.gt_zero():
                 self.solver.add(c)
+
+        self.n_floats += sum(s.nelement() for s in output_shapes)
+        self.solver.add(self.n_floats <= self.limit_float)
 
         if not self.check_sat():
             self.solver.pop()
@@ -297,10 +316,11 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--max_nodes', type=int, default=10)
+    parser.add_argument('--max_nodes', type=int, default=5)
     parser.add_argument('--dim_size', type=int, default=4)
     parser.add_argument('--timeout', type=int, default=10000)
-    parser.add_argument('--viz', type=bool, default=False)
+    parser.add_argument('--viz_sbs', type=bool, default=False,
+                        help='visualize the step by step')
     parser.add_argument('--output_path', type=str, default='output.onnx')
     parser.add_argument('--seed', type=int)
     parser.add_argument('--verbose', action='store_true')
@@ -308,7 +328,7 @@ if __name__ == '__main__':
 
     strt_time = time.time()
     gen = SimpleGenerator(init_dim_size=args.dim_size,
-                          viz=args.viz, seed=args.seed, verbose=args.verbose)
+                          viz_sbs=args.viz_sbs, seed=args.seed, verbose=args.verbose)
     gen.abstract_gen(max_node_size=args.max_nodes,
                      max_gen_millisec=args.timeout)
     print(f'{time.time() - strt_time}s to generate a graph w/ {len(gen.abstract_graph.nodes())} nodes')

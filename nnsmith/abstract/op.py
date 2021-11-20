@@ -44,6 +44,9 @@ class ShapeVar:
     def constains_symbol(self) -> bool:
         return any(isinstance(s, z3.ArithRef) for s in self.shape)
 
+    def nelement(self):
+        return reduce(lambda x, y: x * y, self.shape)
+
     @staticmethod
     def from_torch(torch_shape):
         return ShapeVar([torch_shape[i] for i in range(len(torch_shape))])
@@ -340,6 +343,7 @@ class Expand(UnaryOpBase, ABC):
         """
         super().__init__()
         self.inp_dims = [-1]
+        assert expand_last_dim >= 1
         self.expand_last_dim = expand_last_dim
         self.expand_n = expand_n
 
@@ -360,15 +364,19 @@ class Expand(UnaryOpBase, ABC):
         input_shape = input_shapes[0].shape
         if isinstance(self.expand_n, z3.ArithRef):
             if self.expand_last_dim <= len(input_shape):  # index valid
-                return [z3.Or(
-                    z3.And(input_shape[-self.expand_last_dim]
-                           == 1, self.expand_n >= 1),
-                    input_shape[-self.expand_last_dim] == self.expand_n,
-                        # self.expand_n == -1), # seems not working
-                        )]
+                cons = [z3.Or(
+                    z3.And(
+                        input_shape[-self.expand_last_dim] == 1,
+                        self.expand_n >= 1),
+                    z3.And(
+                        input_shape[-self.expand_last_dim] == self.expand_n,
+                        self.expand_n >= 1))]
+                return cons
         else:
             # It is also valid to expand to 0. But just too tricky...
             assert self.expand_n >= 1
+            if self.expand_last_dim <= len(input_shape):
+                assert input_shape[-self.expand_last_dim] == 1 or input_shape[-self.expand_last_dim] == self.expand_n
         return []
 
     def torch(self):
@@ -450,8 +458,10 @@ class NCHWConv2d(UnaryOpBase):
         cons.append(self.kernel_h_size >= 1)
         cons.append(self.kernel_w_size >= 1)
         # TODO(JK): fix the dialation case for the kernel size constraints.
-        cons.append(self.kernel_h_size <= input_shapes[0].shape[2])
-        cons.append(self.kernel_w_size <= input_shapes[0].shape[3])
+        cons.append(self.kernel_h_size <=
+                    input_shapes[0].shape[2] + 2 * self.padding)
+        cons.append(self.kernel_w_size <=
+                    input_shapes[0].shape[3] + 2 * self.padding)
         cons.append(self.stride >= 1)
         cons.append(self.padding >= 0)
         for c in cons:
@@ -507,12 +517,21 @@ class Reshape(UnaryOpBase, ABC):
         # If your target shape is concrete, then your output shape's total pixels must be the same as the input shape's.
         if -1 not in self.target_shape:
             total_pixels = reduce(lambda x, y: x * y, self.target_shape)
-            return [total_pixels == reduce(lambda x, y: x * y, input_shapes[0].shape)]
+            cons = [total_pixels == reduce(
+                lambda x, y: x * y, input_shapes[0].shape)]
+            # should not be too extreme!
+            __DIM_LIMIT__ = 4096
+            lim = __DIM_LIMIT__
+            for s in self.target_shape[::-1]:
+                cons.append(s <= lim)
+                lim //= 2
+                lim = max(lim, 1)
+            return cons
         else:
             # If you use auto mode (specifying -1 for some dimensions), then the total number of input pixels must be exactly divisible by that of the output shape.
             minimul_pixels = reduce(
                 lambda x, y: x * y, [v for v in self.target_shape if v != -1])
-            return [minimul_pixels % reduce(lambda x, y: x * y, input_shapes[0].shape) == 0]
+            return [reduce(lambda x, y: x * y, input_shapes[0].shape) % minimul_pixels == 0]
 
     def torch(self):
         return lambda x: x.reshape(*self.target_shape)
@@ -609,7 +628,8 @@ class Transpose(UnaryOpBase, ABC):
 
     def _requires(self, input_shapes):
         dim0, dim1 = self._init_swap_dims(input_shapes[0].shape)
-        assert len(input_shapes[0].shape) >= max(dim0, dim1) + 1
+        assert len(input_shapes[0].shape) >= max(
+            dim0, dim1) + 1, f'dim={len(input_shapes[0].shape)}.transpose({dim0},{dim1})'
         return []
 
     def torch(self):
