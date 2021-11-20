@@ -133,11 +133,14 @@ class SimpleGenerator:
             self.solver.add(c)
         self.solver.add(self.n_floats <= self.limit_float)
 
-        # FIXME: Apply concolic execution when concretizing the symbols.
         # The batch size should not have a big min size (avoid unnecessary computation);
+        random_sizes = [random.randint(
+            min_size_rng[0], min_size_rng[1]) for _ in range(1, len(input_tensor_shape.shape))]
+        random_sizes.sort()
+        # FIXME: input constraints will make SMT solving costly.
         for i in range(1, len(input_tensor_shape.shape)):
-            self.solver.add(input_tensor_shape.shape[i] > random.randint(
-                min_size_rng[0], min_size_rng[1]))
+            self.solver.add(input_tensor_shape.shape[i] >= random_sizes[i - 1])
+        self.solver.add(input_tensor_shape.shape[0] == 1)
         self.input_shape = input_tensor_shape  # TODO: multiple input/output.
 
     def concretize_input_shape(self, model):
@@ -164,26 +167,31 @@ class SimpleGenerator:
                 break
             node_t = self.pick_next_op_type()
             self.try_insert_node_type(node_t)
+        if len(self.abstract_graph.nodes) != max_node_size:
+            print(
+                f'[WARNING]: graph size: {len(self.abstract_graph.nodes)} != expected size: {max_node_size}')
 
     def shape_idx_to_op_idx(self, shape_idx: int) -> int:
         return self.alive_shapes[shape_idx][0]
 
     def check_sat(self) -> bool:
-        timeout = max(1000, len(self.solver.assertions()) * 75)
+        timeout = max(1000, len(self.solver.assertions()) * 65)
         self.solver.set('timeout', timeout)
 
         if self.verbose:
-            print(f'checking w/ timeout {timeout} ms...')
+            print(
+                f'checking {len(self.solver.assertions())} constraints w/ timeout {timeout} ms...')
 
         start = time.time()
         cres = self.solver.check()
-        res = cres == z3.sat
         if self.verbose:
-            print(cres)
-        if (time.time() - start) * 1000 > timeout:
+            print(cres, '<-- checking time:',
+                  int((time.time() - start) * 1000), 'ms')
+
+        if cres == z3.unknown:
             print(f'Timeout on operator! ~ {timeout}ms')
-            res = False
-        return res
+
+        return cres == z3.sat
 
     def pick_next_op_type(self):
         return random.choice(self.op_candidates)
@@ -318,7 +326,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--max_nodes', type=int, default=5)
     parser.add_argument('--dim_size', type=int, default=4)
-    parser.add_argument('--timeout', type=int, default=10000)
+    parser.add_argument('--timeout', type=int, default=25000)
     parser.add_argument('--viz_sbs', type=bool, default=False,
                         help='visualize the step by step')
     parser.add_argument('--output_path', type=str, default='output.onnx')
