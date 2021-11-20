@@ -121,25 +121,27 @@ class SimpleGenerator:
         self.viz_cnt = 0
         self.is_viz_sbs = viz_sbs
 
-        input_node = Input()
-        input_node.inp_dims = input_node.out_dims = [init_dim_size]
-        input_tensor_shape = ShapeVar(
-            shape=[z3.Int('i%s' % k) for k in range(init_dim_size)])
-        self.n_floats = input_tensor_shape.nelement()
+        self.input_shape = self.get_input_node(init_dim_size, min_size_rng)
+        self.n_floats = self.input_shape.nelement()
 
-        self.insert_node(input_node, [input_tensor_shape], ishape_indices=[])
-        for c in input_tensor_shape.gt_zero():
-            self.solver.add(c)
+    @abstractmethod
+    def get_input_node(self, init_dim_size, min_size_rng) -> ShapeVar:
+        raise NotImplementedError
 
-        # The batch size should not have a big min size (avoid unnecessary computation);
-        random_sizes = [random.randint(
-            min_size_rng[0], min_size_rng[1]) for _ in range(1, len(input_tensor_shape.shape))]
-        random_sizes.sort()
-        # FIXME: input constraints will make SMT solving costly.
-        for i in range(1, len(input_tensor_shape.shape)):
-            self.solver.add(input_tensor_shape.shape[i] >= random_sizes[i - 1])
-        self.solver.add(input_tensor_shape.shape[0] == 1)
-        self.input_shape = input_tensor_shape  # TODO: multiple input/output.
+    @abstractmethod
+    def try_insert_node(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_symbol_solutions(self) -> List:
+        raise NotImplementedError
+
+    def extra_exit_check(self) -> bool:
+        """
+        Returns:
+            bool: add more checks to determine whether to exit the generation.
+        """
+        return False
 
     def concretize_input_shape(self, model):
         shape = []
@@ -149,13 +151,6 @@ class SimpleGenerator:
             else:
                 shape.append(s)
         return shape
-
-    def extra_exit_check(self) -> bool:
-        """
-        Returns:
-            bool: add more checks to determine whether to exit the generation.
-        """
-        return False
 
     def abstract_gen(self, max_node_size=10, max_gen_millisec=2000):
         init_time = time.time()
@@ -281,6 +276,45 @@ class SimpleGenerator:
                     'Cannot find a shape variable with dimension size %s.' % dim_size)
         return shape_var_candidates
 
+    def viz(self, filename: str = None):
+        if filename is None:
+            filename = f'step{self.viz_cnt}.png'
+        G = self.abstract_graph
+        nx.drawing.nx_pydot.write_dot(G, 'graph.dot')
+        os.system(f'dot -Tpng graph.dot > {filename}')
+        self.viz_cnt += 1
+
+
+class PureSymbolGen(SimpleGenerator):
+    def get_input_node(self, init_dim_size, min_size_rng) -> ShapeVar:
+        input_node = Input()
+        input_node.inp_dims = input_node.out_dims = [init_dim_size]
+        input_tensor_shape = ShapeVar(
+            shape=[z3.Int('i%s' % k) for k in range(init_dim_size)])
+
+        self.insert_node(input_node, [input_tensor_shape], ishape_indices=[])
+        for c in input_tensor_shape.gt_zero():
+            self.solver.add(c)
+
+        # The batch size should not have a big min size (avoid unnecessary computation);
+        random_sizes = [random.randint(
+            min_size_rng[0], min_size_rng[1]) for _ in range(1, len(input_tensor_shape.shape))]
+        random_sizes.sort()
+        # FIXME: input constraints will make SMT solving costly.
+        for i in range(1, len(input_tensor_shape.shape)):
+            self.solver.add(input_tensor_shape.shape[i] >= random_sizes[i - 1])
+        self.solver.add(input_tensor_shape.shape[0] == 1)
+        return input_tensor_shape  # TODO: multiple input/output.
+
+    def concretize_input_shape(self, model):
+        shape = []
+        for s in self.input_shape.shape:
+            if isinstance(s, z3.ArithRef):
+                shape.append(model.eval(s).as_long())
+            else:
+                shape.append(s)
+        return shape
+
     def try_insert_node(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
         input_shapes = [self.alive_shapes[idx][1] for idx in ishape_indices]
         constraints = node.requires(input_shapes)
@@ -308,13 +342,10 @@ class SimpleGenerator:
         self.insert_node(node, output_shapes, ishape_indices)
         return True
 
-    def viz(self, filename: str = None):
-        if filename is None:
-            filename = f'step{self.viz_cnt}.png'
-        G = self.abstract_graph
-        nx.drawing.nx_pydot.write_dot(G, 'graph.dot')
-        os.system(f'dot -Tpng graph.dot > {filename}')
-        self.viz_cnt += 1
+    def get_symbol_solutions(self) -> List:
+        self.solver.set('timeout', 1000 * 60)
+        assert self.solver.check() == z3.sat
+        return self.solver.model()
 
 
 if __name__ == '__main__':
@@ -332,15 +363,13 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     strt_time = time.time()
-    gen = SimpleGenerator(init_dim_size=args.dim_size,
-                          viz_sbs=args.viz_sbs, seed=args.seed, verbose=args.verbose)
+    gen = PureSymbolGen(init_dim_size=args.dim_size,
+                        viz_sbs=args.viz_sbs, seed=args.seed, verbose=args.verbose)
     gen.abstract_gen(max_node_size=args.max_nodes,
                      max_gen_millisec=args.timeout)
     print(f'{time.time() - strt_time}s to generate a graph w/ {len(gen.abstract_graph.nodes())} nodes')
 
-    gen.solver.set('timeout', 1000 * 60)
-    assert gen.solver.check() == z3.sat
-    solution = gen.solver.model()
+    solution = gen.get_symbol_solutions()
     print(f'{len(solution)} symbols and {len(gen.solver.assertions())} constraints.')
     print(solution)
 
