@@ -39,6 +39,9 @@ if __name__ == '__main__':
         elif name == 'xla':
             from nnsmith.backends.xla_graph import XLAExecutor
             return XLAExecutor(device='CUDA')
+        elif name == 'trt':
+            from nnsmith.backends.trt_graph import TRTBackend
+            return TRTBackend()
         elif name == 'crash':
             return CrashExecutor()
         elif name == 'hang':

@@ -3,7 +3,6 @@ from nnsmith.backends import DiffTestBackend
 # See https://docs.nvidia.com/deeplearning/tensorrt/api/python_api/index.html
 import tensorrt as trt
 import onnx
-import pycuda.autoinit
 import pycuda.driver as cuda
 import numpy as np
 
@@ -22,6 +21,7 @@ class HostDeviceMem(object):
 
 class TRTBackend(DiffTestBackend):
     def predict(self, model, inputs):
+        import pycuda.autoinit
         onnx_model = self.get_onnx_proto(model)
         engine = self.build_engine_onnx(onnx_model)
         trt_inputs, trt_outputs, trt_bindings, stream, onames, name2idx = self.allocate_buffers(

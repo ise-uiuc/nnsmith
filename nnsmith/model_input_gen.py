@@ -280,7 +280,7 @@ if __name__ == '__main__':
     parser.add_argument('--input_only', action='store_true')
     parser.add_argument('--model', type=str, nargs='*',
                         help='Generate input for specific model, specified as the path to the .onnx file.')
-    parser.add_argument('--input_gen_method', type=str, default='v1')
+    parser.add_argument('--input_gen_method', type=str, default='v3')
     args = parser.parse_args()
     if not args.input_only:
         gen_models(args.root, args.num_models)
