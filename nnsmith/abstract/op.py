@@ -28,11 +28,12 @@ class ShapeVar:
     def __repr__(self):
         return str(self.shape)
 
-    def gt_zero(self):
+    def gt_zero(self, no_replica=[]):
         ret = []
         for s in self.shape:
             if isinstance(s, z3.ArithRef):
-                ret.append(s > 0)
+                if s not in no_replica:
+                    ret.append(s > 0)
             else:
                 assert s > 0
         return ret
@@ -576,6 +577,8 @@ class Reshape4D(Reshape):
         self.dim3 = dim3
         self.target_shape = [dim0, dim1, dim2, dim3]
         self.out_dims = [4]
+
+# FIXME: Constraint too complex.
 
 
 class Reshape5D(Reshape):

@@ -294,7 +294,7 @@ class SimpleGenerator:
         output_shapes = node.shape_fn(copy.deepcopy(input_shapes))
 
         for shape in output_shapes:
-            for c in shape.gt_zero():
+            for c in shape.gt_zero(no_replica=self.input_shape.shape):
                 constraints.append(c)
 
         self.n_floats += sum(s.nelement() for s in output_shapes)
