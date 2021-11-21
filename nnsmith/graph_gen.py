@@ -98,7 +98,7 @@ class SymbolNet(nn.Module):
 
 
 class SimpleGenerator:
-    def __init__(self, init_dim_size=4, skip=[], viz_sbs=False, min_size_rng=[10, 100], megabyte_lim=6 * 1024, seed=None, verbose=False):
+    def __init__(self, min_dims=[1, 3, 48, 48], skip=[], viz_sbs=False, megabyte_lim=6 * 1024, seed=None, verbose=False):
         self.verbose = verbose
         if seed is not None:
             random.seed(seed)
@@ -121,11 +121,11 @@ class SimpleGenerator:
         self.viz_cnt = 0
         self.is_viz_sbs = viz_sbs
 
-        self.input_shape = self.get_input_node(init_dim_size, min_size_rng)
+        self.input_shape = self.get_input_node(min_dims)
         self.n_floats = self.input_shape.nelement()
 
     @abstractmethod
-    def get_input_node(self, init_dim_size, min_size_rng) -> ShapeVar:
+    def get_input_node(self, min_dims: List[int]) -> ShapeVar:
         raise NotImplementedError
 
     @abstractmethod
@@ -167,26 +167,17 @@ class SimpleGenerator:
     def shape_idx_to_op_idx(self, shape_idx: int) -> int:
         return self.alive_shapes[shape_idx][0]
 
-    def check_sat(self, *assumptions) -> bool:
-        timeout = max(1500, len(self.solver.assertions()) * 100)
-        self.solver.set('timeout', timeout)
-
-        if self.verbose:
-            print(
-                f'checking {len(self.solver.assertions())} constraints w/ timeout {timeout} ms...')
-
+    def check_sat(self, *assumptions):
         start = time.time()
         cres = self.solver.check(*assumptions)
         if self.verbose:
             print(cres, '<-- checking time:',
                   int((time.time() - start) * 1000), 'ms')
 
-        if cres == z3.unknown:
-            print(f'Timeout on operator! ~ {timeout}ms')
-        elif cres == z3.unsat:
+        if cres == z3.unsat:
             print(f'Unsat core: {self.solver.unsat_core()}')
 
-        return cres == z3.sat
+        return cres
 
     def pick_next_op_type(self):
         return random.choice(self.op_candidates)
@@ -286,24 +277,21 @@ class SimpleGenerator:
 
 
 class PureSymbolGen(SimpleGenerator):
-    def get_input_node(self, init_dim_size, min_size_rng) -> ShapeVar:
+    def get_input_node(self, min_dims) -> ShapeVar:
         input_node = Input()
-        input_node.inp_dims = input_node.out_dims = [init_dim_size]
+        input_node.inp_dims = input_node.out_dims = [len(min_dims)]
         input_tensor_shape = ShapeVar(
-            shape=[z3.Int('i%s' % k) for k in range(init_dim_size)])
+            shape=[z3.Int('i%s' % k) for k in range(len(min_dims))])
 
         self.insert_node(input_node, [input_tensor_shape], ishape_indices=[])
         for c in input_tensor_shape.gt_zero():
             self.solver.add(c)
 
         # The batch size should not have a big min size (avoid unnecessary computation);
-        random_sizes = [random.randint(
-            min_size_rng[0], min_size_rng[1]) for _ in range(1, len(input_tensor_shape.shape))]
-        random_sizes.sort()
         # FIXME: input constraints will make SMT solving costly.
-        for i in range(1, len(input_tensor_shape.shape)):
-            self.solver.add(input_tensor_shape.shape[i] >= random_sizes[i - 1])
-        self.solver.add(input_tensor_shape.shape[0] == 1)
+        for i in range(len(input_tensor_shape.shape)):
+            self.solver.add(input_tensor_shape.shape[i] >= min_dims[i])
+        assert self.solver.check() == z3.sat
         return input_tensor_shape  # TODO: multiple input/output.
 
     def concretize_input_shape(self, model):
@@ -333,7 +321,7 @@ class PureSymbolGen(SimpleGenerator):
 
         self.n_floats += sum(s.nelement() for s in output_shapes)
 
-        if not self.check_sat(*constraints, self.n_floats <= self.limit_float):
+        if self.check_sat(*constraints, self.n_floats <= self.limit_float) != z3.sat:
             return False
 
         for c in constraints:
@@ -343,8 +331,8 @@ class PureSymbolGen(SimpleGenerator):
         return True
 
     def get_symbol_solutions(self) -> List:
-        self.solver.set('timeout', 1000 * 60)
-        assert self.solver.check() == z3.sat
+        res = self.solver.check()
+        assert res == z3.sat, res
         return self.solver.model()
 
 
@@ -353,7 +341,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--max_nodes', type=int, default=5)
-    parser.add_argument('--dim_size', type=int, default=4)
+    parser.add_argument('--min_dims', type=list, default=[1, 3, 48, 48])
     parser.add_argument('--timeout', type=int, default=50000)
     parser.add_argument('--viz_sbs', type=bool, default=False,
                         help='visualize the step by step')
@@ -363,7 +351,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     strt_time = time.time()
-    gen = PureSymbolGen(init_dim_size=args.dim_size,
+    gen = PureSymbolGen(min_dims=args.min_dims,
                         viz_sbs=args.viz_sbs, seed=args.seed, verbose=args.verbose)
     gen.abstract_gen(max_node_size=args.max_nodes,
                      max_gen_millisec=args.timeout)

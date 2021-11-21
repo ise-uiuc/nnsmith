@@ -34,7 +34,7 @@ def torch2onnx(model, filename):
         filename,
         input_names=input_names,
         output_names=[f'o{i}' for i in range(model.n_output)],
-        verbose=True,
+        verbose=False,
         dynamic_axes=dynamic_axes,
         opset_version=11)
 
