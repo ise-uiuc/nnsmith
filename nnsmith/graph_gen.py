@@ -100,8 +100,6 @@ class SymbolNet(nn.Module):
 class SimpleGenerator:
     def __init__(self, min_dims=[1, 3, 48, 48], skip=[], viz_sbs=False, megabyte_lim=6 * 1024, seed=None, verbose=False):
         self.verbose = verbose
-        if seed is not None:
-            random.seed(seed)
 
         self.op_candidates = [op for op in ALL_OP_TYPES if op not in skip]
         self.solver = z3.Solver()
@@ -350,13 +348,18 @@ if __name__ == '__main__':
     parser.add_argument('--verbose', action='store_true')
     args = parser.parse_args()
 
+    seed = args.seed
+    if seed is None:
+        seed = random.getrandbits(32)
+    random.seed(seed)
+
     z3.set_param(
         "smt.phase_selection",
         5,
         "smt.random_seed",
-        random.randint(0, 10000),
+        seed,
         "sat.random_seed",
-        random.randint(0, 10000),
+        seed,
         "smt.arith.random_initial_value",
         True,
         "sat.phase",
@@ -365,7 +368,7 @@ if __name__ == '__main__':
 
     strt_time = time.time()
     gen = PureSymbolGen(min_dims=args.min_dims,
-                        viz_sbs=args.viz_sbs, seed=args.seed, verbose=args.verbose)
+                        viz_sbs=args.viz_sbs, seed=seed, verbose=args.verbose)
     gen.abstract_gen(max_node_size=args.max_nodes,
                      max_gen_millisec=args.timeout)
     print(f'{time.time() - strt_time}s to generate a graph w/ {len(gen.abstract_graph.nodes())} nodes')
