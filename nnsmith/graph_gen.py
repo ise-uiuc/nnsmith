@@ -105,7 +105,6 @@ class SimpleGenerator:
 
         self.op_candidates = [op for op in ALL_OP_TYPES if op not in skip]
         self.solver = z3.Solver()
-
         self.solver.set("threads", 4)
         # 4 bytes per float (assume we use float32)
         self.limit_float = 1024**2 * megabyte_lim / 4
@@ -146,8 +145,8 @@ class SimpleGenerator:
     def concretize_input_shape(self, model):
         shape = []
         for s in self.input_shape.shape:
-            if isinstance(s, z3.ArithRef):
-                shape.append(model.eval(s).as_long())
+            if isinstance(s, z3.BitVecRef):
+                shape.append(model.eval(s, model_completion=True).as_long())
             else:
                 shape.append(s)
         return shape
@@ -209,7 +208,7 @@ class SimpleGenerator:
     def try_insert_node_type(self, node_t, max_shape_var_pick_time=3) -> bool:
         op_param_n = signature(node_t).parameters
         op_id = len(self.abstract_graph.nodes)
-        op_params = [z3.Int('op%s_%s' % (op_id, k))
+        op_params = [z3.BitVec('op%s_%s' % (op_id, k), 8)
                      for k in range(len(op_param_n))]
 
         op: AbsOpBase = node_t(*op_params)
@@ -281,7 +280,7 @@ class PureSymbolGen(SimpleGenerator):
         input_node = Input()
         input_node.inp_dims = input_node.out_dims = [len(min_dims)]
         input_tensor_shape = ShapeVar(
-            shape=[z3.Int('i%s' % k) for k in range(len(min_dims))])
+            shape=[z3.BitVec('i%s' % k, 8) for k in range(len(min_dims))])
 
         self.insert_node(input_node, [input_tensor_shape], ishape_indices=[])
         for c in input_tensor_shape.gt_zero():
@@ -289,16 +288,17 @@ class PureSymbolGen(SimpleGenerator):
 
         # The batch size should not have a big min size (avoid unnecessary computation);
         # FIXME: input constraints will make SMT solving costly.
-        for i in range(len(input_tensor_shape.shape)):
-            self.solver.add(input_tensor_shape.shape[i] >= min_dims[i])
+        # for i in range(len(input_tensor_shape.shape)):
+        #     self.solver.add(input_tensor_shape.shape[i] >= min_dims[i])
+
         assert self.solver.check() == z3.sat
         return input_tensor_shape  # TODO: multiple input/output.
 
     def concretize_input_shape(self, model):
         shape = []
         for s in self.input_shape.shape:
-            if isinstance(s, z3.ArithRef):
-                shape.append(model.eval(s).as_long())
+            if isinstance(s, z3.BitVecRef):
+                shape.append(model.eval(s, model_completion=True).as_long())
             else:
                 shape.append(s)
         return shape
@@ -349,6 +349,19 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int)
     parser.add_argument('--verbose', action='store_true')
     args = parser.parse_args()
+
+    z3.set_param(
+        "smt.phase_selection",
+        5,
+        "smt.random_seed",
+        random.randint(0, 10000),
+        "sat.random_seed",
+        random.randint(0, 10000),
+        "smt.arith.random_initial_value",
+        True,
+        "sat.phase",
+        "random",
+    )
 
     strt_time = time.time()
     gen = PureSymbolGen(min_dims=args.min_dims,

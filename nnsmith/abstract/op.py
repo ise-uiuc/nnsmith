@@ -22,7 +22,7 @@ import torch
 
 
 class ShapeVar:
-    def __init__(self, shape: List[Union[int, z3.ArithRef]]):
+    def __init__(self, shape: List[Union[int, z3.BitVecRef]]):
         self.shape = list(shape)
 
     def __repr__(self):
@@ -31,7 +31,7 @@ class ShapeVar:
     def gt_zero(self, no_replica=[]):
         ret = []
         for s in self.shape:
-            if isinstance(s, z3.ArithRef):
+            if isinstance(s, z3.BitVecRef):
                 if s not in no_replica:
                     ret.append(s > 0)
             else:
@@ -43,7 +43,7 @@ class ShapeVar:
         return torch.Size(self.shape)
 
     def constains_symbol(self) -> bool:
-        return any(isinstance(s, z3.ArithRef) for s in self.shape)
+        return any(isinstance(s, z3.BitVecRef) for s in self.shape)
 
     def nelement(self):
         if len(self.shape) == 0:  # Scalar
@@ -92,7 +92,7 @@ class AbsOpBase(ABC):
         self.out_dims = []
         # Require the input dimension sizes to be equivalent.
         self.same_inp_dims = False
-        # NOTE: the input of operator constructors are all Union[int, z3.ArithRef].
+        # NOTE: the input of operator constructors are all Union[int, z3.BitVecRef].
         self.extra_attrs = {}
 
     @abstractmethod  # Overload me!
@@ -129,7 +129,7 @@ def concretize(op: AbsOpBase, model: z3.ModelRef) -> AbsOpBase:
     for idx, key in enumerate(construct_param_dict):
         param = getattr(op, key)
         values.append(param)
-        if isinstance(param, z3.ArithRef):
+        if isinstance(param, z3.BitVecRef):
             symbolic_idx.append(idx)
     for idx in symbolic_idx:
         values[idx] = model.eval(values[idx]).as_long()
@@ -329,7 +329,7 @@ class Add(BinaryOpBase):
         assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
         ret = []
         for l, r in zip(input_shapes[0].shape, input_shapes[1].shape):
-            if isinstance(l, z3.ArithRef) or isinstance(r, z3.ArithRef):
+            if isinstance(l, z3.BitVecRef) or isinstance(r, z3.BitVecRef):
                 ret.append(l == r)
             else:
                 assert l == r
@@ -341,7 +341,7 @@ class Add(BinaryOpBase):
 
 class Expand(UnaryOpBase, ABC):
     # expand_dim cannot be symbolic. So just expand it.
-    def __init__(self, expand_last_dim: int, expand_n: Union[int, z3.ArithRef]):
+    def __init__(self, expand_last_dim: int, expand_n: Union[int, z3.BitVecRef]):
         """See https://pytorch.org/docs/stable/generated/torch.Tensor.expand.html
         """
         super().__init__()
@@ -365,7 +365,7 @@ class Expand(UnaryOpBase, ABC):
         assert self.expand_last_dim > 0
 
         input_shape = input_shapes[0].shape
-        if isinstance(self.expand_n, z3.ArithRef):
+        if isinstance(self.expand_n, z3.BitVecRef):
             if self.expand_last_dim <= len(input_shape):  # index valid
                 cons = [z3.Or(
                     z3.And(
@@ -387,34 +387,34 @@ class Expand(UnaryOpBase, ABC):
 
 
 class ExpandLast1(Expand):
-    def __init__(self, expand_n: Union[int, z3.ArithRef]):
+    def __init__(self, expand_n: Union[int, z3.BitVecRef]):
         super().__init__(expand_last_dim=1, expand_n=expand_n)
 
 
 class ExpandLast2(Expand):
-    def __init__(self, expand_n: Union[int, z3.ArithRef]):
+    def __init__(self, expand_n: Union[int, z3.BitVecRef]):
         super().__init__(expand_last_dim=2, expand_n=expand_n)
 
 
 class ExpandLast3(Expand):
-    def __init__(self, expand_n: Union[int, z3.ArithRef]):
+    def __init__(self, expand_n: Union[int, z3.BitVecRef]):
         super().__init__(expand_last_dim=3, expand_n=expand_n)
 
 
 class ExpandLast4(Expand):
-    def __init__(self, expand_n: Union[int, z3.ArithRef]):
+    def __init__(self, expand_n: Union[int, z3.BitVecRef]):
         super().__init__(expand_last_dim=4, expand_n=expand_n)
 
 
 class NCHWConv2d(UnaryOpBase):
 
     def __init__(self,
-                 in_channels: Union[int, z3.ArithRef],
-                 out_channels: Union[int, z3.ArithRef],
-                 kernel_h_size: Union[int, z3.ArithRef],
-                 kernel_w_size: Union[int, z3.ArithRef],
-                 stride: Union[int, z3.ArithRef],
-                 padding: Union[int, z3.ArithRef]):
+                 in_channels: Union[int, z3.BitVecRef],
+                 out_channels: Union[int, z3.BitVecRef],
+                 kernel_h_size: Union[int, z3.BitVecRef],
+                 kernel_w_size: Union[int, z3.BitVecRef],
+                 stride: Union[int, z3.BitVecRef],
+                 padding: Union[int, z3.BitVecRef]):
         """See https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
         """
         super().__init__()
@@ -430,11 +430,11 @@ class NCHWConv2d(UnaryOpBase):
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         # not symbolic
-        if not isinstance(self.in_channels, z3.ArithRef) and not isinstance(input_shapes[0].shape[1], z3.ArithRef):
+        if not isinstance(self.in_channels, z3.BitVecRef) and not isinstance(input_shapes[0].shape[1], z3.BitVecRef):
             assert input_shapes[0].shape[1] == self.in_channels
 
-        is_symbolic_inp = input_shapes[0].constains_symbol() or isinstance(self.kernel_w_size, z3.ArithRef) or isinstance(
-            self.kernel_h_size, z3.ArithRef) or isinstance(self.stride, z3.ArithRef) or isinstance(self.padding, z3.ArithRef)
+        is_symbolic_inp = input_shapes[0].constains_symbol() or isinstance(self.kernel_w_size, z3.BitVecRef) or isinstance(
+            self.kernel_h_size, z3.BitVecRef) or isinstance(self.stride, z3.BitVecRef) or isinstance(self.padding, z3.BitVecRef)
 
         shape_var = ShapeVar([])
         # Batch dim: just copy
@@ -483,7 +483,7 @@ class Reshape(UnaryOpBase, ABC):
     def __init__(self):
         super().__init__()
         self.inp_dims = [-1]
-        self.target_shape: List[Union[int, z3.ArithRef]]
+        self.target_shape: List[Union[int, z3.BitVecRef]]
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         if -1 not in self.target_shape:
@@ -505,7 +505,7 @@ class Reshape(UnaryOpBase, ABC):
         # First see if there's any symbols in the expression
         symbol_indices = []
         for v in input_shapes[0].shape:
-            if isinstance(v, z3.ArithRef):
+            if isinstance(v, z3.BitVecRef):
                 symbol_indices.append(i)
         if len(symbol_indices) == 0:
             shape_var.shape[auto_dim] = reduce(
@@ -543,7 +543,7 @@ class Reshape(UnaryOpBase, ABC):
 # Expand 6 times.
 class Reshape1D(Reshape):
     # Inputs are target shape.
-    def __init__(self, dim0: Union[int, z3.ArithRef]):
+    def __init__(self, dim0: Union[int, z3.BitVecRef]):
         super().__init__()
         self.dim0 = dim0
         self.target_shape = [dim0]
@@ -551,7 +551,7 @@ class Reshape1D(Reshape):
 
 
 class Reshape2D(Reshape):
-    def __init__(self, dim0: Union[int, z3.ArithRef], dim1: Union[int, z3.ArithRef]):
+    def __init__(self, dim0: Union[int, z3.BitVecRef], dim1: Union[int, z3.BitVecRef]):
         super().__init__()
         self.dim0 = dim0
         self.dim1 = dim1
@@ -560,7 +560,7 @@ class Reshape2D(Reshape):
 
 
 class Reshape3D(Reshape):
-    def __init__(self, dim0: Union[int, z3.ArithRef], dim1: Union[int, z3.ArithRef], dim2: Union[int, z3.ArithRef]):
+    def __init__(self, dim0: Union[int, z3.BitVecRef], dim1: Union[int, z3.BitVecRef], dim2: Union[int, z3.BitVecRef]):
         super().__init__()
         self.dim0 = dim0
         self.dim1 = dim1
@@ -570,8 +570,8 @@ class Reshape3D(Reshape):
 
 
 class Reshape4D(Reshape):
-    def __init__(self, dim0: Union[int, z3.ArithRef], dim1: Union[int, z3.ArithRef], dim2: Union[int, z3.ArithRef],
-                 dim3: Union[int, z3.ArithRef]):
+    def __init__(self, dim0: Union[int, z3.BitVecRef], dim1: Union[int, z3.BitVecRef], dim2: Union[int, z3.BitVecRef],
+                 dim3: Union[int, z3.BitVecRef]):
         super().__init__()
         self.dim0 = dim0
         self.dim1 = dim1
@@ -584,8 +584,8 @@ class Reshape4D(Reshape):
 
 
 class Reshape5D(Reshape):
-    def __init__(self, dim0: Union[int, z3.ArithRef], dim1: Union[int, z3.ArithRef], dim2: Union[int, z3.ArithRef],
-                 dim3: Union[int, z3.ArithRef], dim4: Union[int, z3.ArithRef]):
+    def __init__(self, dim0: Union[int, z3.BitVecRef], dim1: Union[int, z3.BitVecRef], dim2: Union[int, z3.BitVecRef],
+                 dim3: Union[int, z3.BitVecRef], dim4: Union[int, z3.BitVecRef]):
         super().__init__()
         self.dim0 = dim0
         self.dim1 = dim1
@@ -597,8 +597,8 @@ class Reshape5D(Reshape):
 
 
 class Reshape6D(Reshape):
-    def __init__(self, dim0: Union[int, z3.ArithRef], dim1: Union[int, z3.ArithRef], dim2: Union[int, z3.ArithRef],
-                 dim3: Union[int, z3.ArithRef], dim4: Union[int, z3.ArithRef], dim5: Union[int, z3.ArithRef]):
+    def __init__(self, dim0: Union[int, z3.BitVecRef], dim1: Union[int, z3.BitVecRef], dim2: Union[int, z3.BitVecRef],
+                 dim3: Union[int, z3.BitVecRef], dim4: Union[int, z3.BitVecRef], dim5: Union[int, z3.BitVecRef]):
         super().__init__()
         self.dim0 = dim0
         self.dim1 = dim1
@@ -617,7 +617,7 @@ class Transpose(UnaryOpBase, ABC):
         super().__init__()
         self.inp_dims = [-1]
 
-    def _init_swap_dims(self, input_shape: List[Union[int, z3.ArithRef]]):
+    def _init_swap_dims(self, input_shape: List[Union[int, z3.BitVecRef]]):
         assert len(input_shape) >= 1
         if 'dim0' not in self.extra_attrs or 'dim1' not in self.extra_attrs:
             max_dim = len(input_shape) - 1
