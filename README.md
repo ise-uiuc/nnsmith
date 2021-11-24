@@ -35,6 +35,9 @@ python -m nnsmith.backend_executor --root $root --backend xla # test
 
 # compare the result (all close)
 python -m nnsmith.difftest --root $root
+
+# fuzzing
+python nnsmith/fuzz.py
 ```
 
 ## Progress & TODOs
@@ -61,7 +64,7 @@ python -m nnsmith.difftest --root $root
     - [ ] Oracles:
         - [x] Result consistency (allclose);
         - [ ] Performance degradation;
-        - [ ] Crash;
+        - [ ] Crash (use sub-process when doing evaluation);
     - [x] Differential testing comparison (allclose); @jinkun
     - [x] TVM (dynamic models: VM/Debug; & graph); @jiawei
     - [x] ONNXRuntime (new); @jiawei
@@ -69,7 +72,8 @@ python -m nnsmith.difftest --root $root
     - [x] TensorRT; @jiawei
     - [ ] Glow (not prioritized); @jinkun
 - [x] Search-based input generation; @jinkun
-- [x] Add branch coverage guidance and TVM fuzzing loop; @jiawei (Install TVM's [coverage branch](https://github.com/ganler/tvm/tree/coverage))
+- [x] Add edge coverage guidance and TVM fuzzing loop; @jiawei (Install TVM's [coverage branch](https://github.com/ganler/tvm/tree/coverage))
+- [x] Fuzzing loop for TVM with `rich` monitoring (`nnsmith/fuzz.py`). @jiawei
 - **FOUND AN ISSUE**: z3 SMT extremely slow when setting randomized constraints on input shapes.
     - If we don't set random input constraints -> very fast! but those solutions will stick to [1, 1, ..., 1] which is not realistic;
     - If we set those input constraints -> very slow (e.g., up to 25s to generate a 20-node model)... but the generated model is diverse!
@@ -77,12 +81,10 @@ python -m nnsmith.difftest --root $root
     - [ ] Half-symbolic generation: only symbolize operators' parameters;
         - Pros: should be faster than prior one;
         - Cons: generated solves might be edge cases but we can add some guiding constraints;
-    - [ ] Concrete generation: only use concrete values;
-        - Pros: can be very fast in some cases;
-        - Cons: need to try many operators w/ many randomly generated parameters;
 - [ ] **Op Batch 2**: Focuse on multi-input & complex-shape-transfer-func models;
-    - [ ] multi-input: And, Sub, Mul, Concat, Div, Greater;
-    - [ ] complex-shape-func: Sum, Min, Max, Mean, ArgMin, ArgMax, Squeeze, Size;
+    - [ ] multi-input: And, Sub, Mul, Concat, Div, Greater; @jinkun
+    - [ ] complex-shape-func: Sum, Min, Max, Mean, ArgMin, ArgMax, Squeeze, Size; @jiawei
+- [ ] Coverage-guided fuzzing with relation table. @jiawei
 - [ ] Dynamic model testing;
 - [ ] Enable multiple inputs;
 

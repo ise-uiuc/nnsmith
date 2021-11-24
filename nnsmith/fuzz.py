@@ -5,12 +5,13 @@ import datetime
 import random
 import shutil
 import datetime
-from typing import Dict, Iterable
+from typing import Dict, Iterable, Union, List
 
 # Edge coverage. See https://github.com/ganler/tvm/tree/coverage
 from tvm.contrib import coverage
 import git
-from rich.progress import Progress, BarColumn
+import rich
+from rich.progress import Progress, BarColumn, ProgressColumn
 from rich.panel import Panel
 from rich.console import RenderableType
 from rich.columns import Columns
@@ -45,8 +46,15 @@ class Reporter:  # From Tzer.
 
         if os.path.exists(self.report_folder):
             # TODO: Allow continous fuzzing...
-            raise NNSmithInternalError(
-                f'{self.report_folder} already exist... We want an empty folder to report...')
+            decision = ''
+            while decision.lower() not in ['y', 'n']:
+                decision = input(
+                    'Report folder already exists. Press [Y/N] to continue or exit...')
+            if decision.lower() == 'n':
+                raise NNSmithInternalError(
+                    f'{self.report_folder} already exist... We want an empty folder to report...')
+            else:
+                shutil.rmtree(self.report_folder)
 
         os.mkdir(self.report_folder)
         print(f'Create report folder: {self.report_folder}')
@@ -86,9 +94,9 @@ class Reporter:  # From Tzer.
 
 
 class CustomProgress(Progress):
-    def __init__(self, fuzz_status, *args, **kwargs):
+    def __init__(self, fuzz_status, columns: List[Union[str, ProgressColumn]]):
         self.fuzz_status = fuzz_status
-        super().__init__(*args, **kwargs)
+        super().__init__(*columns)
 
     def get_renderables(self) -> Iterable[RenderableType]:
         """Get a number of renderables for the progress display."""
@@ -108,13 +116,35 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         self.time_budget = time_budget
         self.max_nodes = max_nodes
 
+        self.cur_model_gen_t = float('nan')
+        self.slowest_model_gen_t = -float("inf")
+        self.fastest_model_gen_t = float("inf")
+
+        self.cur_model_eval_t = float('nan')
+        self.slowest_model_eval_t = -float("inf")
+        self.fastest_model_eval_t = float("inf")
+
+        rich.print(
+            f'[bold yellow]To exit the program: `kill {os.getpid()}`[/bold yellow]')
+        rich.print(
+            '[grey]This is because we use z3 written in C++ w/ Python wrappers. Ctrl+C may not stop it.')
+
     def rich(self):
         return Columns([
             Panel.fit(
-                f'{datetime.timedelta(seconds=time.time())} ~ {datetime.timedelta(seconds=self.start_time)}',
+                f'{datetime.timedelta(seconds=round(time.time()-self.start_time))} ~ '
+                f'{datetime.timedelta(seconds=self.time_budget)}',
                 title="Time Left ~ Total Time"),
-            Panel.fit('sdasd', title="#Bugs"),
-            Panel.fit('asdasda', title="Gen Speed"),
+            Panel.fit(f'{self.reporter.n_bug}',
+                      title="#Bugs", style="magenta"),
+            Panel.fit(f'[green]Fast: {self.fastest_model_gen_t:.3f}s[/green]|'
+                      f'[bold]Cur: {self.cur_model_gen_t:.3f}s[/bold]|'
+                      f'[red]Slow: {self.slowest_model_gen_t:.3f}s',
+                      title="Model Generation Time"),
+            Panel.fit(f'[green]Fast: {self.fastest_model_eval_t:.3f}s[/green]|'
+                      f'[bold]Cur: {self.cur_model_eval_t:.3f}s[/bold]|'
+                      f'[red]Slow: {self.slowest_model_eval_t:.3f}s',
+                      title="Model Evaluation Time"),
         ])
 
     def fuzz(self):
@@ -122,65 +152,89 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         _PER_MODEL_TIMEOUT_ = 1000  # milliseconds
         self.start_time = time.time()
 
-        with CustomProgress(
-            "[progress.description]{task.description}",
-            BarColumn(),
-            '[progress.percentage]{task.completed}/{task.total}',
-            fuzz_status=self.rich,
-        ) as progress:
-            task_fuzz = progress.add_task(
-                '[cyan]Fuzzing time.', total=self.time_budget)
-            task_coverage = progress.add_task(
-                '[green]Edge coverage.', total=coverage.get_total())
+        try:
+            with CustomProgress(
+                fuzz_status=self.rich,
+                columns=[
+                    "[progress.description]{task.description}",
+                    BarColumn(),
+                    '[progress.percentage]{task.completed:>3.0f}/{task.total}',
+                    '[progress.percentage]{task.percentage:>3.0f}%'],
+            ) as progress:
+                task_fuzz = progress.add_task(
+                    '[green]Fuzzing time.', total=self.time_budget)
+                task_coverage = progress.add_task(
+                    '[green]Edge coverage.', total=coverage.get_total())
 
-            while True:
-                self.reporter.record_coverage()
+                while True:
+                    self.reporter.record_coverage()
 
-                gen = PureSymbolGen()
-                gen.abstract_gen(max_node_size=random.randint(1, self.max_nodes),
-                                 max_gen_millisec=_PER_MODEL_TIMEOUT_)
-                solution = gen.get_symbol_solutions()
-                input_shape = gen.concretize_input_shape(solution)
-                net = SymbolNet(gen.abstract_graph, solution)
-                net.eval()
-                net.set_input_spec(input_shape)
-                torch2onnx(model=net, filename=_TMP_ONNX_FILE_)
+                    gen_t_s = time.time()
+                    gen = PureSymbolGen()
+                    gen.abstract_gen(max_node_size=random.randint(1, self.max_nodes),
+                                     max_gen_millisec=_PER_MODEL_TIMEOUT_)
+                    solution = gen.get_symbol_solutions()
+                    input_shape = gen.concretize_input_shape(solution)
+                    net = SymbolNet(gen.abstract_graph, solution)
+                    net.eval()
+                    net.set_input_spec(input_shape)
+                    torch2onnx(model=net, filename=_TMP_ONNX_FILE_)
 
-                try:  # TODO: multi-process support for isolation.
-                    onnx_model = DiffTestBackend.get_onnx_proto(
-                        _TMP_ONNX_FILE_)
-                    input_spec, onames = DiffTestBackend.analyze_onnx_io(
-                        onnx_model)
-                    inp = InputGenBase.gen_one_input(input_spec, 0, 1)
+                    # Generation time logging.
+                    self.cur_model_gen_t = time.time() - gen_t_s
+                    self.fastest_model_gen_t = min(
+                        self.fastest_model_gen_t, self.cur_model_gen_t)
+                    self.slowest_model_gen_t = max(
+                        self.slowest_model_gen_t, self.cur_model_gen_t)
 
-                    difftest_pool = {}
-                    for bname in self.backends:
-                        difftest_pool[bname] = self.backends[bname].predict(
-                            onnx_model, inp)
+                    try:  # TODO: multi-process support for isolation.
+                        eval_t_s = time.time()
 
-                    keys = list(difftest_pool.keys())
-                    for idx in range(1, len(keys)):
-                        assert_allclose(
-                            difftest_pool[keys[0]],
-                            difftest_pool[keys[idx]],
-                            keys[0], keys[idx],
-                            nan_as_err=False)
-                except Exception as e:
-                    self.reporter.report_bug(e, _TMP_ONNX_FILE_, str(e))
+                        onnx_model = DiffTestBackend.get_onnx_proto(
+                            _TMP_ONNX_FILE_)
+                        input_spec, onames = DiffTestBackend.analyze_onnx_io(
+                            onnx_model)
+                        inp = InputGenBase.gen_one_input(input_spec, 0, 1)
 
-                cur_time = time.time()
-                progress.update(
-                    task_fuzz, completed=cur_time - self.start_time)
-                progress.update(task_coverage, completed=coverage.get_now())
+                        difftest_pool = {}
+                        for bname in self.backends:
+                            difftest_pool[bname] = self.backends[bname].predict(
+                                onnx_model, inp)
 
-                if cur_time - self.start_time > self.time_budget:
-                    break
+                        keys = list(difftest_pool.keys())
+                        for idx in range(1, len(keys)):
+                            assert_allclose(
+                                difftest_pool[keys[0]],
+                                difftest_pool[keys[idx]],
+                                keys[0], keys[idx],
+                                nan_as_err=False)
+
+                        # Evaluation time logging.
+                        self.cur_model_eval_t = time.time() - eval_t_s
+                        self.fastest_model_eval_t = min(
+                            self.fastest_model_eval_t, self.cur_model_eval_t)
+                        self.slowest_model_eval_t = max(self.slowest_model_eval_t,
+                                                        self.cur_model_eval_t)
+                    except Exception as e:
+                        self.reporter.report_bug(e, _TMP_ONNX_FILE_, str(e))
+
+                    cur_time = time.time()
+                    progress.update(
+                        task_fuzz, completed=cur_time - self.start_time)
+                    progress.update(
+                        task_coverage, completed=coverage.get_now())
+
+                    if cur_time - self.start_time > self.time_budget:
+                        break
+        finally:  # cleanup
+            if os.path.exists(_TMP_ONNX_FILE_):
+                os.remove(_TMP_ONNX_FILE_)
 
 
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--root', type=str, default='./tmp')
+    parser.add_argument('--root', type=str, default='./fuzz_report')
     parser.add_argument('--time_budget', type=int, default=60 * 60 * 4)
     args = parser.parse_args()
 
