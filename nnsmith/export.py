@@ -28,7 +28,6 @@ def torch2onnx(model, filename):
     dummy_inputs = []
     for _, v in model.plausible_input_shape.items():
         dummy_inputs.append(torch.zeros(v))
-    print(model)
     torch.onnx.export(
         model, tuple(dummy_inputs),
         filename,
