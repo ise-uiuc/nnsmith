@@ -30,3 +30,7 @@ class RuntimeFailure(ModeledError):
 
 class MaybeDeadLoop(ModeledError):
     pass
+
+
+class NNSmithInternalError(Exception):
+    pass

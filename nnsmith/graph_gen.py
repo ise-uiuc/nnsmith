@@ -174,8 +174,8 @@ class SimpleGenerator:
             print(cres, '<-- checking time:',
                   int((time.time() - start) * 1000), 'ms')
 
-        if cres == z3.unsat:
-            print(f'Unsat core: {self.solver.unsat_core()}')
+            if cres == z3.unsat:
+                print(f'Unsat core: {self.solver.unsat_core()}')
 
         return cres
 

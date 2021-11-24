@@ -8,3 +8,4 @@ onnxruntime-gpu
 nvidia-pyindex
 nvidia-tensorrt
 pydot
+gitpython

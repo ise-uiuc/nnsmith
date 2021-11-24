@@ -14,7 +14,7 @@ import time
 from tqdm import tqdm
 
 
-def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarray], obtained_name: str, oracle_name: str):
+def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarray], obtained_name: str, oracle_name: str, nan_as_err=True):
     err_msg = ''
     if obtained is None:
         err_msg += f'{obtained_name} crashed'
@@ -28,16 +28,17 @@ def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarr
         raise IncorrectResult(
             f'{obtained_name} v.s. {oracle_name} have different output tensor names')
 
-    for index, key in enumerate(obtained):
-        err_msg = ''
-        if np.isnan(obtained[key]).any():
-            err_msg += f'{obtained_name} has NaN, '
-        if np.isnan(desired[key]).any():
-            err_msg += f'{oracle_name} has NaN'
-        if err_msg != '':
-            err_msg = f'At tensor #{index}: ' + err_msg
-            print(err_msg)
-            raise NaNError(err_msg)
+    if nan_as_err:
+        for index, key in enumerate(obtained):
+            err_msg = ''
+            if np.isnan(obtained[key]).any():
+                err_msg += f'{obtained_name} has NaN, '
+            if np.isnan(desired[key]).any():
+                err_msg += f'{oracle_name} has NaN'
+            if err_msg != '':
+                err_msg = f'At tensor #{index}: ' + err_msg
+                # print(err_msg) # Mute.
+                raise NaNError(err_msg)
 
     try:
         index = -1
@@ -48,7 +49,7 @@ def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarr
                 obtained[key], desired[key], rtol=1e-02, atol=1e-05)
             index += 1
     except AssertionError as err:
-        print(err)
+        # print(err) # Mute.
         raise IncorrectResult(
             f'{obtained_name} v.s. {oracle_name} mismatch in #{index} tensor: {str(err)}')
 
