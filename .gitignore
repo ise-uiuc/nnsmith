@@ -3,6 +3,7 @@
 tmp/
 *.png
 *.dot
+fuzz_report/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

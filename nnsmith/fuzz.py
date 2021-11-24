@@ -25,7 +25,7 @@ from nnsmith.input_gen import InputGenBase
 from nnsmith.difftest import assert_allclose
 
 _METADATA_NAME_ = 'meta.txt'
-_COV_BY_TIME_NAME_ = 'cov_by_time.txt'
+_COV_BY_TIME_NAME_ = 'cov_by_time.csv'
 
 # NOTE: Currently only engineered for TVM.
 
@@ -80,10 +80,12 @@ class Reporter:  # From Tzer.
         self.n_bug = 0
 
     def report_bug(self, err_type: Exception, buggy_onnx_path: str, message: str):
-        bug_prefix = f'{type(err_type).__name__}__{uuid.uuid4()}'
+        dir = f'{type(err_type).__name__}__{self.n_bug}'
+        os.mkdir(os.path.join(self.report_folder, dir))
+
         shutil.move(buggy_onnx_path, os.path.join(
-            self.report_folder, f'{bug_prefix}.onnx'))
-        with open(os.path.join(self.report_folder, f'{bug_prefix}.error_message.txt'), 'w') as f:
+            self.report_folder, dir, 'model.onnx'))
+        with open(os.path.join(self.report_folder, dir, 'err.txt'), 'w') as f:
             f.write(message)
         self.n_bug += 1
 

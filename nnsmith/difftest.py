@@ -54,17 +54,12 @@ def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarr
             f'{obtained_name} v.s. {oracle_name} mismatch in #{index} tensor: {str(err)}')
 
 
-def run_backend_same_proc(model_path: str, backend: DiffTestBackend):
+def run_backend_same_proc(model_path: str, input_path: str, backend: DiffTestBackend):
     """This function is for debugging purpose.
     Run the backend on the same process.
     """
-    model_path = Path(model_path)
-    model_name = model_path.name
-    model = str(model_path / 'model.onnx')
-    for inp_path in model_path.glob(f'input.*.pkl'):
-        # type: List[Dict[str, np.ndarray]]
-        inputs = pickle.load(inp_path.open('rb'))
-        outputs = backend.predict(model, inputs)
+    inputs = pickle.load(Path(input_path).open('rb'))
+    outputs = backend.predict(model_path, inputs)
 
 
 def summarize(outputs: Dict[str, np.ndarray]):

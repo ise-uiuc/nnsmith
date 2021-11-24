@@ -2,26 +2,12 @@
 
 This project is under heavy development at this point.
 
-## Notes
+**Please** put bug reports/trackings on this [google sheet](https://docs.google.com/spreadsheets/d/15YY88x_JyZWom2YGNW2JO0JdqNVYWzPbaaRyhVxBJ_Y/edit#gid=0).
 
-- To quickly install latest TVM on a linux machine (w/ CUDA 10.2 or higher): 
-    - `pip install tlcpack-nightly-cu102 -f https://tlcpack.ai/wheels`
-    - See also: https://tlcpack.ai/
-- Please visit the following websites to learn about the operator conversion coverage when you decide to add new operators in our generator. That said, always prefer operators that are acceptable for most frameworks.
-    - [TensorRT-ONNX Coverage](https://github.com/onnx/onnx-tensorrt/blob/master/docs/operators.md)
-    - [PyTorch-ONNX Coverage](https://github.com/pytorch/pytorch/blob/master/caffe2/python/onnx/ONNXOpCoverage.md)
-    - [TensorFlow-ONNX Coverage](https://github.com/onnx/onnx-tensorflow/blob/master/doc/support_status.md)
-    - [Glow-ONNX Coverage](https://github.com/pytorch/glow/tree/d7bd6c59e68a105edafe094ee77c987903eb24a5/tests/models/onnxModels)
-    - TVM-ONNX Coverage: N/A
-- To use ONNXRuntime on GPU & ONNX Simplifier:
+## Quick Start
+
 ```shell
-pip uninstall -y onnxruntime onnxruntime-gpu
-pip install onnxruntime 
-pip install onnxruntime-gpu # the order matters; and you have to split the install steps;
-```
-- To generate models && inputs and launch differential testing:
-```shell
-root='./tmp/seed1' # the path storing (to store) the model and inputs (outputs and bug reports)
+export root='./tmp/seed1' # the path storing (to store) the model and inputs (outputs and bug reports)
 # See difftest.py for the spec of the file structure
 
 python ./nnsmith/input_gen.py --root ./tmp/seed1 # generate models and inputs
@@ -37,8 +23,50 @@ python -m nnsmith.backend_executor --root $root --backend xla # test
 python -m nnsmith.difftest --root $root
 
 # fuzzing
-python nnsmith/fuzz.py
+export target=fuzz_report
+python nnsmith/fuzz.py --report $target
+# Bug report will be put under `$target` (fuzz_report by default).
+# Under $target
+# - cov_by_time.csv               ~ csv to plot the coverage trend; (use `plot_cov.py`).
+# - meta.txt                      ~ metadata.
+# - ${ErrType}__${ID}/      
+#                    - err.txt    ~ error message
+#                    - model.onnx ~ error model
+
+python plot_cov.py -f $target # -cl 80000
+# use `-cl` to set the axis bias.
 ```
+
+## Notes
+
+<details><summary><b>To use ONNXRuntime on GPU & ONNX Simplifier</b> <i>[click to expand]</i></summary>
+<div>
+
+```shell
+pip uninstall -y onnxruntime onnxruntime-gpu
+pip install onnxruntime 
+pip install onnxruntime-gpu # the order matters; and you have to split the install steps;
+```
+
+</div>
+</details>
+
+<details><summary><b>Misc</b> <i>[click to expand]</i></summary>
+<div>
+
+- To quickly install latest TVM on a linux machine (w/ CUDA 10.2 or higher): 
+    - `pip install tlcpack-nightly-cu102 -f https://tlcpack.ai/wheels`
+    - See also: https://tlcpack.ai/
+
+- Please visit the following websites to learn about the operator conversion coverage when you decide to add new operators in our generator. That said, always prefer operators that are acceptable for most frameworks.
+    - [TensorRT-ONNX Coverage](https://github.com/onnx/onnx-tensorrt/blob/master/docs/operators.md)
+    - [PyTorch-ONNX Coverage](https://github.com/pytorch/pytorch/blob/master/caffe2/python/onnx/ONNXOpCoverage.md)
+    - [TensorFlow-ONNX Coverage](https://github.com/onnx/onnx-tensorflow/blob/master/doc/support_status.md)
+    - [Glow-ONNX Coverage](https://github.com/pytorch/glow/tree/d7bd6c59e68a105edafe094ee77c987903eb24a5/tests/models/onnxModels)
+    - TVM-ONNX Coverage: N/A
+
+</div>
+</details>
 
 ## Progress & TODOs
 
