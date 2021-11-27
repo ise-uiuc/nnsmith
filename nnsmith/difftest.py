@@ -50,11 +50,17 @@ def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarr
             f'{obtained_name} v.s. {oracle_name} mismatch in #{index} tensor: {str(err)}')
 
 
-def known_bug(report: dict):
-    def TRT_ROUND(report: dict):
+def known_bug(report: dict, db: List[dict]):
+    def trt_round(report: dict):
         return (report['backend'] == BackendCreator.NAME_MAP['trt'] and
                 'getPluginCreator could not find plugin: Round version: 1' in report['stderr'])
-    filters = [TRT_ROUND]
+
+    def same_model_same_stderr(report: dict):
+        last = db[-1]
+        return (report['backend'] == last['backend'] and report['model_idx'] == last['model_idx'] and
+                report['stderr'] == last['stderr'])
+
+    filters = [trt_round, same_model_same_stderr]
     for f in filters:
         if f(report):
             return True
@@ -84,11 +90,11 @@ def difftest(root: str):
     output_dir = root / 'output'
     # numerical consistency check
     report = []
-    for model_path in sorted(output_dir.glob('*/')):  # reproducibility
-        model_name = model_path.name
+    for model_folder in sorted(output_dir.glob('*/')):  # reproducibility
+        model_name = model_folder.name
 
         def get_meta_info():
-            a = list(model_path.glob(f'*.output.*.pkl'))
+            a = list(model_folder.glob(f'*.output.*.pkl'))
             bknd_names = set(map(lambda x: x.name.split('.')[0], a))
             num_out = len(a) // len(bknd_names)
             assert num_out == len(list(
@@ -121,7 +127,8 @@ def difftest(root: str):
                     assert_allclose(output, oracle, out_path, oracle_path)
                 except ModeledError as err:
                     item = {
-                        'model_idx': model_path.name,
+                        'model_idx': model_folder.name,
+                        'model_path': str(model_folder / 'model.onnx'),
                         'input_path': str(output_dir.parent / 'model_input' / model_name / f'input.{i}.pkl'),
                         'backend': backend,
                         'oracle': oracle_name,
@@ -132,7 +139,7 @@ def difftest(root: str):
                         'stdout': open(out_path + '.stdout').read(),
                         'stderr': open(out_path + '.stderr').read(),
                     }
-                    item['known'] = known_bug(item)
+                    item['known'] = known_bug(item, report)
                     report.append(item)
                     print(err)
     import json
@@ -142,8 +149,8 @@ def difftest(root: str):
     for i in report:
         i['error'] = str(i['error'])
     json.dump(report, open(root / 'report.json', 'w'), indent=2)
-    if len(report) > 0:
-        print(f'{len(report)} differences found!!!')
+    if len(df[df.known]) > 0:
+        print(f'{len(df[df.known])} unknown unique differences found!!!')
     else:
         print('No differences found!')
 
