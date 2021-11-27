@@ -256,7 +256,7 @@ def gen_inputs_for_all(root, num_inputs=2, models=None, input_gen: InputGenBase 
     profile.to_csv(Path(root) / 'gen_profile.csv')
 
 
-def gen_models(root: str, num_models):
+def gen_models(root: str, num_models, gen_args):
     root = Path(root)
     if root.exists():
         raise Exception(f'Folder {root} already exists')
@@ -268,7 +268,7 @@ def gen_models(root: str, num_models):
         seed = int(time.time() * 1000)
         print(f'seeding {seed}')
         check_call(
-            f'python -m nnsmith.gen --output_path {model} --seed {seed}', shell=True)
+            f'python -m nnsmith.graph_gen --output_path {model} --seed {seed} {gen_args}', shell=True)
 
 
 if __name__ == '__main__':
@@ -281,9 +281,10 @@ if __name__ == '__main__':
     parser.add_argument('--model', type=str, nargs='*',
                         help='Generate input for specific model, specified as the path to the .onnx file.')
     parser.add_argument('--input_gen_method', type=str, default='v3')
+    parser.add_argument('--model_gen_args')
     args = parser.parse_args()
     if not args.input_only:
-        gen_models(args.root, args.num_models)
+        gen_models(args.root, args.num_models, args.model_gen_args)
     gen_inputs_func = {
         'v1': InputGenV1(),
         'v2': InputGenV2(),
