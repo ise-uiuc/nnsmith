@@ -7,6 +7,8 @@ from queue import Empty
 import time
 import numpy as np
 from tqdm import tqdm
+from nnsmith import util
+import sys
 
 
 class CrashExecutor(DiffTestBackend):
@@ -89,10 +91,13 @@ def run_backend(root: str, backend_creator: BackendCreator, timeout: int):
                 break
             # add a placeholder for the output. If the backend crashes, the output will be None
             model, inp_path, out_path = task
-            pickle.dump({'exit_code': 1, 'outputs': None}, out_path.open('wb'))
+            pickle.dump({'exit_code': 1, 'outputs': None},
+                        out_path.open('wb'))
             inputs = pickle.load(inp_path.open('rb'))  # type: List[Dict[str, np.ndarray]] # noqa
-            outputs = backend.predict(model, inputs)
-            outputs = summarize(outputs)
+            with util.stdout_redirected(f"{out_path}.stdout"), \
+                    util.stdout_redirected(f"{out_path}.stderr", sys.stderr):
+                outputs = backend.predict(model, inputs)
+                outputs = summarize(outputs)
             pickle.dump({'exit_code': 0, 'outputs': outputs},
                         out_path.open('wb'))
             r.put(True)

@@ -115,7 +115,10 @@ def difftest(root: str):
                         'input_idx': i,
                         'output_backend': out_path,
                         'output_oracle': oracle_path,
-                        'error': err})
+                        'error': err,
+                        'stdout': open(out_path + '.stdout').read(),
+                        'stderr': open(out_path + '.stderr').read(),
+                    })
                     print(err)
     import json
     pickle.dump(report, open(root / 'report.pkl', 'wb'))
