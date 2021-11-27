@@ -6,6 +6,8 @@ from nnsmith.error import *
 import pickle
 from pathlib import Path
 from tqdm import tqdm
+from nnsmith.backend_executor import BackendCreator
+import pandas as pd
 
 
 def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarray], obtained_name: str, oracle_name: str, nan_as_err=True):
@@ -46,6 +48,17 @@ def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarr
         # print(err) # Mute.
         raise IncorrectResult(
             f'{obtained_name} v.s. {oracle_name} mismatch in #{index} tensor: {str(err)}')
+
+
+def known_bug(report: dict):
+    def TRT_ROUND(report: dict):
+        return (report['backend'] == BackendCreator.NAME_MAP['trt'] and
+                'getPluginCreator could not find plugin: Round version: 1' in report['stderr'])
+    filters = [TRT_ROUND]
+    for f in filters:
+        if f(report):
+            return True
+    return False
 
 
 def difftest(root: str):
@@ -107,7 +120,7 @@ def difftest(root: str):
                 try:
                     assert_allclose(output, oracle, out_path, oracle_path)
                 except ModeledError as err:
-                    report.append({
+                    item = {
                         'model_idx': model_path.name,
                         'input_path': str(output_dir.parent / 'model_input' / model_name / f'input.{i}.pkl'),
                         'backend': backend,
@@ -118,10 +131,14 @@ def difftest(root: str):
                         'error': err,
                         'stdout': open(out_path + '.stdout').read(),
                         'stderr': open(out_path + '.stderr').read(),
-                    })
+                    }
+                    item['known'] = known_bug(item)
+                    report.append(item)
                     print(err)
     import json
-    pickle.dump(report, open(root / 'report.pkl', 'wb'))
+    df = pd.DataFrame(report)
+    df.to_pickle(str(root / 'report.pkl'))
+    # pickle.dump(report, open(root / 'report.pkl', 'wb'))
     for i in report:
         i['error'] = str(i['error'])
     json.dump(report, open(root / 'report.json', 'w'), indent=2)

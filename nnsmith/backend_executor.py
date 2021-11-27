@@ -64,12 +64,18 @@ class BackendCreator:
             raise ValueError(f'unknown backend: {name}')
 
 
-def run_backend_same_proc(model_path: str, input_path: str, backend: DiffTestBackend):
+def run_backend_same_proc(model_path: str, input_path: str, backend: BackendCreator):
     """This function is for debugging purpose.
     Run the backend on the same process.
     """
-    inputs = pickle.load(Path(input_path).open('rb'))
-    outputs = backend.predict(model_path, inputs)
+    backend = backend()
+    if input_path is not None:
+        inputs = pickle.load(Path(input_path).open('rb'))
+        outputs = backend.predict(model_path, inputs)
+    else:
+        for inp_path in tqdm(sorted(list(Path(model_path).parent.glob(f'input.*.pkl')))):
+            inputs = pickle.load(inp_path.open('rb'))
+            outputs = backend.predict(model_path, inputs)
 
 
 def summarize(outputs: Dict[str, np.ndarray]):
@@ -167,7 +173,7 @@ if __name__ == '__main__':
     parser.add_argument('--model', type=str,
                         help='For debugging purpose: path to onnx model;')
     parser.add_argument('--input', type=str,
-                        help='For debugging purpose: path to input pkl file.')
+                        help='For debugging purpose: path to input pkl file. If not specified, it will run on all inputs found within the same folder as the model')
     # TODO: Add support for passing backend-specific options
     args = parser.parse_args()
 
