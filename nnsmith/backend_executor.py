@@ -9,6 +9,7 @@ import numpy as np
 from tqdm import tqdm
 from nnsmith import util
 import sys
+import traceback
 
 
 class CrashExecutor(DiffTestBackend):
@@ -64,7 +65,7 @@ class BackendCreator:
             raise ValueError(f'unknown backend: {name}')
 
 
-def run_backend_same_proc(model_path: str, input_path: str, backend: BackendCreator):
+def run_backend_same_proc(model_path: str, input_path: str, backend: BackendCreator, dump_out: str):
     """This function is for debugging purpose.
     Run the backend on the same process.
     """
@@ -73,9 +74,12 @@ def run_backend_same_proc(model_path: str, input_path: str, backend: BackendCrea
         inputs = pickle.load(Path(input_path).open('rb'))
         outputs = backend.predict(model_path, inputs)
     else:
+        outputs = []
         for inp_path in tqdm(sorted(list(Path(model_path).parent.glob(f'input.*.pkl')))):
             inputs = pickle.load(inp_path.open('rb'))
-            outputs = backend.predict(model_path, inputs)
+            outputs.append(backend.predict(model_path, inputs))
+    if dump_out is not None:
+        pickle.dump(outputs, open(dump_out, 'wb'))
 
 
 def summarize(outputs: Dict[str, np.ndarray]):
@@ -102,8 +106,12 @@ def run_backend(root: str, backend_creator: BackendCreator, timeout: int):
             inputs = pickle.load(inp_path.open('rb'))  # type: List[Dict[str, np.ndarray]] # noqa
             with util.stdout_redirected(f"{out_path}.stdout"), \
                     util.stdout_redirected(f"{out_path}.stderr", sys.stderr):
-                outputs = backend.predict(model, inputs)
-                outputs = summarize(outputs)
+                try:  # try block to catch the exception message before the rediction exits
+                    outputs = backend.predict(model, inputs)
+                    outputs = summarize(outputs)
+                except:
+                    traceback.print_exc()
+                    return
             pickle.dump({'exit_code': 0, 'outputs': outputs},
                         out_path.open('wb'))
             r.put(True)
@@ -174,6 +182,8 @@ if __name__ == '__main__':
                         help='For debugging purpose: path to onnx model;')
     parser.add_argument('--input', type=str,
                         help='For debugging purpose: path to input pkl file. If not specified, it will run on all inputs found within the same folder as the model')
+    parser.add_argument(
+        '--dump_out', help='For debugging purposes. Dumps the raw output instead of summary to the specified path')
     # TODO: Add support for passing backend-specific options
     args = parser.parse_args()
 
@@ -181,4 +191,4 @@ if __name__ == '__main__':
     if args.model is None:
         run_backend(args.root, bknd, args.timeout)
     else:
-        run_backend_same_proc(args.model, args.input, bknd)
+        run_backend_same_proc(args.model, args.input, bknd, args.dump_out)

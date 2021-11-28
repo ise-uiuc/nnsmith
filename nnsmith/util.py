@@ -12,18 +12,25 @@ def fileno(file_or_fd):
 
 @contextmanager
 def stdout_redirected(to=os.devnull, stdout=None):
+    # credit: https://stackoverflow.com/questions/4675728/redirect-stdout-to-a-file-in-python/22434262#22434262
     if stdout is None:
         stdout = sys.stdout
+    if stdout is sys.stdout:
+        stream = 'stdout'
+    elif stdout is sys.stderr:
+        stream = 'stderr'
+    else:
+        raise ValueError("Expected `sys.stdout` or `sys.stderr`")
 
     stdout_fd = fileno(stdout)
     # copy stdout_fd before it is overwritten
     # NOTE: `copied` is inheritable on Windows when duplicating a standard stream
-    with os.fdopen(os.dup(stdout_fd), 'ab') as copied:
+    with os.fdopen(os.dup(stdout_fd), 'wb') as copied:
         stdout.flush()  # flush library buffers that dup2 knows nothing about
         try:
             os.dup2(fileno(to), stdout_fd)  # $ exec >&to
         except ValueError:  # filename
-            with open(to, 'ab') as to_file:
+            with open(to, 'wb') as to_file:
                 os.dup2(to_file.fileno(), stdout_fd)  # $ exec > to
         try:
             yield stdout  # allow code to be run with the redirected stdout
