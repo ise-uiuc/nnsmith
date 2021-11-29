@@ -21,8 +21,77 @@ import torch
 # TODO: add interval analysis for shape dimension size;
 
 
+def align_bvs(left: z3.BitVecRef, right: z3.BitVecRef):
+    assert isinstance(left, z3.BitVecRef)
+    assert isinstance(right, z3.BitVecRef)
+    left_size = left.size()
+    right_size = right.size()
+    if left_size < right_size:
+        left = z3.ZeroExt(right_size - left_size, left)
+    elif right_size < left_size:
+        right = z3.ZeroExt(left_size - right_size, right)
+    return (left, right)
+
+
+def nnsmith_eq(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
+    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
+        left, right = align_bvs(left, right)
+    return left == right
+
+def nnsmith_ge(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
+    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
+        left, right = align_bvs(left, right)
+        return z3.UGE(left, right)
+    return left >= right
+
+def nnsmith_gt(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
+    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
+        left, right = align_bvs(left, right)
+        return z3.UGT(left, right)
+    return left > right
+
+def nnsmith_le(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
+    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
+        left, right = align_bvs(left, right)
+        return z3.ULE(left, right)
+    return left <= right
+
+def nnsmith_lt(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
+    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
+        left, right = align_bvs(left, right)
+        return z3.ULT(left, right)
+    return left < right
+
+def nnsmith_div(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
+    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
+        left, right = align_bvs(left, right)
+        return z3.UDiv(left, right)
+    return left / right
+
+def nnsmith_mod(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
+    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
+        left, right = align_bvs(left, right)
+        return z3.URem(left, right)
+    return left % right
+
+def nnsmith_mul(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
+    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
+        left, right = align_bvs(left, right)
+    return left * right
+
+def nnsmith_add(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
+    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
+        left, right = align_bvs(left, right)
+    return left % right
+
+def nnsmith_sub(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
+    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
+        left, right = align_bvs(left, right)
+    return left - right
+
+
 class ShapeVar:
-    def __init__(self, shape: List[Union[int, z3.BitVecRef]]):
+    def __init__(self, shape: List[Union[int, z3.ExprRef]]):
         self.shape = list(shape)
 
     def __repr__(self):
@@ -31,9 +100,9 @@ class ShapeVar:
     def gt_zero(self, no_replica=[]):
         ret = []
         for s in self.shape:
-            if isinstance(s, z3.BitVecRef):
+            if isinstance(s, z3.ExprRef):
                 if s not in no_replica:
-                    ret.append(s > 0)
+                    ret.append(nnsmith_gt(s, 0))
             else:
                 assert s > 0
         return ret
@@ -43,7 +112,7 @@ class ShapeVar:
         return torch.Size(self.shape)
 
     def constains_symbol(self) -> bool:
-        return any(isinstance(s, z3.BitVecRef) for s in self.shape)
+        return any(isinstance(s, z3.ExprRef) for s in self.shape)
 
     def nelement(self):
         if len(self.shape) == 0:  # Scalar
@@ -92,7 +161,7 @@ class AbsOpBase(ABC):
         self.out_dims = []
         # Require the input dimension sizes to be equivalent.
         self.same_inp_dims = False
-        # NOTE: the input of operator constructors are all Union[int, z3.BitVecRef].
+        # NOTE: the input of operator constructors are all Union[int, z3.ExprRef].
         self.extra_attrs = {}
 
     @abstractmethod  # Overload me!
@@ -129,7 +198,7 @@ def concretize(op: AbsOpBase, model: z3.ModelRef) -> AbsOpBase:
     for idx, key in enumerate(construct_param_dict):
         param = getattr(op, key)
         values.append(param)
-        if isinstance(param, z3.BitVecRef):
+        if isinstance(param, z3.ExprRef):
             symbolic_idx.append(idx)
     for idx in symbolic_idx:
         values[idx] = model.eval(values[idx]).as_long()
@@ -329,8 +398,8 @@ class Add(BinaryOpBase):
         assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
         ret = []
         for l, r in zip(input_shapes[0].shape, input_shapes[1].shape):
-            if isinstance(l, z3.BitVecRef) or isinstance(r, z3.BitVecRef):
-                ret.append(l == r)
+            if isinstance(l, z3.ExprRef) or isinstance(r, z3.ExprRef):
+                ret.append(nnsmith_eq(l, r))
             else:
                 assert l == r
         return ret
@@ -341,7 +410,7 @@ class Add(BinaryOpBase):
 
 class Expand(UnaryOpBase, ABC):
     # expand_dim cannot be symbolic. So just expand it.
-    def __init__(self, expand_last_dim: int, expand_n: Union[int, z3.BitVecRef]):
+    def __init__(self, expand_last_dim: int, expand_n: Union[int, z3.ExprRef]):
         """See https://pytorch.org/docs/stable/generated/torch.Tensor.expand.html
         """
         super().__init__()
@@ -365,15 +434,15 @@ class Expand(UnaryOpBase, ABC):
         assert self.expand_last_dim > 0
 
         input_shape = input_shapes[0].shape
-        if isinstance(self.expand_n, z3.BitVecRef):
+        if isinstance(self.expand_n, z3.ExprRef):
             if self.expand_last_dim <= len(input_shape):  # index valid
                 cons = [z3.Or(
                     z3.And(
-                        input_shape[-self.expand_last_dim] == 1,
-                        self.expand_n >= 1),
+                        nnsmith_eq(input_shape[-self.expand_last_dim], 1),
+                        nnsmith_ge(self.expand_n, 1)),
                     z3.And(
-                        input_shape[-self.expand_last_dim] == self.expand_n,
-                        self.expand_n >= 1))]
+                        nnsmith_eq(input_shape[-self.expand_last_dim],self.expand_n),
+                        nnsmith_ge(self.expand_n, 1)))]
                 return cons
         else:
             # It is also valid to expand to 0. But just too tricky...
@@ -387,34 +456,34 @@ class Expand(UnaryOpBase, ABC):
 
 
 class ExpandLast1(Expand):
-    def __init__(self, expand_n: Union[int, z3.BitVecRef]):
+    def __init__(self, expand_n: Union[int, z3.ExprRef]):
         super().__init__(expand_last_dim=1, expand_n=expand_n)
 
 
 class ExpandLast2(Expand):
-    def __init__(self, expand_n: Union[int, z3.BitVecRef]):
+    def __init__(self, expand_n: Union[int, z3.ExprRef]):
         super().__init__(expand_last_dim=2, expand_n=expand_n)
 
 
 class ExpandLast3(Expand):
-    def __init__(self, expand_n: Union[int, z3.BitVecRef]):
+    def __init__(self, expand_n: Union[int, z3.ExprRef]):
         super().__init__(expand_last_dim=3, expand_n=expand_n)
 
 
 class ExpandLast4(Expand):
-    def __init__(self, expand_n: Union[int, z3.BitVecRef]):
+    def __init__(self, expand_n: Union[int, z3.ExprRef]):
         super().__init__(expand_last_dim=4, expand_n=expand_n)
 
 
 class NCHWConv2d(UnaryOpBase):
 
     def __init__(self,
-                 in_channels: Union[int, z3.BitVecRef],
-                 out_channels: Union[int, z3.BitVecRef],
-                 kernel_h_size: Union[int, z3.BitVecRef],
-                 kernel_w_size: Union[int, z3.BitVecRef],
-                 stride: Union[int, z3.BitVecRef],
-                 padding: Union[int, z3.BitVecRef]):
+                 in_channels: Union[int, z3.ExprRef],
+                 out_channels: Union[int, z3.ExprRef],
+                 kernel_h_size: Union[int, z3.ExprRef],
+                 kernel_w_size: Union[int, z3.ExprRef],
+                 stride: Union[int, z3.ExprRef],
+                 padding: Union[int, z3.ExprRef]):
         """See https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
         """
         super().__init__()
@@ -430,11 +499,11 @@ class NCHWConv2d(UnaryOpBase):
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         # not symbolic
-        if not isinstance(self.in_channels, z3.BitVecRef) and not isinstance(input_shapes[0].shape[1], z3.BitVecRef):
+        if not isinstance(self.in_channels, z3.ExprRef) and not isinstance(input_shapes[0].shape[1], z3.ExprRef):
             assert input_shapes[0].shape[1] == self.in_channels
 
-        is_symbolic_inp = input_shapes[0].constains_symbol() or isinstance(self.kernel_w_size, z3.BitVecRef) or isinstance(
-            self.kernel_h_size, z3.BitVecRef) or isinstance(self.stride, z3.BitVecRef) or isinstance(self.padding, z3.BitVecRef)
+        is_symbolic_inp = input_shapes[0].constains_symbol() or isinstance(self.kernel_w_size, z3.ExprRef) or isinstance(
+            self.kernel_h_size, z3.ExprRef) or isinstance(self.stride, z3.ExprRef) or isinstance(self.padding, z3.ExprRef)
 
         shape_var = ShapeVar([])
         # Batch dim: just copy
@@ -447,9 +516,9 @@ class NCHWConv2d(UnaryOpBase):
                 (input_shapes[0].shape[3] - self.kernel_w_size + 2 * self.padding) // self.stride + 1)
         else:
             shape_var.shape.append(
-                (input_shapes[0].shape[2] - self.kernel_h_size + 2 * self.padding) / self.stride + 1)
+                (nnsmith_div(nnsmith_add(nnsmith_sub(input_shapes[0].shape[2], self.kernel_h_size), 2 * self.padding), self.stride) + 1))
             shape_var.shape.append(
-                (input_shapes[0].shape[3] - self.kernel_w_size + 2 * self.padding) / self.stride + 1)
+                (nnsmith_div(nnsmith_add(nnsmith_sub(input_shapes[0].shape[3], self.kernel_h_size), 2 * self.padding), self.stride) + 1))
         return [shape_var]
 
     def _requires(self, input_shapes):
@@ -483,7 +552,7 @@ class Reshape(UnaryOpBase, ABC):
     def __init__(self):
         super().__init__()
         self.inp_dims = [-1]
-        self.target_shape: List[Union[int, z3.BitVecRef]]
+        self.target_shape: List[Union[int, z3.ExprRef]]
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         if -1 not in self.target_shape:
@@ -505,7 +574,7 @@ class Reshape(UnaryOpBase, ABC):
         # First see if there's any symbols in the expression
         symbol_indices = []
         for v in input_shapes[0].shape:
-            if isinstance(v, z3.BitVecRef):
+            if isinstance(v, z3.ExprRef):
                 symbol_indices.append(i)
         if len(symbol_indices) == 0:
             shape_var.shape[auto_dim] = reduce(
@@ -543,7 +612,7 @@ class Reshape(UnaryOpBase, ABC):
 # Expand 6 times.
 class Reshape1D(Reshape):
     # Inputs are target shape.
-    def __init__(self, dim0: Union[int, z3.BitVecRef]):
+    def __init__(self, dim0: Union[int, z3.ExprRef]):
         super().__init__()
         self.dim0 = dim0
         self.target_shape = [dim0]
@@ -551,7 +620,7 @@ class Reshape1D(Reshape):
 
 
 class Reshape2D(Reshape):
-    def __init__(self, dim0: Union[int, z3.BitVecRef], dim1: Union[int, z3.BitVecRef]):
+    def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef]):
         super().__init__()
         self.dim0 = dim0
         self.dim1 = dim1
@@ -560,7 +629,7 @@ class Reshape2D(Reshape):
 
 
 class Reshape3D(Reshape):
-    def __init__(self, dim0: Union[int, z3.BitVecRef], dim1: Union[int, z3.BitVecRef], dim2: Union[int, z3.BitVecRef]):
+    def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef]):
         super().__init__()
         self.dim0 = dim0
         self.dim1 = dim1
@@ -570,8 +639,8 @@ class Reshape3D(Reshape):
 
 
 class Reshape4D(Reshape):
-    def __init__(self, dim0: Union[int, z3.BitVecRef], dim1: Union[int, z3.BitVecRef], dim2: Union[int, z3.BitVecRef],
-                 dim3: Union[int, z3.BitVecRef]):
+    def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef],
+                 dim3: Union[int, z3.ExprRef]):
         super().__init__()
         self.dim0 = dim0
         self.dim1 = dim1
@@ -584,8 +653,8 @@ class Reshape4D(Reshape):
 
 
 class Reshape5D(Reshape):
-    def __init__(self, dim0: Union[int, z3.BitVecRef], dim1: Union[int, z3.BitVecRef], dim2: Union[int, z3.BitVecRef],
-                 dim3: Union[int, z3.BitVecRef], dim4: Union[int, z3.BitVecRef]):
+    def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef],
+                 dim3: Union[int, z3.ExprRef], dim4: Union[int, z3.ExprRef]):
         super().__init__()
         self.dim0 = dim0
         self.dim1 = dim1
@@ -597,8 +666,8 @@ class Reshape5D(Reshape):
 
 
 class Reshape6D(Reshape):
-    def __init__(self, dim0: Union[int, z3.BitVecRef], dim1: Union[int, z3.BitVecRef], dim2: Union[int, z3.BitVecRef],
-                 dim3: Union[int, z3.BitVecRef], dim4: Union[int, z3.BitVecRef], dim5: Union[int, z3.BitVecRef]):
+    def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef],
+                 dim3: Union[int, z3.ExprRef], dim4: Union[int, z3.ExprRef], dim5: Union[int, z3.ExprRef]):
         super().__init__()
         self.dim0 = dim0
         self.dim1 = dim1
@@ -617,7 +686,7 @@ class Transpose(UnaryOpBase, ABC):
         super().__init__()
         self.inp_dims = [-1]
 
-    def _init_swap_dims(self, input_shape: List[Union[int, z3.BitVecRef]]):
+    def _init_swap_dims(self, input_shape: List[Union[int, z3.ExprRef]]):
         assert len(input_shape) >= 1
         if 'dim0' not in self.extra_attrs or 'dim1' not in self.extra_attrs:
             max_dim = len(input_shape) - 1
