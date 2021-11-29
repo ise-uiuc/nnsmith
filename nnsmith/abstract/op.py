@@ -46,6 +46,8 @@ class ShapeVar:
         return any(isinstance(s, z3.ArithRef) for s in self.shape)
 
     def nelement(self):
+        if len(self.shape) == 0:  # Scalar
+            return 1
         return reduce(lambda x, y: x * y, self.shape)
 
     @staticmethod
@@ -640,6 +642,290 @@ class Transpose(UnaryOpBase, ABC):
             dim0, dim1 = self._init_swap_dims([x.shape])
             return x.transpose(dim0, dim1)
         return f
+
+
+# Sum, Min, Max, Mean, ArgMin, ArgMax, Squeeze, Size
+
+class Size(UnaryOpBase):
+    def __init__(self):
+        super().__init__()
+        self.inp_dims = [-1]
+        self.out_dims = [1]
+
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        return [ShapeVar([len(input_shapes[0].shape)])]
+
+    def torch(self):
+        return lambda x: torch.tensor(x.shape).float()
+
+
+class ReduceBase(UnaryOpBase, ABC):
+    def __init__(self, num_dim: int):
+        super().__init__()
+        assert num_dim >= 1
+        self.num_dim = num_dim
+        self.extra_attrs['reduce_dim'] = random.randint(0, self.num_dim - 1)
+
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        assert len(input_shapes[0].shape) == self.num_dim
+        shape_var = input_shapes[0]
+        svar_list = []
+        for i, v in enumerate(shape_var.shape):
+            if i != self.extra_attrs['reduce_dim']:
+                svar_list.append(v)
+        return [ShapeVar(svar_list)]
+
+    def _requires(self, input_shapes: List[ShapeVar]):
+        assert len(input_shapes[0].shape) >= self.num_dim
+        return []
+
+
+class SqueezeBase(ReduceBase, ABC):
+    def _requires(self, input_shapes):
+        assert len(input_shapes[0].shape) == self.num_dim
+        if isinstance(input_shapes[0].shape[self.extra_attrs['reduce_dim']], z3.ArithRef):
+            return [input_shapes[0].shape[self.extra_attrs['reduce_dim']] == 1]
+        else:
+            assert input_shapes[0].shape[self.extra_attrs['reduce_dim']] == 1
+        return []
+
+    def torch(self):
+        return lambda x: x.squeeze(self.extra_attrs['reduce_dim'])
+
+# FIXME: Support 1D (vector -> scalar)
+
+
+class Squeeze2D(SqueezeBase):
+    def __init__(self):
+        super().__init__(2)
+        self.out_dims = [1]
+        self.inp_dims = [2]
+
+
+class Squeeze3D(SqueezeBase):
+    def __init__(self):
+        super().__init__(3)
+        self.out_dims = [2]
+        self.inp_dims = [3]
+
+
+class Squeeze4D(SqueezeBase):
+    def __init__(self):
+        super().__init__(4)
+        self.out_dims = [3]
+        self.inp_dims = [4]
+
+
+class Squeeze5D(SqueezeBase):
+    def __init__(self):
+        super().__init__(5)
+        self.out_dims = [4]
+        self.inp_dims = [5]
+
+
+class Sum(ReduceBase, ABC):
+    def torch(self):
+        return lambda x: x.sum(self.extra_attrs['reduce_dim'])
+
+
+class Sum2D(Sum):
+    def __init__(self):
+        super().__init__(2)
+        self.out_dims = [1]
+        self.inp_dims = [2]
+
+
+class Sum3D(Sum):
+    def __init__(self):
+        super().__init__(3)
+        self.out_dims = [2]
+        self.inp_dims = [3]
+
+
+class Sum4D(Sum):
+    def __init__(self):
+        super().__init__(4)
+        self.out_dims = [3]
+        self.inp_dims = [4]
+
+
+class Sum5D(Sum):
+    def __init__(self):
+        super().__init__(5)
+        self.out_dims = [4]
+        self.inp_dims = [5]
+
+
+class Min(ReduceBase, ABC):
+    def torch(self):
+        return lambda x: x.min(self.extra_attrs['reduce_dim']).values
+
+
+class Min2D(Min):
+    def __init__(self):
+        super().__init__(2)
+        self.out_dims = [1]
+        self.inp_dims = [2]
+
+
+class Min3D(Sum):
+    def __init__(self):
+        super().__init__(3)
+        self.out_dims = [2]
+        self.inp_dims = [3]
+
+
+class Min4D(Min):
+    def __init__(self):
+        super().__init__(4)
+        self.out_dims = [3]
+        self.inp_dims = [4]
+
+
+class Min5D(Min):
+    def __init__(self):
+        super().__init__(5)
+        self.out_dims = [4]
+        self.inp_dims = [5]
+
+
+class Max(ReduceBase, ABC):
+    def torch(self):
+        return lambda x: x.max(self.extra_attrs['reduce_dim']).values
+
+
+class Max2D(Max):
+    def __init__(self):
+        super().__init__(2)
+        self.out_dims = [1]
+        self.inp_dims = [2]
+
+
+class Max3D(Max):
+    def __init__(self):
+        super().__init__(3)
+        self.out_dims = [2]
+        self.inp_dims = [3]
+
+
+class Max4D(Max):
+    def __init__(self):
+        super().__init__(4)
+        self.out_dims = [3]
+        self.inp_dims = [4]
+
+
+class Max5D(Max):
+    def __init__(self):
+        super().__init__(5)
+        self.out_dims = [4]
+        self.inp_dims = [5]
+
+
+class Mean(ReduceBase, ABC):
+    def torch(self):
+        return lambda x: x.mean(self.extra_attrs['reduce_dim'])
+
+
+class Mean1D(Mean):
+    def __init__(self):
+        super().__init__(1)
+        self.out_dims = [0]
+        self.inp_dims = [1]
+
+
+class Mean2D(Mean):
+    def __init__(self):
+        super().__init__(2)
+        self.out_dims = [1]
+        self.inp_dims = [2]
+
+
+class Mean3D(Mean):
+    def __init__(self):
+        super().__init__(3)
+        self.out_dims = [2]
+        self.inp_dims = [3]
+
+
+class Mean4D(Mean):
+    def __init__(self):
+        super().__init__(4)
+        self.out_dims = [3]
+        self.inp_dims = [4]
+
+
+class Mean5D(Mean):
+    def __init__(self):
+        super().__init__(5)
+        self.out_dims = [4]
+        self.inp_dims = [5]
+
+
+class ArgMin(ReduceBase, ABC):
+    def torch(self):
+        return lambda x: x.argmin(self.extra_attrs['reduce_dim']).float()
+
+
+class ArgMin2D(ArgMin):
+    def __init__(self):
+        super().__init__(2)
+        self.out_dims = [1]
+        self.inp_dims = [2]
+
+
+class ArgMin3D(ArgMin):
+    def __init__(self):
+        super().__init__(3)
+        self.out_dims = [2]
+        self.inp_dims = [3]
+
+
+class ArgMin4D(ArgMin):
+    def __init__(self):
+        super().__init__(4)
+        self.out_dims = [3]
+        self.inp_dims = [4]
+
+
+class ArgMin5D(ArgMin):
+    def __init__(self):
+        super().__init__(5)
+        self.out_dims = [4]
+        self.inp_dims = [5]
+
+
+class ArgMax(ReduceBase, ABC):
+    def torch(self):
+        return lambda x: x.argmax(self.extra_attrs['reduce_dim']).float()
+
+
+class ArgMax2D(ArgMax):
+    def __init__(self):
+        super().__init__(2)
+        self.out_dims = [1]
+        self.inp_dims = [2]
+
+
+class ArgMax3D(ArgMax):
+    def __init__(self):
+        super().__init__(3)
+        self.out_dims = [2]
+        self.inp_dims = [3]
+
+
+class ArgMax4D(ArgMax):
+    def __init__(self):
+        super().__init__(4)
+        self.out_dims = [3]
+        self.inp_dims = [4]
+
+
+class ArgMax5D(ArgMax):
+    def __init__(self):
+        super().__init__(5)
+        self.out_dims = [4]
+        self.inp_dims = [5]
 
 
 def _glob_leaf_op_classes():

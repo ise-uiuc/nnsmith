@@ -111,7 +111,7 @@ pip install onnxruntime-gpu # the order matters; and you have to split the insta
         - Cons: generated solves might be edge cases but we can add some guiding constraints;
 - [ ] **Op Batch 2**: Focuse on multi-input & complex-shape-transfer-func models;
     - [ ] multi-input: And, Sub, Mul, Concat, Div, Greater; @jinkun
-    - [ ] complex-shape-func: Sum, Min, Max, Mean, ArgMin, ArgMax, Squeeze, Size; @jiawei
+    - [x] complex-shape-func: Sum, Min, Max, Mean, ArgMin, ArgMax, Squeeze, Size; @jiawei
 - [ ] Coverage-guided fuzzing with relation table. @jiawei
 - [ ] Dynamic model testing;
 - [ ] Enable multiple inputs;
