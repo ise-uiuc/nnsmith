@@ -56,9 +56,11 @@ def known_bug(report: dict, db: List[dict]):
                 'getPluginCreator could not find plugin: Round version: 1' in report['stderr'])
 
     def same_model_same_stderr(report: dict):
-        last = db[-1]
-        return (report['backend'] == last['backend'] and report['model_idx'] == last['model_idx'] and
-                report['stderr'] == last['stderr'])
+        for last in reversed(db):
+            if (report['backend'] == last['backend'] and report['model_idx'] == last['model_idx'] and
+                    report['stderr'] == last['stderr']):
+                return True
+        return False
 
     filters = [trt_round, same_model_same_stderr]
     for f in filters:
@@ -149,8 +151,8 @@ def difftest(root: str):
     for i in report:
         i['error'] = str(i['error'])
     json.dump(report, open(root / 'report.json', 'w'), indent=2)
-    if len(df[df.known]) > 0:
-        print(f'{len(df[df.known])} unknown unique differences found!!!')
+    if len(df) > 0 and len(df[~df.known]) > 0:
+        print(f'{len(df[~df.known])} unknown unique differences found!!!')
     else:
         print('No differences found!')
 

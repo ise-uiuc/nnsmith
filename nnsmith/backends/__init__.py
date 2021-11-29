@@ -125,7 +125,7 @@ class DiffTestBackend(ABC):
 
             inp_analysis_ret[input_node.name] = ShapeType(shape, dtype)
 
-        return inp_analysis_ret, sorted(out_analysis_names)
+        return inp_analysis_ret, out_analysis_names
 
 
 if __name__ == '__main__':

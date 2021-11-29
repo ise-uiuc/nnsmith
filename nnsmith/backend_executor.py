@@ -65,7 +65,7 @@ class BackendCreator:
             raise ValueError(f'unknown backend: {name}')
 
 
-def run_backend_same_proc(model_path: str, input_path: str, backend: BackendCreator, dump_out: str):
+def run_backend_same_proc(model_path: str, input_path: str, backend: BackendCreator, dump_raw: str):
     """This function is for debugging purpose.
     Run the backend on the same process.
     """
@@ -78,8 +78,8 @@ def run_backend_same_proc(model_path: str, input_path: str, backend: BackendCrea
         for inp_path in tqdm(sorted(list(Path(model_path).parent.glob(f'input.*.pkl')))):
             inputs = pickle.load(inp_path.open('rb'))
             outputs.append(backend.predict(model_path, inputs))
-    if dump_out is not None:
-        pickle.dump(outputs, open(dump_out, 'wb'))
+    if dump_raw is not None:
+        pickle.dump(outputs, open(dump_raw, 'wb'))
 
 
 def summarize(outputs: Dict[str, np.ndarray]):
@@ -90,7 +90,7 @@ def summarize(outputs: Dict[str, np.ndarray]):
     return m
 
 
-def run_backend(root: str, backend_creator: BackendCreator, timeout: int):
+def run_backend(root: str, backend_creator: BackendCreator, timeout: int, selected_models: List[str] = None):
     def run(q: multiprocessing.Queue, r: multiprocessing.Queue):
         backend = backend_creator()
         while True:
@@ -154,6 +154,8 @@ def run_backend(root: str, backend_creator: BackendCreator, timeout: int):
     output_dir = Path(root) / 'output'
     output_dir.mkdir(parents=True, exist_ok=True)
     model_folders = sorted(list(model_root.glob('*/')))
+    if selected_models is not None:
+        model_folders = [m for m in model_folders if m.name in selected_models]
     print(f'Found {len(model_folders)} models at {model_root}')
     for model_folder in tqdm(model_folders):
         model_name = model_folder.name
@@ -183,12 +185,16 @@ if __name__ == '__main__':
     parser.add_argument('--input', type=str,
                         help='For debugging purpose: path to input pkl file. If not specified, it will run on all inputs found within the same folder as the model')
     parser.add_argument(
-        '--dump_out', help='For debugging purposes. Dumps the raw output instead of summary to the specified path')
+        '--dump_raw', help='For debugging purposes. Dumps the raw output instead of summary to the specified path')
+    parser.add_argument('--select_model', nargs='*',
+                        help='Run the selected models only')
     # TODO: Add support for passing backend-specific options
     args = parser.parse_args()
+    if args.root is None and args.select_model is not None:
+        raise ValueError('--root is required when --select_model is used')
 
     bknd = BackendCreator(args.backend)
     if args.model is None:
-        run_backend(args.root, bknd, args.timeout)
+        run_backend(args.root, bknd, args.timeout, args.select_model)
     else:
-        run_backend_same_proc(args.model, args.input, bknd, args.dump_out)
+        run_backend_same_proc(args.model, args.input, bknd, args.dump_raw)
