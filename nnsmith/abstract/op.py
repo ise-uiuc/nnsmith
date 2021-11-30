@@ -57,6 +57,12 @@ def nnsmith_eq(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.
     return left == right
 
 
+def nnsmith_neq(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
+    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
+        left, right = align_bvs(left, right)
+    return left != right
+
+
 def nnsmith_ge(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
     if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
         left, right = align_bvs(left, right)
@@ -116,7 +122,7 @@ class ShapeVar:
         for s in self.shape:
             if isinstance(s, z3.ExprRef):
                 if not any(str(replica) == str(s) for replica in no_replica):
-                    ret.append(nnsmith_gt(s, 0))
+                    ret.append(nnsmith_neq(s, 0))
             else:
                 assert s > 0
         return ret
@@ -620,8 +626,8 @@ class Reshape(UnaryOpBase, ABC):
         else:
             # If you use auto mode (specifying -1 for some dimensions), then the total number of input pixels must be exactly divisible by that of the output shape.
             minimul_pixels = reduce(
-                lambda x, y: x * y, [v for v in self.target_shape if v != -1])
-            return [reduce(lambda x, y: x * y, input_shapes[0].shape) % minimul_pixels == 0]
+                lambda x, y: nnsmith_mul(x, y), [v for v in self.target_shape if v != -1])
+            return [nnsmith_eq(nnsmith_mod(reduce(lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape), minimul_pixels), 0)]
 
     def torch(self):
         return lambda x: x.reshape(*self.target_shape)
