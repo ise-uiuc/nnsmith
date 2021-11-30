@@ -21,11 +21,29 @@ import torch
 # TODO: add interval analysis for shape dimension size;
 
 
-def align_bvs(left: z3.BitVecRef, right: z3.BitVecRef):
-    assert isinstance(left, z3.BitVecRef)
-    assert isinstance(right, z3.BitVecRef)
-    left_size = left.size()
-    right_size = right.size()
+def align_bvs(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
+    left_is_arith = isinstance(left, (int, float, z3.ArithRef))
+    right_is_arith = isinstance(right, (int, float, z3.ArithRef))
+    # If both values are of arithmetic type, we do not need to do anything.
+    if left_is_arith and right_is_arith:
+        return (left, right)
+    # We assume that the width of an arithmetic type is 64.
+    if left_is_arith:
+        left_size = 64
+    elif isinstance(left, z3.BitVecRef):
+        left_size = left.size()
+    else:
+        raise RuntimeError(
+            f"Unsupported alignment value {left} of type {type(left)}")
+    # We assume that the width of an arithmetic type is 64.
+    if right_is_arith:
+        right_size = 64
+    elif isinstance(right, z3.BitVecRef):
+        right_size = right.size()
+    else:
+        raise RuntimeError(
+            f"Unsupported alignment value {right} of type {type(right)}")
+    # Extend the bitvector that is smaller with the necessary amount of zeroes.
     if left_size < right_size:
         left = z3.ZeroExt(right_size - left_size, left)
     elif right_size < left_size:
@@ -34,77 +52,67 @@ def align_bvs(left: z3.BitVecRef, right: z3.BitVecRef):
 
 
 def nnsmith_mul(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
-    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
-        left, right = align_bvs(left, right)
+    left, right = align_bvs(left, right)
     return left * right
 
 
 def nnsmith_add(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
-    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
-        left, right = align_bvs(left, right)
+    left, right = align_bvs(left, right)
     return left + right
 
 
 def nnsmith_sub(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
-    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
-        left, right = align_bvs(left, right)
+    left, right = align_bvs(left, right)
     return left - right
 
 
 def nnsmith_eq(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
-    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
-        left, right = align_bvs(left, right)
+    left, right = align_bvs(left, right)
     return left == right
 
 
 def nnsmith_neq(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
-    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
-        left, right = align_bvs(left, right)
+    left, right = align_bvs(left, right)
     return left != right
 
 
 def nnsmith_ge(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
-    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
-        left, right = align_bvs(left, right)
+    left, right = align_bvs(left, right)
+    if isinstance(left, z3.BitVecRef) or isinstance(right, z3.BitVecRef):
         return z3.UGE(left, right)
     return left >= right
 
 
 def nnsmith_gt(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
-    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
-        left, right = align_bvs(left, right)
+    left, right = align_bvs(left, right)
     if isinstance(left, z3.BitVecRef) or isinstance(right, z3.BitVecRef):
         return z3.UGT(left, right)
     return left > right
 
 
 def nnsmith_le(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
-    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
-        left, right = align_bvs(left, right)
+    left, right = align_bvs(left, right)
     if isinstance(left, z3.BitVecRef) or isinstance(right, z3.BitVecRef):
         return z3.ULE(left, right)
     return left <= right
 
 
 def nnsmith_lt(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
-    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
-        left, right = align_bvs(left, right)
+    left, right = align_bvs(left, right)
     if isinstance(left, z3.BitVecRef) or isinstance(right, z3.BitVecRef):
         return z3.ULT(left, right)
     return left < right
 
 
 def nnsmith_div(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
-    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
-        left, right = align_bvs(left, right)
+    left, right = align_bvs(left, right)
     if isinstance(left, z3.BitVecRef) or isinstance(right, z3.BitVecRef):
         return z3.UDiv(left, right)
     return left / right
 
 
 def nnsmith_mod(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
-    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
-        left, right = align_bvs(left, right)
+    left, right = align_bvs(left, right)
     if isinstance(left, z3.BitVecRef) or isinstance(right, z3.BitVecRef):
         return z3.URem(left, right)
     return left % right
@@ -591,7 +599,7 @@ class Reshape(UnaryOpBase, ABC):
                         "See https://pytorch.org/docs/stable/generated/torch.reshape.html")
                 auto_dim = i
             else:
-                accum *= v
+                accum = nnsmith_mul(accum, v)
 
         # First see if there's any symbols in the expression
         symbol_indices = []

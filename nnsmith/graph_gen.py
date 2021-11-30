@@ -206,7 +206,7 @@ class SimpleGenerator:
     def try_insert_node_type(self, node_t, max_shape_var_pick_time=3) -> bool:
         op_param_n = signature(node_t).parameters
         op_id = len(self.abstract_graph.nodes)
-        op_params = [z3.BitVec('op%s_%s' % (op_id, k), 4)
+        op_params = [z3.BitVec('op%s_%s' % (op_id, k), 5)
                      for k in range(len(op_param_n))]
 
         op: AbsOpBase = node_t(*op_params)
@@ -313,10 +313,9 @@ class PureSymbolGen(SimpleGenerator):
                 constraints.append(c)
 
         for s in output_shapes:
-            elem = s.nelement()
-            self.n_floats = nnsmith_add(self.n_floats, elem)
+            self.n_floats = nnsmith_add(self.n_floats, s.nelement())
 
-        if self.check_sat(*constraints, self.n_floats <= self.limit_float) != z3.sat:
+        if self.check_sat(*constraints, nnsmith_le(self.n_floats, self.limit_float)) != z3.sat:
             return False
 
         for c in constraints:
