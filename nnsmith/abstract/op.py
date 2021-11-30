@@ -33,10 +33,29 @@ def align_bvs(left: z3.BitVecRef, right: z3.BitVecRef):
     return (left, right)
 
 
+def nnsmith_mul(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
+    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
+        left, right = align_bvs(left, right)
+    return left * right
+
+
+def nnsmith_add(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
+    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
+        left, right = align_bvs(left, right)
+    return left + right
+
+
+def nnsmith_sub(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
+    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
+        left, right = align_bvs(left, right)
+    return left - right
+
+
 def nnsmith_eq(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
     if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
         left, right = align_bvs(left, right)
     return left == right
+
 
 def nnsmith_ge(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
     if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
@@ -44,50 +63,45 @@ def nnsmith_ge(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.
         return z3.UGE(left, right)
     return left >= right
 
+
 def nnsmith_gt(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
     if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
         left, right = align_bvs(left, right)
+    if isinstance(left, z3.BitVecRef) or isinstance(right, z3.BitVecRef):
         return z3.UGT(left, right)
     return left > right
+
 
 def nnsmith_le(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
     if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
         left, right = align_bvs(left, right)
+    if isinstance(left, z3.BitVecRef) or isinstance(right, z3.BitVecRef):
         return z3.ULE(left, right)
     return left <= right
+
 
 def nnsmith_lt(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
     if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
         left, right = align_bvs(left, right)
+    if isinstance(left, z3.BitVecRef) or isinstance(right, z3.BitVecRef):
         return z3.ULT(left, right)
     return left < right
+
 
 def nnsmith_div(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
     if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
         left, right = align_bvs(left, right)
+    if isinstance(left, z3.BitVecRef) or isinstance(right, z3.BitVecRef):
         return z3.UDiv(left, right)
     return left / right
+
 
 def nnsmith_mod(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
     if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
         left, right = align_bvs(left, right)
+    if isinstance(left, z3.BitVecRef) or isinstance(right, z3.BitVecRef):
         return z3.URem(left, right)
     return left % right
-
-def nnsmith_mul(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
-    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
-        left, right = align_bvs(left, right)
-    return left * right
-
-def nnsmith_add(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
-    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
-        left, right = align_bvs(left, right)
-    return left % right
-
-def nnsmith_sub(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
-    if isinstance(left, z3.BitVecRef) and isinstance(right, z3.BitVecRef):
-        left, right = align_bvs(left, right)
-    return left - right
 
 
 class ShapeVar:
@@ -101,7 +115,7 @@ class ShapeVar:
         ret = []
         for s in self.shape:
             if isinstance(s, z3.ExprRef):
-                if s not in no_replica:
+                if not any(str(replica) == str(s) for replica in no_replica):
                     ret.append(nnsmith_gt(s, 0))
             else:
                 assert s > 0
@@ -117,7 +131,7 @@ class ShapeVar:
     def nelement(self):
         if len(self.shape) == 0:  # Scalar
             return 1
-        return reduce(lambda x, y: x * y, self.shape)
+        return reduce(lambda x, y: nnsmith_mul(x, y), self.shape)
 
     @staticmethod
     def from_torch(torch_shape):
@@ -441,7 +455,8 @@ class Expand(UnaryOpBase, ABC):
                         nnsmith_eq(input_shape[-self.expand_last_dim], 1),
                         nnsmith_ge(self.expand_n, 1)),
                     z3.And(
-                        nnsmith_eq(input_shape[-self.expand_last_dim],self.expand_n),
+                        nnsmith_eq(
+                            input_shape[-self.expand_last_dim], self.expand_n),
                         nnsmith_ge(self.expand_n, 1)))]
                 return cons
         else:
@@ -525,17 +540,17 @@ class NCHWConv2d(UnaryOpBase):
         cons = []
         ret = []
         # TODO: Use eager mode for debugging.
-        cons.append(self.in_channels == input_shapes[0].shape[1])
-        cons.append(self.out_channels >= 1)
-        cons.append(self.kernel_h_size >= 1)
-        cons.append(self.kernel_w_size >= 1)
+        cons.append(nnsmith_eq(self.in_channels, input_shapes[0].shape[1]))
+        cons.append(nnsmith_ge(self.out_channels, 1))
+        cons.append(nnsmith_ge(self.kernel_h_size, 1))
+        cons.append(nnsmith_ge(self.kernel_w_size, 1))
         # TODO(JK): fix the dialation case for the kernel size constraints.
-        cons.append(self.kernel_h_size <=
-                    input_shapes[0].shape[2] + 2 * self.padding)
-        cons.append(self.kernel_w_size <=
-                    input_shapes[0].shape[3] + 2 * self.padding)
-        cons.append(self.stride >= 1)
-        cons.append(self.padding >= 0)
+        cons.append(nnsmith_le(self.kernel_h_size,
+                    nnsmith_add(input_shapes[0].shape[2], 2 * self.padding)))
+        cons.append(nnsmith_le(self.kernel_w_size,
+                    nnsmith_add(input_shapes[0].shape[3], 2 * self.padding)))
+        cons.append(nnsmith_ge(self.stride, 1))
+        cons.append(nnsmith_ge(self.padding, 0))
         for c in cons:
             if isinstance(c, z3.ExprRef):
                 ret.append(c)
@@ -562,6 +577,7 @@ class Reshape(UnaryOpBase, ABC):
         auto_dim = -1
         accum = 1
         for i, v in enumerate(self.target_shape):
+            # TODO: What to do about bitvectors here?
             if v == -1:
                 if auto_dim != -1:
                     raise ValueError(
@@ -580,22 +596,24 @@ class Reshape(UnaryOpBase, ABC):
             shape_var.shape[auto_dim] = reduce(
                 lambda x, y: x * y, input_shapes[0].shape) // accum
         else:
-            shape_var.shape[auto_dim] = reduce(
-                lambda x, y: x * y, input_shapes[0].shape) / accum
+            shape_var.shape[auto_dim] = nnsmith_div(reduce(
+                lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape), accum)
 
         return [shape_var]
 
     def _requires(self, input_shapes):
+        # TODO: How to handle -1 with input shapes?
         # If your target shape is concrete, then your output shape's total pixels must be the same as the input shape's.
         if -1 not in self.target_shape:
-            total_pixels = reduce(lambda x, y: x * y, self.target_shape)
-            cons = [total_pixels == reduce(
-                lambda x, y: x * y, input_shapes[0].shape)]
+            total_pixels = reduce(
+                lambda x, y: nnsmith_mul(x, y), self.target_shape)
+            cons = [nnsmith_eq(total_pixels, reduce(
+                lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape))]
             # should not be too extreme!
             __DIM_LIMIT__ = 4096
             lim = __DIM_LIMIT__
             for s in self.target_shape[::-1]:
-                cons.append(s <= lim)
+                cons.append(nnsmith_le(s, lim))
                 lim //= 2
                 lim = max(lim, 1)
             return cons
@@ -752,8 +770,8 @@ class ReduceBase(UnaryOpBase, ABC):
 class SqueezeBase(ReduceBase, ABC):
     def _requires(self, input_shapes):
         assert len(input_shapes[0].shape) == self.num_dim
-        if isinstance(input_shapes[0].shape[self.extra_attrs['reduce_dim']], z3.ArithRef):
-            return [input_shapes[0].shape[self.extra_attrs['reduce_dim']] == 1]
+        if isinstance(input_shapes[0].shape[self.extra_attrs['reduce_dim']], z3.ExprRef):
+            return [nnsmith_eq(input_shapes[0].shape[self.extra_attrs['reduce_dim']], 1)]
         else:
             assert input_shapes[0].shape[self.extra_attrs['reduce_dim']] == 1
         return []
