@@ -20,44 +20,64 @@ import torch
 # FIXME: Z3 solving is way slower than numerical computing. Try to use exceptions to reject invalid inputs;
 # TODO: add interval analysis for shape dimension size;
 
+ARITH_MAX_WIDTH: int = 64
 
-def align_bvs(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
+
+def align_bvs(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef], carry=False, mult=False):
     left_is_arith = isinstance(left, (int, float, z3.ArithRef))
     right_is_arith = isinstance(right, (int, float, z3.ArithRef))
     # If both values are of arithmetic type, we do not need to do anything.
     if left_is_arith and right_is_arith:
         return (left, right)
-    # We assume that the width of an arithmetic type is 64.
+    # We assume that the width of an arithmetic type is ARITH_MAX_WIDTH.
     if left_is_arith:
-        left_size = 64
+        left_size = ARITH_MAX_WIDTH
     elif isinstance(left, z3.BitVecRef):
         left_size = left.size()
     else:
         raise RuntimeError(
             f"Unsupported alignment value {left} of type {type(left)}")
-    # We assume that the width of an arithmetic type is 64.
+    # We assume that the width of an arithmetic type is ARITH_MAX_WIDTH.
     if right_is_arith:
-        right_size = 64
+        right_size = ARITH_MAX_WIDTH
     elif isinstance(right, z3.BitVecRef):
         right_size = right.size()
     else:
         raise RuntimeError(
             f"Unsupported alignment value {right} of type {type(right)}")
     # Extend the bitvector that is smaller with the necessary amount of zeroes.
-    if left_size < right_size:
-        left = z3.ZeroExt(right_size - left_size, left)
-    elif right_size < left_size:
-        right = z3.ZeroExt(left_size - right_size, right)
+    assert not (
+        carry and mult), "Carry and multiplication extension are mutually exclusive"
+    assert left_size <= ARITH_MAX_WIDTH, f"Bitvector sizes must not exceed {ARITH_MAX_WIDTH} bits."
+    assert right_size <= ARITH_MAX_WIDTH, f"Bitvector sizes must not exceed {ARITH_MAX_WIDTH} bits."
+    diff = left_size - right_size
+    if left_is_arith and diff >= 0:
+        right = z3.ZeroExt(diff, right)
+        return left, right
+    if right_is_arith and diff <= 0:
+        left = z3.ZeroExt(abs(diff), left)
+        return left, right
+    if diff < 0:
+        left = z3.ZeroExt(abs(diff), left)
+    elif diff > 0:
+        right = z3.ZeroExt(diff, right)
+    if carry and max(left_size, right_size) < ARITH_MAX_WIDTH:
+        left = z3.ZeroExt(1, left)
+        right = z3.ZeroExt(1, right)
+    if mult:
+        max_val = min(max(left_size, right_size), ARITH_MAX_WIDTH)
+        left = z3.ZeroExt(max_val, left)
+        right = z3.ZeroExt(max_val, right)
     return (left, right)
 
 
 def nnsmith_mul(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
-    left, right = align_bvs(left, right)
+    left, right = align_bvs(left, right, mult=True)
     return left * right
 
 
 def nnsmith_add(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]):
-    left, right = align_bvs(left, right)
+    left, right = align_bvs(left, right, carry=True)
     return left + right
 
 

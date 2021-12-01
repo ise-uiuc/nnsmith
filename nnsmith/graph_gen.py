@@ -206,7 +206,7 @@ class SimpleGenerator:
     def try_insert_node_type(self, node_t, max_shape_var_pick_time=3) -> bool:
         op_param_n = signature(node_t).parameters
         op_id = len(self.abstract_graph.nodes)
-        op_params = [z3.BitVec('op%s_%s' % (op_id, k), 5)
+        op_params = [z3.BitVec('op%s_%s' % (op_id, k), 8)
                      for k in range(len(op_param_n))]
 
         op: AbsOpBase = node_t(*op_params)
@@ -278,7 +278,7 @@ class PureSymbolGen(SimpleGenerator):
         input_node = Input()
         input_node.inp_dims = input_node.out_dims = [len(min_dims)]
         input_tensor_shape = ShapeVar(
-            shape=[z3.BitVec('i%s' % k, 8) for k in range(len(min_dims))])
+            shape=[z3.BitVec('i%s' % k, 5) for k in range(len(min_dims))])
 
         self.insert_node(input_node, [input_tensor_shape], ishape_indices=[])
         for c in input_tensor_shape.gt_zero():
