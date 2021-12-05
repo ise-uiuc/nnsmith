@@ -11,8 +11,8 @@ import time
 import os
 import copy
 
-from nnsmith.abstract.op import *
-from nnsmith.export import torch2onnx
+from abstract.op import *
+from export import torch2onnx
 
 
 class RequiredDimNotFound(Exception):
@@ -98,14 +98,11 @@ class SymbolNet(nn.Module):
 
 
 class SimpleGenerator:
-    def __init__(self, min_dims=[1, 3, 48, 48], skip=[], viz_sbs=False, megabyte_lim=6 * 1024, seed=None, verbose=False):
+    def __init__(self, min_dims=[1, 3, 48, 48], skip=[], viz_sbs=False, megabyte_lim=6 * 1024, seed=None, verbose=False, use_bitvec=False):
         self.verbose = verbose
-        if seed is not None:
-            random.seed(seed)
 
         self.op_candidates = [op for op in ALL_OP_TYPES if op not in skip]
         self.solver = z3.Solver()
-
         self.solver.set("threads", 4)
         # 4 bytes per float (assume we use float32)
         self.limit_float = 1024**2 * megabyte_lim / 4
@@ -121,8 +118,15 @@ class SimpleGenerator:
         self.viz_cnt = 0
         self.is_viz_sbs = viz_sbs
 
+        self.use_bitvec = use_bitvec
         self.input_shape = self.get_input_node(min_dims)
         self.n_floats = self.input_shape.nelement()
+
+    def new_sym(self, name):
+        if self.use_bitvec:
+            return z3.BitVec(name, 8)
+        else:
+            return z3.Int(name)
 
     @abstractmethod
     def get_input_node(self, min_dims: List[int]) -> ShapeVar:
@@ -146,8 +150,8 @@ class SimpleGenerator:
     def concretize_input_shape(self, model):
         shape = []
         for s in self.input_shape.shape:
-            if isinstance(s, z3.ArithRef):
-                shape.append(model.eval(s).as_long())
+            if isinstance(s, z3.ExprRef):
+                shape.append(model.eval(s, model_completion=True).as_long())
             else:
                 shape.append(s)
         return shape
@@ -209,7 +213,7 @@ class SimpleGenerator:
     def try_insert_node_type(self, node_t, max_shape_var_pick_time=3) -> bool:
         op_param_n = signature(node_t).parameters
         op_id = len(self.abstract_graph.nodes)
-        op_params = [z3.Int('op%s_%s' % (op_id, k))
+        op_params = [self.new_sym('op%s_%s' % (op_id, k))
                      for k in range(len(op_param_n))]
 
         op: AbsOpBase = node_t(*op_params)
@@ -281,24 +285,25 @@ class PureSymbolGen(SimpleGenerator):
         input_node = Input()
         input_node.inp_dims = input_node.out_dims = [len(min_dims)]
         input_tensor_shape = ShapeVar(
-            shape=[z3.Int('i%s' % k) for k in range(len(min_dims))])
+            shape=[self.new_sym('i%s' % k) for k in range(len(min_dims))])
 
         self.insert_node(input_node, [input_tensor_shape], ishape_indices=[])
         for c in input_tensor_shape.gt_zero():
             self.solver.add(c)
 
-        # The batch size should not have a big min size (avoid unnecessary computation);
-        # FIXME: input constraints will make SMT solving costly.
-        for i in range(len(input_tensor_shape.shape)):
-            self.solver.add(input_tensor_shape.shape[i] >= min_dims[i])
+        if not self.use_bitvec:  # bit vector is randomizable
+            # The batch size should not have a big min size (avoid unnecessary computation);
+            # FIXME: input constraints will make SMT solving costly.
+            for i in range(len(input_tensor_shape.shape)):
+                self.solver.add(input_tensor_shape.shape[i] >= min_dims[i])
         assert self.solver.check() == z3.sat
         return input_tensor_shape  # TODO: multiple input/output.
 
     def concretize_input_shape(self, model):
         shape = []
         for s in self.input_shape.shape:
-            if isinstance(s, z3.ArithRef):
-                shape.append(model.eval(s).as_long())
+            if isinstance(s, z3.ExprRef):
+                shape.append(model.eval(s, model_completion=True).as_long())
             else:
                 shape.append(s)
         return shape
@@ -319,9 +324,10 @@ class PureSymbolGen(SimpleGenerator):
             for c in shape.gt_zero(no_replica=self.input_shape.shape):
                 constraints.append(c)
 
-        self.n_floats += sum(s.nelement() for s in output_shapes)
+        for s in output_shapes:
+            self.n_floats = nnsmith_add(self.n_floats, s.nelement())
 
-        if self.check_sat(*constraints, self.n_floats <= self.limit_float) != z3.sat:
+        if self.check_sat(*constraints, nnsmith_le(self.n_floats, self.limit_float)) != z3.sat:
             return False
 
         for c in constraints:
@@ -348,11 +354,28 @@ if __name__ == '__main__':
     parser.add_argument('--output_path', type=str, default='output.onnx')
     parser.add_argument('--seed', type=int)
     parser.add_argument('--verbose', action='store_true')
+    parser.add_argument('--use_bitvec', action='store_true')
     args = parser.parse_args()
+
+    seed = args.seed
+    if seed is None:
+        # If we have not selected a seed, choose random one.
+        seed = random.getrandbits(32)
+    print(f"Using seed {seed}")
+    random.seed(seed)
+
+    z3.set_param(
+        "smt.phase_selection",
+        5,
+        "smt.arith.random_initial_value",
+        True,
+        "sat.phase",
+        "random",
+    )
 
     strt_time = time.time()
     gen = PureSymbolGen(min_dims=args.min_dims,
-                        viz_sbs=args.viz_sbs, seed=args.seed, verbose=args.verbose)
+                        viz_sbs=args.viz_sbs, seed=seed, verbose=args.verbose, use_bitvec=args.use_bitvec)
     gen.abstract_gen(max_node_size=args.max_nodes,
                      max_gen_millisec=args.timeout)
     print(f'{time.time() - strt_time}s to generate a graph w/ {len(gen.abstract_graph.nodes())} nodes')
@@ -369,7 +392,7 @@ if __name__ == '__main__':
     net = SymbolNet(gen.abstract_graph, solution)
     net.eval()
     net.set_input_spec(input_shape)
-    torch2onnx(model=net, filename=args.output_path)
+    torch2onnx(model=net, filename=args.output_path, verbose=True)
 
     # Draw with NetworkX
     # import matplotlib.pyplot as plt
