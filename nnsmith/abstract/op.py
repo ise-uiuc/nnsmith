@@ -198,6 +198,75 @@ def check_require_fn(func):
     return wrapper_check_require_fn
 
 
+def _prepend_to(x, max_dim):
+    return [1 for i in range(max_dim - len(x))] + x
+
+
+def z3_bcast(x: Union[int, z3.ExprRef], y: Union[int, z3.ExprRef], *args: Union[int, z3.ExprRef]):
+    return z3.If(y == 1, x, y) if len(args) == 0 else z3_bcast(z3_bcast(x, y), *args)
+
+
+def broadcast_shapes(*shapes: ShapeVar) -> ShapeVar:
+    """this function does not check the validity of broadcast. Please always pair it with broadcast_cons"""
+    assert len(shapes) > 0
+    if len(shapes) == 1:
+        return shapes[0]
+    max_dim = max(map(lambda x: len(x.shape), shapes))
+    max_shape = [None] * (max_dim)
+    for j in range(max_dim):
+        i = -j - 1
+        args_dim_sz = [_prepend_to(x.shape, max_dim)[i] for x in shapes]
+        if any(isinstance(s, z3.ExprRef) for s in args_dim_sz):
+            max_shape[i] = z3.simplify(z3_bcast(*args_dim_sz))
+        else:
+            max_shape[i] = max(*args_dim_sz)
+    return ShapeVar(max_shape)
+
+
+def broadcast_cons(*shapes: ShapeVar) -> List[z3.ExprRef]:
+    tgt_shape = broadcast_shapes(*shapes).shape
+    cons = []
+    max_dim = len(tgt_shape)
+    for j in range(max_dim):
+        i = -j - 1
+        if isinstance(tgt_shape[i], z3.ExprRef):
+            axis_cons = []
+            for x in shapes:
+                if len(x.shape) > j:
+                    axis_cons.append(
+                        z3.Or(nnsmith_eq(x.shape[i], tgt_shape[i]), x.shape[i] == 1))
+            axis_cons = z3.simplify(z3.And(*axis_cons))
+            cons.append(axis_cons)
+        else:
+            args_dim_sz = [_prepend_to(x.shape, max_dim)[i] for x in shapes]
+            valid = all(s == tgt_shape[i] or s == 1 for s in args_dim_sz)
+            # TODO(JK): enable this after fixing issue #2
+            # assert valid, "Invalid broadcast shapes {}. Specific dim sizes: {}".format(shapes, args_dim_sz)
+            cons.append(z3.BoolVal(valid))
+    return cons
+
+
+def broadcast_cons_2d(*shapes: ShapeVar) -> List[z3.ExprRef]:
+    assert len(shapes) == 2
+    tgt_shape = broadcast_shapes(*shapes).shape
+    cons = []
+    max_dim = len(tgt_shape)
+    lhs, rhs = shapes
+    lhs = _prepend_to(lhs.shape, max_dim)
+    rhs = _prepend_to(rhs.shape, max_dim)
+    for j in range(max_dim):
+        i = -j - 1
+        if isinstance(tgt_shape[i], z3.ExprRef):
+            cons.append(z3.simplify(
+                z3.Or(lhs[i] == 1, rhs[i] == 1, nnsmith_eq(lhs[i], rhs[i]))))
+        else:
+            valid = lhs[i] == 1 or rhs[i] == 1 or nnsmith_eq(lhs[i], rhs[i])
+            # TODO(JK): enable this after fixing issue #2
+            # assert valid, "Invalid broadcast shapes lhs={}, rhs={}".format(lhs, rhs)
+            cons.append(z3.BoolVal(valid))
+    return cons
+
+
 class AbsOpBase(ABC):
     def __init__(self):
         # `[3, 3]` this means this op requires 2 inputs. Where the 1st one has 2 dimensions, and the 2nd one has 3 dimensions.
@@ -281,6 +350,42 @@ class ElementWiseUnaryOp(UnaryOpBase):
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         assert len(input_shapes) == 1
         return [input_shapes[0]]
+
+
+class ElementWiseBinaryOp(BinaryOpBase):
+    def __init__(self):
+        super().__init__()
+        self.inp_dims = [-1, -1]
+        self.same_inp_dims = True
+
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
+        return [input_shapes[0]]
+
+    def _requires(self, input_shapes):
+        assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
+        ret = []
+        for l, r in zip(input_shapes[0].shape, input_shapes[1].shape):
+            if isinstance(l, z3.ExprRef) or isinstance(r, z3.ExprRef):
+                ret.append(nnsmith_eq(l, r))
+            else:
+                assert l == r
+        return ret
+
+
+class BcastBinaryOp(BinaryOpBase):
+    def __init__(self):
+        super().__init__()
+        self.inp_dims = [-1, -1]
+        self.same_inp_dims = False
+
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        # assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
+        tgt_shape = broadcast_shapes(*input_shapes)
+        return [tgt_shape]
+
+    def _requires(self, input_shapes):
+        return broadcast_cons_2d(*input_shapes)
 
 
 class Input(ElementWiseUnaryOp):
@@ -432,25 +537,11 @@ class Neg(ElementWiseUnaryOp):
         return torch.neg
 
 
-class Add(BinaryOpBase):
+class Add(BcastBinaryOp):
     def __init__(self):
         super().__init__()
         self.inp_dims = [-1, -1]
-        self.same_inp_dims = True
-
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
-        return [input_shapes[0]]
-
-    def _requires(self, input_shapes):
-        assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
-        ret = []
-        for l, r in zip(input_shapes[0].shape, input_shapes[1].shape):
-            if isinstance(l, z3.ExprRef) or isinstance(r, z3.ExprRef):
-                ret.append(nnsmith_eq(l, r))
-            else:
-                assert l == r
-        return ret
+        # self.same_inp_dims = True
 
     def torch(self):
         return torch.add
