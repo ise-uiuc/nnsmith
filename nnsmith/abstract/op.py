@@ -150,7 +150,7 @@ class ShapeVar:
         for s in self.shape:
             if isinstance(s, z3.ExprRef):
                 if not any(str(replica) == str(s) for replica in no_replica):
-                    ret.append(nnsmith_neq(s, 0))
+                    ret.append(nnsmith_gt(s, 0))
             else:
                 assert s > 0
         return ret
@@ -567,7 +567,7 @@ class NCHWConv2d(UnaryOpBase):
             shape_var.shape.append(
                 (nnsmith_div(nnsmith_add(nnsmith_sub(input_shapes[0].shape[2], self.kernel_h_size), 2 * self.padding), self.stride) + 1))
             shape_var.shape.append(
-                (nnsmith_div(nnsmith_add(nnsmith_sub(input_shapes[0].shape[3], self.kernel_h_size), 2 * self.padding), self.stride) + 1))
+                (nnsmith_div(nnsmith_add(nnsmith_sub(input_shapes[0].shape[3], self.kernel_w_size), 2 * self.padding), self.stride) + 1))
         return [shape_var]
 
     def _requires(self, input_shapes):
