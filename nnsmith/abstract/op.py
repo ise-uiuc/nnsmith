@@ -389,11 +389,23 @@ class BcastBinaryOp(BinaryOpBase):
 
 
 class Input(ElementWiseUnaryOp):
-    def __init__(self):
+    def __init__(self, idx, dim0, dim1, dim2, dim3):
         super().__init__()
+        self.idx = idx
+        self.dim0 = dim0
+        self.dim1 = dim1
+        self.dim2 = dim2
+        self.dim3 = dim3
+
+    @property
+    def shape(self):
+        return [self.dim0, self.dim1, self.dim2, self.dim3]
+
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        return [ShapeVar(self.shape)]
 
     def torch(self):
-        return lambda x: x
+        raise NotImplementedError("This should never be called")
 
 
 class ReLU(ElementWiseUnaryOp):

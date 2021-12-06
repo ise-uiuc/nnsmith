@@ -4,7 +4,7 @@ import networkx as nx
 import torch
 from torch import nn
 
-from typing import Dict, Tuple, List
+from typing import Dict, NamedTuple, Tuple, List
 from inspect import signature
 import random
 import time
@@ -29,6 +29,9 @@ class SymbolNet(nn.Module):
         # keep track of layers and weights so that the tracing can work properly
         self.mlist = nn.ModuleList()
         # NOTE: All leaf nodes are output tensors.
+
+        InputInfo = NamedTuple('InputInfo', [('op', Input), ('oid', int)])
+        self.input_info: List[InputInfo] = []
 
         tmp_op_output_map = {}  # node id -> output idx in tensors;
         for node_id in nx.topological_sort(graph):
@@ -70,13 +73,17 @@ class SymbolNet(nn.Module):
                 self.instructions.append((cur_op, input_idx, output_idx))
             else:  # Should be input node
                 assert type(op) is Input
+                assert len(output_idx) == 1
+                self.input_info.append(InputInfo(op=op, oid=output_idx[0]))
 
-    # TODO: Support multiple inputs.
+        self.plausible_input_shape = self.input_spec = {f'i{ii.op.idx}': ii.op.shape
+                                                        for ii in self.input_info}
 
     @torch.no_grad()
-    def forward(self, x):
+    def forward(self, *xs):
         local_ref_cnt = self.ref_cnt.copy()
-        self.tensors[0] = x
+        for ii in self.input_info:
+            self.tensors[ii.oid] = xs[ii.op.idx]
         for inst, inps, outs in self.instructions:
             outputs = inst(*[self.tensors[idx] for idx in inps])
             if not isinstance(outputs, list):
@@ -91,10 +98,6 @@ class SymbolNet(nn.Module):
                 if local_ref_cnt[idx] > 0:  # Will be used.
                     self.tensors[idx] = output
         return tuple(t for t in self.tensors if t is not None)
-
-    # TODO: Support multiple & dynamic inputs
-    def set_input_spec(self, input_shape):
-        self.plausible_input_shape = self.input_spec = {'i0': input_shape}
 
 
 class SimpleGenerator:
@@ -147,14 +150,14 @@ class SimpleGenerator:
         """
         return False
 
-    def concretize_input_shape(self, model):
-        shape = []
-        for s in self.input_shape.shape:
-            if isinstance(s, z3.ExprRef):
-                shape.append(model.eval(s, model_completion=True).as_long())
-            else:
-                shape.append(s)
-        return shape
+    # def concretize_input_shape(self, model):
+    #     shape = []
+    #     for s in self.input_shape.shape:
+    #         if isinstance(s, z3.ExprRef):
+    #             shape.append(model.eval(s, model_completion=True).as_long())
+    #         else:
+    #             shape.append(s)
+    #     return shape
 
     def abstract_gen(self, max_node_size=10, max_gen_millisec=2000):
         init_time = time.time()
@@ -282,10 +285,10 @@ class SimpleGenerator:
 
 class PureSymbolGen(SimpleGenerator):
     def get_input_node(self, min_dims) -> ShapeVar:
-        input_node = Input()
-        input_node.inp_dims = input_node.out_dims = [len(min_dims)]
         input_tensor_shape = ShapeVar(
-            shape=[self.new_sym('i%s' % k) for k in range(len(min_dims))])
+            shape=[self.new_sym('i0_s%s' % k) for k in range(len(min_dims))])
+        input_node = Input(0, *input_tensor_shape.shape)
+        input_node.inp_dims = input_node.out_dims = [len(min_dims)]
 
         self.insert_node(input_node, [input_tensor_shape], ishape_indices=[])
         for c in input_tensor_shape.gt_zero():
@@ -298,15 +301,6 @@ class PureSymbolGen(SimpleGenerator):
                 self.solver.add(input_tensor_shape.shape[i] >= min_dims[i])
         assert self.solver.check() == z3.sat
         return input_tensor_shape  # TODO: multiple input/output.
-
-    def concretize_input_shape(self, model):
-        shape = []
-        for s in self.input_shape.shape:
-            if isinstance(s, z3.ExprRef):
-                shape.append(model.eval(s, model_completion=True).as_long())
-            else:
-                shape.append(s)
-        return shape
 
     def try_insert_node(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
         input_shapes = [self.alive_shapes[idx][1] for idx in ishape_indices]
@@ -349,7 +343,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_nodes', type=int, default=5)
     parser.add_argument('--min_dims', type=list, default=[1, 3, 48, 48])
     parser.add_argument('--timeout', type=int, default=50000)
-    parser.add_argument('--viz_sbs', type=bool, default=False,
+    parser.add_argument('--viz_sbs', action='store_true',
                         help='visualize the step by step')
     parser.add_argument('--output_path', type=str, default='output.onnx')
     parser.add_argument('--seed', type=int)
@@ -386,12 +380,12 @@ if __name__ == '__main__':
 
     gen.viz(args.output_path + '.png')
 
-    input_shape = gen.concretize_input_shape(solution)
-    print(f'Input shape: {input_shape}')
+    # input_shape = gen.concretize_input_shape(solution)
+    # print(f'Input shape: {input_shape}')
 
     net = SymbolNet(gen.abstract_graph, solution)
     net.eval()
-    net.set_input_spec(input_shape)
+    # net.set_input_spec(input_shape)
     torch2onnx(model=net, filename=args.output_path, verbose=True)
 
     # Draw with NetworkX
