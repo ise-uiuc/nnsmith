@@ -352,25 +352,25 @@ class ElementWiseUnaryOp(UnaryOpBase):
         return [input_shapes[0]]
 
 
-class ElementWiseBinaryOp(BinaryOpBase):
-    def __init__(self):
-        super().__init__()
-        self.inp_dims = [-1, -1]
-        self.same_inp_dims = True
+# class ElementWiseBinaryOp(BinaryOpBase):
+#     def __init__(self):
+#         super().__init__()
+#         self.inp_dims = [-1, -1]
+#         self.same_inp_dims = True
 
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
-        return [input_shapes[0]]
+#     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+#         assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
+#         return [input_shapes[0]]
 
-    def _requires(self, input_shapes):
-        assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
-        ret = []
-        for l, r in zip(input_shapes[0].shape, input_shapes[1].shape):
-            if isinstance(l, z3.ExprRef) or isinstance(r, z3.ExprRef):
-                ret.append(nnsmith_eq(l, r))
-            else:
-                assert l == r
-        return ret
+#     def _requires(self, input_shapes):
+#         assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
+#         ret = []
+#         for l, r in zip(input_shapes[0].shape, input_shapes[1].shape):
+#             if isinstance(l, z3.ExprRef) or isinstance(r, z3.ExprRef):
+#                 ret.append(nnsmith_eq(l, r))
+#             else:
+#                 assert l == r
+#         return ret
 
 
 class BcastBinaryOp(BinaryOpBase):
@@ -391,6 +391,8 @@ class BcastBinaryOp(BinaryOpBase):
 class Input(ElementWiseUnaryOp):
     def __init__(self, idx, dim0, dim1, dim2, dim3):
         super().__init__()
+        self.inp_dims = []
+        self.out_dims = [4]
         self.idx = idx
         self.dim0 = dim0
         self.dim1 = dim1
@@ -1160,7 +1162,8 @@ def _glob_leaf_op_classes():
         for c in cls.__subclasses__():
             if c.__subclasses__():
                 _glob_leaf_op_classes_rec(c)
-            elif c is not Input:
+            # elif c is not Input:
+            else:
                 ret.append(c)
     _glob_leaf_op_classes_rec(AbsOpBase)
     return ret

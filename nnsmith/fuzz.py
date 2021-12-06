@@ -176,10 +176,10 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     gen.abstract_gen(max_node_size=random.randint(1, self.max_nodes),
                                      max_gen_millisec=_PER_MODEL_TIMEOUT_)
                     solution = gen.get_symbol_solutions()
-                    input_shape = gen.concretize_input_shape(solution)
+                    # input_shape = gen.concretize_input_shape(solution)
                     net = SymbolNet(gen.abstract_graph, solution)
                     net.eval()
-                    net.set_input_spec(input_shape)
+                    # net.set_input_spec(input_shape)
                     torch2onnx(model=net, filename=_TMP_ONNX_FILE_)
 
                     # Generation time logging.

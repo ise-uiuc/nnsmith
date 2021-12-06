@@ -122,8 +122,10 @@ class SimpleGenerator:
         self.is_viz_sbs = viz_sbs
 
         self.use_bitvec = use_bitvec
-        self.input_shape = self.get_input_node(min_dims)
-        self.n_floats = self.input_shape.nelement()
+        # self.input_shape = self.insert_input_node(min_dims)
+        self.min_dims = min_dims
+        self.n_floats = 0
+        self.n_inps = 0
 
     def new_sym(self, name):
         if self.use_bitvec:
@@ -132,7 +134,7 @@ class SimpleGenerator:
             return z3.Int(name)
 
     @abstractmethod
-    def get_input_node(self, min_dims: List[int]) -> ShapeVar:
+    def insert_input_node(self) -> ShapeVar:
         raise NotImplementedError
 
     @abstractmethod
@@ -160,13 +162,19 @@ class SimpleGenerator:
     #     return shape
 
     def abstract_gen(self, max_node_size=10, max_gen_millisec=2000):
+        self.insert_input_node()
+        self.insert_input_node()
+        self.insert_input_node()
         init_time = time.time()
         while time.time() - init_time < max_gen_millisec / 1000 and len(
                 self.abstract_graph.nodes) < max_node_size:
             if self.extra_exit_check():
                 break
             node_t = self.pick_next_op_type()
-            self.try_insert_node_type(node_t)
+            if issubclass(node_t, Input):
+                self.insert_input_node()
+            else:
+                self.try_insert_node_type(node_t)
         if len(self.abstract_graph.nodes) != max_node_size:
             print(
                 f'[WARNING]: graph size: {len(self.abstract_graph.nodes)} != expected size: {max_node_size}')
@@ -191,6 +199,7 @@ class SimpleGenerator:
 
     def insert_node(self, node: AbsOpBase, oshapes: List[ShapeVar], ishape_indices: List[int]):
         new_node_idx = len(self.abstract_graph.nodes)
+        shape_idx_st = len(self.alive_shapes)
         for i, shape_var in enumerate(oshapes):
             if node.out_dims[i] == -1:
                 node.out_dims[i] = len(shape_var.shape)
@@ -201,9 +210,10 @@ class SimpleGenerator:
             self.alive_shapes.append((new_node_idx, shape_var, i))
             self.dim2shape_idx.setdefault(
                 len(shape_var.shape), []).append(shape_idx)
+        shape_idx_ed = len(self.alive_shapes)
 
         self.abstract_graph.add_node(
-            new_node_idx, op=node, nin=len(ishape_indices), nout=len(oshapes), label=str(node))
+            new_node_idx, op=node, nin=len(ishape_indices), nout=len(oshapes), label=f'#{new_node_idx}, [{shape_idx_st},{shape_idx_ed}), {node}')
 
         for in_operand_idx, idx in enumerate(ishape_indices):
             old_node_idx, svar, out_operand_idx = self.alive_shapes[idx]
@@ -252,26 +262,26 @@ class SimpleGenerator:
 
         return False
 
-    def pick_shape_var_idx(self, dim_size_list: List[int]) -> List[int]:
+    def pick_shape_var_idx(self, ndim_list: List[int]) -> List[int]:
         """Randomly pick indices to shape variables from the output pool.
 
         Args:
-            dim_size_list (List[int]): required dimension sizes of the shape variables.
+            ndim_list (List[int]): required dimension sizes of the shape variables.
 
         Returns:
             List[int]: indices to applicable shape variables.
         """
         shape_var_candidates = []
-        for dim_size in dim_size_list:
-            if dim_size == -1:  # Arbitrary dimension size.
+        for ndim in ndim_list:
+            if ndim == -1:  # Arbitrary dimension size.
                 shape_var_candidates.append(
                     random.randint(0, len(self.alive_shapes) - 1))
-            elif dim_size in self.dim2shape_idx:
+            elif ndim in self.dim2shape_idx:
                 shape_var_candidates.append(
-                    random.choice(self.dim2shape_idx[dim_size]))
+                    random.choice(self.dim2shape_idx[ndim]))
             else:
                 raise RequiredDimNotFound(
-                    'Cannot find a shape variable with dimension size %s.' % dim_size)
+                    'Cannot find a shape variable with #dimensions %s.' % ndim)
         return shape_var_candidates
 
     def viz(self, filename: str = None):
@@ -284,11 +294,11 @@ class SimpleGenerator:
 
 
 class PureSymbolGen(SimpleGenerator):
-    def get_input_node(self, min_dims) -> ShapeVar:
+    def insert_input_node(self) -> ShapeVar:
+        min_dims = self.min_dims
         input_tensor_shape = ShapeVar(
-            shape=[self.new_sym('i0_s%s' % k) for k in range(len(min_dims))])
-        input_node = Input(0, *input_tensor_shape.shape)
-        input_node.inp_dims = input_node.out_dims = [len(min_dims)]
+            shape=[self.new_sym('i%s_s%s' % (self.n_inps, k)) for k in range(len(min_dims))])
+        input_node = Input(self.n_inps, *input_tensor_shape.shape)
 
         self.insert_node(input_node, [input_tensor_shape], ishape_indices=[])
         for c in input_tensor_shape.gt_zero():
@@ -300,7 +310,10 @@ class PureSymbolGen(SimpleGenerator):
             for i in range(len(input_tensor_shape.shape)):
                 self.solver.add(input_tensor_shape.shape[i] >= min_dims[i])
         assert self.solver.check() == z3.sat
-        return input_tensor_shape  # TODO: multiple input/output.
+        self.n_floats = nnsmith_add(
+            self.n_floats, input_tensor_shape.nelement())
+        self.n_inps += 1
+        return input_tensor_shape
 
     def try_insert_node(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
         input_shapes = [self.alive_shapes[idx][1] for idx in ishape_indices]
@@ -308,14 +321,15 @@ class PureSymbolGen(SimpleGenerator):
 
         if self.verbose:
             print('---> Trying to solve: ', node, constraints)
-            print('---> total constraints: ', self.solver.assertions())
+            print('---> total constraints: \n',
+                  '\n'.join(sorted(map(str, set(self.solver.assertions())))))
             # self.viz('currentgraph.png')
 
         # make a copy
         output_shapes = node.shape_fn(copy.deepcopy(input_shapes))
 
         for shape in output_shapes:
-            for c in shape.gt_zero(no_replica=self.input_shape.shape):
+            for c in shape.gt_zero():
                 constraints.append(c)
 
         for s in output_shapes:
