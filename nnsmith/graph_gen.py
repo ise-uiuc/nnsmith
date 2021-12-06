@@ -4,7 +4,7 @@ import networkx as nx
 import torch
 from torch import nn
 
-from typing import Dict, NamedTuple, Tuple, List
+from typing import Dict, NamedTuple, Tuple, List, Type
 from inspect import signature
 import random
 import time
@@ -66,7 +66,7 @@ class SymbolNet(nn.Module):
                 for _, _, (out_idx, in_idx) in out_edges:
                     output_idx[out_idx] = tmp_op_output_map[node_id] + out_idx
 
-            if len(input_idx) != 0:
+            if not isinstance(op, Input):
                 cur_op = op.torch()
                 if isinstance(cur_op, nn.Module):
                     self.mlist.append(cur_op)
@@ -133,6 +133,29 @@ class SimpleGenerator:
         else:
             return z3.Int(name)
 
+    def fix_graph_dependency(self):
+        """Fix output nodes not having any dependency on any input nodes"""
+        graph = self.abstract_graph
+        dep = {node_id: False for node_id in nx.topological_sort(graph)}
+        for node_id in nx.topological_sort(graph):
+            node = graph.nodes[node_id]
+            if isinstance(node["op"], Input):
+                dep[node_id] = True
+
+            out_edges = graph.out_edges(node_id, data='operand_idx')
+            for _, to_node, (out_idx, in_idx) in out_edges:
+                dep[to_node] = dep[to_node] or dep[node_id]
+
+        # Find all output nodes
+        output_nid = [n for n, d in graph.out_degree() if d == 0]
+        out_non_dep = [n for n in output_nid if not dep[n]]
+        self.insert_input_node()
+        in_nid = len(self.alive_shapes) - 1
+        for o_nid in out_non_dep:
+            shape_indices = graph.nodes[o_nid]['shape_indices']
+            for sid in shape_indices:
+                assert self.try_insert_node(Add(), [in_nid, sid])
+
     @abstractmethod
     def insert_input_node(self) -> ShapeVar:
         raise NotImplementedError
@@ -178,6 +201,7 @@ class SimpleGenerator:
         if len(self.abstract_graph.nodes) != max_node_size:
             print(
                 f'[WARNING]: graph size: {len(self.abstract_graph.nodes)} != expected size: {max_node_size}')
+        self.fix_graph_dependency()
 
     def shape_idx_to_op_idx(self, shape_idx: int) -> int:
         return self.alive_shapes[shape_idx][0]
@@ -200,6 +224,7 @@ class SimpleGenerator:
     def insert_node(self, node: AbsOpBase, oshapes: List[ShapeVar], ishape_indices: List[int]):
         new_node_idx = len(self.abstract_graph.nodes)
         shape_idx_st = len(self.alive_shapes)
+        shape_indices = []
         for i, shape_var in enumerate(oshapes):
             if node.out_dims[i] == -1:
                 node.out_dims[i] = len(shape_var.shape)
@@ -207,13 +232,15 @@ class SimpleGenerator:
                 assert node.out_dims[i] == len(shape_var.shape), "{}'s dimension size is not {} in {}".format(
                     shape_var.shape, node.out_dims[i], node.__class__.__name__)
             shape_idx = len(self.alive_shapes)
+            shape_indices.append(shape_idx)
             self.alive_shapes.append((new_node_idx, shape_var, i))
             self.dim2shape_idx.setdefault(
                 len(shape_var.shape), []).append(shape_idx)
         shape_idx_ed = len(self.alive_shapes)
 
         self.abstract_graph.add_node(
-            new_node_idx, op=node, nin=len(ishape_indices), nout=len(oshapes), label=f'#{new_node_idx}, [{shape_idx_st},{shape_idx_ed}), {node}')
+            new_node_idx, op=node, nin=len(ishape_indices), nout=len(oshapes),
+            label=f'#{new_node_idx}, [{shape_idx_st},{shape_idx_ed}), {node}', shape_indices=shape_indices)
 
         for in_operand_idx, idx in enumerate(ishape_indices):
             old_node_idx, svar, out_operand_idx = self.alive_shapes[idx]

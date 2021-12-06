@@ -174,8 +174,8 @@ class ShapeVar:
 
 def check_shape_fn(func):
     def wrapper_check_shape_fn(self, input_shapes):
-        assert self.inp_dims, "Empty input dimensions in {}".format(
-            self.__class__.__name__)
+        # assert self.inp_dims, "Empty input dimensions in {}".format(
+        #     self.__class__.__name__)
         assert self.out_dims, "Empty output dimensions in {}".format(
             self.__class__.__name__)
         assert len(input_shapes) == len(self.inp_dims), "{} requires {} inputs, but got {}".format(
@@ -386,6 +386,66 @@ class BcastBinaryOp(BinaryOpBase):
 
     def _requires(self, input_shapes):
         return broadcast_cons_2d(*input_shapes)
+
+
+class Constant(AbsOpBase):
+    def __init__(self, dim: int):
+        super().__init__()
+        self.inp_dims = []
+        self.out_dims = [dim]
+        self.shape_var: ShapeVar = None  # overload this
+
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        assert len(input_shapes) == 0
+        return [self.shape_var]
+
+    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+        assert len(input_shapes) == 0
+        return []
+
+    def torch(self) -> Callable[..., torch.Tensor]:
+        data = torch.randn(self.shape_var.shape)
+        return lambda: data
+
+
+class Constant0D(Constant):
+    def __init__(self):
+        super().__init__(0)
+        self.shape_var = ShapeVar([])
+
+
+class Constant1D(Constant):
+    def __init__(self, dim0: Union[int, z3.ExprRef]):
+        super().__init__(1)
+        self.shape_var = ShapeVar([dim0])
+        self.dim0 = dim0
+
+
+class Constant2D(Constant):
+    def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef]):
+        super().__init__(2)
+        self.shape_var = ShapeVar([dim0, dim1])
+        self.dim0 = dim0
+        self.dim1 = dim1
+
+
+class Constant3D(Constant):
+    def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef]):
+        super().__init__(3)
+        self.shape_var = ShapeVar([dim0, dim1, dim2])
+        self.dim0 = dim0
+        self.dim1 = dim1
+        self.dim2 = dim2
+
+
+class Constant4D(Constant):
+    def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef], dim3: Union[int, z3.ExprRef]):
+        super().__init__(4)
+        self.shape_var = ShapeVar([dim0, dim1, dim2, dim3])
+        self.dim0 = dim0
+        self.dim1 = dim1
+        self.dim2 = dim2
+        self.dim3 = dim3
 
 
 class Input(ElementWiseUnaryOp):
