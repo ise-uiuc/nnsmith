@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from functools import reduce
-from typing import List, Union, Callable
+from typing import List, Union, Callable, Type
 from inspect import signature
 import random
 
@@ -246,7 +246,7 @@ def broadcast_cons(*shapes: ShapeVar) -> List[z3.ExprRef]:
     return cons
 
 
-def broadcast_cons_2d(*shapes: ShapeVar) -> List[z3.ExprRef]:
+def broadcast_cons_binary(*shapes: ShapeVar) -> List[z3.ExprRef]:
     assert len(shapes) == 2
     tgt_shape = broadcast_shapes(*shapes).shape
     cons = []
@@ -268,6 +268,9 @@ def broadcast_cons_2d(*shapes: ShapeVar) -> List[z3.ExprRef]:
 
 
 class AbsOpBase(ABC):
+    # whether this op is broadcastable or not
+    bcastable = False
+
     def __init__(self):
         # `[3, 3]` this means this op requires 2 inputs. Where the 1st one has 2 dimensions, and the 2nd one has 3 dimensions.
         # `-1` means arbitrary dimantions; NOTE: but should be concretized during execution.
@@ -341,6 +344,12 @@ class BinaryOpBase(AbsOpBase):
         self.out_dims = [-1]
 
 
+# class TernaryOpBase(AbsOpBase):
+#     def __init__(self):
+#         super().__init__()
+#         self.out_dims = [-1]
+
+
 class ElementWiseUnaryOp(UnaryOpBase):
     def __init__(self):
         super().__init__()
@@ -372,12 +381,14 @@ class ElementWiseUnaryOp(UnaryOpBase):
 #                 assert l == r
 #         return ret
 
-
 class BcastBinaryOp(BinaryOpBase):
+    bcastable = True
+
     def __init__(self):
         super().__init__()
         self.inp_dims = [-1, -1]
         self.same_inp_dims = False
+        self.bcastable = True
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         # assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
@@ -385,7 +396,51 @@ class BcastBinaryOp(BinaryOpBase):
         return [tgt_shape]
 
     def _requires(self, input_shapes):
-        return broadcast_cons_2d(*input_shapes)
+        return broadcast_cons_binary(*input_shapes)
+
+
+# class BcastTernaryOp(TernaryOpBase):
+#     bcastable = True
+
+#     def __init__(self):
+#         super().__init__()
+#         self.inp_dims = [-1, -1, -1]
+#         self.same_inp_dims = False
+#         self.bcastable = True
+
+#     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+#         # assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
+#         tgt_shape = broadcast_shapes(*input_shapes)
+#         return [tgt_shape]
+
+#     def _requires(self, input_shapes):
+#         return broadcast_cons(*input_shapes)
+
+
+# class Add(BcastBinaryOp):
+    # def torch(self):
+        # return torch.add
+# bcast binary ops from https://github.com/onnx/onnx/blob/master/docs/Broadcasting.md
+# TODO bitwise_and/or/xor?
+Add = type('Add', (BcastBinaryOp,), {'torch': lambda self: torch.add})
+# And = type('And', (BcastBinaryOp,), {'torch': lambda self: torch.logical_and})
+Div = type('Div', (BcastBinaryOp,), {'torch': lambda self: torch.div})
+# Equal = type('Equal', (BcastBinaryOp,), {'torch': lambda self: torch.eq})
+# Greater = type('Greater', (BcastBinaryOp,), {'torch': lambda self: torch.gt})
+# Less = type('Less', (BcastBinaryOp,), {'torch': lambda self: torch.lt})
+# NOTE(JK): didn't find multi-input version of Max and Min in torch, so assume binary ops
+Max = type('Max', (BcastBinaryOp,), {'torch': lambda self: torch.max})
+Min = type('Min', (BcastBinaryOp,), {'torch': lambda self: torch.min})
+Mul = type('Mul', (BcastBinaryOp,), {'torch': lambda self: torch.mul})
+# Or = type('Or', (BcastBinaryOp,), {'torch': lambda self: torch.logical_or})
+Pow = type('Pow', (BcastBinaryOp,), {'torch': lambda self: torch.pow})
+Sub = type('Sub', (BcastBinaryOp,), {'torch': lambda self: torch.sub})
+# Where = type('Where', (BcastTernaryOp,), {'torch': lambda self: torch.where})
+# Xor = type('Xor', (BcastBinaryOp,), {'torch': lambda self: torch.logical_xor})
+
+# NOTE(JK): For Mean and Sum there is no corresponding torch op, so we ignore them
+# Sum = type('Sum', (BcastBinaryOp,), {'torch': lambda self: torch.sum})
+# Mean = type('Mean', (BcastBinaryOp,), {'torch': lambda self: torch.mean})
 
 
 class Constant(AbsOpBase):
@@ -609,16 +664,6 @@ class Neg(ElementWiseUnaryOp):
 
     def torch(self):
         return torch.neg
-
-
-class Add(BcastBinaryOp):
-    def __init__(self):
-        super().__init__()
-        self.inp_dims = [-1, -1]
-        # self.same_inp_dims = True
-
-    def torch(self):
-        return torch.add
 
 
 class Expand(UnaryOpBase, ABC):
@@ -1009,139 +1054,139 @@ class Squeeze5D(SqueezeBase):
         self.inp_dims = [5]
 
 
-class Sum(ReduceBase, ABC):
+class ReduceSum(ReduceBase, ABC):
     def torch(self):
         return lambda x: x.sum(self.extra_attrs['reduce_dim'])
 
 
-class Sum2D(Sum):
+class ReduceSum2D(ReduceSum):
     def __init__(self):
         super().__init__(2)
         self.out_dims = [1]
         self.inp_dims = [2]
 
 
-class Sum3D(Sum):
+class ReduceSum3D(ReduceSum):
     def __init__(self):
         super().__init__(3)
         self.out_dims = [2]
         self.inp_dims = [3]
 
 
-class Sum4D(Sum):
+class ReduceSum4D(ReduceSum):
     def __init__(self):
         super().__init__(4)
         self.out_dims = [3]
         self.inp_dims = [4]
 
 
-class Sum5D(Sum):
+class ReduceSum5D(ReduceSum):
     def __init__(self):
         super().__init__(5)
         self.out_dims = [4]
         self.inp_dims = [5]
 
 
-class Min(ReduceBase, ABC):
+class ReduceMin(ReduceBase, ABC):
     def torch(self):
         return lambda x: x.min(self.extra_attrs['reduce_dim']).values
 
 
-class Min2D(Min):
+class ReduceMin2D(ReduceMin):
     def __init__(self):
         super().__init__(2)
         self.out_dims = [1]
         self.inp_dims = [2]
 
 
-class Min3D(Sum):
+class ReduceMin3D(ReduceMin):
     def __init__(self):
         super().__init__(3)
         self.out_dims = [2]
         self.inp_dims = [3]
 
 
-class Min4D(Min):
+class ReduceMin4D(ReduceMin):
     def __init__(self):
         super().__init__(4)
         self.out_dims = [3]
         self.inp_dims = [4]
 
 
-class Min5D(Min):
+class ReduceMin5D(ReduceMin):
     def __init__(self):
         super().__init__(5)
         self.out_dims = [4]
         self.inp_dims = [5]
 
 
-class Max(ReduceBase, ABC):
+class ReduceMax(ReduceBase, ABC):
     def torch(self):
         return lambda x: x.max(self.extra_attrs['reduce_dim']).values
 
 
-class Max2D(Max):
+class ReduceMax2D(ReduceMax):
     def __init__(self):
         super().__init__(2)
         self.out_dims = [1]
         self.inp_dims = [2]
 
 
-class Max3D(Max):
+class ReduceMax3D(ReduceMax):
     def __init__(self):
         super().__init__(3)
         self.out_dims = [2]
         self.inp_dims = [3]
 
 
-class Max4D(Max):
+class ReduceMax4D(ReduceMax):
     def __init__(self):
         super().__init__(4)
         self.out_dims = [3]
         self.inp_dims = [4]
 
 
-class Max5D(Max):
+class ReduceMax5D(ReduceMax):
     def __init__(self):
         super().__init__(5)
         self.out_dims = [4]
         self.inp_dims = [5]
 
 
-class Mean(ReduceBase, ABC):
+class ReduceMean(ReduceBase, ABC):
     def torch(self):
         return lambda x: x.mean(self.extra_attrs['reduce_dim'])
 
 
-class Mean1D(Mean):
+class ReduceMean1D(ReduceMean):
     def __init__(self):
         super().__init__(1)
         self.out_dims = [0]
         self.inp_dims = [1]
 
 
-class Mean2D(Mean):
+class ReduceMean2D(ReduceMean):
     def __init__(self):
         super().__init__(2)
         self.out_dims = [1]
         self.inp_dims = [2]
 
 
-class Mean3D(Mean):
+class ReduceMean3D(ReduceMean):
     def __init__(self):
         super().__init__(3)
         self.out_dims = [2]
         self.inp_dims = [3]
 
 
-class Mean4D(Mean):
+class ReduceMean4D(ReduceMean):
     def __init__(self):
         super().__init__(4)
         self.out_dims = [3]
         self.inp_dims = [4]
 
 
-class Mean5D(Mean):
+class ReduceMean5D(ReduceMean):
     def __init__(self):
         super().__init__(5)
         self.out_dims = [4]
@@ -1214,7 +1259,7 @@ class ArgMax5D(ArgMax):
         self.inp_dims = [5]
 
 
-def _glob_leaf_op_classes():
+def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
     ret = []
 
     def _glob_leaf_op_classes_rec(cls):

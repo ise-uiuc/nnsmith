@@ -11,8 +11,8 @@ import time
 import os
 import copy
 
-from abstract.op import *
-from export import torch2onnx
+from nnsmith.abstract.op import *
+from nnsmith.export import torch2onnx
 
 
 class RequiredDimNotFound(Exception):
@@ -149,7 +149,7 @@ class SimpleGenerator:
         # Find all output nodes
         output_nid = [n for n, d in graph.out_degree() if d == 0]
         out_non_dep = [n for n in output_nid if not dep[n]]
-        self.insert_input_node()
+        self.insert_input_node([1, 1, 1, 1])
         in_nid = len(self.alive_shapes) - 1
         for o_nid in out_non_dep:
             shape_indices = graph.nodes[o_nid]['shape_indices']
@@ -157,7 +157,7 @@ class SimpleGenerator:
                 assert self.try_insert_node(Add(), [in_nid, sid])
 
     @abstractmethod
-    def insert_input_node(self) -> ShapeVar:
+    def insert_input_node(self, min_dims) -> ShapeVar:
         raise NotImplementedError
 
     @abstractmethod
@@ -185,9 +185,9 @@ class SimpleGenerator:
     #     return shape
 
     def abstract_gen(self, max_node_size=10, max_gen_millisec=2000):
-        self.insert_input_node()
-        self.insert_input_node()
-        self.insert_input_node()
+        self.insert_input_node(self.min_dims)
+        self.insert_input_node(self.min_dims)
+        self.insert_input_node(self.min_dims)
         init_time = time.time()
         while time.time() - init_time < max_gen_millisec / 1000 and len(
                 self.abstract_graph.nodes) < max_node_size:
@@ -195,7 +195,7 @@ class SimpleGenerator:
                 break
             node_t = self.pick_next_op_type()
             if issubclass(node_t, Input):
-                self.insert_input_node()
+                self.insert_input_node(self.min_dims)
             else:
                 self.try_insert_node_type(node_t)
         if len(self.abstract_graph.nodes) != max_node_size:
@@ -285,6 +285,9 @@ class SimpleGenerator:
         except RequiredDimNotFound:
             return False
         except AssertionError:
+            if self.verbose:
+                import traceback
+                traceback.print_exc()
             return False
 
         return False
@@ -321,8 +324,7 @@ class SimpleGenerator:
 
 
 class PureSymbolGen(SimpleGenerator):
-    def insert_input_node(self) -> ShapeVar:
-        min_dims = self.min_dims
+    def insert_input_node(self, min_dims) -> ShapeVar:
         input_tensor_shape = ShapeVar(
             shape=[self.new_sym('i%s_s%s' % (self.n_inps, k)) for k in range(len(min_dims))])
         input_node = Input(self.n_inps, *input_tensor_shape.shape)

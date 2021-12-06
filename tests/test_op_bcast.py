@@ -1,4 +1,10 @@
 from nnsmith.abstract.op import *
+from nnsmith import graph_gen
+from nnsmith.graph_gen import PureSymbolGen, SymbolNet
+from nnsmith.export import torch2onnx
+import time
+import tempfile
+import os
 
 
 def test_bcast():
@@ -21,7 +27,7 @@ def test_bcast():
             shapes = (x1,), (x2,)
             shapes_var = [ShapeVar(s) for s in shapes]
             cons1 = broadcast_cons(*shapes_var)
-            cons2 = broadcast_cons_2d(*shapes_var)
+            cons2 = broadcast_cons_binary(*shapes_var)
             s = z3.Solver()
             assert s.check(z3.And(*cons1) != z3.And(*cons2)) == z3.unsat
 
@@ -59,5 +65,63 @@ def test_bcast_add():
     assert s.check() == z3.unsat
 
 
+def test_bcast_with_graph_gen():
+    class BcastOrientedGen(graph_gen.PureSymbolGen):
+        def pick_next_op_type(self):
+            wts = []
+            for op in self.op_candidates:
+                if issubclass(op, (Input, Constant)):
+                    wts.append(5)
+                elif op.bcastable:
+                    wts.append(50)
+                else:
+                    wts.append(1)
+            return random.choices(self.op_candidates, wts)[0]
+
+    d = tempfile.mkdtemp(dir='.')
+    print('creating tmp dir:', d)
+
+    def gen_once(idx):
+        gen = BcastOrientedGen()
+
+        seed = random.getrandbits(32)
+        print(f"Using seed {seed}")
+        random.seed(seed)
+
+        z3.set_param(
+            "smt.phase_selection",
+            5,
+            "smt.arith.random_initial_value",
+            True,
+            "sat.phase",
+            "random",
+        )
+
+        strt_time = time.time()
+        gen = PureSymbolGen()
+        gen.abstract_gen(max_node_size=10)
+        print(
+            f'{time.time() - strt_time}s to generate a graph w/ {len(gen.abstract_graph.nodes())} nodes')
+
+        solution = gen.get_symbol_solutions()
+        print(
+            f'{len(solution)} symbols and {len(gen.solver.assertions())} constraints.')
+        print(solution)
+
+        gen.viz(d + f'/output-{idx}.onnx.png')
+
+        # input_shape = gen.concretize_input_shape(solution)
+        # print(f'Input shape: {input_shape}')
+
+        net = SymbolNet(gen.abstract_graph, solution)
+        net.eval()
+        # net.set_input_spec(input_shape)
+        torch2onnx(model=net, filename=d + f'/output-{idx}.onnx', verbose=True)
+    for i in range(100):
+        gen_once(i)
+    os.system(f'rm -rf {d}')
+
+
 test_bcast()
 test_bcast_add()
+test_bcast_with_graph_gen()
