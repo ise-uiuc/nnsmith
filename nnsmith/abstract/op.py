@@ -165,7 +165,7 @@ class ShapeVar:
     def nelement(self):
         if len(self.shape) == 0:  # Scalar
             return 1
-        return reduce(lambda x, y: nnsmith_mul(x, y), self.shape)
+        return reduce(lambda x, y: nnsmith_mul(x, y), self.shape, 1)
 
     @staticmethod
     def from_torch(torch_shape):
@@ -838,10 +838,10 @@ class Reshape(UnaryOpBase, ABC):
                 symbol_indices.append(i)
         if len(symbol_indices) == 0:
             shape_var.shape[auto_dim] = reduce(
-                lambda x, y: x * y, input_shapes[0].shape) // accum
+                lambda x, y: x * y, input_shapes[0].shape, 1) // accum
         else:
             shape_var.shape[auto_dim] = nnsmith_div(reduce(
-                lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape), accum)
+                lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape, 1), accum)
 
         return [shape_var]
 
@@ -850,9 +850,9 @@ class Reshape(UnaryOpBase, ABC):
         # If your target shape is concrete, then your output shape's total pixels must be the same as the input shape's.
         if -1 not in self.target_shape:
             total_pixels = reduce(
-                lambda x, y: nnsmith_mul(x, y), self.target_shape)
+                lambda x, y: nnsmith_mul(x, y), self.target_shape, 1)
             cons = [nnsmith_eq(total_pixels, reduce(
-                lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape))]
+                lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape, 1))]
             # should not be too extreme!
             __DIM_LIMIT__ = 4096
             lim = __DIM_LIMIT__
@@ -864,8 +864,8 @@ class Reshape(UnaryOpBase, ABC):
         else:
             # If you use auto mode (specifying -1 for some dimensions), then the total number of input pixels must be exactly divisible by that of the output shape.
             minimul_pixels = reduce(
-                lambda x, y: nnsmith_mul(x, y), [v for v in self.target_shape if v != -1])
-            return [nnsmith_eq(nnsmith_mod(reduce(lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape), minimul_pixels), 0)]
+                lambda x, y: nnsmith_mul(x, y), [v for v in self.target_shape if v != -1], 1)
+            return [nnsmith_eq(nnsmith_mod(reduce(lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape, 1), minimul_pixels), 0)]
 
     def torch(self):
         return lambda x: x.reshape(*self.target_shape)
