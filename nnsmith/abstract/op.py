@@ -1,9 +1,12 @@
 from abc import ABC, abstractmethod
 from enum import Enum
 from functools import reduce
-from typing import List, Union, Callable, Type
+import traceback
+from typing import List, Tuple, Union, Callable, Type
 from inspect import signature
 import random
+import itertools
+import warnings
 
 # Import z3 ahead of torch (See https://github.com/Z3Prover/z3/issues/5656)
 import z3
@@ -151,6 +154,17 @@ class DType(Enum):
     # complex64 = 'complex64'
     # complex128 = 'complex128'
 
+    def __repr__(self) -> str:
+        return self.name
+
+
+DTypeComb = Tuple[DType, ...]
+
+DTYPE_ALL = list(DType.__members__.values())
+DTYPE_NON_BOOLS = [dtype for dtype in DTYPE_ALL if dtype != DType.bool]
+DTYPE_FLOATS = [DType.float32, DType.float64]
+DTYPE_INTS = [DType.int32, DType.int64]
+
 
 class ShapeVar:
     def __init__(self, shape: List[Union[int, z3.ExprRef]], dtype: DType = DType.float32):
@@ -289,8 +303,11 @@ def broadcast_cons_binary(*shapes: ShapeVar) -> List[z3.ExprRef]:
 class AbsOpBase(ABC):
     # whether this op is broadcastable or not
     bcastable = False
-    # input dtypes
-    in_dtypes = []
+    # input dtypes: enumerates all possible input dtype combinations. Size of the list is the number of combinations.
+    # Each element is a tuple of allowed input dtypes. NOTE: len(list) can >= the # of inputs, for handling ops with arbitrary arity.
+    # For example, [(DType.float32, DType.float32), (DType.float64, DType.float64), (DType.int32, DType.int32)] means that
+    # this op can accept one of float32xfloat32, float64xfloat64, and int32xint32 as input dtypes.
+    in_dtypes: List[DTypeComb] = None  # Overwrite me!
 
     def __init__(self):
         # `[3, 3]` this means this op requires 2 inputs. Where the 1st one has 2 dimensions, and the 2nd one has 3 dimensions.
@@ -326,8 +343,7 @@ class AbsOpBase(ABC):
 
     @check_require_fn  # Public API.
     def requires(self, input_shapes):
-        specific_cons = self._requires(input_shapes)
-        return specific_cons
+        return self._requires(input_shapes)
 
     def __repr__(self) -> str:
         return self.__class__.__name__
@@ -405,8 +421,8 @@ class ElementWiseUnaryOp(UnaryOpBase):
 
 class BcastBinaryOp(BinaryOpBase):
     bcastable = True
-    same_inp_dtypes = True
-    out_dtypes = None
+    # by default, output dtype is the same as the first input dtype
+    _bcast_out_dtypes = None
 
     def __init__(self):
         super().__init__()
@@ -416,17 +432,31 @@ class BcastBinaryOp(BinaryOpBase):
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         tgt_shape = broadcast_shapes(*input_shapes)
-        tgt_shape.dtype = input_shapes[0].dtype if self.out_dtypes is None else self.out_dtypes[0]
+        tgt_shape.dtype = input_shapes[0].dtype if self._bcast_out_dtypes is None else self._bcast_out_dtypes[0]
         return [tgt_shape]
 
     def _requires(self, input_shapes):
-        return broadcast_cons_binary(*input_shapes) + (
-            [input_shapes[0].dtype == input_shapes[1].dtype] if self.same_inp_dtypes else [])
+        return broadcast_cons_binary(*input_shapes)
+
+
+class BcastBinaryOp1(BcastBinaryOp):  # +-*/ max min
+    in_dtypes = [(i, i) for i in DTYPE_NON_BOOLS]
+    _bcast_out_dtypes = None
+
+
+class BcastBinaryOp2(BcastBinaryOp):  # > < =
+    in_dtypes = [(i, i) for i in DTYPE_ALL]
+    _bcast_out_dtypes = [DType.bool]
+
+
+class BcastBinaryOp3(BcastBinaryOp):  # logical and or xor
+    in_dtypes = [(DType.bool,), (DType.bool,)]
+    _bcast_out_dtypes = [DType.bool]
 
 
 class Where(TernaryOpBase):
     bcastable = True
-    in_dtypes = [DType.bool]
+    in_dtypes = [(DType.bool, i, i) for i in DTYPE_ALL]
 
     def __init__(self):
         super().__init__()
@@ -448,34 +478,28 @@ class Where(TernaryOpBase):
         return torch.where
 
 
-# class Add(BcastBinaryOp):
-    # def torch(self):
-        # return torch.add
 # bcast binary ops from https://github.com/onnx/onnx/blob/master/docs/Broadcasting.md
 # TODO bitwise_and/or/xor?
-Add = type('Add', (BcastBinaryOp,), {'torch': lambda self: torch.add})
-And = type('And', (BcastBinaryOp,), {'torch': lambda self: torch.logical_and})
-And.in_dtypes = [DType.bool, DType.bool]
-Div = type('Div', (BcastBinaryOp,), {'torch': lambda self: torch.div})
-Equal = type('Equal', (BcastBinaryOp,), {'torch': lambda self: torch.eq})
-Equal.out_dtypes = [DType.bool]
-Greater = type('Greater', (BcastBinaryOp,), {'torch': lambda self: torch.gt})
-Greater.out_dtypes = [DType.bool]
-Less = type('Less', (BcastBinaryOp,), {'torch': lambda self: torch.lt})
-Less.out_dtypes = [DType.bool]
+Add = type('Add', (BcastBinaryOp1,), {'torch': lambda self: torch.add})
+Sub = type('Sub', (BcastBinaryOp1,), {'torch': lambda self: torch.sub})
+Mul = type('Mul', (BcastBinaryOp1,), {'torch': lambda self: torch.mul})
+Div = type('Div', (BcastBinaryOp1,), {'torch': lambda self: torch.div})
 # NOTE(JK): didn't find multi-input version of Max and Min in torch, so assume binary ops
-Max = type('Max', (BcastBinaryOp,), {'torch': lambda self: torch.max})
-Min = type('Min', (BcastBinaryOp,), {'torch': lambda self: torch.min})
-Mul = type('Mul', (BcastBinaryOp,), {'torch': lambda self: torch.mul})
-Or = type('Or', (BcastBinaryOp,), {'torch': lambda self: torch.logical_or})
-Or.in_dtypes = [DType.bool, DType.bool]
+Max = type('Max', (BcastBinaryOp1,), {'torch': lambda self: torch.max})
+Min = type('Min', (BcastBinaryOp1,), {'torch': lambda self: torch.min})
+
+Equal = type('Equal', (BcastBinaryOp2,), {'torch': lambda self: torch.eq})
+Greater = type('Greater', (BcastBinaryOp2,), {'torch': lambda self: torch.gt})
+Less = type('Less', (BcastBinaryOp2,), {'torch': lambda self: torch.lt})
+
+And = type('And', (BcastBinaryOp3,), {'torch': lambda self: torch.logical_and})
+Or = type('Or', (BcastBinaryOp3,), {'torch': lambda self: torch.logical_or})
+Xor = type('Xor', (BcastBinaryOp3,), {'torch': lambda self: torch.logical_xor})
+
 Pow = type('Pow', (BcastBinaryOp,), {'torch': lambda self: torch.pow})
-Pow.in_dtypes = [
-    (DType.int32, DType.int64, DType.float32, DType.float64), (DType.int32, DType.int64, DType.float32, DType.float64)]
-Pow.same_inp_dtypes = False
-Sub = type('Sub', (BcastBinaryOp,), {'torch': lambda self: torch.sub})
-Xor = type('Xor', (BcastBinaryOp,), {'torch': lambda self: torch.logical_xor})
-Xor.in_dtypes = [DType.bool, DType.bool]
+# lhs_dtypes = (DType.int32, DType.int64, DType.float32, DType.float64)
+# rhs_dtypes = (DType.int32, DType.int64, DType.float32, DType.float64)
+# Pow.in_dtypes = itertools.product(lhs_dtypes, rhs_dtypes)
 
 # NOTE(JK): For Mean and Sum there is no corresponding torch op, so we ignore them
 # Sum = type('Sum', (BcastBinaryOp,), {'torch': lambda self: torch.sum})
@@ -483,6 +507,8 @@ Xor.in_dtypes = [DType.bool, DType.bool]
 
 
 class Constant(AbsOpBase):
+    in_dtypes = [()]
+
     def __init__(self, dim: int):
         super().__init__()
         self.inp_dims = []
@@ -543,6 +569,8 @@ class Constant4D(Constant):
 
 
 class Input(ElementWiseUnaryOp):
+    in_dtypes = []
+
     def __init__(self, idx, dtype, dim0, dim1, dim2, dim3):
         super().__init__()
         self.inp_dims = []
@@ -1315,11 +1343,60 @@ def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
 
 
 ALL_OP_TYPES = _glob_leaf_op_classes()
-ALL_DTYPES = list(DType.__members__.values())
-# FIXME(JK): only bcast ops encode dtype specs. Other ops use the default spec
-# which also accepts bool. However it turns out bool is not a valid input dtype for most of the ops.
-ALL_DTYPES.remove(DType.bool)
-print(ALL_DTYPES)
+
+
+def _check_comb(comb: DTypeComb, op: AbsOpBase):
+    inps = []
+    for dtype, ndims in zip(comb, op.inp_dims):
+        if ndims == -1:
+            ndims = 1
+        inps.append(torch.empty([1] * ndims, dtype=dtype.value))
+    try:
+        out = op.torch()(*inps)
+    except:
+        # traceback.print_exc()
+        return False
+    return True
+
+
+def auto_infer_in_dtypes():
+    _WHITE_LIST = [Input]
+
+    def create_op(op_t: Type[AbsOpBase]):
+        construct_param_dict = signature(op_t.__init__).parameters
+        values = []
+        for key, val in construct_param_dict.items():
+            if key == 'self':
+                continue
+            values.append((key, 1))  # TODO consider type hints?
+        return op_t(**dict(values))
+
+    for op_t in ALL_OP_TYPES:
+        if op_t in _WHITE_LIST:
+            continue
+        print(f'Try auto inferring input dtype spec for `{op_t.__name__}`')
+        valid_combs = None
+        op = create_op(op_t)
+        in_dtype_combs: List[DTypeComb] = \
+            itertools.product(DTYPE_ALL, repeat=len(op.inp_dims))
+        valid_combs = [
+            comb for comb in in_dtype_combs if _check_comb(comb, op)]
+        if len(valid_combs) == 0:
+            raise RuntimeError(
+                f'No valid input dtype combination found for `{op_t.__name__}`')
+
+        print('infered result:', valid_combs)
+        if op_t.in_dtypes is not None:
+            # we disable type promotion for bcast binary ops so the difference is fine
+            if valid_combs != op_t.in_dtypes and not issubclass(op_t, (BcastBinaryOp1, BcastBinaryOp2, BcastBinaryOp3)):
+                warnings.warn('Inferred result for `{}` different from given one.\nInferred={}\n, given={}'.format(
+                    op_t.__name__, valid_combs, op_t.in_dtypes))
+        else:
+            op_t.in_dtypes = valid_combs
+
+
+auto_infer_in_dtypes()
+
 
 if __name__ == '__main__':
     # Test shape functions

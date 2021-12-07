@@ -118,6 +118,7 @@ def test_bcast_with_graph_gen():
         net.eval()
         # net.set_input_spec(input_shape)
         torch2onnx(model=net, filename=d + f'/output-{idx}.onnx', verbose=True)
+        del net, gen
     d = tempfile.mkdtemp(dir='.')
     print('creating tmp dir:', d)
     for i in range(100):
