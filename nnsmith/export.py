@@ -1,6 +1,8 @@
 import torch
 import torch.onnx
 
+from nnsmith.abstract.op import DType, ShapeVar
+
 
 # Torch is actually not an ideal choice for graph generation,
 # as it is based on dynamic graph construction.
@@ -26,8 +28,8 @@ def torch2onnx(model, filename, verbose=False):
 
     # Dummy inputs
     dummy_inputs = []
-    for _, v in model.plausible_input_shape.items():
-        dummy_inputs.append(torch.zeros(v))
+    for _, svar in model.plausible_input_shape.items():
+        dummy_inputs.append(torch.zeros(svar.shape).to(dtype=svar.dtype.value))
     if verbose:
         print(f"Generated model:\n{model}")
     torch.onnx.export(
@@ -54,7 +56,8 @@ if __name__ == "__main__":
         def __init__(self):
             super(DyNet, self).__init__()
             # Following attributes are required to export ONNX model.
-            self.plausible_input_shape = {"i0": [1, 1, 3], "i1": [2, 3, 3]}
+            self.plausible_input_shape = {"i0": ShapeVar(
+                [1, 1, 3]), "i1": ShapeVar([2, 3, 3], dtype=DType.float64)}
             self.input_spec = {"i0": [-1, -1, 3], "i1": [2, 3, 3]}
             self.n_output = 2
 
@@ -68,7 +71,8 @@ if __name__ == "__main__":
         def __init__(self):
             super(StaticNet, self).__init__()
             # Following attributes are required to export ONNX model.
-            self.plausible_input_shape = {"i0": [1, 1, 3], "i1": [1, 1, 3]}
+            self.plausible_input_shape = {"i0": ShapeVar(
+                [1, 1, 3]), "i1": ShapeVar([1, 1, 3])}
             self.input_spec = {"i0": [1, 1, 3], "i1": [1, 1, 3]}
             self.n_output = 1
 

@@ -76,8 +76,10 @@ class SymbolNet(nn.Module):
                 assert len(output_idx) == 1
                 self.input_info.append(InputInfo(op=op, oid=output_idx[0]))
 
-        self.plausible_input_shape = self.input_spec = {f'i{ii.op.idx}': ii.op.shape
-                                                        for ii in self.input_info}
+        self.input_spec = {
+            f'i{ii.op.idx}': ii.op.shape for ii in self.input_info}
+        self.plausible_input_shape = {f'i{ii.op.idx}': ShapeVar(
+            ii.op.shape, dtype=ii.op.dtype) for ii in self.input_info}
 
     @torch.no_grad()
     def forward(self, *xs):
@@ -149,15 +151,26 @@ class SimpleGenerator:
         # Find all output nodes
         output_nid = [n for n, d in graph.out_degree() if d == 0]
         out_non_dep = [n for n in output_nid if not dep[n]]
-        self.insert_input_node([1, 1, 1, 1])
-        in_nid = len(self.alive_shapes) - 1
+        to_be_fixed_sids = []
         for o_nid in out_non_dep:
             shape_indices = graph.nodes[o_nid]['shape_indices']
             for sid in shape_indices:
-                assert self.try_insert_node(Add(), [in_nid, sid])
+                to_be_fixed_sids.append(sid)
+
+        # fix for each dtype
+        for dt in DType.__members__.values():
+            to_be_fixed_sids_dt = [
+                sid for sid in to_be_fixed_sids if self.alive_shapes[sid][1].dtype == dt]
+            if len(to_be_fixed_sids_dt) == 0:
+                continue
+            self.insert_input_node([1, 1, 1, 1], dtype=dt)
+            in_nid = len(self.alive_shapes) - 1
+            for sid in to_be_fixed_sids_dt:
+                node_t = Equal if dt == DType.bool else Add
+                assert self.try_insert_node(node_t(), [in_nid, sid])
 
     @abstractmethod
-    def insert_input_node(self, min_dims) -> ShapeVar:
+    def insert_input_node(self, min_dims, dtype=DType.float32) -> ShapeVar:
         raise NotImplementedError
 
     @abstractmethod
@@ -251,6 +264,9 @@ class SimpleGenerator:
             self.viz()
 
     def try_insert_node_type(self, node_t, max_shape_var_pick_time=3) -> bool:
+        if self.verbose:
+            print(f'Inserting node #{len(self.abstract_graph.nodes)}: '
+                  f'trying to insert node type {node_t.__name__}')
         op_param_n = signature(node_t).parameters
         op_id = len(self.abstract_graph.nodes)
         op_params = [self.new_sym('op%s_%s' % (op_id, k))
@@ -279,10 +295,14 @@ class SimpleGenerator:
 
         try:
             for _ in range(max_shape_var_pick_time):
-                ishape_indices = self.pick_shape_var_idx(dim_spec_list)
+                ishape_indices = self.pick_shape_var_idx(
+                    dim_spec_list, op.in_dtypes)
                 if self.try_insert_node(op, ishape_indices):
                     return True
         except RequiredDimNotFound:
+            if self.verbose:
+                import traceback
+                traceback.print_exc()
             return False
         except AssertionError:
             if self.verbose:
@@ -292,7 +312,7 @@ class SimpleGenerator:
 
         return False
 
-    def pick_shape_var_idx(self, ndim_list: List[int]) -> List[int]:
+    def pick_shape_var_idx(self, ndim_list: List[int], in_dtypes) -> List[int]:
         """Randomly pick indices to shape variables from the output pool.
 
         Args:
@@ -301,17 +321,39 @@ class SimpleGenerator:
         Returns:
             List[int]: indices to applicable shape variables.
         """
+
         shape_var_candidates = []
-        for ndim in ndim_list:
-            if ndim == -1:  # Arbitrary dimension size.
-                shape_var_candidates.append(
-                    random.randint(0, len(self.alive_shapes) - 1))
-            elif ndim in self.dim2shape_idx:
-                shape_var_candidates.append(
-                    random.choice(self.dim2shape_idx[ndim]))
-            else:
+
+        for i, ndim in enumerate(ndim_list):
+            # TODO(JK): consider same_in_dtypes
+            # no constraint
+            dtype = ALL_DTYPES if i >= len(in_dtypes) else in_dtypes[i]
+            dtype = [dtype] if isinstance(dtype, DType) else dtype
+            cans = range(len(self.alive_shapes))
+
+            cans = list(filter(  # filter with ndim
+                lambda sid: self.alive_shapes[sid][1].ndims == ndim or ndim == -1, cans))
+            if len(cans) == 0:
                 raise RequiredDimNotFound(
                     'Cannot find a shape variable with #dimensions %s.' % ndim)
+
+            cans = list(filter(  # filter with dtype
+                lambda sid: self.alive_shapes[sid][1].dtype in dtype, cans))
+            if len(cans) == 0:
+                raise RequiredDimNotFound(
+                    'Cannot find a shape variable with #dimensions %s and dtype %s.' % (ndim, dtype))
+
+            shape_var_candidates.append(random.choice(cans))
+            # if ndim == -1:  # Arbitrary dimension size.
+            #     shape_var_candidates.append(
+            #         random.randint(0, len(self.alive_shapes) - 1))
+            # elif ndim in self.dim2shape_idx:
+            #     shape_var_candidates.append(
+            #         random.choice(self.dim2shape_idx[ndim]))
+            # else:
+            #     raise RequiredDimNotFound(
+            #         'Cannot find a shape variable with #dimensions %s.' % ndim)
+
         return shape_var_candidates
 
     def viz(self, filename: str = None):
@@ -324,10 +366,10 @@ class SimpleGenerator:
 
 
 class PureSymbolGen(SimpleGenerator):
-    def insert_input_node(self, min_dims) -> ShapeVar:
+    def insert_input_node(self, min_dims, dtype=DType.float32) -> ShapeVar:
         input_tensor_shape = ShapeVar(
-            shape=[self.new_sym('i%s_s%s' % (self.n_inps, k)) for k in range(len(min_dims))])
-        input_node = Input(self.n_inps, *input_tensor_shape.shape)
+            shape=[self.new_sym('i%s_s%s' % (self.n_inps, k)) for k in range(len(min_dims))], dtype=dtype)
+        input_node = Input(self.n_inps, dtype, *input_tensor_shape.shape)
 
         self.insert_node(input_node, [input_tensor_shape], ishape_indices=[])
         for c in input_tensor_shape.gt_zero():
@@ -379,7 +421,7 @@ class PureSymbolGen(SimpleGenerator):
         return self.solver.model()
 
 
-if __name__ == '__main__':
+def parse_args():
     import argparse
 
     parser = argparse.ArgumentParser()
@@ -392,7 +434,11 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int)
     parser.add_argument('--verbose', action='store_true')
     parser.add_argument('--use_bitvec', action='store_true')
-    args = parser.parse_args()
+    return parser.parse_args()
+
+
+if __name__ == '__main__':
+    args = parse_args()
 
     seed = args.seed
     if seed is None:

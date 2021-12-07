@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from enum import Enum
 from functools import reduce
 from typing import List, Union, Callable, Type
 from inspect import signature
@@ -138,12 +139,26 @@ def nnsmith_mod(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3
     return left % right
 
 
+class DType(Enum):
+    # float16 = 'float16'
+    float32 = torch.float32
+    float64 = torch.float64
+    # int8 = 'int8'
+    # int16 = 'int16'
+    int32 = torch.int32
+    int64 = torch.int64
+    bool = torch.bool
+    # complex64 = 'complex64'
+    # complex128 = 'complex128'
+
+
 class ShapeVar:
-    def __init__(self, shape: List[Union[int, z3.ExprRef]]):
+    def __init__(self, shape: List[Union[int, z3.ExprRef]], dtype: DType = DType.float32):
         self.shape = list(shape)
+        self.dtype = dtype
 
     def __repr__(self):
-        return str(self.shape)
+        return f'ShapeVar(shape={str(self.shape)}, dtype={self.dtype.value})'
 
     def gt_zero(self, no_replica=[]):
         ret = []
@@ -170,6 +185,10 @@ class ShapeVar:
     @staticmethod
     def from_torch(torch_shape):
         return ShapeVar([torch_shape[i] for i in range(len(torch_shape))])
+
+    @property
+    def ndims(self):
+        return len(self.shape)
 
 
 def check_shape_fn(func):
@@ -270,6 +289,8 @@ def broadcast_cons_binary(*shapes: ShapeVar) -> List[z3.ExprRef]:
 class AbsOpBase(ABC):
     # whether this op is broadcastable or not
     bcastable = False
+    # input dtypes
+    in_dtypes = []
 
     def __init__(self):
         # `[3, 3]` this means this op requires 2 inputs. Where the 1st one has 2 dimensions, and the 2nd one has 3 dimensions.
@@ -305,7 +326,8 @@ class AbsOpBase(ABC):
 
     @check_require_fn  # Public API.
     def requires(self, input_shapes):
-        return self._requires(input_shapes)
+        specific_cons = self._requires(input_shapes)
+        return specific_cons
 
     def __repr__(self) -> str:
         return self.__class__.__name__
@@ -344,10 +366,10 @@ class BinaryOpBase(AbsOpBase):
         self.out_dims = [-1]
 
 
-# class TernaryOpBase(AbsOpBase):
-#     def __init__(self):
-#         super().__init__()
-#         self.out_dims = [-1]
+class TernaryOpBase(AbsOpBase):
+    def __init__(self):
+        super().__init__()
+        self.out_dims = [-1]
 
 
 class ElementWiseUnaryOp(UnaryOpBase):
@@ -383,6 +405,8 @@ class ElementWiseUnaryOp(UnaryOpBase):
 
 class BcastBinaryOp(BinaryOpBase):
     bcastable = True
+    same_inp_dtypes = True
+    out_dtypes = None
 
     def __init__(self):
         super().__init__()
@@ -391,30 +415,37 @@ class BcastBinaryOp(BinaryOpBase):
         self.bcastable = True
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        # assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
         tgt_shape = broadcast_shapes(*input_shapes)
+        tgt_shape.dtype = input_shapes[0].dtype if self.out_dtypes is None else self.out_dtypes[0]
         return [tgt_shape]
 
     def _requires(self, input_shapes):
-        return broadcast_cons_binary(*input_shapes)
+        return broadcast_cons_binary(*input_shapes) + (
+            [input_shapes[0].dtype == input_shapes[1].dtype] if self.same_inp_dtypes else [])
 
 
-# class BcastTernaryOp(TernaryOpBase):
-#     bcastable = True
+class Where(TernaryOpBase):
+    bcastable = True
+    in_dtypes = [DType.bool]
 
-#     def __init__(self):
-#         super().__init__()
-#         self.inp_dims = [-1, -1, -1]
-#         self.same_inp_dims = False
-#         self.bcastable = True
+    def __init__(self):
+        super().__init__()
+        self.inp_dims = [-1, -1, -1]
+        self.same_inp_dims = False
+        self.same_inp_dtypes = True
+        self.bcastable = True
 
-#     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-#         # assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
-#         tgt_shape = broadcast_shapes(*input_shapes)
-#         return [tgt_shape]
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        # assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
+        tgt_shape = broadcast_shapes(*input_shapes)
+        tgt_shape.dtype = input_shapes[1].dtype
+        return [tgt_shape]
 
-#     def _requires(self, input_shapes):
-#         return broadcast_cons(*input_shapes)
+    def _requires(self, input_shapes):
+        return broadcast_cons(*input_shapes) + [input_shapes[1].dtype == input_shapes[2].dtype]
+
+    def torch(self):
+        return torch.where
 
 
 # class Add(BcastBinaryOp):
@@ -423,20 +454,28 @@ class BcastBinaryOp(BinaryOpBase):
 # bcast binary ops from https://github.com/onnx/onnx/blob/master/docs/Broadcasting.md
 # TODO bitwise_and/or/xor?
 Add = type('Add', (BcastBinaryOp,), {'torch': lambda self: torch.add})
-# And = type('And', (BcastBinaryOp,), {'torch': lambda self: torch.logical_and})
+And = type('And', (BcastBinaryOp,), {'torch': lambda self: torch.logical_and})
+And.in_dtypes = [DType.bool, DType.bool]
 Div = type('Div', (BcastBinaryOp,), {'torch': lambda self: torch.div})
-# Equal = type('Equal', (BcastBinaryOp,), {'torch': lambda self: torch.eq})
-# Greater = type('Greater', (BcastBinaryOp,), {'torch': lambda self: torch.gt})
-# Less = type('Less', (BcastBinaryOp,), {'torch': lambda self: torch.lt})
+Equal = type('Equal', (BcastBinaryOp,), {'torch': lambda self: torch.eq})
+Equal.out_dtypes = [DType.bool]
+Greater = type('Greater', (BcastBinaryOp,), {'torch': lambda self: torch.gt})
+Greater.out_dtypes = [DType.bool]
+Less = type('Less', (BcastBinaryOp,), {'torch': lambda self: torch.lt})
+Less.out_dtypes = [DType.bool]
 # NOTE(JK): didn't find multi-input version of Max and Min in torch, so assume binary ops
 Max = type('Max', (BcastBinaryOp,), {'torch': lambda self: torch.max})
 Min = type('Min', (BcastBinaryOp,), {'torch': lambda self: torch.min})
 Mul = type('Mul', (BcastBinaryOp,), {'torch': lambda self: torch.mul})
-# Or = type('Or', (BcastBinaryOp,), {'torch': lambda self: torch.logical_or})
+Or = type('Or', (BcastBinaryOp,), {'torch': lambda self: torch.logical_or})
+Or.in_dtypes = [DType.bool, DType.bool]
 Pow = type('Pow', (BcastBinaryOp,), {'torch': lambda self: torch.pow})
+Pow.in_dtypes = [
+    (DType.int32, DType.int64, DType.float32, DType.float64), (DType.int32, DType.int64, DType.float32, DType.float64)]
+Pow.same_inp_dtypes = False
 Sub = type('Sub', (BcastBinaryOp,), {'torch': lambda self: torch.sub})
-# Where = type('Where', (BcastTernaryOp,), {'torch': lambda self: torch.where})
-# Xor = type('Xor', (BcastBinaryOp,), {'torch': lambda self: torch.logical_xor})
+Xor = type('Xor', (BcastBinaryOp,), {'torch': lambda self: torch.logical_xor})
+Xor.in_dtypes = [DType.bool, DType.bool]
 
 # NOTE(JK): For Mean and Sum there is no corresponding torch op, so we ignore them
 # Sum = type('Sum', (BcastBinaryOp,), {'torch': lambda self: torch.sum})
@@ -504,11 +543,12 @@ class Constant4D(Constant):
 
 
 class Input(ElementWiseUnaryOp):
-    def __init__(self, idx, dim0, dim1, dim2, dim3):
+    def __init__(self, idx, dtype, dim0, dim1, dim2, dim3):
         super().__init__()
         self.inp_dims = []
         self.out_dims = [4]
         self.idx = idx
+        self.dtype = dtype
         self.dim0 = dim0
         self.dim1 = dim1
         self.dim2 = dim2
@@ -1275,6 +1315,11 @@ def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
 
 
 ALL_OP_TYPES = _glob_leaf_op_classes()
+ALL_DTYPES = list(DType.__members__.values())
+# FIXME(JK): only bcast ops encode dtype specs. Other ops use the default spec
+# which also accepts bool. However it turns out bool is not a valid input dtype for most of the ops.
+ALL_DTYPES.remove(DType.bool)
+print(ALL_DTYPES)
 
 if __name__ == '__main__':
     # Test shape functions

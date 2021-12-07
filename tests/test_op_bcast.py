@@ -1,6 +1,6 @@
 from nnsmith.abstract.op import *
 from nnsmith import graph_gen
-from nnsmith.graph_gen import PureSymbolGen, SymbolNet
+from nnsmith.graph_gen import PureSymbolGen, SymbolNet, parse_args
 from nnsmith.export import torch2onnx
 import time
 import tempfile
@@ -78,13 +78,12 @@ def test_bcast_with_graph_gen():
                     wts.append(1)
             return random.choices(self.op_candidates, wts)[0]
 
-    d = tempfile.mkdtemp(dir='.')
-    print('creating tmp dir:', d)
-
-    def gen_once(idx):
-        gen = BcastOrientedGen()
-
-        seed = random.getrandbits(32)
+    def gen_once(idx, gen_cls):
+        args = parse_args()
+        seed = args.seed
+        if seed is None:
+            # If we have not selected a seed, choose random one.
+            seed = random.getrandbits(32)
         print(f"Using seed {seed}")
         random.seed(seed)
 
@@ -98,8 +97,10 @@ def test_bcast_with_graph_gen():
         )
 
         strt_time = time.time()
-        gen = PureSymbolGen()
-        gen.abstract_gen(max_node_size=10)
+        gen = gen_cls(min_dims=args.min_dims,
+                      viz_sbs=args.viz_sbs, seed=seed, verbose=args.verbose, use_bitvec=args.use_bitvec)
+        gen.abstract_gen(max_node_size=args.max_nodes,
+                         max_gen_millisec=args.timeout)
         print(
             f'{time.time() - strt_time}s to generate a graph w/ {len(gen.abstract_graph.nodes())} nodes')
 
@@ -117,8 +118,15 @@ def test_bcast_with_graph_gen():
         net.eval()
         # net.set_input_spec(input_shape)
         torch2onnx(model=net, filename=d + f'/output-{idx}.onnx', verbose=True)
+    d = tempfile.mkdtemp(dir='.')
+    print('creating tmp dir:', d)
     for i in range(100):
-        gen_once(i)
+        gen_once(i, BcastOrientedGen)
+    os.system(f'rm -rf {d}')
+    d = tempfile.mkdtemp(dir='.')
+    print('creating tmp dir:', d)
+    for i in range(100):
+        gen_once(i, PureSymbolGen)
     os.system(f'rm -rf {d}')
 
 
