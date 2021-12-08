@@ -450,7 +450,7 @@ class BcastBinaryOp2(BcastBinaryOp):  # > < =
 
 
 class BcastBinaryOp3(BcastBinaryOp):  # logical and or xor
-    in_dtypes = [(DType.bool,), (DType.bool,)]
+    in_dtypes = [(DType.bool, DType.bool)]
     _bcast_out_dtypes = [DType.bool]
 
 
@@ -497,6 +497,8 @@ Or = type('Or', (BcastBinaryOp3,), {'torch': lambda self: torch.logical_or})
 Xor = type('Xor', (BcastBinaryOp3,), {'torch': lambda self: torch.logical_xor})
 
 Pow = type('Pow', (BcastBinaryOp,), {'torch': lambda self: torch.pow})
+# TODO: support exactly what onnx spec says (e.g., int support in the rhs)
+Pow.in_dtypes = [(i, i) for i in DTYPE_FLOATS]
 # lhs_dtypes = (DType.int32, DType.int64, DType.float32, DType.float64)
 # rhs_dtypes = (DType.int32, DType.int64, DType.float32, DType.float64)
 # Pow.in_dtypes = itertools.product(lhs_dtypes, rhs_dtypes)
@@ -621,6 +623,8 @@ class PReLU(ElementWiseUnaryOp):
 
 
 class Sigmoid(ElementWiseUnaryOp):
+    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+
     def __init__(self):
         super().__init__()
 
@@ -629,6 +633,8 @@ class Sigmoid(ElementWiseUnaryOp):
 
 
 class Sin(ElementWiseUnaryOp):
+    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+
     def __init__(self):
         super().__init__()
 
@@ -637,6 +643,8 @@ class Sin(ElementWiseUnaryOp):
 
 
 class Cos(ElementWiseUnaryOp):
+    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+
     def __init__(self):
         super().__init__()
 
@@ -645,6 +653,8 @@ class Cos(ElementWiseUnaryOp):
 
 
 class Asin(ElementWiseUnaryOp):
+    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+
     def __init__(self):
         super().__init__()
 
@@ -653,6 +663,8 @@ class Asin(ElementWiseUnaryOp):
 
 
 class Acos(ElementWiseUnaryOp):
+    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+
     def __init__(self):
         super().__init__()
 
@@ -661,6 +673,8 @@ class Acos(ElementWiseUnaryOp):
 
 
 class Tan(ElementWiseUnaryOp):
+    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+
     def __init__(self):
         super().__init__()
 
@@ -669,6 +683,8 @@ class Tan(ElementWiseUnaryOp):
 
 
 class Atan(ElementWiseUnaryOp):
+    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+
     def __init__(self):
         super().__init__()
 
@@ -685,6 +701,8 @@ class Abs(ElementWiseUnaryOp):
 
 
 class Ceil(ElementWiseUnaryOp):
+    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+
     def __init__(self):
         super().__init__()
 
@@ -703,6 +721,8 @@ class Clip(ElementWiseUnaryOp):
 
 
 class Round(ElementWiseUnaryOp):
+    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+
     def __init__(self):
         super().__init__()
 
@@ -711,6 +731,8 @@ class Round(ElementWiseUnaryOp):
 
 
 class Sqrt(ElementWiseUnaryOp):
+    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+
     def __init__(self):
         super().__init__()
 
@@ -719,6 +741,8 @@ class Sqrt(ElementWiseUnaryOp):
 
 
 class Log2(ElementWiseUnaryOp):
+    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+
     def __init__(self):
         super().__init__()
 
@@ -735,7 +759,9 @@ class Neg(ElementWiseUnaryOp):
 
 
 class Expand(UnaryOpBase, ABC):
+    in_dtypes = [(i, i) for i in DTYPE_ALL]
     # expand_dim cannot be symbolic. So just expand it.
+
     def __init__(self, expand_last_dim: int, expand_n: Union[int, z3.ExprRef]):
         """See https://pytorch.org/docs/stable/generated/torch.Tensor.expand.html
         """
@@ -803,6 +829,7 @@ class ExpandLast4(Expand):
 
 
 class NCHWConv2d(UnaryOpBase):
+    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
 
     def __init__(self,
                  in_channels: Union[int, z3.ExprRef],
@@ -876,6 +903,8 @@ class NCHWConv2d(UnaryOpBase):
 
 
 class Reshape(UnaryOpBase, ABC):
+    in_dtypes = [(i, i) for i in DTYPE_ALL]
+
     def __init__(self):
         super().__init__()
         self.inp_dims = [-1]
@@ -1350,7 +1379,8 @@ def _check_comb(comb: DTypeComb, op: AbsOpBase):
     for dtype, ndims in zip(comb, op.inp_dims):
         if ndims == -1:
             ndims = 1
-        inps.append(torch.empty([1] * ndims, dtype=dtype.value))
+        # TODO use symbolic solver
+        inps.append(torch.empty([2] * ndims, dtype=dtype.value))
     try:
         out = op.torch()(*inps)
     except:
@@ -1360,7 +1390,7 @@ def _check_comb(comb: DTypeComb, op: AbsOpBase):
 
 
 def auto_infer_in_dtypes():
-    _WHITE_LIST = [Input]
+    _WHITE_LIST = (Input, Expand, NCHWConv2d, Reshape)
 
     def create_op(op_t: Type[AbsOpBase]):
         construct_param_dict = signature(op_t.__init__).parameters
@@ -1372,7 +1402,7 @@ def auto_infer_in_dtypes():
         return op_t(**dict(values))
 
     for op_t in ALL_OP_TYPES:
-        if op_t in _WHITE_LIST:
+        if issubclass(op_t, _WHITE_LIST):
             continue
         print(f'Try auto inferring input dtype spec for `{op_t.__name__}`')
         valid_combs = None

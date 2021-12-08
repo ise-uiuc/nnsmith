@@ -20,8 +20,9 @@ class RequiredDimNotFound(Exception):
 
 
 class SymbolNet(nn.Module):
-    def __init__(self, graph: nx.MultiDiGraph, model: z3.ModelRef):
+    def __init__(self, graph: nx.MultiDiGraph, model: z3.ModelRef, verbose=False):
         super(SymbolNet, self).__init__()
+        self.verbose = verbose
         self.tensors = []  # 1) edges; 2) leaf nodes; 3) input -> 0;
         self.ref_cnt = []  # ref cnt -> tensors; erased on 0;
         self.instructions = []  # <Func, <input idx>, <output idx>>
@@ -70,7 +71,8 @@ class SymbolNet(nn.Module):
                 cur_op = op.torch()
                 if isinstance(cur_op, nn.Module):
                     self.mlist.append(cur_op)
-                self.instructions.append((cur_op, input_idx, output_idx))
+                self.instructions.append(
+                    (cur_op, input_idx, output_idx, op, node_id))
             else:  # Should be input node
                 assert type(op) is Input
                 assert len(output_idx) == 1
@@ -86,10 +88,16 @@ class SymbolNet(nn.Module):
         local_ref_cnt = self.ref_cnt.copy()
         for ii in self.input_info:
             self.tensors[ii.oid] = xs[ii.op.idx]
-        for inst, inps, outs in self.instructions:
+        for inst, inps, outs, op, node_id in self.instructions:
+            if self.verbose:
+                print(
+                    f'executing instruction op={op}, node_id={node_id}, inps={inps}, outs={outs}')
             outputs = inst(*[self.tensors[idx] for idx in inps])
             if not isinstance(outputs, list):
                 outputs = [outputs]
+            if self.verbose:
+                print('outputs=', ','.join(
+                    f'(shape={i.shape} dtype={i.dtype})' for i in outputs))
             for idx in inps:
                 local_ref_cnt[idx] -= 1
                 if local_ref_cnt[idx] == 0:
@@ -296,7 +304,7 @@ class SimpleGenerator:
         try:
             for _ in range(max_shape_var_pick_time):
                 ishape_indices = self.pick_shape_var_idx(
-                    dim_spec_list, op.in_dtypes)
+                    dim_spec_list, random.choice(op.in_dtypes))
                 if self.try_insert_node(op, ishape_indices):
                     return True
         except RequiredDimNotFound:
@@ -312,7 +320,7 @@ class SimpleGenerator:
 
         return False
 
-    def pick_shape_var_idx(self, ndim_list: List[int], in_dtypes) -> List[int]:
+    def pick_shape_var_idx(self, ndim_list: List[int], dtype_comb: DTypeComb) -> List[int]:
         """Randomly pick indices to shape variables from the output pool.
 
         Args:
@@ -327,8 +335,7 @@ class SimpleGenerator:
         for i, ndim in enumerate(ndim_list):
             # TODO(JK): consider same_in_dtypes
             # no constraint
-            dtype = ALL_DTYPES if i >= len(in_dtypes) else in_dtypes[i]
-            dtype = [dtype] if isinstance(dtype, DType) else dtype
+            dtype = dtype_comb[i]
             cans = range(len(self.alive_shapes))
 
             cans = list(filter(  # filter with ndim
@@ -338,7 +345,7 @@ class SimpleGenerator:
                     'Cannot find a shape variable with #dimensions %s.' % ndim)
 
             cans = list(filter(  # filter with dtype
-                lambda sid: self.alive_shapes[sid][1].dtype in dtype, cans))
+                lambda sid: self.alive_shapes[sid][1].dtype == dtype, cans))
             if len(cans) == 0:
                 raise RequiredDimNotFound(
                     'Cannot find a shape variable with #dimensions %s and dtype %s.' % (ndim, dtype))

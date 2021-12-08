@@ -114,7 +114,7 @@ def test_bcast_with_graph_gen():
         # input_shape = gen.concretize_input_shape(solution)
         # print(f'Input shape: {input_shape}')
 
-        net = SymbolNet(gen.abstract_graph, solution)
+        net = SymbolNet(gen.abstract_graph, solution, verbose=args.verbose)
         net.eval()
         # net.set_input_spec(input_shape)
         torch2onnx(model=net, filename=d + f'/output-{idx}.onnx', verbose=True)
