@@ -167,9 +167,9 @@ DTYPE_INTS = [DType.int32, DType.int64]
 
 
 class ShapeVar:
-    def __init__(self, shape: List[Union[int, z3.ExprRef]], dtype: DType):
+    def __init__(self, shape: List[Union[int, z3.ExprRef]], dtype: Union[DType, torch.dtype]):
         self.shape = list(shape)
-        self.dtype = dtype
+        self.dtype = DType(dtype)
 
     def __repr__(self):
         return f'ShapeVar(shape={str(self.shape)}, dtype={self.dtype.value})'
@@ -198,7 +198,7 @@ class ShapeVar:
 
     @staticmethod
     def from_torch(torch_tensor):
-        return ShapeVar([torch_tensor.shape[i] for i in range(len(torch_tensor))], torch_tensor.dtype)
+        return ShapeVar(list(torch_tensor.shape), torch_tensor.dtype)
 
     @property
     def ndims(self):
@@ -779,6 +779,7 @@ class Expand(UnaryOpBase, ABC):
         self.expand_n = expand_n
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        print(input_shapes)
         if self.expand_last_dim <= len(input_shapes[0].shape):
             input_shapes[0].shape[-self.expand_last_dim] = self.expand_n
             return input_shapes
