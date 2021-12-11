@@ -331,6 +331,8 @@ class SimpleGenerator:
         """
 
         shape_var_candidates = []
+        if self.verbose:
+            print('dtype_comb:', dtype_comb)
 
         for i, ndim in enumerate(ndim_list):
             # TODO(JK): consider same_in_dtypes

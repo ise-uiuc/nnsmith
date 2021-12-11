@@ -167,7 +167,7 @@ DTYPE_INTS = [DType.int32, DType.int64]
 
 
 class ShapeVar:
-    def __init__(self, shape: List[Union[int, z3.ExprRef]], dtype: DType = DType.float32):
+    def __init__(self, shape: List[Union[int, z3.ExprRef]], dtype: DType):
         self.shape = list(shape)
         self.dtype = dtype
 
@@ -197,8 +197,8 @@ class ShapeVar:
         return reduce(lambda x, y: nnsmith_mul(x, y), self.shape, 1)
 
     @staticmethod
-    def from_torch(torch_shape):
-        return ShapeVar([torch_shape[i] for i in range(len(torch_shape))])
+    def from_torch(torch_tensor):
+        return ShapeVar([torch_tensor.shape[i] for i in range(len(torch_tensor))], torch_tensor.dtype)
 
     @property
     def ndims(self):
@@ -239,25 +239,25 @@ def z3_bcast(x: Union[int, z3.ExprRef], y: Union[int, z3.ExprRef], *args: Union[
     return z3.If(y == 1, x, y) if len(args) == 0 else z3_bcast(z3_bcast(x, y), *args)
 
 
-def broadcast_shapes(*shapes: ShapeVar) -> ShapeVar:
+def broadcast_shapes(*shapes: List[Union[z3.ExprRef, int]]) -> List[Union[z3.ExprRef, int]]:
     """this function does not check the validity of broadcast. Please always pair it with broadcast_cons"""
     assert len(shapes) > 0
     if len(shapes) == 1:
         return shapes[0]
-    max_dim = max(map(lambda x: len(x.shape), shapes))
+    max_dim = max(map(lambda x: len(x), shapes))
     max_shape = [None] * (max_dim)
     for j in range(max_dim):
         i = -j - 1
-        args_dim_sz = [_prepend_to(x.shape, max_dim)[i] for x in shapes]
+        args_dim_sz = [_prepend_to(x, max_dim)[i] for x in shapes]
         if any(isinstance(s, z3.ExprRef) for s in args_dim_sz):
             max_shape[i] = z3.simplify(z3_bcast(*args_dim_sz))
         else:
             max_shape[i] = max(*args_dim_sz)
-    return ShapeVar(max_shape)
+    return max_shape
 
 
-def broadcast_cons(*shapes: ShapeVar) -> List[z3.ExprRef]:
-    tgt_shape = broadcast_shapes(*shapes).shape
+def broadcast_cons(*shapes: List[Union[z3.ExprRef, int]]) -> List[z3.ExprRef]:
+    tgt_shape = broadcast_shapes(*shapes)
     cons = []
     max_dim = len(tgt_shape)
     for j in range(max_dim):
@@ -265,13 +265,13 @@ def broadcast_cons(*shapes: ShapeVar) -> List[z3.ExprRef]:
         if isinstance(tgt_shape[i], z3.ExprRef):
             axis_cons = []
             for x in shapes:
-                if len(x.shape) > j:
+                if len(x) > j:
                     axis_cons.append(
-                        z3.Or(nnsmith_eq(x.shape[i], tgt_shape[i]), x.shape[i] == 1))
+                        z3.Or(nnsmith_eq(x[i], tgt_shape[i]), x[i] == 1))
             axis_cons = z3.simplify(z3.And(*axis_cons))
             cons.append(axis_cons)
         else:
-            args_dim_sz = [_prepend_to(x.shape, max_dim)[i] for x in shapes]
+            args_dim_sz = [_prepend_to(x, max_dim)[i] for x in shapes]
             valid = all(s == tgt_shape[i] or s == 1 for s in args_dim_sz)
             # TODO(JK): enable this after fixing issue #2
             # assert valid, "Invalid broadcast shapes {}. Specific dim sizes: {}".format(shapes, args_dim_sz)
@@ -279,14 +279,14 @@ def broadcast_cons(*shapes: ShapeVar) -> List[z3.ExprRef]:
     return cons
 
 
-def broadcast_cons_binary(*shapes: ShapeVar) -> List[z3.ExprRef]:
+def broadcast_cons_binary(*shapes: List[Union[z3.ExprRef, int]]) -> List[z3.ExprRef]:
     assert len(shapes) == 2
-    tgt_shape = broadcast_shapes(*shapes).shape
+    tgt_shape = broadcast_shapes(*shapes)
     cons = []
     max_dim = len(tgt_shape)
     lhs, rhs = shapes
-    lhs = _prepend_to(lhs.shape, max_dim)
-    rhs = _prepend_to(rhs.shape, max_dim)
+    lhs = _prepend_to(lhs, max_dim)
+    rhs = _prepend_to(rhs, max_dim)
     for j in range(max_dim):
         i = -j - 1
         if isinstance(tgt_shape[i], z3.ExprRef):
@@ -431,12 +431,12 @@ class BcastBinaryOp(BinaryOpBase):
         self.bcastable = True
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        tgt_shape = broadcast_shapes(*input_shapes)
-        tgt_shape.dtype = input_shapes[0].dtype if self._bcast_out_dtypes is None else self._bcast_out_dtypes[0]
-        return [tgt_shape]
+        tgt_shape = broadcast_shapes(*(ish.shape for ish in input_shapes))
+        dtype = input_shapes[0].dtype if self._bcast_out_dtypes is None else self._bcast_out_dtypes[0]
+        return [ShapeVar(tgt_shape, dtype)]
 
     def _requires(self, input_shapes):
-        return broadcast_cons_binary(*input_shapes)
+        return broadcast_cons_binary(*(ish.shape for ish in input_shapes))
 
 
 class BcastBinaryOp1(BcastBinaryOp):  # +-*/ max min
@@ -467,12 +467,13 @@ class Where(TernaryOpBase):
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         # assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
-        tgt_shape = broadcast_shapes(*input_shapes)
-        tgt_shape.dtype = input_shapes[1].dtype
-        return [tgt_shape]
+        tgt_shape = broadcast_shapes(*(ish.shape for ish in input_shapes))
+        dtype = input_shapes[1].dtype
+        return [ShapeVar(tgt_shape, dtype)]
 
     def _requires(self, input_shapes):
-        return broadcast_cons(*input_shapes) + [input_shapes[1].dtype == input_shapes[2].dtype]
+        return broadcast_cons(*(ish.shape for ish in input_shapes)) \
+            + [input_shapes[1].dtype == input_shapes[2].dtype]
 
     def torch(self):
         return torch.where
@@ -533,20 +534,23 @@ class Constant(AbsOpBase):
 class Constant0D(Constant):
     def __init__(self):
         super().__init__(0)
-        self.shape_var = ShapeVar([])
+        # TODO more dtypes
+        self.shape_var = ShapeVar([], dtype=DType.float32)
 
 
 class Constant1D(Constant):
     def __init__(self, dim0: Union[int, z3.ExprRef]):
         super().__init__(1)
-        self.shape_var = ShapeVar([dim0])
+        # TODO more dtypes
+        self.shape_var = ShapeVar([dim0], dtype=DType.float32)
         self.dim0 = dim0
 
 
 class Constant2D(Constant):
     def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef]):
         super().__init__(2)
-        self.shape_var = ShapeVar([dim0, dim1])
+        # TODO more dtypes
+        self.shape_var = ShapeVar([dim0, dim1], dtype=DType.float32)
         self.dim0 = dim0
         self.dim1 = dim1
 
@@ -554,7 +558,8 @@ class Constant2D(Constant):
 class Constant3D(Constant):
     def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef]):
         super().__init__(3)
-        self.shape_var = ShapeVar([dim0, dim1, dim2])
+        # TODO more dtypes
+        self.shape_var = ShapeVar([dim0, dim1, dim2], dtype=DType.float32)
         self.dim0 = dim0
         self.dim1 = dim1
         self.dim2 = dim2
@@ -563,7 +568,9 @@ class Constant3D(Constant):
 class Constant4D(Constant):
     def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef], dim3: Union[int, z3.ExprRef]):
         super().__init__(4)
-        self.shape_var = ShapeVar([dim0, dim1, dim2, dim3])
+        # TODO more dtypes
+        self.shape_var = ShapeVar(
+            [dim0, dim1, dim2, dim3], dtype=DType.float32)
         self.dim0 = dim0
         self.dim1 = dim1
         self.dim2 = dim2
@@ -589,7 +596,7 @@ class Input(ElementWiseUnaryOp):
         return [self.dim0, self.dim1, self.dim2, self.dim3]
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        return [ShapeVar(self.shape)]
+        return [ShapeVar(self.shape, self.dtype)]
 
     def torch(self):
         raise NotImplementedError("This should never be called")
@@ -780,7 +787,8 @@ class Expand(UnaryOpBase, ABC):
             #       input shape [u, v]
             #       expand_last_dim <- 4
             #       return [expand_n, 1, u, v] where `1` is padded.
-            return [ShapeVar([self.expand_n, *([1] * (self.expand_last_dim - len(input_shapes[0].shape) - 1)), *input_shapes[0].shape])]
+            dtype = input_shapes[0].dtype
+            return [ShapeVar([self.expand_n, *([1] * (self.expand_last_dim - len(input_shapes[0].shape) - 1)), *input_shapes[0].shape], dtype)]
 
     def _requires(self, input_shapes):
         assert self.expand_last_dim > 0
@@ -805,7 +813,7 @@ class Expand(UnaryOpBase, ABC):
         return []
 
     def torch(self):
-        return lambda x: x.expand(*self.shape_fn([ShapeVar.from_torch(x.shape)])[0].shape)
+        return lambda x: x.expand(*self.shape_fn([ShapeVar.from_torch(x)])[0].shape)
 
 
 class ExpandLast1(Expand):
@@ -859,7 +867,7 @@ class NCHWConv2d(UnaryOpBase):
         is_symbolic_inp = input_shapes[0].constains_symbol() or isinstance(self.kernel_w_size, z3.ExprRef) or isinstance(
             self.kernel_h_size, z3.ExprRef) or isinstance(self.stride, z3.ExprRef) or isinstance(self.padding, z3.ExprRef)
 
-        shape_var = ShapeVar([])
+        shape_var = ShapeVar([], dtype=input_shapes[0].dtype)
         # Batch dim: just copy
         shape_var.shape.append(input_shapes[0].shape[0])
         shape_var.shape.append(self.out_channels)        # Output channels
@@ -912,9 +920,9 @@ class Reshape(UnaryOpBase, ABC):
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         if -1 not in self.target_shape:
-            return [ShapeVar(self.target_shape)]
+            return [ShapeVar(self.target_shape, dtype=input_shapes[0].dtype)]
         # else
-        shape_var = ShapeVar(self.target_shape)
+        shape_var = ShapeVar(self.target_shape, dtype=input_shapes[0].dtype)
         auto_dim = -1
         accum = 1
         for i, v in enumerate(self.target_shape):
@@ -1074,6 +1082,8 @@ class Transpose(UnaryOpBase, ABC):
 
 # Sum, Min, Max, Mean, ArgMin, ArgMax, Squeeze, Size
 
+# JK: Which onnx op does this op try to model? The Size op from ONNX is different from what is being written below.
+# ONNX Size op returns nelements of the input tensor.
 class Size(UnaryOpBase):
     def __init__(self):
         super().__init__()
@@ -1081,13 +1091,15 @@ class Size(UnaryOpBase):
         self.out_dims = [1]
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        return [ShapeVar([len(input_shapes[0].shape)])]
+        return [ShapeVar([len(input_shapes[0].shape)], DType.float64)]
 
     def torch(self):
         return lambda x: torch.tensor(x.shape).float()
 
 
 class ReduceBase(UnaryOpBase, ABC):
+    _reduce_out_dtype = None  # None means same as input dtype
+
     def __init__(self, num_dim: int):
         super().__init__()
         assert num_dim >= 1
@@ -1101,7 +1113,8 @@ class ReduceBase(UnaryOpBase, ABC):
         for i, v in enumerate(shape_var.shape):
             if i != self.extra_attrs['reduce_dim']:
                 svar_list.append(v)
-        return [ShapeVar(svar_list)]
+        return [ShapeVar(svar_list,
+                         input_shapes[0].dtype if self._reduce_out_dtype is None else self._reduce_out_dtype)]
 
     def _requires(self, input_shapes: List[ShapeVar]):
         assert len(input_shapes[0].shape) >= self.num_dim
@@ -1291,6 +1304,8 @@ class ReduceMean5D(ReduceMean):
 
 
 class ArgMin(ReduceBase, ABC):
+    _reduce_out_dtype = DType.int64
+
     def torch(self):
         return lambda x: x.argmin(self.extra_attrs['reduce_dim']).float()
 
@@ -1324,6 +1339,8 @@ class ArgMin5D(ArgMin):
 
 
 class ArgMax(ReduceBase, ABC):
+    _reduce_out_dtype = DType.int64
+
     def torch(self):
         return lambda x: x.argmax(self.extra_attrs['reduce_dim']).float()
 
@@ -1435,7 +1452,8 @@ if __name__ == '__main__':
 
     # ReLU
     lhs = torch.relu(torch.randn(1, 1, 1, 1)).shape
-    rhs = torch.Size(ReLU().shape_fn([ShapeVar([1, 1, 1, 1])])[0].shape)
+    rhs = torch.Size(ReLU().shape_fn(
+        [ShapeVar([1, 1, 1, 1], DType.float32)])[0].shape)
     assert lhs == rhs, f"{lhs} != {rhs}"
 
     # Add
@@ -1443,18 +1461,18 @@ if __name__ == '__main__':
     b = torch.randn(2, 3, 4, 5)
     c = a + b
     assert c.shape == torch.Size(Add().shape_fn(
-        [ShapeVar([2, 3, 4, 5]), ShapeVar([2, 3, 4, 5])])[0].shape)
+        [ShapeVar([2, 3, 4, 5], DType.float32), ShapeVar([2, 3, 4, 5], DType.float32)])[0].shape)
 
     # Expand
     source_shape = (4, 1)
     a = torch.randn(source_shape)
     abs_op = ExpandLast4(expand_n=2)
     assert a.expand(2, 1, *source_shape).shape == torch.Size(
-        abs_op.shape_fn([ShapeVar(source_shape)])[0].shape)
+        abs_op.shape_fn([ShapeVar(source_shape, DType.float32)])[0].shape)
 
     abs_op = ExpandLast1(expand_n=2)
     rhs = torch.Size(abs_op.shape_fn(
-        [ShapeVar(list(source_shape))])[0].shape)
+        [ShapeVar(list(source_shape), DType.float32)])[0].shape)
     lhs = a.expand(4, 2).shape
     assert lhs == rhs, f"{lhs} != {rhs}"
 
@@ -1463,26 +1481,26 @@ if __name__ == '__main__':
     a = torch.randn(*source_shape)
     out = torch.conv2d(a, torch.randn(3, 3, 3, 4), stride=1, padding=1)
     assert out.shape == NCHWConv2d(
-        3, 3, 3, 4, 1, 1).shape_fn([ShapeVar(source_shape)])[0].torch()
+        3, 3, 3, 4, 1, 1).shape_fn([ShapeVar(source_shape, DType.float32)])[0].torch()
     print(NCHWConv2d(
-        3, 3, 3, 4, 1, 1).shape_fn([ShapeVar([2, *z3.Ints('c h w')])])[0])
+        3, 3, 3, 4, 1, 1).shape_fn([ShapeVar([2, *z3.Ints('c h w')], DType.float32)])[0])
 
     # Reshape
     source_shape = (2, 3, 4)
     target_shape = (1, 2, 3, 2, 2)
     a = torch.randn(*source_shape)
     assert a.reshape(*target_shape).shape == Reshape5D(*target_shape).shape_fn(
-        [ShapeVar(source_shape)])[0].torch()
+        [ShapeVar(source_shape, DType.float32)])[0].torch()
 
     # Dirty fix for z3 bug by wrapping the context using seprated functions.
     def test_reshape_symbol():  # See https://github.com/Z3Prover/z3/issues/989
         s = z3.Solver()
         v = z3.Ints('a b c d e')
         abs_op = Reshape5D(*v)
-        cons = abs_op.requires([ShapeVar(source_shape)])
+        cons = abs_op.requires([ShapeVar(source_shape, DType.float32)])
         for c in cons:
             s.add(c)
-        for c in abs_op.shape_fn([ShapeVar(source_shape)])[0].gt_zero():
+        for c in abs_op.shape_fn([ShapeVar(source_shape, DType.float32)])[0].gt_zero():
             s.add(c)
         assert s.check() == z3.sat
         print(s.model())
@@ -1492,7 +1510,7 @@ if __name__ == '__main__':
     p0, p1, p2, p3, p4, p5 = z3.Ints('p0 p1 p2 p3 p4 p5')
     op = NCHWConv2d(p0, p1, p2, p3, p4, p5)
     s = z3.Solver()
-    shape = ShapeVar([1, 3, 224, 224])
+    shape = ShapeVar([1, 3, 224, 224], DType.float32)
     for c in op.requires([shape]):
         s.add(c)
     for c in op.shape_fn([shape])[0].gt_zero():
