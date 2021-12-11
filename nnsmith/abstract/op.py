@@ -779,7 +779,6 @@ class Expand(UnaryOpBase, ABC):
         self.expand_n = expand_n
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        print(input_shapes)
         if self.expand_last_dim <= len(input_shapes[0].shape):
             input_shapes[0].shape[-self.expand_last_dim] = self.expand_n
             return input_shapes
@@ -1166,6 +1165,8 @@ class Squeeze5D(SqueezeBase):
 
 
 class ReduceSum(ReduceBase, ABC):
+    in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+
     def torch(self):
         return lambda x: x.sum(self.extra_attrs['reduce_dim'])
 
@@ -1199,6 +1200,8 @@ class ReduceSum5D(ReduceSum):
 
 
 class ReduceMin(ReduceBase, ABC):
+    in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+
     def torch(self):
         return lambda x: x.min(self.extra_attrs['reduce_dim']).values
 
@@ -1232,6 +1235,8 @@ class ReduceMin5D(ReduceMin):
 
 
 class ReduceMax(ReduceBase, ABC):
+    in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+
     def torch(self):
         return lambda x: x.max(self.extra_attrs['reduce_dim']).values
 
@@ -1265,6 +1270,8 @@ class ReduceMax5D(ReduceMax):
 
 
 class ReduceMean(ReduceBase, ABC):
+    in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+
     def torch(self):
         return lambda x: x.mean(self.extra_attrs['reduce_dim'])
 
@@ -1305,10 +1312,11 @@ class ReduceMean5D(ReduceMean):
 
 
 class ArgMin(ReduceBase, ABC):
+    in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
     _reduce_out_dtype = DType.int64
 
     def torch(self):
-        return lambda x: x.argmin(self.extra_attrs['reduce_dim']).float()
+        return lambda x: x.argmin(self.extra_attrs['reduce_dim'])
 
 
 class ArgMin2D(ArgMin):
@@ -1340,10 +1348,11 @@ class ArgMin5D(ArgMin):
 
 
 class ArgMax(ReduceBase, ABC):
+    in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
     _reduce_out_dtype = DType.int64
 
     def torch(self):
-        return lambda x: x.argmax(self.extra_attrs['reduce_dim']).float()
+        return lambda x: x.argmax(self.extra_attrs['reduce_dim'])
 
 
 class ArgMax2D(ArgMax):

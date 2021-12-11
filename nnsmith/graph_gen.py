@@ -19,8 +19,11 @@ class RequiredDimNotFound(Exception):
     pass
 
 
+ALIVE_SHAPE_TYPE = List[Tuple[int, ShapeVar, int]]
+
+
 class SymbolNet(nn.Module):
-    def __init__(self, graph: nx.MultiDiGraph, model: z3.ModelRef, verbose=False):
+    def __init__(self, graph: nx.MultiDiGraph, model: z3.ModelRef, verbose=False, alive_shapes: ALIVE_SHAPE_TYPE = None):
         super(SymbolNet, self).__init__()
         self.verbose = verbose
         self.tensors = []  # 1) edges; 2) leaf nodes; 3) input -> 0;
@@ -29,7 +32,12 @@ class SymbolNet(nn.Module):
         self.n_output = 0
         # keep track of layers and weights so that the tracing can work properly
         self.mlist = nn.ModuleList()
+        self.graph = graph
         # NOTE: All leaf nodes are output tensors.
+        self.alive_shapes = alive_shapes
+        if alive_shapes is None:
+            warnings.warn(
+                "Please supply `alive_shapes` if possible. This will be used to check dtype correctness.")
 
         InputInfo = NamedTuple('InputInfo', [('op', Input), ('oid', int)])
         self.input_info: List[InputInfo] = []
@@ -83,6 +91,17 @@ class SymbolNet(nn.Module):
         self.plausible_input_shape = {f'i{ii.op.idx}': ShapeVar(
             ii.op.shape, dtype=ii.op.dtype) for ii in self.input_info}
 
+    def _check_out_dtype(self, outputs, node_id, op):
+        if self.alive_shapes is None:
+            return
+        msg_head = f'In dtype checking for {op} (#{node_id}): '
+        shape_indices = self.graph.nodes[node_id]['shape_indices']
+        assert len(outputs) == len(shape_indices), msg_head + \
+            f'{len(outputs)} != {len(shape_indices)}'
+        for out, shape_idx in zip(outputs, shape_indices):
+            assert out.dtype == self.alive_shapes[shape_idx][1].dtype.value, msg_head + \
+                f'torch dtype ({out.dtype}) != symbolic dtype ({self.alive_shapes[shape_idx][1].dtype.value})'
+
     @torch.no_grad()
     def forward(self, *xs):
         local_ref_cnt = self.ref_cnt.copy()
@@ -95,6 +114,7 @@ class SymbolNet(nn.Module):
             outputs = inst(*[self.tensors[idx] for idx in inps])
             if not isinstance(outputs, list):
                 outputs = [outputs]
+            self._check_out_dtype(outputs, node_id, op)
             if self.verbose:
                 print('outputs=', ','.join(
                     f'(shape={i.shape} dtype={i.dtype})' for i in outputs))
@@ -125,7 +145,7 @@ class SimpleGenerator:
         self.abstract_graph = nx.MultiDiGraph()
 
         # <op idx, shape variable, output operand idx>
-        self.alive_shapes: List[Tuple[int, ShapeVar, int]] = []
+        self.alive_shapes: ALIVE_SHAPE_TYPE = []
         # dim size -> list[shape idx -> output_tensor_pool]
         self.dim2shape_idx: Dict[int, List[int]] = {}
         self.viz_cnt = 0
@@ -481,7 +501,8 @@ if __name__ == '__main__':
     # input_shape = gen.concretize_input_shape(solution)
     # print(f'Input shape: {input_shape}')
 
-    net = SymbolNet(gen.abstract_graph, solution)
+    net = SymbolNet(gen.abstract_graph, solution,
+                    alive_shapes=gen.alive_shapes)
     net.eval()
     # net.set_input_spec(input_shape)
     torch2onnx(model=net, filename=args.output_path, verbose=True)
