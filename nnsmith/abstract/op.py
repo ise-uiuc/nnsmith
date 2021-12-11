@@ -1270,7 +1270,7 @@ class ReduceMax5D(ReduceMax):
 
 
 class ReduceMean(ReduceBase, ABC):
-    in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def torch(self):
         return lambda x: x.mean(self.extra_attrs['reduce_dim'])
