@@ -456,7 +456,7 @@ class BcastBinaryOp3(BcastBinaryOp):  # logical and or xor
 
 class Where(TernaryOpBase):
     bcastable = True
-    in_dtypes = [(DType.bool, i, i) for i in DTYPE_ALL]
+    in_dtypes = [(DType.bool, i, i) for i in DTYPE_NON_BOOLS]
 
     def __init__(self):
         super().__init__()
@@ -605,6 +605,10 @@ class Input(ElementWiseUnaryOp):
 
 
 class ReLU(ElementWiseUnaryOp):
+    # FIXME(JK): ints are somehow not supported in onnxruntime, which we use to gen inputs.
+    # Make it include ints once we use other backends other than onnxruntime.
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
+
     def __init__(self):
         super().__init__()
 
@@ -1314,7 +1318,9 @@ class ReduceMean5D(ReduceMean):
 
 
 class ArgMin(ReduceBase, ABC):
-    in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+    # FIXME(JK): ints are somehow not supported in onnxruntime, which we use to gen inputs.
+    # Make it include ints once we use other backends other than onnxruntime.
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
     _reduce_out_dtype = DType.int64
 
     def torch(self):
@@ -1350,7 +1356,9 @@ class ArgMin5D(ArgMin):
 
 
 class ArgMax(ReduceBase, ABC):
-    in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+    # FIXME(JK): ints are somehow not supported in onnxruntime, which we use to gen inputs.
+    # Make it include ints once we use other backends other than onnxruntime.
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
     _reduce_out_dtype = DType.int64
 
     def torch(self):

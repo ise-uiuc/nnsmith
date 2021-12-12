@@ -235,19 +235,23 @@ class InputGenV3(InputGenBase):
         return stats
 
 
+def gen_inputs_for_one(num_inputs, model, input_gen: InputGenBase = InputGenV1()):
+    st = time.time()
+    stats = input_gen.gen_inputs(
+        DiffTestBackend.get_onnx_proto(str(model)), num_inputs, Path(model).parent)
+    stats.update({
+        'model': model,
+        'elpased_time': time.time() - st}
+    )
+    return stats
+
+
 def gen_inputs_for_all(root, num_inputs=2, models=None, input_gen: InputGenBase = InputGenV1()):
     profile = []
     models = models or sorted(list(Path(root).glob('model_input/*/*.onnx')))
     for model in tqdm(models):
-        st = time.time()
         print(model)
-        stats = input_gen.gen_inputs(
-            DiffTestBackend.get_onnx_proto(str(model)), num_inputs, Path(model).parent)
-        stats.update({
-            'model': model,
-            'elpased_time': time.time() - st}
-        )
-        profile.append(stats)
+        profile.append(gen_inputs_for_one(num_inputs, model, input_gen))
     # profile = pd.DataFrame(
         # profile, columns=['model', 'succ', 'trials', 'succ_rate', 'elapsed_time'])
     profile = pd.DataFrame(profile)
@@ -256,9 +260,10 @@ def gen_inputs_for_all(root, num_inputs=2, models=None, input_gen: InputGenBase 
     profile.to_csv(Path(root) / 'gen_profile.csv')
 
 
-def gen_models(root: str, num_models, gen_args):
+def gen_models_inputs(root: str, num_models, gen_args, num_inputs, input_gen):
     st_time = time.time()
     profile = []
+    profile_inputs = []
     root = Path(root)  # type: Path
     if len(list(root.glob('model*'))) > 0:
         raise Exception(f'Folder {root} already exists')
@@ -270,6 +275,7 @@ def gen_models(root: str, num_models, gen_args):
         atmpts = 0
         while not succ:
             atmpts += 1
+            e1 = None
             try:
                 model = model_root / f'{i}' / 'model.onnx'
                 model.parent.mkdir(exist_ok=True, parents=True)
@@ -277,8 +283,13 @@ def gen_models(root: str, num_models, gen_args):
                 print(f'seeding {seed}')
                 check_call(
                     f'python -m nnsmith.graph_gen --output_path {model} --seed {seed} {gen_args}', shell=True)
+                input_st = time.time()
+                profile_inputs.append(gen_inputs_for_one(
+                    num_inputs, model, input_gen))
+                print('gen_input time={}s'.format(time.time() - input_st))
                 succ = True
             except Exception as e:
+                e1 = e
                 print(e)
             finally:
                 profile.append({
@@ -286,12 +297,20 @@ def gen_models(root: str, num_models, gen_args):
                     'atmpts': atmpts,
                     'succ': succ,
                     'elpased_time': time.time() - st,
-                    'seed': seed
+                    'seed': seed,
                 })
+            if e1 is not None:
+                profile[-1]['error'] = e1
     print('gen_model elapsed time={}s'.format(time.time() - st_time))
     profile = pd.DataFrame(profile)
     profile.to_pickle(Path(root) / 'gen_model_profile.pkl')
     profile.to_csv(Path(root) / 'gen_model_profile.csv')
+
+    profile_inputs = pd.DataFrame(profile_inputs)
+    profile_inputs = profile_inputs.sort_values(
+        by=['succ_rate'], ascending=True)
+    profile_inputs.to_pickle(Path(root) / 'gen_input_profile.pkl')
+    profile_inputs.to_csv(Path(root) / 'gen_input_profile.csv')
 
 
 if __name__ == '__main__':
@@ -306,11 +325,12 @@ if __name__ == '__main__':
     parser.add_argument('--input_gen_method', type=str, default='v3')
     parser.add_argument('--model_gen_args')
     args = parser.parse_args()
-    if not args.input_only:
-        gen_models(args.root, args.num_models, args.model_gen_args)
     gen_inputs_func = {
         'v1': InputGenV1(),
         'v2': InputGenV2(),
         'v3': InputGenV3(),
     }[args.input_gen_method]
+    if not args.input_only:
+        gen_models_inputs(args.root, args.num_models,
+                          args.model_gen_args, args.num_inputs, gen_inputs_func)
     gen_inputs_for_all(args.root, args.num_inputs, args.model, gen_inputs_func)
