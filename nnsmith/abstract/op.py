@@ -1091,7 +1091,7 @@ class Size(UnaryOpBase):
         self.out_dims = [1]
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        return [ShapeVar([len(input_shapes[0].shape)], DType.float64)]
+        return [ShapeVar([len(input_shapes[0].shape)], DType.float32)]
 
     def torch(self):
         return lambda x: torch.tensor(x.shape).float()

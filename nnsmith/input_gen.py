@@ -1,7 +1,7 @@
 import numpy as np
 import os
 from pathlib import Path
-from nnsmith.difftest import DiffTestBackend
+from nnsmith.backends import DiffTestBackend
 import pickle
 from subprocess import check_call
 from tqdm import tqdm
@@ -257,18 +257,29 @@ def gen_inputs_for_all(root, num_inputs=2, models=None, input_gen: InputGenBase 
 
 
 def gen_models(root: str, num_models, gen_args):
+    st_time = time.time()
+    profile = []
     root = Path(root)
     if root.exists():
         raise Exception(f'Folder {root} already exists')
     model_root = root / 'model_input'
     model_root.mkdir(exist_ok=True, parents=True)
     for i in tqdm(range(num_models)):
+        st = time.time()
         model = model_root / f'{i}' / 'model.onnx'
         model.parent.mkdir(exist_ok=True, parents=True)
         seed = int(time.time() * 1000)
         print(f'seeding {seed}')
         check_call(
             f'python -m nnsmith.graph_gen --output_path {model} --seed {seed} {gen_args}', shell=True)
+        profile.append({
+            'model': model,
+            'elpased_time': time.time() - st}
+        )
+    print('gen_model elapsed time={}s'.format(time.time() - st_time))
+    profile = pd.DataFrame(profile)
+    profile.to_pickle(Path(root) / 'gen_model_profile.pkl')
+    profile.to_csv(Path(root) / 'gen_model_profile.csv')
 
 
 if __name__ == '__main__':
