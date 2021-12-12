@@ -484,7 +484,9 @@ class Where(TernaryOpBase):
 Add = type('Add', (BcastBinaryOp1,), {'torch': lambda self: torch.add})
 Sub = type('Sub', (BcastBinaryOp1,), {'torch': lambda self: torch.sub})
 Mul = type('Mul', (BcastBinaryOp1,), {'torch': lambda self: torch.mul})
-Div = type('Div', (BcastBinaryOp1,), {'torch': lambda self: torch.div})
+Div = type('Div', (BcastBinaryOp1,), {
+    'torch': lambda self:
+        lambda x, y: torch.floor_divide(x, y) if DType(x.dtype) in DTYPE_INTS else torch.div(x, y)})
 # NOTE(JK): didn't find multi-input version of Max and Min in torch, so assume binary ops
 Max = type('Max', (BcastBinaryOp1,), {'torch': lambda self: torch.max})
 Min = type('Min', (BcastBinaryOp1,), {'torch': lambda self: torch.min})

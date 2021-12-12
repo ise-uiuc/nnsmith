@@ -39,7 +39,7 @@ def torch2onnx(model, filename, verbose=False):
         output_names=[f'o{i}' for i in range(model.n_output)],
         verbose=False,
         dynamic_axes=dynamic_axes,
-        opset_version=11)
+        opset_version=14)
 
 
 if __name__ == "__main__":

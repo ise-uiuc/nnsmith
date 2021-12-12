@@ -259,23 +259,35 @@ def gen_inputs_for_all(root, num_inputs=2, models=None, input_gen: InputGenBase 
 def gen_models(root: str, num_models, gen_args):
     st_time = time.time()
     profile = []
-    root = Path(root)
-    if root.exists():
+    root = Path(root)  # type: Path
+    if len(list(root.glob('model*'))) > 0:
         raise Exception(f'Folder {root} already exists')
     model_root = root / 'model_input'
     model_root.mkdir(exist_ok=True, parents=True)
     for i in tqdm(range(num_models)):
         st = time.time()
-        model = model_root / f'{i}' / 'model.onnx'
-        model.parent.mkdir(exist_ok=True, parents=True)
-        seed = int(time.time() * 1000)
-        print(f'seeding {seed}')
-        check_call(
-            f'python -m nnsmith.graph_gen --output_path {model} --seed {seed} {gen_args}', shell=True)
-        profile.append({
-            'model': model,
-            'elpased_time': time.time() - st}
-        )
+        succ = False
+        atmpts = 0
+        while not succ:
+            atmpts += 1
+            try:
+                model = model_root / f'{i}' / 'model.onnx'
+                model.parent.mkdir(exist_ok=True, parents=True)
+                seed = int(time.time() * 1000)
+                print(f'seeding {seed}')
+                check_call(
+                    f'python -m nnsmith.graph_gen --output_path {model} --seed {seed} {gen_args}', shell=True)
+                succ = True
+            except Exception as e:
+                print(e)
+            finally:
+                profile.append({
+                    'model': model,
+                    'atmpts': atmpts,
+                    'succ': succ,
+                    'elpased_time': time.time() - st,
+                    'seed': seed
+                })
     print('gen_model elapsed time={}s'.format(time.time() - st_time))
     profile = pd.DataFrame(profile)
     profile.to_pickle(Path(root) / 'gen_model_profile.pkl')
