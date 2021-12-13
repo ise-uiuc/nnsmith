@@ -25,6 +25,7 @@ import torch
 # TODO: add interval analysis for shape dimension size;
 
 ARITH_MAX_WIDTH: int = 64
+_INFERRED = False
 
 
 def align_bvs(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef], carry=False, mult=False):
@@ -207,6 +208,7 @@ class ShapeVar:
 
 def check_shape_fn(func):
     def wrapper_check_shape_fn(self, input_shapes):
+        assert _INFERRED, "Please call auto_infer_in_dtypes before using this function"
         # assert self.inp_dims, "Empty input dimensions in {}".format(
         #     self.__class__.__name__)
         assert self.out_dims, "Empty output dimensions in {}".format(
@@ -486,7 +488,7 @@ Sub = type('Sub', (BcastBinaryOp1,), {'torch': lambda self: torch.sub})
 Mul = type('Mul', (BcastBinaryOp1,), {'torch': lambda self: torch.mul})
 Div = type('Div', (BcastBinaryOp1,), {
     'torch': lambda self:
-        lambda x, y: torch.floor_divide(x, y) if DType(x.dtype) in DTYPE_INTS else torch.div(x, y)})
+        lambda x, y: torch.div(x, y, rounding_mode='floor') if DType(x.dtype) in DTYPE_INTS else torch.div(x, y)})
 # NOTE(JK): didn't find multi-input version of Max and Min in torch, so assume binary ops
 Max = type('Max', (BcastBinaryOp1,), {'torch': lambda self: torch.max})
 Min = type('Min', (BcastBinaryOp1,), {'torch': lambda self: torch.min})
@@ -1426,7 +1428,9 @@ def _check_comb(comb: DTypeComb, op: AbsOpBase):
     return True
 
 
-def auto_infer_in_dtypes():
+def auto_infer_in_dtypes(verbose=False):
+    global _INFERRED
+    _INFERRED = True
     _WHITE_LIST = (Input, Expand, NCHWConv2d, Reshape)
 
     def create_op(op_t: Type[AbsOpBase]):
@@ -1441,7 +1445,8 @@ def auto_infer_in_dtypes():
     for op_t in ALL_OP_TYPES:
         if issubclass(op_t, _WHITE_LIST):
             continue
-        print(f'Try auto inferring input dtype spec for `{op_t.__name__}`')
+        if verbose:
+            print(f'Try auto inferring input dtype spec for `{op_t.__name__}`')
         valid_combs = None
         op = create_op(op_t)
         in_dtype_combs: List[DTypeComb] = \
@@ -1452,17 +1457,15 @@ def auto_infer_in_dtypes():
             raise RuntimeError(
                 f'No valid input dtype combination found for `{op_t.__name__}`')
 
-        print('infered result:', valid_combs)
+        if verbose:
+            print('infered result:', valid_combs)
         if op_t.in_dtypes is not None:
             # we disable type promotion for bcast binary ops so the difference is fine
-            if valid_combs != op_t.in_dtypes and not issubclass(op_t, (BcastBinaryOp1, BcastBinaryOp2, BcastBinaryOp3)):
+            if verbose and valid_combs != op_t.in_dtypes and not issubclass(op_t, (BcastBinaryOp1, BcastBinaryOp2, BcastBinaryOp3)):
                 warnings.warn('Inferred result for `{}` different from given one.\nInferred={}\n, given={}'.format(
                     op_t.__name__, valid_combs, op_t.in_dtypes))
         else:
             op_t.in_dtypes = valid_combs
-
-
-auto_infer_in_dtypes()
 
 
 if __name__ == '__main__':

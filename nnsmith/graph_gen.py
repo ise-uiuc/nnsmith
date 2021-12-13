@@ -133,6 +133,7 @@ class SymbolNet(nn.Module):
 class SimpleGenerator:
     def __init__(self, min_dims=[1, 3, 48, 48], skip=[], viz_sbs=False, megabyte_lim=6 * 1024, seed=None, verbose=False, use_bitvec=False):
         self.verbose = verbose
+        auto_infer_in_dtypes(self.verbose)
 
         self.op_candidates = [op for op in ALL_OP_TYPES if op not in skip]
         self.solver = z3.Solver()
@@ -226,6 +227,16 @@ class SimpleGenerator:
     #     return shape
 
     def abstract_gen(self, max_node_size=10, max_gen_millisec=2000):
+        z3.set_param(
+            "smt.phase_selection",
+            5,
+            "smt.arith.random_initial_value",
+            True,
+            "sat.phase",
+            "random",
+            "timeout",
+            max_gen_millisec // 3,
+        )
         self.insert_input_node(self.min_dims)
         self.insert_input_node(self.min_dims)
         self.insert_input_node(self.min_dims)
@@ -476,15 +487,6 @@ if __name__ == '__main__':
     print(f"Using seed {seed}")
     random.seed(seed)
 
-    z3.set_param(
-        "smt.phase_selection",
-        5,
-        "smt.arith.random_initial_value",
-        True,
-        "sat.phase",
-        "random",
-    )
-
     strt_time = time.time()
     gen = PureSymbolGen(min_dims=args.min_dims,
                         viz_sbs=args.viz_sbs, seed=seed, verbose=args.verbose, use_bitvec=args.use_bitvec)
@@ -494,7 +496,8 @@ if __name__ == '__main__':
 
     solution = gen.get_symbol_solutions()
     print(f'{len(solution)} symbols and {len(gen.solver.assertions())} constraints.')
-    print(solution)
+    if args.verbose:
+        print(solution)
 
     gen.viz(args.output_path + '.png')
 
@@ -505,7 +508,7 @@ if __name__ == '__main__':
                     alive_shapes=gen.alive_shapes)
     net.eval()
     # net.set_input_spec(input_shape)
-    torch2onnx(model=net, filename=args.output_path, verbose=True)
+    torch2onnx(model=net, filename=args.output_path, verbose=args.verbose)
 
     # Draw with NetworkX
     # import matplotlib.pyplot as plt

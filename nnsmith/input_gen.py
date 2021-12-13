@@ -282,7 +282,7 @@ def gen_models_inputs(root: str, num_models, gen_args, num_inputs, input_gen):
                 seed = int(time.time() * 1000)
                 print(f'seeding {seed}')
                 check_call(
-                    f'python -m nnsmith.graph_gen --output_path {model} --seed {seed} {gen_args}', shell=True)
+                    f'python -u -m nnsmith.graph_gen --output_path {model} --seed {seed} {gen_args} 2>&1', shell=True)
                 input_st = time.time()
                 profile_inputs.append(gen_inputs_for_one(
                     num_inputs, model, input_gen))
