@@ -39,6 +39,14 @@ python plot_cov.py -f $target # -cl 80000
 
 ## Notes
 
+<details><summary><b>Minor Coding Spec</b> <i>[click to expand]</i></summary>
+<div>
+
+- **Do not put repeated logging/warning in library code.** Fuzzing loop might execute such programs for many times that such logs will create numerous loggings that messes STDOUT.
+
+</div>
+</details>
+
 <details><summary><b>To use ONNXRuntime on GPU & ONNX Simplifier</b> <i>[click to expand]</i></summary>
 <div>
 

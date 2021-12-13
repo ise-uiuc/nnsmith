@@ -1,12 +1,12 @@
 from abc import ABC, abstractmethod
 from enum import Enum
 from functools import reduce
-import traceback
 from typing import List, Tuple, Union, Callable, Type
 from inspect import signature
 import random
 import itertools
 import warnings
+import os
 
 # Import z3 ahead of torch (See https://github.com/Z3Prover/z3/issues/5656)
 import z3
@@ -486,9 +486,16 @@ class Where(TernaryOpBase):
 Add = type('Add', (BcastBinaryOp1,), {'torch': lambda self: torch.add})
 Sub = type('Sub', (BcastBinaryOp1,), {'torch': lambda self: torch.sub})
 Mul = type('Mul', (BcastBinaryOp1,), {'torch': lambda self: torch.mul})
+<< << << < Updated upstream
 Div = type('Div', (BcastBinaryOp1,), {
     'torch': lambda self:
         lambda x, y: torch.div(x, y, rounding_mode='floor') if DType(x.dtype) in DTYPE_INTS else torch.div(x, y)})
+== == == =
+# FIXME: Div will cause fuzzing crash.
+# Div = type('Div', (BcastBinaryOp1,), {
+#     'torch': lambda self:
+#         lambda x, y: torch.div(x, y, rounding_mode='floor' if DType(x.dtype) in DTYPE_INTS else None)})
+>>>>>> > Stashed changes
 # NOTE(JK): didn't find multi-input version of Max and Min in torch, so assume binary ops
 Max = type('Max', (BcastBinaryOp1,), {'torch': lambda self: torch.max})
 Min = type('Min', (BcastBinaryOp1,), {'torch': lambda self: torch.min})
@@ -1423,7 +1430,6 @@ def _check_comb(comb: DTypeComb, op: AbsOpBase):
     try:
         out = op.torch()(*inps)
     except:
-        # traceback.print_exc()
         return False
     return True
 
