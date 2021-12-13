@@ -194,7 +194,9 @@ if __name__ == '__main__':
         raise ValueError('--root is required when --select_model is used')
 
     bknd = BackendCreator(args.backend)
+    st = time.time()
     if args.model is None:
         run_backend(args.root, bknd, args.timeout, args.select_model)
     else:
         run_backend_same_proc(args.model, args.input, bknd, args.dump_raw)
+    print(f'Total time: {time.time() - st}')

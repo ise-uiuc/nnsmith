@@ -51,10 +51,6 @@ def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarr
 
 
 def known_bug(report: dict, db: List[dict]):
-    def trt_round(report: dict):
-        return (report['backend'] == BackendCreator.NAME_MAP['trt'] and
-                'getPluginCreator could not find plugin: Round version: 1' in report['stderr'])
-
     def same_model_same_stderr(report: dict):
         for last in reversed(db):
             if (report['backend'] == last['backend'] and report['model_idx'] == last['model_idx'] and
@@ -62,7 +58,31 @@ def known_bug(report: dict, db: List[dict]):
                 return True
         return False
 
-    filters = [trt_round, same_model_same_stderr]
+    def trt_clip_int32(report: dict):
+        return (report['backend'] == BackendCreator.NAME_MAP['trt'] and
+                'INVALID_NODE: Invalid Node - Clip' in report['stdout'])
+
+    filters = [same_model_same_stderr, trt_clip_int32]
+    for f in filters:
+        if f(report):
+            return True
+    return False
+
+
+def unsupported_feature(report: dict, db: List[dict]):
+    def trt_round(report: dict):
+        return (report['backend'] == BackendCreator.NAME_MAP['trt'] and
+                'getPluginCreator could not find plugin: Round version: 1' in report['stderr'])
+
+    def trt_general(report: dict):
+        return (report['backend'] == BackendCreator.NAME_MAP['trt'] and
+                'UNSUPPORTED_NODE' in report['stdout'])
+
+    def xla_squeeze(report: dict):
+        return (report['backend'] == BackendCreator.NAME_MAP['xla'] and
+                'BackendIsNotSupposedToImplementIt: Squeeze version 13 is not implemented' in report['stderr'])
+
+    filters = [trt_round, trt_general, xla_squeeze]
     for f in filters:
         if f(report):
             return True
@@ -102,7 +122,9 @@ def difftest(root: str):
             assert num_out == len(list(
                 (output_dir.parent / 'model_input' /
                  model_name).glob(f'input.*.pkl')
-            )), 'inputs and outputs are not matched. Do you forget to run_backends?'
+            )), 'inputs and outputs are not matched. Do you forget to run_backends?\n'\
+                'model_folder: {}\nbknd_names: {}\nnum_out: {}\nlen(a): {}'.format(
+                    model_folder, bknd_names, num_out, len(a))
             assert len(a) % len(bknd_names) == 0, \
                 f'{model_name} has {len(a)} outputs, but {len(bknd_names)} backends which cannot divide'
             return num_out, bknd_names
@@ -142,6 +164,7 @@ def difftest(root: str):
                         'stderr': open(out_path + '.stderr').read(),
                     }
                     item['known'] = known_bug(item, report)
+                    item['unsupported'] = unsupported_feature(item, report)
                     report.append(item)
                     print(err)
     import json
@@ -151,8 +174,9 @@ def difftest(root: str):
     for i in report:
         i['error'] = str(i['error'])
     json.dump(report, open(root / 'report.json', 'w'), indent=2)
-    if len(df) > 0 and len(df[~df.known]) > 0:
-        print(f'{len(df[~df.known])} unknown unique differences found!!!')
+    if len(df) > 0 and len(df[(~df.known) & (~df.unsupported)]) > 0:
+        print(
+            f'{len(df[(~df.known) & (~df.unsupported)])} unknown non-unsupported unique differences found!!!')
     else:
         print('No differences found!')
 
