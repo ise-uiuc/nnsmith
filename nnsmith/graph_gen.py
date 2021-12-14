@@ -1,3 +1,4 @@
+import pickle
 import z3  # Always import z3 first to avoid incompatibility issue.
 # See https://github.com/Z3Prover/z3/issues/5656
 import networkx as nx
@@ -12,7 +13,9 @@ import os
 import copy
 
 from nnsmith.abstract.op import *
+from nnsmith.backends import DiffTestBackend
 from nnsmith.export import torch2onnx
+from nnsmith.input_gen import InputGenV3
 
 
 class RequiredDimNotFound(Exception):
@@ -157,6 +160,7 @@ class SimpleGenerator:
         self.min_dims = min_dims
         self.n_floats = 0
         self.n_inps = 0
+        self.last_soln = None
 
     def new_sym(self, name):
         if self.use_bitvec:
@@ -192,14 +196,22 @@ class SimpleGenerator:
                 sid for sid in to_be_fixed_sids if self.alive_shapes[sid][1].dtype == dt]
             if len(to_be_fixed_sids_dt) == 0:
                 continue
-            self.insert_input_node([1, 1, 1, 1], dtype=dt)
+
+            # work around z3 timeout issue by skipping the constraints
+            input_tensor_shape = ShapeVar(shape=[1, 1, 1, 1], dtype=dt)
+            input_node = Input(self.n_inps, dt, *input_tensor_shape.shape)
+            self.insert_node(input_node, [], oshapes=[input_tensor_shape])
+
+            # self.insert_input_node([1, 1, 1, 1], shape=[1, 1, 1, 1], dtype=dt)
             in_nid = len(self.alive_shapes) - 1
+            if self.verbose:
+                print('insert input node #', in_nid)
             for sid in to_be_fixed_sids_dt:
                 node_t = Equal if dt == DType.bool else Add
-                assert self.try_insert_node(node_t(), [in_nid, sid])
+                self.insert_node(node_t(), [in_nid, sid])
 
     @abstractmethod
-    def insert_input_node(self, min_dims, dtype=DType.float32) -> ShapeVar:
+    def insert_input_node(self, min_dims, shape=None, dtype=DType.float32) -> ShapeVar:
         raise NotImplementedError
 
     @abstractmethod
@@ -267,13 +279,19 @@ class SimpleGenerator:
 
             if cres == z3.unsat:
                 print(f'Unsat core: {self.solver.unsat_core()}')
-
+        if cres == z3.sat:
+            self.last_soln = self.solver.model()
         return cres
 
     def pick_next_op_type(self):
         return random.choice(self.op_candidates)
 
-    def insert_node(self, node: AbsOpBase, oshapes: List[ShapeVar], ishape_indices: List[int]):
+    def insert_node(self, node: AbsOpBase, ishape_indices: List[int], oshapes: List[ShapeVar] = None):
+        if oshapes is None:
+            input_shapes = [self.alive_shapes[idx][1]
+                            for idx in ishape_indices]
+            oshapes = node.shape_fn(copy.deepcopy(input_shapes))
+
         new_node_idx = len(self.abstract_graph.nodes)
         shape_idx_st = len(self.alive_shapes)
         shape_indices = []
@@ -411,7 +429,7 @@ class PureSymbolGen(SimpleGenerator):
             shape=[self.new_sym('i%s_s%s' % (self.n_inps, k)) for k in range(len(min_dims))], dtype=dtype)
         input_node = Input(self.n_inps, dtype, *input_tensor_shape.shape)
 
-        self.insert_node(input_node, [input_tensor_shape], ishape_indices=[])
+        self.insert_node(input_node, [], oshapes=[input_tensor_shape])
         for c in input_tensor_shape.gt_zero():
             self.solver.add(c)
 
@@ -420,7 +438,9 @@ class PureSymbolGen(SimpleGenerator):
             # FIXME: input constraints will make SMT solving costly.
             for i in range(len(input_tensor_shape.shape)):
                 self.solver.add(input_tensor_shape.shape[i] >= min_dims[i])
-        assert self.solver.check() == z3.sat
+        check_res = self.check_sat()
+        # FIXME sometimes the constraints are too complicated to return stable result.
+        assert check_res == z3.sat, check_res
         self.n_floats = nnsmith_add(
             self.n_floats, input_tensor_shape.nelement())
         self.n_inps += 1
@@ -452,13 +472,15 @@ class PureSymbolGen(SimpleGenerator):
         for c in constraints:
             self.solver.add(c)
 
-        self.insert_node(node, output_shapes, ishape_indices)
+        self.insert_node(node, ishape_indices, output_shapes)
         return True
 
     def get_symbol_solutions(self) -> List:
-        res = self.solver.check()
-        assert res == z3.sat, res
-        return self.solver.model()
+        assert self.last_soln is not None
+        return self.last_soln
+        # res = self.solver.check()
+        # assert res == z3.sat, res
+        # return self.solver.model()
 
 
 def parse_args():
