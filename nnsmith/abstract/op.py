@@ -486,16 +486,13 @@ class Where(TernaryOpBase):
 Add = type('Add', (BcastBinaryOp1,), {'torch': lambda self: torch.add})
 Sub = type('Sub', (BcastBinaryOp1,), {'torch': lambda self: torch.sub})
 Mul = type('Mul', (BcastBinaryOp1,), {'torch': lambda self: torch.mul})
-<< << << < Updated upstream
-Div = type('Div', (BcastBinaryOp1,), {
-    'torch': lambda self:
-        lambda x, y: torch.div(x, y, rounding_mode='floor') if DType(x.dtype) in DTYPE_INTS else torch.div(x, y)})
-== == == =
+# Div = type('Div', (BcastBinaryOp1,), {
+#     'torch': lambda self:
+#         lambda x, y: torch.div(x, y, rounding_mode='floor') if DType(x.dtype) in DTYPE_INTS else torch.div(x, y)})
 # FIXME: Div will cause fuzzing crash.
 # Div = type('Div', (BcastBinaryOp1,), {
 #     'torch': lambda self:
 #         lambda x, y: torch.div(x, y, rounding_mode='floor' if DType(x.dtype) in DTYPE_INTS else None)})
->>>>>> > Stashed changes
 # NOTE(JK): didn't find multi-input version of Max and Min in torch, so assume binary ops
 Max = type('Max', (BcastBinaryOp1,), {'torch': lambda self: torch.max})
 Min = type('Min', (BcastBinaryOp1,), {'torch': lambda self: torch.min})
