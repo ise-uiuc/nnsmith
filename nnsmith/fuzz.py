@@ -8,7 +8,7 @@ import datetime
 from typing import Dict, Iterable, Union, List
 
 # Edge coverage. See https://github.com/ganler/tvm/tree/coverage
-from tvm.contrib import coverage
+# from tvm.contrib import coverage
 import git
 import rich
 from rich.progress import Progress, BarColumn, ProgressColumn
@@ -21,13 +21,24 @@ from nnsmith.graph_gen import PureSymbolGen, SymbolNet
 from nnsmith.export import torch2onnx
 from nnsmith.backends.tvm_graph import TVMExecutor
 from nnsmith.backends import DiffTestBackend
-from nnsmith.input_gen import InputGenBase
+from nnsmith.input_gen import gen_one_input_rngs
 from nnsmith.difftest import assert_allclose
+from nnsmith.graph_input_gen import gen_model_and_range_safe
 
 _METADATA_NAME_ = 'meta.txt'
 _COV_BY_TIME_NAME_ = 'cov_by_time.csv'
 
 # NOTE: Currently only engineered for TVM.
+
+
+class coverage:
+    @staticmethod
+    def get_now():
+        return 1
+
+    @staticmethod
+    def get_total():
+        return 1
 
 
 class Reporter:  # From Tzer.
@@ -172,15 +183,20 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     self.reporter.record_coverage()
 
                     gen_t_s = time.time()
-                    gen = PureSymbolGen()
-                    gen.abstract_gen(max_node_size=random.randint(1, self.max_nodes),
-                                     max_gen_millisec=_PER_MODEL_TIMEOUT_)
-                    solution = gen.get_symbol_solutions()
-                    # input_shape = gen.concretize_input_shape(solution)
-                    net = SymbolNet(gen.abstract_graph, solution)
-                    net.eval()
-                    # net.set_input_spec(input_shape)
-                    torch2onnx(model=net, filename=_TMP_ONNX_FILE_)
+                    # gen = PureSymbolGen()
+                    # gen.abstract_gen(max_node_size=random.randint(1, self.max_nodes),
+                    #                  max_gen_millisec=_PER_MODEL_TIMEOUT_)
+                    # solution = gen.get_symbol_solutions()
+                    # # input_shape = gen.concretize_input_shape(solution)
+                    # net = SymbolNet(gen.abstract_graph, solution)
+                    # net.eval()
+                    # # net.set_input_spec(input_shape)
+                    # torch2onnx(model=net, filename=_TMP_ONNX_FILE_)
+
+                    rngs = gen_model_and_range_safe(
+                        _TMP_ONNX_FILE_,
+                        max_node_size=random.randint(1, self.max_nodes),
+                        max_gen_millisec=_PER_MODEL_TIMEOUT_)[1]
 
                     # Generation time logging.
                     self.cur_model_gen_t = time.time() - gen_t_s
@@ -196,7 +212,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                             _TMP_ONNX_FILE_)
                         input_spec, onames = DiffTestBackend.analyze_onnx_io(
                             onnx_model)
-                        inp = InputGenBase.gen_one_input(input_spec, 0, 1)
+                        inp = gen_one_input_rngs(input_spec, rngs)
 
                         difftest_pool = {}
                         for bname in self.backends:

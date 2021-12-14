@@ -22,6 +22,16 @@ def gen_one_input(inp_spec, l, r):
     return inp
 
 
+Range = Tuple[float, float]
+
+
+def gen_one_input_rngs(inp_spec, rngs: List[Range]):
+    """rngs is a list of tuples (low, high). When rngs is None (which means no valid range found), this falls back to use low=0, high=1 as a workaround"""
+    if rngs is None:
+        rngs = [(0, 1)]
+    return gen_one_input(inp_spec, *rngs[np.random.randint(len(rngs))])
+
+
 def has_nan(output: Dict[str, np.ndarray]):
     for k, o in output.items():
         if np.isnan(o).any():
@@ -38,9 +48,8 @@ class InputGenBase:
     def gen_inputs(self, model, num_inputs, model_path) -> Dict:
         raise NotImplementedError
 
-    Range = Tuple[float, float]
-
     # overload me; return valid ranges for further analysis
+
     def infer_domain(self, model: onnx.ModelProto) -> List[Range]:
         raise NotImplementedError
 

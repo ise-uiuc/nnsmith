@@ -486,9 +486,6 @@ class Where(TernaryOpBase):
 Add = type('Add', (BcastBinaryOp1,), {'torch': lambda self: torch.add})
 Sub = type('Sub', (BcastBinaryOp1,), {'torch': lambda self: torch.sub})
 Mul = type('Mul', (BcastBinaryOp1,), {'torch': lambda self: torch.mul})
-# Div = type('Div', (BcastBinaryOp1,), {
-#     'torch': lambda self:
-#         lambda x, y: torch.div(x, y, rounding_mode='floor') if DType(x.dtype) in DTYPE_INTS else torch.div(x, y)})
 # FIXME: Div will cause fuzzing crash.
 # Div = type('Div', (BcastBinaryOp1,), {
 #     'torch': lambda self:
@@ -517,6 +514,7 @@ Pow.in_dtypes = [(i, i) for i in DTYPE_FLOATS]
 # Mean = type('Mean', (BcastBinaryOp,), {'torch': lambda self: torch.mean})
 
 
+# FIXME(JK): generated onnx model too large size because of constant op
 class Constant(AbsOpBase):
     in_dtypes = [()]
 
