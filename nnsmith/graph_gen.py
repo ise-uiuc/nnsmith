@@ -532,6 +532,25 @@ if __name__ == '__main__':
     # net.set_input_spec(input_shape)
     torch2onnx(model=net, filename=args.output_path, verbose=args.verbose)
 
+    model = DiffTestBackend.get_onnx_proto(args.output_path)
+
+    input_gen = InputGenV3()
+    input_st = time.time()
+    rngs = input_gen.infer_domain(model)
+    infer_succ = rngs is not None
+    ed_time = time.time()
+
+    stats = {
+        'gen_succ': True,
+        'infer_succ': infer_succ,
+        'elpased_time': ed_time - strt_time,
+        'gen_model_time': input_st - strt_time,
+        'infer_domain_time': ed_time - input_st,
+        'rngs': rngs,
+        'seed': seed,
+    }
+    pickle.dump(stats, open(args.output_path + '-stats.pkl', 'wb'))
+
     # Draw with NetworkX
     # import matplotlib.pyplot as plt
     # import pygraphviz as pgv
