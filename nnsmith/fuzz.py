@@ -8,7 +8,7 @@ import datetime
 from typing import Dict, Iterable, Union, List
 
 # Edge coverage. See https://github.com/ganler/tvm/tree/coverage
-# from tvm.contrib import coverage
+from tvm.contrib import coverage
 import git
 import rich
 from rich.progress import Progress, BarColumn, ProgressColumn
@@ -29,16 +29,6 @@ _METADATA_NAME_ = 'meta.txt'
 _COV_BY_TIME_NAME_ = 'cov_by_time.csv'
 
 # NOTE: Currently only engineered for TVM.
-
-
-class coverage:
-    @staticmethod
-    def get_now():
-        return 1
-
-    @staticmethod
-    def get_total():
-        return 1
 
 
 class Reporter:  # From Tzer.
