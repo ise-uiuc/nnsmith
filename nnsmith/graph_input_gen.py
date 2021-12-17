@@ -92,7 +92,7 @@ def gen_model_and_range(
     kwargs_str = ' '.join([f'--{k} {v}' for k, v in kwargs.items()])
     check_call(f'python -u -m nnsmith.graph_gen --output_path {output_path}'
                f' --seed {seed} --max_nodes {max_node_size} --timeout {max_gen_millisec} '
-               f'{kwargs_str} 2>&1', shell=True)
+               f'{kwargs_str} 2>&1', shell=True, timeout=max_gen_millisec * 2 / 1000)
     model = DiffTestBackend.get_onnx_proto(output_path)
     stats = pickle.load(open(output_path + '-stats.pkl', 'rb'))
     rngs = stats['rngs']
@@ -108,7 +108,13 @@ def _main(root: str, num_models, max_nodes, input_gen: InputGenBase):
     profile_inputs = []
     root = Path(root)  # type: Path
     if len(list(root.glob('model*'))) > 0:
-        raise Exception(f'Folder {root} already exists')
+        cont = input('The output directory already exists. Continue? y/n.')
+        if cont == 'n':
+            raise Exception(f'Folder {root} already exists')
+        elif cont == 'y':
+            pass
+        else:
+            raise Exception('Invalid input')
     model_root = root / 'model_input'
     model_root.mkdir(exist_ok=True, parents=True)
     for i in tqdm(range(num_models)):
@@ -152,12 +158,13 @@ def _main(root: str, num_models, max_nodes, input_gen: InputGenBase):
                     'atmpts': atmpts,
                     'gen_succ': gen_succ,
                     'infer_succ': infer_succ,
-                    'elpased_time': ed_time - gen_model_st,
+                    # 'elapsed_time': ed_time - gen_model_st,
                     'gen_model_time': input_st - gen_model_st,
                     'infer_domain_time': ed_time - input_st,
                     'seed': seed,
                 }
                 x.update(stats)
+                x['elapsed_time'] = ed_time - gen_model_st
                 profile.append(x)
             if e1 is not None:
                 profile[-1]['error'] = e1

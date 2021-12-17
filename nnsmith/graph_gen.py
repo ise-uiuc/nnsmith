@@ -114,7 +114,12 @@ class SymbolNet(nn.Module):
             if self.verbose:
                 print(
                     f'executing instruction op={op}, node_id={node_id}, inps={inps}, outs={outs}')
-            outputs = inst(*[self.tensors[idx] for idx in inps])
+            input_tensors = [self.tensors[idx] for idx in inps]
+            if isinstance(op, Div):
+                if (input_tensors[1] == 0).any():
+                    input_tensors[1] = torch.clip(
+                        input_tensors[1], torch.ones(size=[1], dtype=input_tensors[1].dtype))
+            outputs = inst(*input_tensors)
             if not isinstance(outputs, list):
                 outputs = [outputs]
             self._check_out_dtype(outputs, node_id, op)
@@ -543,7 +548,7 @@ if __name__ == '__main__':
     stats = {
         'gen_succ': True,
         'infer_succ': infer_succ,
-        'elpased_time': ed_time - strt_time,
+        'elapsed_time': ed_time - strt_time,
         'gen_model_time': input_st - strt_time,
         'infer_domain_time': ed_time - input_st,
         'rngs': rngs,
