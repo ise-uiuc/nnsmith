@@ -7,7 +7,7 @@ from queue import Empty
 import time
 import numpy as np
 from tqdm import tqdm
-from nnsmith import util
+from nnsmith import util, input_gen
 import sys
 import traceback
 
@@ -65,9 +65,9 @@ class BackendCreator:
             raise ValueError(f'unknown backend: {name}')
 
 
-def run_backend_same_proc(model_path: str, input_path: str, backend: BackendCreator, dump_raw: str):
+def run_backend_same_proc(model_path: str, input_path: str, backend: BackendCreator, dump_raw: str, gen_input: int = None):
     """This function is for debugging purpose.
-    Run the backend on the same process.
+    Run the backend on the same process. gen_input is the index of the input to generate.
     """
     backend = backend()
     if input_path is not None:
@@ -76,7 +76,16 @@ def run_backend_same_proc(model_path: str, input_path: str, backend: BackendCrea
     else:
         outputs = []
         for inp_path in tqdm(sorted(list(Path(model_path).parent.glob(f'input.*.pkl')))):
-            inputs = pickle.load(inp_path.open('rb'))
+            if gen_input is not None:
+                inp_spec = DiffTestBackend.analyze_onnx_io(
+                    DiffTestBackend.get_onnx_proto(model_path))[0]
+                rngs = pickle.load(
+                    (Path(model_path).parent / 'domain.pkl').open('rb'))
+                inputs = input_gen.gen_one_input_rngs(
+                    inp_spec, rngs, gen_input)
+
+            else:
+                inputs = pickle.load(inp_path.open('rb'))
             outputs.append(backend.predict(model_path, inputs))
     if dump_raw is not None:
         pickle.dump(outputs, open(dump_raw, 'wb'))
@@ -90,7 +99,7 @@ def summarize(outputs: Dict[str, np.ndarray]):
     return m
 
 
-def run_backend(root: str, backend_creator: BackendCreator, timeout: int, selected_models: List[str] = None):
+def run_backend(root: str, backend_creator: BackendCreator, timeout: int, selected_models: List[str] = None, gen_input: int = None):
     def run(q: multiprocessing.Queue, r: multiprocessing.Queue):
         backend = backend_creator()
         while True:
@@ -103,7 +112,11 @@ def run_backend(root: str, backend_creator: BackendCreator, timeout: int, select
             model, inp_path, out_path = task
             pickle.dump({'exit_code': 1, 'outputs': None},
                         out_path.open('wb'))
-            inputs = pickle.load(inp_path.open('rb'))  # type: List[Dict[str, np.ndarray]] # noqa
+            if isinstance(inp_path, Path):
+                inputs = pickle.load(inp_path.open('rb'))  # type: List[Dict[str, np.ndarray]] # noqa
+            else:
+                rngs, input_spec, seed = inp_path
+                inputs = input_gen.gen_one_input_rngs(input_spec, rngs, seed)
             with util.stdout_redirected(f"{out_path}.stdout"), \
                     util.stdout_redirected(f"{out_path}.stderr", sys.stderr):
                 try:  # try block to catch the exception message before the rediction exits
@@ -159,14 +172,28 @@ def run_backend(root: str, backend_creator: BackendCreator, timeout: int, select
     print(f'Found {len(model_folders)} models at {model_root}')
     for model_folder in tqdm(model_folders):
         model_name = model_folder.name
-        for inp_path in sorted(list(model_folder.glob(f'input.*.pkl'))):
-            idx = inp_path.stem.split('.')[-1]
-            out_path = output_dir / \
-                f'{model_name}/{bknd.dump_name}.output.{idx}.pkl'
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-            task = (str(model_folder / 'model.onnx'), inp_path, out_path)
-            print(f'testing {model_folder} on input {inp_path}')
-            run_task(task)
+        inp_spec = DiffTestBackend.analyze_onnx_io(
+            DiffTestBackend.get_onnx_proto(str(model_folder / f'model.onnx')))[0]
+        if gen_input is None:
+            for inp_path in sorted(list(model_folder.glob(f'input.*.pkl'))):
+                idx = inp_path.stem.split('.')[-1]
+                out_path = output_dir / \
+                    f'{model_name}/{bknd.dump_name}.output.{idx}.pkl'
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                task = (str(model_folder / 'model.onnx'), inp_path, out_path)
+                print(f'testing {model_folder} on input {inp_path}')
+                run_task(task)
+        else:
+            for idx in range(gen_input):
+                out_path = output_dir / \
+                    f'{model_name}/{bknd.dump_name}.output.{idx}.pkl'
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                rngs = pickle.load(
+                    (model_folder / 'domain.pkl').open('rb'))
+                inp_info = rngs, inp_spec, idx
+                task = (str(model_folder / 'model.onnx'), inp_info, out_path)
+                print(f'testing {model_folder} on input #{idx}')
+                run_task(task)
 
     run_task(None)
     p.join()
@@ -188,6 +215,8 @@ if __name__ == '__main__':
         '--dump_raw', help='For debugging purposes. Dumps the raw output instead of summary to the specified path')
     parser.add_argument('--select_model', nargs='*',
                         help='Run the selected models only')
+    parser.add_argument('--gen_input', type=int,
+                        help='When specified, the given args should be an int, and it will generate the specified number of input data on the fly')
     # TODO: Add support for passing backend-specific options
     args = parser.parse_args()
     if args.root is None and args.select_model is not None:
@@ -196,7 +225,8 @@ if __name__ == '__main__':
     bknd = BackendCreator(args.backend)
     st = time.time()
     if args.model is None:
-        run_backend(args.root, bknd, args.timeout, args.select_model)
+        run_backend(args.root, bknd, args.timeout,
+                    args.select_model, args.gen_input)
     else:
         run_backend_same_proc(args.model, args.input, bknd, args.dump_raw)
     print(f'Total time: {time.time() - st}')

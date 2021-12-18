@@ -7,14 +7,13 @@ from nnsmith.backends import DiffTestBackend
 import pickle
 from subprocess import check_call
 from tqdm import tqdm
-import torch
-from typing import List, Dict, Tuple
-from nnsmith.backends.ort_graph import ORTExecutor
-import pandas as pd
+from typing import List, Dict, Tuple, Union
 import time
 
 
-def gen_one_input(inp_spec, l, r):
+def gen_one_input(inp_spec, l, r, seed=None):
+    if seed is not None:
+        np.random.seed(seed)  # TODO: use standalone random generator
     inp = {}
     for name, shape in inp_spec.items():
         inp[name] = np.random.uniform(
@@ -25,11 +24,11 @@ def gen_one_input(inp_spec, l, r):
 Range = Tuple[float, float]
 
 
-def gen_one_input_rngs(inp_spec, rngs: List[Range]):
+def gen_one_input_rngs(inp_spec, rngs: Union[List[Range], None], seed=None):
     """rngs is a list of tuples (low, high). When rngs is None (which means no valid range found), this falls back to use low=0, high=1 as a workaround"""
     if rngs is None:
         rngs = [(0, 1)]
-    return gen_one_input(inp_spec, *rngs[np.random.randint(len(rngs))])
+    return gen_one_input(inp_spec, *rngs[np.random.randint(len(rngs))], seed)
 
 
 def has_nan(output: Dict[str, np.ndarray]):
@@ -55,6 +54,7 @@ class InputGenBase:
 
     @classmethod
     def _gen_inputs(cls, model, num_inputs, model_path, rngs=None, max_trials=MAX_TRIALS):
+        from nnsmith.backends.ort_graph import ORTExecutor
         rngs = rngs or [cls.DEFAULT_RNG]
         rf_exe = ORTExecutor(opt_level=0)  # reference model
         inp_spec = DiffTestBackend.analyze_onnx_io(model)[0]
@@ -162,6 +162,7 @@ class NaNChecker():
     THRES = 1
 
     def __init__(self, max_rng_trials=3) -> None:
+        from nnsmith.backends.ort_graph import ORTExecutor
         super().__init__()
         self.max_rng_trials = max_rng_trials
         # reference model
@@ -277,6 +278,7 @@ def gen_inputs_for_one(num_inputs, model, input_gen: InputGenBase = InputGenV1()
 
 
 def gen_inputs_for_all(root, num_inputs=2, models=None, input_gen: InputGenBase = InputGenV1()):
+    import pandas as pd
     profile = []
     models = models or sorted(list(Path(root).glob('model_input/*/*.onnx')))
     for model in tqdm(models):

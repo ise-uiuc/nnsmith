@@ -119,10 +119,10 @@ def difftest(root: str):
             a = list(model_folder.glob(f'*.output.*.pkl'))
             bknd_names = set(map(lambda x: x.name.split('.')[0], a))
             num_out = len(a) // len(bknd_names)
-            assert num_out == len(list(
+            num_in = len(list(
                 (output_dir.parent / 'model_input' /
-                 model_name).glob(f'input.*.pkl')
-            )), 'inputs and outputs are not matched. Do you forget to run_backends?\n'\
+                 model_name).glob(f'input.*.pkl')))
+            assert num_out == num_in or num_in == 0, 'inputs and outputs are not matched. Do you forget to run_backends?\n'\
                 'model_folder: {}\nbknd_names: {}\nnum_out: {}\nlen(a): {}'.format(
                     model_folder, bknd_names, num_out, len(a))
             assert len(a) % len(bknd_names) == 0, \

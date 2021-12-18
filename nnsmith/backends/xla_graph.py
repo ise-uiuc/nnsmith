@@ -44,7 +44,8 @@ class XLAExecutor(DiffTestBackend):
         outputs = tf_rep.run(
             {iname: inputs[iname].astype(self.inp_spec[iname].dtype) for iname in inputs})
         assert Counter(self.out_names) == Counter(
-            outputs._fields), "Output names don't match"
+            outputs._fields), "Output names don't match, analyze_onnx_io gives {} but xla returns {}".format(
+                self.out_names, outputs._fields)
         return {oname: outputs[oname] for oname in self.out_names}
 
 

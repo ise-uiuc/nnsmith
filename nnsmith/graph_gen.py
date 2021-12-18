@@ -42,7 +42,8 @@ class SymbolNet(nn.Module):
             warnings.warn(
                 "Please supply `alive_shapes` if possible. This will be used to check dtype correctness.")
 
-        InputInfo = NamedTuple('InputInfo', [('op', Input), ('oid', int)])
+        InputInfo = NamedTuple(
+            'InputInfo', [('op', Input), ('oid', int), ('node_id', int), ('input_name', str)])
         self.input_info: List[InputInfo] = []
 
         tmp_op_output_map = {}  # node id -> output idx in tensors;
@@ -87,8 +88,10 @@ class SymbolNet(nn.Module):
             else:  # Should be input node
                 assert type(op) is Input
                 assert len(output_idx) == 1
-                self.input_info.append(InputInfo(op=op, oid=output_idx[0]))
-
+                self.input_info.append(
+                    InputInfo(op=op, oid=output_idx[0], node_id=node_id, input_name=f'i{op.idx}'))
+        if self.verbose:
+            print('input_info=', self.input_info)
         self.input_spec = {
             f'i{ii.op.idx}': ii.op.shape for ii in self.input_info}
         self.plausible_input_shape = {f'i{ii.op.idx}': ShapeVar(
