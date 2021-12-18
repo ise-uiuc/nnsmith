@@ -108,10 +108,13 @@ def run_backend(root: str, backend_creator: BackendCreator, timeout: int, select
             if task is None:
                 r.put(True)
                 break
-            # add a placeholder for the output. If the backend crashes, the output will be None
-            model, inp_path, out_path = task
+            # add a placeholder for the output. If the backend crashes or the input is skipped, the output will be None
+            model, inp_path, out_path, skip = task
             pickle.dump({'exit_code': 1, 'outputs': None},
                         out_path.open('wb'))
+            if skip:  # crashed before on the same model. so skip later same-model tasks
+                r.put(True)
+                continue
             if isinstance(inp_path, Path):
                 inputs = pickle.load(inp_path.open('rb'))  # type: List[Dict[str, np.ndarray]] # noqa
             else:
@@ -141,10 +144,12 @@ def run_backend(root: str, backend_creator: BackendCreator, timeout: int, select
         p.start()
 
     def run_task(task):
+        """Returns true if the backend is crashed"""
         assert q.empty()
         q.put(task)
         st_time = time.time()
         done = False
+        crashed = False
         while st_time + timeout > time.time():
             try:
                 done = r.get(block=False)
@@ -153,11 +158,13 @@ def run_backend(root: str, backend_creator: BackendCreator, timeout: int, select
             if done:
                 break
             if not p.is_alive():
+                crashed = True
                 break
             time.sleep(0.01)
         # timeout; skip this task and restart the worker
         if not done:
             re_start_worker()
+        return crashed
 
     p = None  # type: multiprocessing.Process
     q = None  # type: multiprocessing.Queue
@@ -171,29 +178,34 @@ def run_backend(root: str, backend_creator: BackendCreator, timeout: int, select
         model_folders = [m for m in model_folders if m.name in selected_models]
     print(f'Found {len(model_folders)} models at {model_root}')
     for model_folder in tqdm(model_folders):
+        crashed = False
         model_name = model_folder.name
         inp_spec = DiffTestBackend.analyze_onnx_io(
             DiffTestBackend.get_onnx_proto(str(model_folder / f'model.onnx')))[0]
+        rngs = pickle.load(
+            (model_folder / 'domain.pkl').open('rb'))
         if gen_input is None:
             for inp_path in sorted(list(model_folder.glob(f'input.*.pkl'))):
                 idx = inp_path.stem.split('.')[-1]
                 out_path = output_dir / \
                     f'{model_name}/{bknd.dump_name}.output.{idx}.pkl'
                 out_path.parent.mkdir(parents=True, exist_ok=True)
-                task = (str(model_folder / 'model.onnx'), inp_path, out_path)
+                task = (str(model_folder / 'model.onnx'),
+                        inp_path, out_path, crashed)
                 print(f'testing {model_folder} on input {inp_path}')
-                run_task(task)
+                if run_task(task):
+                    crashed = True
         else:
             for idx in range(gen_input):
                 out_path = output_dir / \
                     f'{model_name}/{bknd.dump_name}.output.{idx}.pkl'
                 out_path.parent.mkdir(parents=True, exist_ok=True)
-                rngs = pickle.load(
-                    (model_folder / 'domain.pkl').open('rb'))
                 inp_info = rngs, inp_spec, idx
-                task = (str(model_folder / 'model.onnx'), inp_info, out_path)
+                task = (str(model_folder / 'model.onnx'),
+                        inp_info, out_path, crashed)
                 print(f'testing {model_folder} on input #{idx}')
-                run_task(task)
+                if run_task(task):
+                    crashed = True
 
     run_task(None)
     p.join()
