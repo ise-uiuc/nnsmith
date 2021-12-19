@@ -10,13 +10,13 @@ This project is under heavy development at this point.
 export root='./tmp/seed1' # the path storing (to store) the model and inputs (outputs and bug reports)
 # See difftest.py for the spec of the file structure
 
-python ./nnsmith/input_gen.py --root ./tmp/seed1 # generate models and inputs
+python ./nnsmith/graph_input_gen.py --root ./tmp/seed1 # generate models and inputs
 
 ... # setup your enviroment for ort
-python -m nnsmith.backend_executor --root $root --backend ort # test
+python -m nnsmith.backend_executor --root $root --gen_input 10 --backend ort # test
 
 ... # setup your enviroment for xla
-python -m nnsmith.backend_executor --root $root --backend xla # test
+python -m nnsmith.backend_executor --root $root --gen_input 10 --backend xla # test
 # ...
 
 # compare the result (all close)
