@@ -70,23 +70,27 @@ def run_backend_same_proc(model_path: str, input_path: str, backend: BackendCrea
     Run the backend on the same process. gen_input is the index of the input to generate.
     """
     backend = backend()
-    if input_path is not None:
-        inputs = pickle.load(Path(input_path).open('rb'))
+    if gen_input is not None:  # new version with input gen on the fly
+        inp_spec = DiffTestBackend.analyze_onnx_io(
+            DiffTestBackend.get_onnx_proto(model_path))[0]
+        if input_path is not None:
+            rngs = pickle.load(open(input_path, 'rb'))
+        else:
+            rngs = None
+            # rngs = pickle.load(
+            #     (Path(model_path).parent / 'domain.pkl').open('rb'))
+        inputs = input_gen.gen_one_input_rngs(
+            inp_spec, rngs, gen_input)
         outputs = backend.predict(model_path, inputs)
-    else:
-        outputs = []
-        for inp_path in tqdm(sorted(list(Path(model_path).parent.glob(f'input.*.pkl')))):
-            if gen_input is not None:
-                inp_spec = DiffTestBackend.analyze_onnx_io(
-                    DiffTestBackend.get_onnx_proto(model_path))[0]
-                rngs = pickle.load(
-                    (Path(model_path).parent / 'domain.pkl').open('rb'))
-                inputs = input_gen.gen_one_input_rngs(
-                    inp_spec, rngs, gen_input)
-
-            else:
+    else:  # old version
+        if input_path is not None:
+            inputs = pickle.load(Path(input_path).open('rb'))
+            outputs = backend.predict(model_path, inputs)
+        else:
+            outputs = []
+            for inp_path in tqdm(sorted(list(Path(model_path).parent.glob(f'input.*.pkl')))):
                 inputs = pickle.load(inp_path.open('rb'))
-            outputs.append(backend.predict(model_path, inputs))
+                outputs.append(backend.predict(model_path, inputs))
     if dump_raw is not None:
         pickle.dump(outputs, open(dump_raw, 'wb'))
 
@@ -222,7 +226,9 @@ if __name__ == '__main__':
     parser.add_argument('--model', type=str,
                         help='For debugging purpose: path to onnx model;')
     parser.add_argument('--input', type=str,
-                        help='For debugging purpose: path to input pkl file. If not specified, it will run on all inputs found within the same folder as the model')
+                        help='For debugging purpose: '
+                        'When gen_input is not specified: path to input pkl file. If not specified, it will run on all inputs found within the same folder as the model.'
+                        'When gen_input is specified: path to the domain pkl file. If not specified, it uses the default domain.')
     parser.add_argument(
         '--dump_raw', help='For debugging purposes. Dumps the raw output instead of summary to the specified path')
     parser.add_argument('--select_model', nargs='*',
@@ -240,5 +246,6 @@ if __name__ == '__main__':
         run_backend(args.root, bknd, args.timeout,
                     args.select_model, args.gen_input)
     else:
-        run_backend_same_proc(args.model, args.input, bknd, args.dump_raw)
+        run_backend_same_proc(args.model, args.input, bknd,
+                              args.dump_raw, args.gen_input)
     print(f'Total time: {time.time() - st}')

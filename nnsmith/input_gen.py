@@ -24,10 +24,24 @@ def gen_one_input(inp_spec, l, r, seed=None):
 Range = Tuple[float, float]
 
 
-def gen_one_input_rngs(inp_spec, rngs: Union[List[Range], None], seed=None):
-    """rngs is a list of tuples (low, high). When rngs is None (which means no valid range found), this falls back to use low=0, high=1 as a workaround"""
+def gen_one_input_rngs(inp_spec: Union[str, Dict], rngs: Union[str, List[Range], None], seed=None) -> Dict:
+    """
+    Parameters
+    ----------
+    `inp_spec` can be either a string or a dictionary. When it's a string, it's the a path to the ONNX model.
+
+    `rngs` can be 
+    - a list of tuples (low, high).
+    - None, which means no valid range found, this falls back to use low=0, high=1 as a workaroun
+    - a string, which is interpreted as a path to a pickled file.
+    """
     if rngs is None:
         rngs = [(0, 1)]
+    elif isinstance(rngs, str):
+        rngs = pickle.load(open(rngs, 'rb'))
+    if isinstance(inp_spec, str):  # in this case the inp_spec is a path to a the model proto
+        inp_spec = DiffTestBackend.analyze_onnx_io(
+            DiffTestBackend.get_onnx_proto(inp_spec))[0]
     return gen_one_input(inp_spec, *rngs[np.random.randint(len(rngs))], seed)
 
 
@@ -266,27 +280,49 @@ class InputGenV3(InputGenBase):
         return rngs
 
 
-def gen_inputs_for_one(num_inputs, model, input_gen: InputGenBase = InputGenV1()):
-    st = time.time()
-    stats = input_gen.gen_inputs(
-        DiffTestBackend.get_onnx_proto(str(model)), num_inputs, Path(model).parent)
-    stats.update({
-        'model': model,
-        'elpased_time': time.time() - st}
-    )
-    return stats
+# def gen_inputs_for_one(num_inputs, model, input_gen: InputGenBase = InputGenV1()):
+#     st = time.time()
+#     stats = input_gen.gen_inputs(
+#         DiffTestBackend.get_onnx_proto(str(model)), num_inputs, Path(model).parent)
+#     stats.update({
+#         'model': model,
+#         'elpased_time': time.time() - st}
+#     )
+#     return stats
 
 
-def gen_inputs_for_all(root, num_inputs=2, models=None, input_gen: InputGenBase = InputGenV1()):
-    import pandas as pd
-    profile = []
-    models = models or sorted(list(Path(root).glob('model_input/*/*.onnx')))
-    for model in tqdm(models):
-        print(model)
-        profile.append(gen_inputs_for_one(num_inputs, model, input_gen))
-    # profile = pd.DataFrame(
-        # profile, columns=['model', 'succ', 'trials', 'succ_rate', 'elapsed_time'])
-    profile = pd.DataFrame(profile)
-    profile = profile.sort_values(by=['succ_rate'], ascending=True)
-    profile.to_pickle(Path(root) / 'gen_profile.pkl')
-    profile.to_csv(Path(root) / 'gen_profile.csv')
+# def gen_inputs_for_all(root, num_inputs=2, models=None, input_gen: InputGenBase = InputGenV1()):
+#     import pandas as pd
+#     profile = []
+#     models = models or sorted(list(Path(root).glob('model_input/*/*.onnx')))
+#     for model in tqdm(models):
+#         print(model)
+#         profile.append(gen_inputs_for_one(num_inputs, model, input_gen))
+#     # profile = pd.DataFrame(
+#         # profile, columns=['model', 'succ', 'trials', 'succ_rate', 'elapsed_time'])
+#     profile = pd.DataFrame(profile)
+#     profile = profile.sort_values(by=['succ_rate'], ascending=True)
+#     profile.to_pickle(Path(root) / 'gen_profile.pkl')
+#     profile.to_csv(Path(root) / 'gen_profile.csv')
+
+
+def gen_one_input_for_model(model: Union[str, onnx.GraphProto], input_gen: InputGenBase = InputGenV3(), seed=None):
+    """Convenient wrapper for gen_one_input_rngs. This function requires only one input that specified the model. 
+    Under the hood, it parses the model to extract the input spec and invokes input_gen to infer the domain."""
+    inp_spec = DiffTestBackend.analyze_onnx_io(model)[0]
+    return gen_one_input_rngs(inp_spec, input_gen.infer_domain(model), seed)
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser('Domain inferencer')
+    parser.add_argument('--model')
+    parser.add_argument('--output_path', default='./domain.pkl')
+    args = parser.parse_args()
+
+    model = DiffTestBackend.get_onnx_proto(args.model)
+
+    input_gen = InputGenV3()
+    input_st = time.time()
+    rngs = input_gen.infer_domain(model)
+    pickle.dump(rngs, open(args.output_path, 'wb'))
