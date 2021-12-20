@@ -14,7 +14,7 @@ class Ploter:
         self.cov_lim = cov_lim
 
     def add(self, folder, name=None):
-        path = os.path.join(folder, 'cov_by_time.txt')
+        path = os.path.join(folder, 'cov_by_time.csv')
         df = pandas.read_csv(path, usecols=[0, 1], header=None).to_numpy()
 
         self.axs[0].plot(df[:, 0], df[:, 1])  # cov / time
