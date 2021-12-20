@@ -513,10 +513,13 @@ class GenerationTable:
         return ALL_OP_TYPES.index(t) - 1
 
     def on_new_cov(self, src_t, tar_t):
-        self.np_table[self.row_mapper(src_t)][self.col_mapper(tar_t)] *= 1.1
+        val = self.np_table[self.row_mapper(src_t)][self.col_mapper(tar_t)]
+        self.np_table[self.row_mapper(src_t)][self.col_mapper(
+            tar_t)] = min(4., val * 1.1)
 
     def on_no_cov(self, src_t, tar_t):
-        pass
+        self.np_table[self.row_mapper(
+            src_t)][self.col_mapper(tar_t)] = 1.  # reset.
 
     def on_unsolvable(self, src_t, tar_t):
         val = self.np_table[self.row_mapper(src_t)][self.col_mapper(tar_t)]
