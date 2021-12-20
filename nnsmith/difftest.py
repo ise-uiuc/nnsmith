@@ -56,6 +56,9 @@ def known_bug(report: dict, db: List[dict]):
             if (report['backend'] == last['backend'] and report['model_idx'] == last['model_idx'] and
                     report['stderr'] == last['stderr']):
                 return True
+            # NOTE: when the input is deliverately skipped (because it already crashed on the same model but different input), I didn't create stderr/stdout.
+            if report['stderr'] == 'file not found' and report['stdout'] == 'file not found':
+                return True
         return False
 
     def trt_clip_int32(report: dict):
