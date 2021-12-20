@@ -1,10 +1,11 @@
-import pickle
 import z3  # Always import z3 first to avoid incompatibility issue.
 # See https://github.com/Z3Prover/z3/issues/5656
 import networkx as nx
 import torch
 from torch import nn
+import numpy as np
 
+import pickle
 from typing import Dict, NamedTuple, Tuple, List
 from inspect import signature
 import traceback
@@ -361,7 +362,6 @@ class SimpleGenerator:
 
         try:
             for _ in range(max_shape_var_pick_time):
-                print(op.in_dtypes)
                 ishape_indices = self.pick_shape_var_idx(
                     node_t, dim_spec_list, random.choice(op.in_dtypes))
                 if self.try_insert_node(op, ishape_indices):
@@ -377,7 +377,7 @@ class SimpleGenerator:
 
         return False
 
-    def filter_alive_shapes(self, node_t, ndim, dtype):
+    def filter_alive_shapes(self, ndim, dtype):
         # TODO(JK): consider same_in_dtypes
         cans = range(len(self.alive_shapes))
 
@@ -395,7 +395,7 @@ class SimpleGenerator:
 
         return cans
 
-    def pick_alive_shape(self, candidates):
+    def pick_alive_shape(self, node_t, candidates):
         return random.choice(candidates)
 
     def pick_shape_var_idx(self, node_t, ndim_list: List[int], dtype_comb: DTypeComb) -> List[int]:
@@ -414,8 +414,9 @@ class SimpleGenerator:
 
         for i, ndim in enumerate(ndim_list):
             candidates = self.filter_alive_shapes(
-                node_t=node_t, ndim=ndim, dtype=dtype_comb[i])
-            shape_var_candidates.append(self.pick_alive_shape(candidates))
+                ndim=ndim, dtype=dtype_comb[i])
+            shape_var_candidates.append(
+                self.pick_alive_shape(node_t, candidates))
 
         return shape_var_candidates
 
@@ -528,7 +529,6 @@ def random_model_gen(
         print(
             f'{len(solution)} symbols and {len(gen.solver.assertions())} constraints.')
         print(solution)
-        gen.viz(args.output_path + '.png')
 
     return gen, solution
 
@@ -547,6 +547,9 @@ if __name__ == '__main__':
 
     gen, solution = random_model_gen(min_dims=args.min_dims, viz_sbs=args.viz_sbs, max_nodes=args.max_nodes,
                                      use_bitvec=args.use_bitvec, timeout=args.timeout, verbose=args.verbose)
+
+    if args.verbose:
+        gen.viz(args.output_path + '.png')
 
     net = SymbolNet(gen.abstract_graph, solution, verbose=args.verbose,
                     alive_shapes=gen.alive_shapes)
