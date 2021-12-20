@@ -5,8 +5,9 @@ import networkx as nx
 import torch
 from torch import nn
 
-from typing import Dict, NamedTuple, Tuple, List, Type
+from typing import Dict, NamedTuple, Tuple, List
 from inspect import signature
+import traceback
 import random
 import time
 import os
@@ -360,22 +361,42 @@ class SimpleGenerator:
 
         try:
             for _ in range(max_shape_var_pick_time):
+                print(op.in_dtypes)
                 ishape_indices = self.pick_shape_var_idx(
                     dim_spec_list, random.choice(op.in_dtypes))
                 if self.try_insert_node(op, ishape_indices):
                     return True
         except RequiredDimNotFound:
             if self.verbose:
-                import traceback
                 traceback.print_exc()
             return False
         except AssertionError:
             if self.verbose:
-                import traceback
                 traceback.print_exc()
             return False
 
         return False
+
+    def filter_alive_shapes(self, ndim, dtype):
+        # TODO(JK): consider same_in_dtypes
+        cans = range(len(self.alive_shapes))
+
+        cans = list(filter(  # filter with ndim
+            lambda sid: self.alive_shapes[sid][1].ndims == ndim or ndim == -1, cans))
+        if len(cans) == 0:
+            raise RequiredDimNotFound(
+                'Cannot find a shape variable with #dimensions %s.' % ndim)
+
+        cans = list(filter(  # filter with dtype
+            lambda sid: self.alive_shapes[sid][1].dtype == dtype, cans))
+        if len(cans) == 0:
+            raise RequiredDimNotFound(
+                'Cannot find a shape variable with #dimensions %s and dtype %s.' % (ndim, dtype))
+
+        return cans
+
+    def pick_alive_shape(self, candidates):
+        return random.choice(candidates)
 
     def pick_shape_var_idx(self, ndim_list: List[int], dtype_comb: DTypeComb) -> List[int]:
         """Randomly pick indices to shape variables from the output pool.
@@ -392,33 +413,9 @@ class SimpleGenerator:
             print('dtype_comb:', dtype_comb)
 
         for i, ndim in enumerate(ndim_list):
-            # TODO(JK): consider same_in_dtypes
-            # no constraint
-            dtype = dtype_comb[i]
-            cans = range(len(self.alive_shapes))
-
-            cans = list(filter(  # filter with ndim
-                lambda sid: self.alive_shapes[sid][1].ndims == ndim or ndim == -1, cans))
-            if len(cans) == 0:
-                raise RequiredDimNotFound(
-                    'Cannot find a shape variable with #dimensions %s.' % ndim)
-
-            cans = list(filter(  # filter with dtype
-                lambda sid: self.alive_shapes[sid][1].dtype == dtype, cans))
-            if len(cans) == 0:
-                raise RequiredDimNotFound(
-                    'Cannot find a shape variable with #dimensions %s and dtype %s.' % (ndim, dtype))
-
-            shape_var_candidates.append(random.choice(cans))
-            # if ndim == -1:  # Arbitrary dimension size.
-            #     shape_var_candidates.append(
-            #         random.randint(0, len(self.alive_shapes) - 1))
-            # elif ndim in self.dim2shape_idx:
-            #     shape_var_candidates.append(
-            #         random.choice(self.dim2shape_idx[ndim]))
-            # else:
-            #     raise RequiredDimNotFound(
-            #         'Cannot find a shape variable with #dimensions %s.' % ndim)
+            candidates = self.filter_alive_shapes(
+                ndim=ndim, dtype=dtype_comb[i])
+            shape_var_candidates.append(self.pick_alive_shape(candidates))
 
         return shape_var_candidates
 
