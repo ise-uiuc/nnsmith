@@ -472,7 +472,12 @@ class PureSymbolGen(SimpleGenerator):
         for s in output_shapes:
             self.n_floats = nnsmith_add(self.n_floats, s.nelement())
 
-        if self.check_sat(*constraints, nnsmith_le(self.n_floats, self.limit_float)) != z3.sat:
+        check_res = self.check_sat(
+            *constraints, nnsmith_le(self.n_floats, self.limit_float))
+        if check_res == z3.unknown:  # Timeout thing.
+            self.on_timeout(node, ishape_indices)
+
+        if check_res != z3.sat:
             return False
 
         for c in constraints:
@@ -481,12 +486,76 @@ class PureSymbolGen(SimpleGenerator):
         self.insert_node(node, ishape_indices, output_shapes)
         return True
 
+    def on_timeout(self, node: AbsOpBase, ishape_indices: List[int]):
+        pass
+
     def get_symbol_solutions(self) -> List:
         assert self.last_soln is not None
         return self.last_soln
         # res = self.solver.check()
         # assert res == z3.sat, res
         # return self.solver.model()
+
+
+class GenerationTable:
+    def __init__(self):
+        self.np_table = np.ones((len(ALL_OP_TYPES), len(
+            ALL_OP_TYPES) - 1))  # do not count Input
+
+    def row_mapper(self, t):
+        if isinstance(t, int):
+            return t
+        return ALL_OP_TYPES.index(t)
+
+    def col_mapper(self, t):
+        if isinstance(t, int):
+            return t
+        return ALL_OP_TYPES.index(t) - 1
+
+    def on_new_cov(self, src_t, tar_t):
+        self.np_table[self.row_mapper(src_t)][self.col_mapper(tar_t)] *= 1.1
+
+    def on_no_cov(self, src_t, tar_t):
+        pass
+
+    def on_unsolvable(self, src_t, tar_t):
+        val = self.np_table[self.row_mapper(src_t)][self.col_mapper(tar_t)]
+        self.np_table[self.row_mapper(src_t)][self.col_mapper(
+            tar_t)] = max(0.1, val * 0.9)
+
+    def lookup(self, src_t, tar_t):
+        return self.np_table[self.row_mapper(src_t)][self.col_mapper(tar_t)]
+
+    def __len__(self):
+        return len(self.np_table)
+
+    def __getitem__(self, t):
+        return self.np_table[self.row_mapper(t)]
+
+
+class CoverageTableGen(PureSymbolGen):
+    def __init__(self, table, state, **kwargs):
+        self.table = table
+        assert 'unsolvable' in state
+        self.state = state
+        super(CoverageTableGen, self).__init__(**kwargs)
+
+    def pick_alive_shape(self, node_t, candidates):
+        successor_probability = self.table[node_t]
+        candidate_indices = [self.table.col_mapper(
+            type(self.abstract_graph.nodes[self.alive_shapes[alive_shape_idx][0]]['op'])) for alive_shape_idx in candidates]
+        candidate_conf = successor_probability[candidate_indices]
+        return np.random.choice(candidates, p=candidate_conf / candidate_conf.sum())
+
+    def pick_next_op_type(self):
+        probability_vector = self.table.np_table.sum(axis=1)
+        return np.random.choice(ALL_OP_TYPES, p=probability_vector / probability_vector.sum())
+
+    def on_timeout(self, node: AbsOpBase, ishape_indices: List[int]):
+        # node -> ishape_indices :: on_unsolvable
+        for idx in ishape_indices:
+            self.state['unsolvable'].append(
+                (type(node), type(self.abstract_graph.nodes[self.alive_shapes[idx][0]]['op'])))
 
 
 def parse_args():
@@ -518,6 +587,37 @@ def random_model_gen(
 
     gen = PureSymbolGen(min_dims=min_dims,
                         viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec)
+    gen.abstract_gen(max_node_size=max_nodes,
+                     max_gen_millisec=timeout)
+    if verbose:
+        print(
+            f'{time.time() - strt_time}s to generate a graph w/ {len(gen.abstract_graph.nodes())} nodes')
+
+    solution = gen.get_symbol_solutions()
+    if verbose:
+        print(
+            f'{len(solution)} symbols and {len(gen.solver.assertions())} constraints.')
+        print(solution)
+
+    return gen, solution
+
+
+def table_model_gen(
+        table,
+        state,
+        min_dims=[1, 3, 48, 48],
+        viz_sbs=False,
+        max_nodes=5,
+        seed=None,
+        use_bitvec=False,
+        timeout=50000,
+        verbose=False):
+    if verbose:
+        strt_time = time.time()
+
+    gen = CoverageTableGen(table=table, state=state, min_dims=min_dims,
+                           viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec)
+
     gen.abstract_gen(max_node_size=max_nodes,
                      max_gen_millisec=timeout)
     if verbose:

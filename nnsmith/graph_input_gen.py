@@ -9,9 +9,10 @@ import random
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+from nnsmith.abstract.op import ALL_OP_TYPES
 
 from nnsmith.backends import DiffTestBackend
-from nnsmith.graph_gen import SymbolNet, torch2onnx
+from nnsmith.graph_gen import SymbolNet, torch2onnx, random_model_gen, table_model_gen
 from nnsmith.input_gen import InputGenBase, InputGenV1, InputGenV3
 
 
@@ -36,14 +37,31 @@ def safe_wrapper(func):
 
 @safe_wrapper
 def forked_execution(
-        gen_method, output_path, seed=None, max_nodes=10, max_gen_millisec=2000, state=None, **kwargs):
+        gen_method, output_path, seed=None, max_nodes=10, max_gen_millisec=2000, table=None, **kwargs):
     if seed is None:
         seed = random.getrandbits(32)
 
-    def subprocess_call(return_values):
+    def subprocess_call(ipc_dict):
         random.seed(seed if seed is not None else random.getrandbits(32))
-        gen, solution = gen_method(
-            max_nodes=max_nodes, timeout=max_gen_millisec)
+
+        if gen_method == 'random':
+            gen, solution = random_model_gen(
+                max_nodes=max_nodes, timeout=max_gen_millisec)
+        elif gen_method == 'table':
+            gen, solution = table_model_gen(
+                table=table,
+                state=ipc_dict['state'],
+                max_nodes=max_nodes, timeout=max_gen_millisec)
+            abs_graph = gen.abstract_graph
+            unique_set = set()
+            for src, dst in abs_graph.edges():
+                pair = (ALL_OP_TYPES.index(type(abs_graph.nodes[src]['op'])), ALL_OP_TYPES.index(
+                    type(abs_graph.nodes[dst]['op'])) - 1)
+                unique_set.add(pair)
+            ipc_dict['edges'] = unique_set
+        else:
+            assert False, f'Unknown gen_method: {gen_method}'
+
         net = SymbolNet(gen.abstract_graph, solution, verbose=False,
                         alive_shapes=gen.alive_shapes)
         net.eval()
@@ -52,11 +70,14 @@ def forked_execution(
 
         input_gen = InputGenV3()
         rngs = input_gen.infer_domain(model)
-        return_values['ranges'] = rngs
+        ipc_dict['ranges'] = rngs
 
     with mp.Manager() as manager:
-        return_values = manager.dict()
-        p = mp.Process(target=subprocess_call, args=(return_values,))
+        ipc_dict = manager.dict()
+        ipc_dict['state'] = manager.dict()
+        ipc_dict['state']['unsolvable'] = manager.list()
+        ipc_dict['edges'] = set()
+        p = mp.Process(target=subprocess_call, args=(ipc_dict,))
 
         p_duration = None
         try:
@@ -82,6 +103,9 @@ def forked_execution(
                     raise ModelGenSubProcesssError(
                         f'process hang {process_time_tolerance}')
 
+            for src, dst in ipc_dict['state']['unsolvable']:
+                table.on_unsolvable(src, dst)
+
         assert not p.is_alive()
 
         if p.exitcode != 0:
@@ -90,7 +114,7 @@ def forked_execution(
             raise ModelGenSubProcesssError(
                 'return code not zero: {}'.format(p.exitcode))
 
-        return return_values['ranges']
+        return ipc_dict['ranges'], ipc_dict['state'], ipc_dict['edges']
 
 
 # TODO(from Jiawei @Jinkun): stop using this implementation.

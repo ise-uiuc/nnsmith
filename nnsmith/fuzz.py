@@ -17,7 +17,7 @@ from rich.console import RenderableType
 from rich.columns import Columns
 
 from nnsmith.error import NNSmithInternalError
-from nnsmith.graph_gen import random_model_gen
+from nnsmith.graph_gen import GenerationTable
 from nnsmith.backends.tvm_graph import TVMExecutor
 from nnsmith.backends import DiffTestBackend
 from nnsmith.input_gen import gen_one_input_rngs
@@ -108,9 +108,11 @@ class CustomProgress(Progress):
 
 
 class FuzzingLoop:  # TODO: Support multiple backends.
-    def __init__(self, backends: Dict[str, DiffTestBackend], root=None, time_budget=60 * 60 * 4, max_nodes=32):
+    def __init__(self, backends: Dict[str, DiffTestBackend], mode='table', root=None, time_budget=60 * 60 * 4, max_nodes=32):
         self.root = root
         self.reporter = Reporter(report_folder=root)
+        self.mode = mode  # `random` or `table`
+        self.table = GenerationTable() if mode == 'table' else None
 
         assert len(backends) > 0, "Empty backends are not allowed!"
         self.backends = backends
@@ -154,6 +156,8 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         _PER_MODEL_TIMEOUT_ = 1000  # milliseconds
         self.start_time = time.time()
 
+        last_cov = 0
+
         try:
             with CustomProgress(
                 fuzz_status=self.rich,
@@ -182,10 +186,12 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     # # net.set_input_spec(input_shape)
                     # torch2onnx(model=net, filename=_TMP_ONNX_FILE_)
 
-                    rngs = forked_execution(random_model_gen, _TMP_ONNX_FILE_,
-                                            max_node_size=random.randint(
-                                                1, self.max_nodes),
-                                            max_gen_millisec=_PER_MODEL_TIMEOUT_)
+                    rngs, state, edge_set = forked_execution(self.mode,
+                                                             _TMP_ONNX_FILE_,
+                                                             table=self.table,
+                                                             max_node_size=random.randint(
+                                                                 1, self.max_nodes),
+                                                             max_gen_millisec=_PER_MODEL_TIMEOUT_)
 
                     # Generation time logging.
                     self.cur_model_gen_t = time.time() - gen_t_s
@@ -222,6 +228,17 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                             self.fastest_model_eval_t, self.cur_model_eval_t)
                         self.slowest_model_eval_t = max(self.slowest_model_eval_t,
                                                         self.cur_model_eval_t)
+
+                        cur_cov = coverage.get_now()
+                        if edge_set:
+                            for src, dst in edge_set:
+                                if cur_cov == last_cov:
+                                    self.table.on_no_cov(src, dst)
+                                else:
+                                    self.table.on_new_cov(src, dst)
+
+                        # for the whole graph
+                        # self.table.on_no_cov()
                     except Exception as e:
                         self.reporter.report_bug(e, _TMP_ONNX_FILE_, str(e))
 
@@ -236,6 +253,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         finally:  # cleanup
             if os.path.exists(_TMP_ONNX_FILE_):
                 os.remove(_TMP_ONNX_FILE_)
+            last_cov = coverage.get_now()
 
 
 if __name__ == '__main__':
