@@ -65,12 +65,15 @@ class BackendCreator:
             raise ValueError(f'unknown backend: {name}')
 
 
-def run_backend_same_proc(model_path: str, input_path: str, backend: BackendCreator, dump_raw: str, gen_input: int = None):
+def run_backend_same_proc(model_path: str, input_path: str, backend: BackendCreator, dump_raw: str, gen_input=False):
     """This function is for debugging purpose.
     Run the backend on the same process. gen_input is the index of the input to generate.
     """
     backend = backend()
-    if gen_input is not None:  # new version with input gen on the fly
+    if input_path is None:
+        print('Input path not found... Generating input using v3 approach')
+        gen_input = True
+    if gen_input:  # new version with input gen on the fly
         inp_spec = DiffTestBackend.analyze_onnx_io(
             DiffTestBackend.get_onnx_proto(model_path))[0]
         if input_path is not None:
@@ -80,7 +83,7 @@ def run_backend_same_proc(model_path: str, input_path: str, backend: BackendCrea
             # rngs = pickle.load(
             #     (Path(model_path).parent / 'domain.pkl').open('rb'))
         inputs = input_gen.gen_one_input_rngs(
-            inp_spec, rngs, gen_input)
+            inp_spec, rngs, None)
         outputs = backend.predict(model_path, inputs)
     else:  # old version
         if input_path is not None:
@@ -253,5 +256,5 @@ if __name__ == '__main__':
                     args.select_model, args.gen_input)
     else:
         run_backend_same_proc(args.model, args.input, bknd,
-                              args.dump_raw, args.gen_input)
+                              args.dump_raw)
     print(f'Total time: {time.time() - st}')
