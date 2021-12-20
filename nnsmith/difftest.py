@@ -160,8 +160,8 @@ def difftest(root: str):
                         'output_backend': out_path,
                         'output_oracle': oracle_path,
                         'error': err,
-                        'stdout': open(out_path + '.stdout').read(),
-                        'stderr': open(out_path + '.stderr').read(),
+                        'stdout': open(out_path + '.stdout').read() if Path(out_path + '.stdout').exists() else 'file not found',
+                        'stderr': open(out_path + '.stderr').read() if Path(out_path + '.stderr').exists() else 'file not found',
                     }
                     item['known'] = known_bug(item, report)
                     item['unsupported'] = unsupported_feature(item, report)
