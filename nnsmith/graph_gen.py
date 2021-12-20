@@ -363,7 +363,7 @@ class SimpleGenerator:
             for _ in range(max_shape_var_pick_time):
                 print(op.in_dtypes)
                 ishape_indices = self.pick_shape_var_idx(
-                    dim_spec_list, random.choice(op.in_dtypes))
+                    node_t, dim_spec_list, random.choice(op.in_dtypes))
                 if self.try_insert_node(op, ishape_indices):
                     return True
         except RequiredDimNotFound:
@@ -377,7 +377,7 @@ class SimpleGenerator:
 
         return False
 
-    def filter_alive_shapes(self, ndim, dtype):
+    def filter_alive_shapes(self, node_t, ndim, dtype):
         # TODO(JK): consider same_in_dtypes
         cans = range(len(self.alive_shapes))
 
@@ -398,7 +398,7 @@ class SimpleGenerator:
     def pick_alive_shape(self, candidates):
         return random.choice(candidates)
 
-    def pick_shape_var_idx(self, ndim_list: List[int], dtype_comb: DTypeComb) -> List[int]:
+    def pick_shape_var_idx(self, node_t, ndim_list: List[int], dtype_comb: DTypeComb) -> List[int]:
         """Randomly pick indices to shape variables from the output pool.
 
         Args:
@@ -414,7 +414,7 @@ class SimpleGenerator:
 
         for i, ndim in enumerate(ndim_list):
             candidates = self.filter_alive_shapes(
-                ndim=ndim, dtype=dtype_comb[i])
+                node_t=node_t, ndim=ndim, dtype=dtype_comb[i])
             shape_var_candidates.append(self.pick_alive_shape(candidates))
 
         return shape_var_candidates
