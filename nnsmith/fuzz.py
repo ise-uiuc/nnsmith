@@ -17,13 +17,12 @@ from rich.console import RenderableType
 from rich.columns import Columns
 
 from nnsmith.error import NNSmithInternalError
-from nnsmith.graph_gen import PureSymbolGen, SymbolNet
-from nnsmith.export import torch2onnx
+from nnsmith.graph_gen import random_model_gen
 from nnsmith.backends.tvm_graph import TVMExecutor
 from nnsmith.backends import DiffTestBackend
 from nnsmith.input_gen import gen_one_input_rngs
 from nnsmith.difftest import assert_allclose
-from nnsmith.graph_input_gen import gen_model_and_range_safe
+from nnsmith.graph_input_gen import forked_execution
 
 _METADATA_NAME_ = 'meta.txt'
 _COV_BY_TIME_NAME_ = 'cov_by_time.csv'
@@ -183,10 +182,10 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     # # net.set_input_spec(input_shape)
                     # torch2onnx(model=net, filename=_TMP_ONNX_FILE_)
 
-                    rngs = gen_model_and_range_safe(
-                        _TMP_ONNX_FILE_,
-                        max_node_size=random.randint(1, self.max_nodes),
-                        max_gen_millisec=_PER_MODEL_TIMEOUT_)[1]
+                    rngs = forked_execution(random_model_gen, _TMP_ONNX_FILE_,
+                                            max_node_size=random.randint(
+                                                1, self.max_nodes),
+                                            max_gen_millisec=_PER_MODEL_TIMEOUT_)
 
                     # Generation time logging.
                     self.cur_model_gen_t = time.time() - gen_t_s

@@ -1,14 +1,22 @@
 from pathlib import Path
 import pickle
 from subprocess import CalledProcessError, check_call
+import multiprocessing as mp
+import psutil
+import time
+import random
+
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+
 from nnsmith.backends import DiffTestBackend
-from nnsmith.graph_gen import PureSymbolGen, SymbolNet, torch2onnx
+from nnsmith.graph_gen import SymbolNet, torch2onnx
 from nnsmith.input_gen import InputGenBase, InputGenV1, InputGenV3
-import time
-import random
+
+
+class ModelGenSubProcesssError(Exception):
+    pass
 
 
 def safe_wrapper(func):
@@ -20,12 +28,72 @@ def safe_wrapper(func):
                 succ = True
             except CalledProcessError:
                 pass
+            except ModelGenSubProcesssError:
+                pass
         return res
     return wrapper
 
 
-# ATTENTION: This changes random seed
-# @util.forked  # call this function in a forked process to work around unknown z3 issues
+@safe_wrapper
+def forked_execution(
+        gen_method, output_path, seed=None, max_nodes=10, max_gen_millisec=2000, state=None, **kwargs):
+    if seed is None:
+        seed = random.getrandbits(32)
+
+    def subprocess_call(return_values):
+        random.seed(seed if seed is not None else random.getrandbits(32))
+        gen, solution = gen_method(
+            max_nodes=max_nodes, timeout=max_gen_millisec)
+        net = SymbolNet(gen.abstract_graph, solution, verbose=False,
+                        alive_shapes=gen.alive_shapes)
+        net.eval()
+        torch2onnx(model=net, filename=output_path, verbose=False)
+        model = DiffTestBackend.get_onnx_proto(output_path)
+
+        input_gen = InputGenV3()
+        rngs = input_gen.infer_domain(model)
+        return_values['ranges'] = rngs
+
+    with mp.Manager() as manager:
+        return_values = manager.dict()
+        p = mp.Process(target=subprocess_call, args=(return_values,))
+
+        p_duration = None
+        try:
+            process_time_tolerance = max_gen_millisec * 2 / 1000
+            p.start()
+            p_strt_time = time.time()
+            p.join(process_time_tolerance)
+            p_duration = time.time() - p_strt_time
+        finally:
+            if p.is_alive():
+                for child in psutil.Process(p.pid).children(recursive=False):
+                    child: psutil.Process  # type: ignore
+                    try:
+                        child.terminate()
+                        child.wait()
+                    except psutil.NoSuchProcess:
+                        pass
+                p.terminate()
+                p.join()
+
+                if p_duration is not None and p_duration >= process_time_tolerance:
+                    print('We got timeout due to process hang.')
+                    raise ModelGenSubProcesssError(
+                        f'process hang {process_time_tolerance}')
+
+        assert not p.is_alive()
+
+        if p.exitcode != 0:
+            print(
+                f'Return code not zero in model generation process: {p.exitcode}')
+            raise ModelGenSubProcesssError(
+                'return code not zero: {}'.format(p.exitcode))
+
+        return return_values['ranges']
+
+
+# TODO(from Jiawei @Jinkun): stop using this implementation.
 def gen_model_and_range(
         output_path,
         seed=None,
@@ -57,36 +125,6 @@ def gen_model_and_range(
         print(gen_model_and_range(
             './output.onnx', seed=i, max_node_size=20)[1:])
     """
-    # gen_model_st = time.time()
-    # if seed is None:
-    #     seed = random.getrandbits(32)
-    # random.seed(seed)
-    # gen = PureSymbolGen(**kwargs)
-    # gen.abstract_gen(max_node_size=max_node_size,
-    #                  max_gen_millisec=max_gen_millisec)
-    # gen.viz(output_path + '.png')
-    # solution = gen.get_symbol_solutions()
-    # net = SymbolNet(gen.abstract_graph, solution,
-    #                 alive_shapes=gen.alive_shapes)
-    # net.eval()
-
-    # torch2onnx(model=net, filename=output_path)
-    # model = DiffTestBackend.get_onnx_proto(output_path)
-
-    # input_st = time.time()
-    # rngs = input_gen.infer_domain(model)
-    # infer_succ = rngs is not None
-    # ed_time = time.time()
-
-    # stats = {
-    #     'gen_succ': True,
-    #     'infer_succ': infer_succ,
-    #     'elpased_time': ed_time - gen_model_st,
-    #     'gen_model_time': input_st - gen_model_st,
-    #     'infer_domain_time': ed_time - input_st,
-    #     'seed': seed,
-    # }
-
     if seed is None:
         seed = random.getrandbits(32)
     kwargs_str = ' '.join([f'--{k} {v}' for k, v in kwargs.items()])

@@ -507,8 +507,39 @@ def parse_args():
     return parser.parse_args()
 
 
+def random_model_gen(
+        min_dims=[1, 3, 48, 48],
+        viz_sbs=False,
+        max_nodes=5,
+        seed=None,
+        use_bitvec=False,
+        timeout=50000,
+        verbose=False):
+    if verbose:
+        strt_time = time.time()
+
+    gen = PureSymbolGen(min_dims=min_dims,
+                        viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec)
+    gen.abstract_gen(max_node_size=max_nodes,
+                     max_gen_millisec=timeout)
+    if verbose:
+        print(
+            f'{time.time() - strt_time}s to generate a graph w/ {len(gen.abstract_graph.nodes())} nodes')
+
+    solution = gen.get_symbol_solutions()
+    if verbose:
+        print(
+            f'{len(solution)} symbols and {len(gen.solver.assertions())} constraints.')
+        print(solution)
+        gen.viz(args.output_path + '.png')
+
+    return gen, solution
+
+
 if __name__ == '__main__':
     args = parse_args()
+
+    strt_time = time.time()
 
     seed = args.seed
     if seed is None:
@@ -517,27 +548,12 @@ if __name__ == '__main__':
     print(f"Using seed {seed}")
     random.seed(seed)
 
-    strt_time = time.time()
-    gen = PureSymbolGen(min_dims=args.min_dims,
-                        viz_sbs=args.viz_sbs, seed=seed, verbose=args.verbose, use_bitvec=args.use_bitvec)
-    gen.abstract_gen(max_node_size=args.max_nodes,
-                     max_gen_millisec=args.timeout)
-    print(f'{time.time() - strt_time}s to generate a graph w/ {len(gen.abstract_graph.nodes())} nodes')
-
-    solution = gen.get_symbol_solutions()
-    print(f'{len(solution)} symbols and {len(gen.solver.assertions())} constraints.')
-    if args.verbose:
-        print(solution)
-
-    gen.viz(args.output_path + '.png')
-
-    # input_shape = gen.concretize_input_shape(solution)
-    # print(f'Input shape: {input_shape}')
+    gen, solution = random_model_gen(min_dims=args.min_dims, viz_sbs=args.viz_sbs, max_nodes=args.max_nodes,
+                                     use_bitvec=args.use_bitvec, timeout=args.timeout, verbose=args.verbose)
 
     net = SymbolNet(gen.abstract_graph, solution, verbose=args.verbose,
                     alive_shapes=gen.alive_shapes)
     net.eval()
-    # net.set_input_spec(input_shape)
     torch2onnx(model=net, filename=args.output_path, verbose=args.verbose)
 
     model = DiffTestBackend.get_onnx_proto(args.output_path)
@@ -549,7 +565,6 @@ if __name__ == '__main__':
     ed_time = time.time()
 
     stats = {
-        'gen_succ': True,
         'infer_succ': infer_succ,
         'elapsed_time': ed_time - strt_time,
         'gen_model_time': input_st - strt_time,
@@ -558,20 +573,3 @@ if __name__ == '__main__':
         'seed': seed,
     }
     pickle.dump(stats, open(args.output_path + '-stats.pkl', 'wb'))
-
-    # Draw with NetworkX
-    # import matplotlib.pyplot as plt
-    # import pygraphviz as pgv
-
-    # fig_size = max(8, args.max_nodes)
-    # plt.figure(figsize=(fig_size, fig_size * 1.2))
-
-    # pos = nx.drawing.nx_pydot.pydot_layout(G, prog='dot')
-
-    # nx.draw(G, pos, node_size=fig_size * 500)
-    # node_labels = nx.get_node_attributes(G, 'label')
-    # nx.draw_networkx_labels(G, pos, labels=node_labels)
-    # edge_labels = nx.get_edge_attributes(G, 'label')
-    # nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
-
-    # plt.savefig("graph_nx.png")
