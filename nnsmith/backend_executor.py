@@ -65,35 +65,40 @@ class BackendCreator:
             raise ValueError(f'unknown backend: {name}')
 
 
-def run_backend_same_proc(model_path: str, input_path: str, backend: BackendCreator, dump_raw: str, gen_input=False):
+def run_backend_same_proc(model_path: str, input_path: str, backend: BackendCreator, dump_raw: str, seed: int = None):
+    """This function is for debugging purpose.
+    Run the backend on the same process.
+    Compared to run_backend_same_proc_raw_input, this is new version with input gen on the fly
+    """
+    backend = backend()
+    inp_spec = DiffTestBackend.analyze_onnx_io(
+        DiffTestBackend.get_onnx_proto(model_path))[0]
+    if input_path is not None:
+        rngs = pickle.load(open(input_path, 'rb'))
+    else:
+        rngs = None
+        # rngs = pickle.load(
+        #     (Path(model_path).parent / 'domain.pkl').open('rb'))
+    inputs = input_gen.gen_one_input_rngs(
+        inp_spec, rngs, seed)
+    outputs = backend.predict(model_path, inputs)
+    if dump_raw is not None:
+        pickle.dump(outputs, open(dump_raw, 'wb'))
+
+
+def run_backend_same_proc_raw_input(model_path: str, input_path: str, backend: BackendCreator, dump_raw: str):
     """This function is for debugging purpose.
     Run the backend on the same process. gen_input is the index of the input to generate.
     """
     backend = backend()
-    if input_path is None:
-        print('Input path not found... Generating input using v3 approach')
-        gen_input = True
-    if gen_input:  # new version with input gen on the fly
-        inp_spec = DiffTestBackend.analyze_onnx_io(
-            DiffTestBackend.get_onnx_proto(model_path))[0]
-        if input_path is not None:
-            rngs = pickle.load(open(input_path, 'rb'))
-        else:
-            rngs = None
-            # rngs = pickle.load(
-            #     (Path(model_path).parent / 'domain.pkl').open('rb'))
-        inputs = input_gen.gen_one_input_rngs(
-            inp_spec, rngs, None)
+    if input_path is not None:
+        inputs = pickle.load(Path(input_path).open('rb'))
         outputs = backend.predict(model_path, inputs)
-    else:  # old version
-        if input_path is not None:
-            inputs = pickle.load(Path(input_path).open('rb'))
-            outputs = backend.predict(model_path, inputs)
-        else:
-            outputs = []
-            for inp_path in tqdm(sorted(list(Path(model_path).parent.glob(f'input.*.pkl')))):
-                inputs = pickle.load(inp_path.open('rb'))
-                outputs.append(backend.predict(model_path, inputs))
+    else:
+        outputs = []
+        for inp_path in tqdm(sorted(list(Path(model_path).parent.glob(f'input.*.pkl')))):
+            inputs = pickle.load(inp_path.open('rb'))
+            outputs.append(backend.predict(model_path, inputs))
     if dump_raw is not None:
         pickle.dump(outputs, open(dump_raw, 'wb'))
 
@@ -245,8 +250,11 @@ if __name__ == '__main__':
                         help='Paths to model.onnx. Run the selected models only. The output will be generated at args.output_dir/<model_name>/<backend>.output.pkl')
     parser.add_argument(
         '--output_dir', help='by default it is args.root/output')
-    parser.add_argument('--gen_input', type=int,
+    parser.add_argument('--gen_input', type=int, default=10,
                         help='When specified, the given args should be an int, and it will generate the specified number of input data on the fly')
+    parser.add_argument('--seed', type=int, default=0,
+                        help='only used in run_backend_same_proc')
+
     # TODO: Add support for passing backend-specific options
     args = parser.parse_args()
     if args.root is None and args.select_model is not None:
@@ -259,5 +267,5 @@ if __name__ == '__main__':
                     args.select_model, args.gen_input)
     else:
         run_backend_same_proc(args.model, args.input, bknd,
-                              args.dump_raw)
+                              args.dump_raw, args.seed)
     print(f'Total time: {time.time() - st}')
