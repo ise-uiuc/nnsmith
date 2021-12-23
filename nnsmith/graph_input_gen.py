@@ -164,7 +164,9 @@ def gen_model_and_range(
 gen_model_and_range_safe = safe_wrapper(gen_model_and_range)
 
 
-def _main(root: str, num_models, max_nodes, input_gen: InputGenBase):
+def _main(root: str, num_models, max_nodes, input_gen: InputGenBase, seed=None):
+    if seed is not None:
+        random.seed(seed)
     st_time = time.time()
     profile = []
     profile_inputs = []
@@ -189,7 +191,7 @@ def _main(root: str, num_models, max_nodes, input_gen: InputGenBase):
             e1 = None
             infer_succ = gen_succ = False
             input_st = np.nan
-            seed = int(time.time() * 1000)
+            seed = random.getrandbits(32)
             print(f'seeding {seed}, attempt {atmpts}')
             gen_model_st = time.time()
             stats = {}
@@ -224,6 +226,7 @@ def _main(root: str, num_models, max_nodes, input_gen: InputGenBase):
                     'gen_model_time': input_st - gen_model_st,
                     'infer_domain_time': ed_time - input_st,
                     'seed': seed,
+                    'succ': succ,
                 }
                 x.update(stats)
                 x['elapsed_time'] = ed_time - gen_model_st
@@ -254,6 +257,7 @@ if __name__ == '__main__':
                         help='Generate input for specific model, specified as the path to the .onnx file.')
     parser.add_argument('--input_gen_method', type=str, default='v3')
     parser.add_argument('--max_nodes', type=int)
+    parser.add_argument('--seed', type=int)
     args = parser.parse_args()
     gen_inputs_func = {
         'v1': InputGenV1(),
@@ -262,5 +266,5 @@ if __name__ == '__main__':
     }[args.input_gen_method]
     if not args.input_only:
         _main(args.root, args.num_models,
-              args.max_nodes, gen_inputs_func)
+              args.max_nodes, gen_inputs_func, seed=args.seed)
     # gen_inputs_for_all(args.root, args.num_inputs, args.model, gen_inputs_func)
