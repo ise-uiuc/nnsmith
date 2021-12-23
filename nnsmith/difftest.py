@@ -135,7 +135,7 @@ def difftest(root: str):
         def get_output(backend_name: str, idx: str) -> Tuple[Dict[str, np.ndarray], str]:
             out_path = output_dir / \
                 f'{model_name}/{backend_name}.output.{idx}.pkl'
-            return pickle.load(out_path.open('rb'))['outputs'], str(out_path)
+            return pickle.load(out_path.open('rb')), str(out_path)
 
         # TODO(JK): use more advanced oracle (e.g., clustering?) if this does not work well
         num_out, bknd_names = get_meta_info()
@@ -143,14 +143,19 @@ def difftest(root: str):
         for i in range(num_out):
             oracle_path = None
             for backend in bknd_names:
-                output, out_path = get_output(backend, i)
+                output_json, out_path = get_output(backend, i)
+                output, infer_succ = output_json['outputs'], output_json.get(
+                    'infer_succ', None)
                 if oracle_path is None:
                     # read oracle's data (assume first backend as oracle)
                     oracle = output
+                    oracle_infer_succ = infer_succ
                     oracle_path = out_path
                     oracle_name = Path(out_path).name.split('.')[0]
                     continue
                 try:
+                    if infer_succ is False or oracle_infer_succ is False:
+                        raise NaNError('Infer domain failed.')
                     assert_allclose(output, oracle, out_path, oracle_path)
                 except ModeledError as err:
                     item = {
@@ -177,9 +182,12 @@ def difftest(root: str):
     for i in report:
         i['error'] = str(i['error'])
     json.dump(report, open(root / 'report.json', 'w'), indent=2)
-    if len(df) > 0 and len(df[(~df.known) & (~df.unsupported)]) > 0:
+
+    def _cond(): return ((~df.known) & (~df.unsupported) &
+                         (~df.error.map(lambda x: isinstance(x, NaNError))))
+    if len(df) > 0 and len(df[_cond()]) > 0:
         print(
-            f'{len(df[(~df.known) & (~df.unsupported)])} unknown non-unsupported unique differences found!!!')
+            f'{len(df[_cond()])} unknown non-unsupported unique differences found!!!')
     else:
         print('No differences found!')
 

@@ -17,7 +17,7 @@ import copy
 from nnsmith.abstract.op import *
 from nnsmith.backends import DiffTestBackend
 from nnsmith.export import torch2onnx
-from nnsmith.input_gen import InputGenV3
+from nnsmith.input_gen import InputGenV3, TorchNaNChecker
 
 
 class RequiredDimNotFound(Exception):
@@ -28,7 +28,8 @@ ALIVE_SHAPE_TYPE = List[Tuple[int, ShapeVar, int]]
 
 
 class SymbolNet(nn.Module):
-    def __init__(self, graph: nx.MultiDiGraph, model: z3.ModelRef, verbose=False, alive_shapes: ALIVE_SHAPE_TYPE = None):
+    def __init__(self, graph: nx.MultiDiGraph, model: z3.ModelRef, verbose=False, alive_shapes: ALIVE_SHAPE_TYPE = None,
+                 record_intermediate=False):
         super(SymbolNet, self).__init__()
         self.verbose = verbose
         self.tensors = []  # 1) edges; 2) leaf nodes; 3) input -> 0;
@@ -43,6 +44,8 @@ class SymbolNet(nn.Module):
         if alive_shapes is None:
             warnings.warn(
                 "Please supply `alive_shapes` if possible. This will be used to check dtype correctness.")
+        # whether or not to register intermediate tensors as output tensors. Useful (at least) for checking nan
+        self.record_intermediate = record_intermediate
 
         InputInfo = NamedTuple(
             'InputInfo', [('op', Input), ('oid', int), ('node_id', int), ('input_name', str)])
@@ -113,6 +116,7 @@ class SymbolNet(nn.Module):
     @torch.no_grad()
     def forward(self, *xs):
         local_ref_cnt = self.ref_cnt.copy()
+        self.tensors = [None for _ in self.tensors]
         for ii in self.input_info:
             self.tensors[ii.oid] = xs[ii.op.idx]
         for inst, inps, outs, op, node_id in self.instructions:
@@ -133,7 +137,7 @@ class SymbolNet(nn.Module):
                     f'(shape={i.shape} dtype={i.dtype})' for i in outputs))
             for idx in inps:
                 local_ref_cnt[idx] -= 1
-                if local_ref_cnt[idx] == 0:
+                if local_ref_cnt[idx] == 0 and not self.record_intermediate:
                     self.tensors[idx] = None
             for idx, output in list(zip(outs, outputs)):
                 assert self.tensors[idx] is None, 'tensor[{}] is not None.'.format(
@@ -651,6 +655,7 @@ if __name__ == '__main__':
     if seed is None:
         # If we have not selected a seed, choose random one.
         seed = random.getrandbits(32)
+    np.random.seed(seed)  # debugging purposes for input_gen
     print(f"Using seed {seed}")
     random.seed(seed)
 
@@ -667,13 +672,16 @@ if __name__ == '__main__':
 
     model = DiffTestBackend.get_onnx_proto(args.output_path)
 
-    input_gen = InputGenV3()
+    # turn this on so that nan in the intermediate tensors can be detected too
+    net.record_intermediate = True
+    input_gen = InputGenV3(TorchNaNChecker(net))
     input_st = time.time()
     rngs = input_gen.infer_domain(model)
     infer_succ = rngs is not None
     ed_time = time.time()
 
     stats = {
+        'gen_succ': True,
         'infer_succ': infer_succ,
         'elapsed_time': ed_time - strt_time,
         'gen_model_time': input_st - strt_time,

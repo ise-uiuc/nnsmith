@@ -117,15 +117,18 @@ def run_backend(root: str, output_dir: str, backend_creator: BackendCreator, tim
                 break
             # add a placeholder for the output. If the backend crashes or the input is skipped, the output will be None
             model, inp_path, out_path, skip = task
-            pickle.dump({'exit_code': 1, 'outputs': None},
+            pickle.dump({'exit_code': 1, 'outputs': None, 'infer_succ': None},
                         out_path.open('wb'))
             if skip:  # crashed before on the same model. so skip later same-model tasks
                 r.put(True)
                 continue
             if isinstance(inp_path, Path):
                 inputs = pickle.load(inp_path.open('rb'))  # type: List[Dict[str, np.ndarray]] # noqa
+                infer_succ = None
             else:
                 rngs, input_spec, seed = inp_path
+                # used to filter out false positive due to nan
+                infer_succ = (rngs is not None)
                 inputs = input_gen.gen_one_input_rngs(input_spec, rngs, seed)
             with util.stdout_redirected(f"{out_path}.stdout"), \
                     util.stdout_redirected(f"{out_path}.stderr", sys.stderr):
@@ -135,7 +138,7 @@ def run_backend(root: str, output_dir: str, backend_creator: BackendCreator, tim
                 except:
                     traceback.print_exc()
                     return
-            pickle.dump({'exit_code': 0, 'outputs': outputs},
+            pickle.dump({'exit_code': 0, 'outputs': outputs, 'infer_succ': infer_succ},
                         out_path.open('wb'))
             r.put(True)
 
