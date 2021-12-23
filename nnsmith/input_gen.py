@@ -58,43 +58,43 @@ class InputGenBase:
     DEFAULT_RNG = (0, 1)
 
     # overload me; can return stats for further analysis
-    def gen_inputs(self, model, num_inputs, model_path) -> Dict:
-        raise NotImplementedError
+    # def gen_inputs(self, model, num_inputs, model_path) -> Dict:
+    #     raise NotImplementedError
 
     # overload me; return valid ranges for further analysis
 
     def infer_domain(self, model: onnx.ModelProto) -> List[Range]:
         raise NotImplementedError
 
-    @classmethod
-    def _gen_inputs(cls, model, num_inputs, model_path, rngs=None, max_trials=MAX_TRIALS):
-        from nnsmith.backends.ort_graph import ORTExecutor
-        rngs = rngs or [cls.DEFAULT_RNG]
-        rf_exe = ORTExecutor(opt_level=0)  # reference model
-        inp_spec = DiffTestBackend.analyze_onnx_io(model)[0]
-        trials, succ = 0, 0
-        for i in tqdm(range(num_inputs)):
-            for ntrials in range(max_trials):
-                rng_idx = np.random.randint(len(rngs))
-                inp = gen_one_input(
-                    inp_spec, l=rngs[rng_idx][0], r=rngs[rng_idx][1])
-                out = rf_exe.predict(model, inp)
-                if not has_nan(out):
-                    break
-            trials += ntrials + 1
-            succ += not has_nan(out)
-            pickle.dump(inp, (Path(model_path) / f'input.{i}.pkl').open("wb"))
+    # @classmethod
+    # def _gen_inputs(cls, model, num_inputs, model_path, rngs=None, max_trials=MAX_TRIALS):
+    #     from nnsmith.backends.ort_graph import ORTExecutor
+    #     rngs = rngs or [cls.DEFAULT_RNG]
+    #     rf_exe = ORTExecutor(opt_level=0)  # reference model
+    #     inp_spec = DiffTestBackend.analyze_onnx_io(model)[0]
+    #     trials, succ = 0, 0
+    #     for i in tqdm(range(num_inputs)):
+    #         for ntrials in range(max_trials):
+    #             rng_idx = np.random.randint(len(rngs))
+    #             inp = gen_one_input(
+    #                 inp_spec, l=rngs[rng_idx][0], r=rngs[rng_idx][1])
+    #             out = rf_exe.predict(model, inp)
+    #             if not has_nan(out):
+    #                 break
+    #         trials += ntrials + 1
+    #         succ += not has_nan(out)
+    #         pickle.dump(inp, (Path(model_path) / f'input.{i}.pkl').open("wb"))
 
-        print('succ rate:', np.mean(succ / trials))
-        return {'succ': succ, 'trials': trials, 'succ_rate': succ / trials}
+    #     print('succ rate:', np.mean(succ / trials))
+    #     return {'succ': succ, 'trials': trials, 'succ_rate': succ / trials}
 
 
 class InputGenV1(InputGenBase):
     def __init__(self) -> None:
         super().__init__()
 
-    def gen_inputs(self, *args, **kwargs):
-        return super()._gen_inputs(*args, **kwargs)
+    # def gen_inputs(self, *args, **kwargs):
+    #     return super()._gen_inputs(*args, **kwargs)
 
     def infer_domain(self, model):
         return [(0, 1)]
@@ -254,21 +254,21 @@ class InputGenV3(InputGenBase):
             valid_rngs = None
         return valid_rngs
 
-    def gen_inputs(self, model, num_inputs, model_path):
-        self.nan_checker.load_model(model)
-        st = time.time()
-        rngs = self.infer_domain(model)
-        get_range_time = time.time() - st
+    # def gen_inputs(self, model, num_inputs, model_path):
+    #     self.nan_checker.load_model(model)
+    #     st = time.time()
+    #     rngs = self.infer_domain(model)
+    #     get_range_time = time.time() - st
 
-        st = time.time()
-        stats = self._gen_inputs(model, num_inputs, model_path, rngs)
-        gen_input_time = time.time() - st
+    #     st = time.time()
+    #     stats = self._gen_inputs(model, num_inputs, model_path, rngs)
+    #     gen_input_time = time.time() - st
 
-        # print('get_range_time=', get_range_time, 'gen_input_time=',
-        #       gen_input_time, 'valid ranges=', rngs)
-        stats['get_range_time'] = get_range_time
-        stats['gen_input_time'] = gen_input_time
-        return stats
+    #     # print('get_range_time=', get_range_time, 'gen_input_time=',
+    #     #       gen_input_time, 'valid ranges=', rngs)
+    #     stats['get_range_time'] = get_range_time
+    #     stats['gen_input_time'] = gen_input_time
+    #     return stats
 
     def infer_domain(self, model):
         self.nan_checker.load_model(model)
