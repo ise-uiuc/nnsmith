@@ -154,10 +154,10 @@ def difftest(root: str):
                     oracle_name = Path(out_path).name.split('.')[0]
                     continue
                 try:
-                    if infer_succ is False or oracle_infer_succ is False:
-                        raise NaNError('Infer domain failed.')
                     assert_allclose(output, oracle, out_path, oracle_path)
                 except ModeledError as err:
+                    if isinstance(err, (NaNError, IncorrectResult)) and (infer_succ is False or oracle_infer_succ is False):
+                        err = NaNError('Infer domain failed.')
                     item = {
                         'model_idx': model_folder.name,
                         'model_path': str(model_folder / 'model.onnx'),
