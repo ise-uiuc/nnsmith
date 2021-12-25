@@ -597,7 +597,7 @@ class Input(ElementWiseUnaryOp):
         self.dim2 = dim2
         self.dim3 = dim3
 
-    @property
+    @ property
     def shape(self):
         return [self.dim0, self.dim1, self.dim2, self.dim3]
 
@@ -640,7 +640,7 @@ class PReLU(ElementWiseUnaryOp):
 
 
 class Sigmoid(ElementWiseUnaryOp):
-    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -650,7 +650,7 @@ class Sigmoid(ElementWiseUnaryOp):
 
 
 class Sin(ElementWiseUnaryOp):
-    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -660,7 +660,7 @@ class Sin(ElementWiseUnaryOp):
 
 
 class Cos(ElementWiseUnaryOp):
-    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -670,7 +670,7 @@ class Cos(ElementWiseUnaryOp):
 
 
 class Asin(ElementWiseUnaryOp):
-    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -680,7 +680,7 @@ class Asin(ElementWiseUnaryOp):
 
 
 class Acos(ElementWiseUnaryOp):
-    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -690,7 +690,7 @@ class Acos(ElementWiseUnaryOp):
 
 
 class Tan(ElementWiseUnaryOp):
-    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -700,7 +700,7 @@ class Tan(ElementWiseUnaryOp):
 
 
 class Atan(ElementWiseUnaryOp):
-    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -718,7 +718,7 @@ class Abs(ElementWiseUnaryOp):
 
 
 class Ceil(ElementWiseUnaryOp):
-    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -738,7 +738,7 @@ class Clip(ElementWiseUnaryOp):
 
 
 class Round(ElementWiseUnaryOp):
-    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -748,7 +748,7 @@ class Round(ElementWiseUnaryOp):
 
 
 class Sqrt(ElementWiseUnaryOp):
-    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -758,7 +758,7 @@ class Sqrt(ElementWiseUnaryOp):
 
 
 class Log2(ElementWiseUnaryOp):
-    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -776,7 +776,7 @@ class Neg(ElementWiseUnaryOp):
 
 
 class Expand(UnaryOpBase, ABC):
-    in_dtypes = [(i, i) for i in DTYPE_ALL]
+    in_dtypes = [(i,) for i in DTYPE_ALL]
     # expand_dim cannot be symbolic. So just expand it.
 
     def __init__(self, expand_last_dim: int, expand_n: Union[int, z3.ExprRef]):
@@ -847,7 +847,7 @@ class ExpandLast4(Expand):
 
 
 class NCHWConv2d(UnaryOpBase):
-    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self,
                  in_channels: Union[int, z3.ExprRef],
@@ -921,7 +921,7 @@ class NCHWConv2d(UnaryOpBase):
 
 
 class Reshape(UnaryOpBase, ABC):
-    in_dtypes = [(i, i) for i in DTYPE_ALL]
+    in_dtypes = [(i,) for i in DTYPE_ALL]
 
     def __init__(self):
         super().__init__()
