@@ -62,7 +62,7 @@ class Reporter:  # From Tzer.
         print(f'Using `{self.report_folder}` as the fuzzing report folder')
         with open(os.path.join(self.report_folder, _METADATA_NAME_), 'w') as f:
             fuzz_repo = git.Repo(search_parent_directories=True)
-            tvm_repo = git.Repo(search_parent_directories=True)
+            tvm_repo = git.Repo(tvm_home, search_parent_directories=True)
 
             def _log_repo(f, tag, repo: git.Repo):
                 f.write(f'{tag} GIT HASH: {repo.head.object.hexsha}\n')
