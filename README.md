@@ -110,17 +110,19 @@ pip install onnxruntime-gpu # the order matters; and you have to split the insta
 - [x] Search-based input generation; @jinkun
 - [x] Add edge coverage guidance and TVM fuzzing loop; @jiawei (Install TVM's [coverage branch](https://github.com/ganler/tvm/tree/coverage))
 - [x] Fuzzing loop for TVM with `rich` monitoring (`nnsmith/fuzz.py`). @jiawei
+    - See instructions [here](https://github.com/Tzer-AnonBot/tzer/blob/main/tvm_cov_patch/build_tvm.sh).
 - **FOUND AN ISSUE**: z3 SMT extremely slow when setting randomized constraints on input shapes.
     - If we don't set random input constraints -> very fast! but those solutions will stick to [1, 1, ..., 1] which is not realistic;
     - If we set those input constraints -> very slow (e.g., up to 25s to generate a 20-node model)... but the generated model is diverse!
-- **Proposals**: @jiawei
-    - [ ] Half-symbolic generation: only symbolize operators' parameters;
-        - Pros: should be faster than prior one;
-        - Cons: generated solves might be edge cases but we can add some guiding constraints;
-- [ ] **Op Batch 2**: Focuse on multi-input & complex-shape-transfer-func models;
-    - [ ] multi-input: And, Sub, Mul, Concat, Div, Greater; @jinkun
+- [x] **Op Batch 2**: Focuse on multi-input & complex-shape-transfer-func models;
+    - [x] multi-input: And, Sub, Mul, Concat, Div, Greater; @jinkun
     - [x] complex-shape-func: Sum, Min, Max, Mean, ArgMin, ArgMax, Squeeze, Size; @jiawei
-- [ ] Coverage-guided fuzzing with relation table. @jiawei
+- [x] Coverage-guided fuzzing with relation table. @jiawei
+- [ ] Coverage feedback support for ONNXRuntime (Install ORT's [coverage branch](https://github.com/ganler/onnxruntime/tree/coverage)) @jiawei
+    - Make sure you have `/usr/bin/clang++` installed with compiler runtime;
+    - `git clone -b coverage git@github.com:ganler/onnxruntime.git --recursive`
+    - `./build.sh --config RelWithDebInfo --build_shared_lib --parallel --build_wheel --skip_onnx_tests`
+    - `pip install build/Linux/RelWithDebInfo/dist/onnxruntime-1.11.0-cp38-cp38-linux_x86_64.whl --force-reinstall`
 - [ ] Dynamic model testing;
-- [ ] Enable multiple inputs;
+- [x] Enable multiple inputs; @jinkun
 
