@@ -111,7 +111,7 @@ class SymbolNet(nn.Module):
         assert_eq(len(outputs), len(shape_indices), msg_head +
                   f'{len(outputs)} != {len(shape_indices)}')
         for out, shape_idx in zip(outputs, shape_indices):
-            assert_eq(out.dtype, self.alive_shapes[shape_idx][1].dtype, msg_head +
+            assert_eq(out.dtype, self.alive_shapes[shape_idx][1].dtype.value, msg_head +
                       f'torch dtype ({out.dtype}) != symbolic dtype ({self.alive_shapes[shape_idx][1].dtype.value})')
 
     @torch.no_grad()
