@@ -12,6 +12,7 @@ from tqdm import tqdm
 from nnsmith.abstract.op import ALL_OP_TYPES
 
 from nnsmith.backends import DiffTestBackend
+from nnsmith.error import assert_false, assert_true
 from nnsmith.graph_gen import SymbolNet, torch2onnx, random_model_gen, table_model_gen
 from nnsmith.input_gen import InputGenBase, InputGenV1, InputGenV3
 
@@ -60,7 +61,7 @@ def forked_execution(
                 unique_set.add(pair)
             ipc_dict['edges'] = unique_set
         else:
-            assert False, f'Unknown gen_method: {gen_method}'
+            assert_true(False, f'Unknown gen_method: {gen_method}')
 
         net = SymbolNet(gen.abstract_graph, solution, verbose=False,
                         alive_shapes=gen.alive_shapes)
@@ -106,7 +107,8 @@ def forked_execution(
             for src, dst in ipc_dict['state']['unsolvable']:
                 table.on_unsolvable(src, dst)
 
-        assert not p.is_alive()
+        assert_false(
+            p.is_alive(), 'Process should be terminated but still alive.')
 
         if p.exitcode != 0:
             print(

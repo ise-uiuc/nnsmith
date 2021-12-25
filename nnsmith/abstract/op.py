@@ -11,6 +11,8 @@ import os
 # Import z3 ahead of torch (See https://github.com/Z3Prover/z3/issues/5656)
 import z3
 import torch
+
+from nnsmith.error import assert_eq, assert_ge, assert_gt, assert_le, assert_not_none, assert_true
 # Recommended resources: https://theory.stanford.edu/~nikolaj/programmingz3.html
 # Another plausible tool (Interval Analysis): https://simon-rohou.fr/research/tubex-lib/doc/toctree.html
 # Please follow the PyTorch API conventions: https://pytorch.org/docs/stable/nn.html
@@ -51,10 +53,12 @@ def align_bvs(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.E
         raise RuntimeError(
             f"Unsupported alignment value {right} of type {type(right)}")
     # Extend the bitvector that is smaller with the necessary amount of zeroes.
-    assert not (
-        carry and mult), "Carry and multiplication extension are mutually exclusive"
-    assert left_size <= ARITH_MAX_WIDTH, f"Bitvector sizes must not exceed {ARITH_MAX_WIDTH} bits."
-    assert right_size <= ARITH_MAX_WIDTH, f"Bitvector sizes must not exceed {ARITH_MAX_WIDTH} bits."
+    assert_true(not (
+        carry and mult), "Carry and multiplication extension are mutually exclusive")
+    assert_le(left_size, ARITH_MAX_WIDTH,
+              f"Bitvector sizes must not exceed {ARITH_MAX_WIDTH} bits.")
+    assert_le(right_size, ARITH_MAX_WIDTH,
+              f"Bitvector sizes must not exceed {ARITH_MAX_WIDTH} bits.")
     diff = left_size - right_size
     if left_is_arith and diff >= 0:
         right = z3.ZeroExt(diff, right)
@@ -182,7 +186,7 @@ class ShapeVar:
                 if not any(str(replica) == str(s) for replica in no_replica):
                     ret.append(nnsmith_gt(s, 0))
             else:
-                assert s > 0
+                assert_gt(s, 0)
         return ret
 
     def torch(self):
@@ -208,27 +212,26 @@ class ShapeVar:
 
 def check_shape_fn(func):
     def wrapper_check_shape_fn(self, input_shapes):
-        assert _INFERRED, "Please call auto_infer_in_dtypes before using this function"
-        # assert self.inp_dims, "Empty input dimensions in {}".format(
-        #     self.__class__.__name__)
-        assert self.out_dims, "Empty output dimensions in {}".format(
-            self.__class__.__name__)
-        assert len(input_shapes) == len(self.inp_dims), "{} requires {} inputs, but got {}".format(
+        assert_true(
+            _INFERRED, "Please call auto_infer_in_dtypes before using this function")
+        assert_true(self.out_dims, "Empty output dimensions in {}".format(
+            self.__class__.__name__))
+        assert_eq(len(input_shapes), len(self.inp_dims), "{} requires {} inputs, but got {}".format(
             self.__class__.__name__,
-            len(self.inp_dims), len(input_shapes))
+            len(self.inp_dims), len(input_shapes)))
         res = func(self, input_shapes)
-        assert len(res) == len(self.out_dims), "{} requires {} outputs, but got {}".format(
+        assert_eq(len(res), len(self.out_dims), "{} requires {} outputs, but got {}".format(
             self.__class__.__name__,
-            len(self.out_dims), len(res))
+            len(self.out_dims), len(res)))
         return res
     return wrapper_check_shape_fn
 
 
 def check_require_fn(func):
     def wrapper_check_require_fn(self, input_shapes):
-        assert len(input_shapes) == len(self.inp_dims), "{} requires {} inputs, but got {}".format(
+        assert_eq(len(input_shapes), len(self.inp_dims), "{} requires {} inputs, but got {}".format(
             self.__class__.__name__,
-            len(self.inp_dims), len(input_shapes))
+            len(self.inp_dims), len(input_shapes)))
         return func(self, input_shapes)
     return wrapper_check_require_fn
 
@@ -243,7 +246,7 @@ def z3_bcast(x: Union[int, z3.ExprRef], y: Union[int, z3.ExprRef], *args: Union[
 
 def broadcast_shapes(*shapes: List[Union[z3.ExprRef, int]]) -> List[Union[z3.ExprRef, int]]:
     """this function does not check the validity of broadcast. Please always pair it with broadcast_cons"""
-    assert len(shapes) > 0
+    assert_gt(len(shapes), 0)
     if len(shapes) == 1:
         return shapes[0]
     max_dim = max(map(lambda x: len(x), shapes))
@@ -282,7 +285,7 @@ def broadcast_cons(*shapes: List[Union[z3.ExprRef, int]]) -> List[z3.ExprRef]:
 
 
 def broadcast_cons_binary(*shapes: List[Union[z3.ExprRef, int]]) -> List[z3.ExprRef]:
-    assert len(shapes) == 2
+    assert_eq(len(shapes), 2)
     tgt_shape = broadcast_shapes(*shapes)
     cons = []
     max_dim = len(tgt_shape)
@@ -397,7 +400,7 @@ class ElementWiseUnaryOp(UnaryOpBase):
         self.out_dims = [-1]
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        assert len(input_shapes) == 1
+        assert_eq(len(input_shapes), 1)
         return [input_shapes[0]]
 
 
@@ -525,11 +528,11 @@ class Constant(AbsOpBase):
         self.shape_var: ShapeVar = None  # overload this
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        assert len(input_shapes) == 0
+        assert_eq(len(input_shapes), 0)
         return [self.shape_var]
 
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
-        assert len(input_shapes) == 0
+        assert_eq(len(input_shapes), 0)
         return []
 
     def torch(self) -> Callable[..., torch.Tensor]:
@@ -784,7 +787,7 @@ class Expand(UnaryOpBase, ABC):
         """
         super().__init__()
         self.inp_dims = [-1]
-        assert expand_last_dim >= 1
+        assert_ge(expand_last_dim, 1)
         self.expand_last_dim = expand_last_dim
         self.expand_n = expand_n
 
@@ -801,7 +804,7 @@ class Expand(UnaryOpBase, ABC):
             return [ShapeVar([self.expand_n, *([1] * (self.expand_last_dim - len(input_shapes[0].shape) - 1)), *input_shapes[0].shape], dtype)]
 
     def _requires(self, input_shapes):
-        assert self.expand_last_dim > 0
+        assert_gt(self.expand_last_dim, 0)
 
         input_shape = input_shapes[0].shape
         if isinstance(self.expand_n, z3.ExprRef):
@@ -817,9 +820,10 @@ class Expand(UnaryOpBase, ABC):
                 return cons
         else:
             # It is also valid to expand to 0. But just too tricky...
-            assert self.expand_n >= 1
+            assert_ge(self.expand_n, 1)
             if self.expand_last_dim <= len(input_shape):
-                assert input_shape[-self.expand_last_dim] == 1 or input_shape[-self.expand_last_dim] == self.expand_n
+                assert_true(input_shape[-self.expand_last_dim] ==
+                            1 or input_shape[-self.expand_last_dim] == self.expand_n)
         return []
 
     def torch(self):
@@ -872,7 +876,7 @@ class NCHWConv2d(UnaryOpBase):
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         # not symbolic
         if not isinstance(self.in_channels, z3.ExprRef) and not isinstance(input_shapes[0].shape[1], z3.ExprRef):
-            assert input_shapes[0].shape[1] == self.in_channels
+            assert_eq(input_shapes[0].shape[1], self.in_channels)
 
         is_symbolic_inp = input_shapes[0].constains_symbol() or isinstance(self.kernel_w_size, z3.ExprRef) or isinstance(
             self.kernel_h_size, z3.ExprRef) or isinstance(self.stride, z3.ExprRef) or isinstance(self.padding, z3.ExprRef)
@@ -912,7 +916,7 @@ class NCHWConv2d(UnaryOpBase):
             if isinstance(c, z3.ExprRef):
                 ret.append(c)
             else:
-                assert c
+                assert_true(c)
         return ret
 
     def torch(self):
@@ -1064,7 +1068,7 @@ class Transpose(UnaryOpBase, ABC):
         self.inp_dims = [-1]
 
     def _init_swap_dims(self, input_shape: List[Union[int, z3.ExprRef]]):
-        assert len(input_shape) >= 1
+        assert_ge(len(input_shape), 1)
         if 'dim0' not in self.extra_attrs or 'dim1' not in self.extra_attrs:
             max_dim = len(input_shape) - 1
             self.extra_attrs['dim0'] = random.randint(0, max_dim)
@@ -1079,8 +1083,8 @@ class Transpose(UnaryOpBase, ABC):
 
     def _requires(self, input_shapes):
         dim0, dim1 = self._init_swap_dims(input_shapes[0].shape)
-        assert len(input_shapes[0].shape) >= max(
-            dim0, dim1) + 1, f'dim={len(input_shapes[0].shape)}.transpose({dim0},{dim1})'
+        assert_ge(len(input_shapes[0].shape), max(
+            dim0, dim1) + 1, f'dim={len(input_shapes[0].shape)}.transpose({dim0},{dim1})')
         return []
 
     def torch(self):
@@ -1112,12 +1116,12 @@ class ReduceBase(UnaryOpBase, ABC):
 
     def __init__(self, num_dim: int):
         super().__init__()
-        assert num_dim >= 1
+        assert_ge(num_dim, 1)
         self.num_dim = num_dim
         self.extra_attrs['reduce_dim'] = random.randint(0, self.num_dim - 1)
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        assert len(input_shapes[0].shape) == self.num_dim
+        assert_eq(len(input_shapes[0].shape), self.num_dim)
         shape_var = input_shapes[0]
         svar_list = []
         for i, v in enumerate(shape_var.shape):
@@ -1127,17 +1131,17 @@ class ReduceBase(UnaryOpBase, ABC):
                          input_shapes[0].dtype if self._reduce_out_dtype is None else self._reduce_out_dtype)]
 
     def _requires(self, input_shapes: List[ShapeVar]):
-        assert len(input_shapes[0].shape) >= self.num_dim
+        assert_ge(len(input_shapes[0].shape), self.num_dim)
         return []
 
 
 class SqueezeBase(ReduceBase, ABC):
     def _requires(self, input_shapes):
-        assert len(input_shapes[0].shape) == self.num_dim
+        assert_eq(len(input_shapes[0].shape), self.num_dim)
         if isinstance(input_shapes[0].shape[self.extra_attrs['reduce_dim']], z3.ExprRef):
             return [nnsmith_eq(input_shapes[0].shape[self.extra_attrs['reduce_dim']], 1)]
         else:
-            assert input_shapes[0].shape[self.extra_attrs['reduce_dim']] == 1
+            assert_eq(input_shapes[0].shape[self.extra_attrs['reduce_dim']], 1)
         return []
 
     def torch(self):

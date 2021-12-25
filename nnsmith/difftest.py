@@ -38,7 +38,7 @@ def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarr
 
     try:
         index = -1
-        assert set(obtained.keys()) == set(desired.keys())
+        assert_eq(set(obtained.keys()), set(desired.keys()))
         index = 0
         for key in obtained:
             testing.assert_allclose(
@@ -125,11 +125,12 @@ def difftest(root: str):
             num_in = len(list(
                 (output_dir.parent / 'model_input' /
                  model_name).glob(f'input.*.pkl')))
-            assert num_out == num_in or num_in == 0, 'inputs and outputs are not matched. Do you forget to run_backends?\n'\
-                'model_folder: {}\nbknd_names: {}\nnum_out: {}\nlen(a): {}'.format(
-                    model_folder, bknd_names, num_out, len(a))
-            assert len(a) % len(bknd_names) == 0, \
-                f'{model_name} has {len(a)} outputs, but {len(bknd_names)} backends which cannot divide'
+
+            assert_true(num_out == num_in or num_in == 0, 'inputs and outputs are not matched. Do you forget to run_backends?\n'
+                        'model_folder: {}\nbknd_names: {}\nnum_out: {}\nlen(a): {}'.format(
+                            model_folder, bknd_names, num_out, len(a)))
+            assert_eq(len(a) % len(bknd_names), 0,
+                      f'{model_name} has {len(a)} outputs, but {len(bknd_names)} backends which cannot divide')
             return num_out, bknd_names
 
         def get_output(backend_name: str, idx: str) -> Tuple[Dict[str, np.ndarray], str]:

@@ -16,7 +16,7 @@ from rich.panel import Panel
 from rich.console import RenderableType
 from rich.columns import Columns
 
-from nnsmith.error import NNSmithInternalError
+from nnsmith.error import NNSmithInternalError, assert_gt, assert_false
 from nnsmith.graph_gen import GenerationTable
 from nnsmith.backends.tvm_graph import TVMExecutor
 from nnsmith.backends import DiffTestBackend
@@ -34,9 +34,9 @@ class Reporter:  # From Tzer.
     def __init__(self, report_folder=None) -> None:
         # Checks
         tvm_home = os.getenv('TVM_HOME')
-        if not tvm_home or not os.path.exists(tvm_home):
-            raise NNSmithInternalError(
-                'got incorrect env var `TVM_HOME`: "{tvm_home}"')
+
+        assert_false(not tvm_home or not os.path.exists(tvm_home),
+                     f'got incorrect env var `TVM_HOME`: "{tvm_home}"')
 
         self.start_time = time.perf_counter()
         self.report_folder = report_folder
@@ -114,7 +114,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         self.mode = mode  # `random` or `table`
         self.table = GenerationTable() if mode == 'table' else None
 
-        assert len(backends) > 0, "Empty backends are not allowed!"
+        assert_gt(len(backends), 0, "Empty backends are not allowed!")
         self.backends = backends
 
         self.time_budget = time_budget
