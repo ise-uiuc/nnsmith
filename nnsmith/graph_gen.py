@@ -14,7 +14,7 @@ import time
 import os
 import copy
 
-from nnsmith.error import assert_not_none, assert_true, assert_eq, assert_none
+from nnsmith.error import SanityCheck, ConstraintError
 from nnsmith.abstract.op import *
 from nnsmith.backends import DiffTestBackend
 from nnsmith.export import torch2onnx
@@ -92,8 +92,8 @@ class SymbolNet(nn.Module):
                 self.instructions.append(
                     (cur_op, input_idx, output_idx, op, node_id))
             else:  # Should be input node
-                assert_true(type(op) is Input, 'type(op) should be Input')
-                assert_eq(len(output_idx), 1)
+                SanityCheck.true(type(op) is Input, 'type(op) should be Input')
+                SanityCheck.eq(len(output_idx), 1)
                 self.input_info.append(
                     InputInfo(op=op, oid=output_idx[0], node_id=node_id, input_name=f'i{op.idx}'))
         if self.verbose:
@@ -108,11 +108,11 @@ class SymbolNet(nn.Module):
             return
         msg_head = f'In dtype checking for {op} (#{node_id}): '
         shape_indices = self.graph.nodes[node_id]['shape_indices']
-        assert_eq(len(outputs), len(shape_indices), msg_head +
-                  f'{len(outputs)} != {len(shape_indices)}')
+        SanityCheck.eq(len(outputs), len(shape_indices), msg_head +
+                       f'{len(outputs)} != {len(shape_indices)}')
         for out, shape_idx in zip(outputs, shape_indices):
-            assert_eq(out.dtype, self.alive_shapes[shape_idx][1].dtype.value, msg_head +
-                      f'torch dtype ({out.dtype}) != symbolic dtype ({self.alive_shapes[shape_idx][1].dtype.value})')
+            SanityCheck.eq(out.dtype, self.alive_shapes[shape_idx][1].dtype.value, msg_head +
+                           f'torch dtype ({out.dtype}) != symbolic dtype ({self.alive_shapes[shape_idx][1].dtype.value})')
 
     @torch.no_grad()
     def forward(self, *xs):
@@ -141,7 +141,7 @@ class SymbolNet(nn.Module):
                 if local_ref_cnt[idx] == 0 and not self.record_intermediate:
                     self.tensors[idx] = None
             for idx, output in list(zip(outs, outputs)):
-                assert_none(self.tensors[idx], 'tensor[{}] is not None.'.format(
+                SanityCheck.none(self.tensors[idx], 'tensor[{}] is not None.'.format(
                     idx))
                 if local_ref_cnt[idx] > 0:  # Will be used.
                     self.tensors[idx] = output
@@ -314,7 +314,7 @@ class SimpleGenerator:
             if node.out_dims[i] == -1:
                 node.out_dims[i] = len(shape_var.shape)
             else:
-                assert_eq(node.out_dims[i], len(shape_var.shape), "{}'s dimension size is not {} in {}".format(
+                SanityCheck.eq(node.out_dims[i], len(shape_var.shape), "{}'s dimension size is not {} in {}".format(
                     shape_var.shape, node.out_dims[i], node.__class__.__name__))
             shape_idx = len(self.alive_shapes)
             shape_indices.append(shape_idx)
@@ -358,7 +358,7 @@ class SimpleGenerator:
                     if final_dim == -1:
                         final_dim = dim
                     else:
-                        assert_eq(final_dim, dim)
+                        SanityCheck.eq(final_dim, dim)
             if final_dim == -1:
                 final_dim = random.choice(list(self.dim2shape_idx.keys()))
             dim_spec_list = [final_dim] * n_inp
@@ -375,7 +375,7 @@ class SimpleGenerator:
             if self.verbose:
                 traceback.print_exc()
             return False
-        except AssertionError:
+        except ConstraintError:
             if self.verbose:
                 traceback.print_exc()
             return False
@@ -451,8 +451,8 @@ class PureSymbolGen(SimpleGenerator):
                 self.solver.add(input_tensor_shape.shape[i] >= min_dims[i])
         check_res = self.check_sat()
         # FIXME sometimes the constraints are too complicated to return stable result.
-        assert_eq(check_res, z3.sat,
-                  msg=f'Constraints not sat but {check_res}.')
+        SanityCheck.eq(check_res, z3.sat,
+                       msg=f'Constraints not sat but {check_res}.')
         self.n_floats = nnsmith_add(
             self.n_floats, input_tensor_shape.nelement())
         self.n_inps += 1
@@ -496,7 +496,7 @@ class PureSymbolGen(SimpleGenerator):
         pass
 
     def get_symbol_solutions(self) -> List:
-        assert_not_none(self.last_soln)
+        SanityCheck.not_none(self.last_soln)
         return self.last_soln
         # res = self.solver.check()
         # assert res == z3.sat, res
@@ -551,7 +551,7 @@ class GenerationTable:
 class CoverageTableGen(PureSymbolGen):
     def __init__(self, table, state, **kwargs):
         self.table = table
-        assert_true('unsolvable' in state, 'unsolvable not in state')
+        SanityCheck.true('unsolvable' in state, 'unsolvable not in state')
         self.state = state
         super(CoverageTableGen, self).__init__(**kwargs)
 
