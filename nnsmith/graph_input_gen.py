@@ -9,7 +9,7 @@ import random
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from nnsmith.abstract.op import ALL_OP_TYPES
+from nnsmith.abstract.op import ALL_OP_STR2TYPE, ALL_OP_TYPES
 
 from nnsmith.backends import DiffTestBackend
 from nnsmith.error import SanityCheck
@@ -74,6 +74,10 @@ def forked_execution(
         ipc_dict['ranges'] = rngs
 
     with mp.Manager() as manager:
+        # NOTE: Please only try to transfer primitive data types. e.g., str.
+        # That is why I use `ALL_OP_STR2TYPE` to map strings to original types.
+        # You might want to use `dill` to serialize some special stuff, e.g., lambda.
+        # Also see https://stackoverflow.com/questions/25348532/can-python-pickle-lambda-functions
         ipc_dict = manager.dict()
         ipc_dict['state'] = manager.dict()
         ipc_dict['state']['unsolvable'] = manager.list()
@@ -105,7 +109,7 @@ def forked_execution(
                         f'process hang {process_time_tolerance}')
 
             for src, dst in ipc_dict['state']['unsolvable']:
-                table.on_unsolvable(src, dst)
+                table.on_unsolvable(ALL_OP_STR2TYPE[src], ALL_OP_STR2TYPE[dst])
 
         SanityCheck.false(
             p.is_alive(), 'Process should be terminated but still alive.')

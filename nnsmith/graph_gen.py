@@ -570,7 +570,7 @@ class CoverageTableGen(PureSymbolGen):
         # node -> ishape_indices :: on_unsolvable
         for idx in ishape_indices:
             self.state['unsolvable'].append(
-                (type(node), type(self.abstract_graph.nodes[self.alive_shapes[idx][0]]['op'])))
+                (type(node).__name__, type(self.abstract_graph.nodes[self.alive_shapes[idx][0]]['op']).__name__))
 
 
 def parse_args():

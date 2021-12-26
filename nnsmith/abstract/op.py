@@ -1390,7 +1390,7 @@ def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
 
 
 ALL_OP_TYPES = _glob_leaf_op_classes()
-
+ALL_OP_STR2TYPE = {c.__name__: c for c in ALL_OP_TYPES}
 
 def _check_comb(comb: DTypeComb, op: AbsOpBase):
     inps = []
