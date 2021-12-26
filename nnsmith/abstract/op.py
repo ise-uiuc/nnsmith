@@ -1054,11 +1054,12 @@ class Transpose(UnaryOpBase, ABC):
         self.inp_dims = [-1]
 
     def _init_swap_dims(self, input_shape: List[Union[int, z3.ExprRef]]):
-        SanityCheck.true(len(input_shape), 1)
+        ConstraintCheck.ge(len(input_shape), 2)
         if 'dim0' not in self.extra_attrs or 'dim1' not in self.extra_attrs:
             max_dim = len(input_shape) - 1
             self.extra_attrs['dim0'] = random.randint(0, max_dim)
-            self.extra_attrs['dim1'] = random.randint(0, max_dim)
+            self.extra_attrs['dim1'] = (random.randint(
+                1, max_dim) + self.extra_attrs['dim0']) % (1 + max_dim)
         return self.extra_attrs['dim0'], self.extra_attrs['dim1']
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
@@ -1075,7 +1076,7 @@ class Transpose(UnaryOpBase, ABC):
 
     def torch(self):
         def f(x: torch.Tensor):
-            dim0, dim1 = self._init_swap_dims([x.shape])
+            dim0, dim1 = self._init_swap_dims(list(x.shape))
             return x.transpose(dim0, dim1)
         return f
 
@@ -1395,12 +1396,12 @@ def _check_comb(comb: DTypeComb, op: AbsOpBase):
     inps = []
     for dtype, ndims in zip(comb, op.inp_dims):
         if ndims == -1:
-            ndims = 1
+            ndims = 2
         # TODO use symbolic solver
         inps.append(torch.empty([2] * ndims, dtype=dtype.value))
     try:
-        out = op.torch()(*inps)
-    except:
+        _ = op.torch()(*inps)
+    except Exception as e:
         return False
     return True
 
