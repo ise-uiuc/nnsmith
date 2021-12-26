@@ -115,7 +115,7 @@ pip install onnxruntime-gpu # the order matters; and you have to split the insta
     - If we don't set random input constraints -> very fast! but those solutions will stick to [1, 1, ..., 1] which is not realistic;
     - If we set those input constraints -> very slow (e.g., up to 25s to generate a 20-node model)... but the generated model is diverse!
 - [x] **Op Batch 2**: Focuse on multi-input & complex-shape-transfer-func models;
-    - [x] multi-input: And, Sub, Mul, Concat, Div, Greater; @jinkun
+    - [ ] multi-input: And, Sub, Mul, Concat, Div, Greater; @jinkun
     - [x] complex-shape-func: Sum, Min, Max, Mean, ArgMin, ArgMax, Squeeze, Size; @jiawei
 - [x] Coverage-guided fuzzing with relation table. @jiawei
 - [ ] Coverage feedback support for ONNXRuntime (Install ORT's [coverage branch](https://github.com/ganler/onnxruntime/tree/coverage)) @jiawei
@@ -125,4 +125,7 @@ pip install onnxruntime-gpu # the order matters; and you have to split the insta
     - `pip install build/Linux/RelWithDebInfo/dist/onnxruntime-1.11.0-cp38-cp38-linux_x86_64.whl --force-reinstall`
 - [ ] Dynamic model testing;
 - [x] Enable multiple inputs; @jinkun
-
+- [ ] **Op Batch 2**: See https://github.com/ise-uiuc/nnsmith/issues/6
+    - [ ] Casting, GeLU, Dropout, Softmax;
+    - [ ] BatchNorm, LayerNorm;
+    - [ ] Scalar scaling;
