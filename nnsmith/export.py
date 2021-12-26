@@ -1,3 +1,5 @@
+import warnings
+
 import torch
 import torch.onnx
 
@@ -32,14 +34,18 @@ def torch2onnx(model, filename, verbose=False):
         dummy_inputs.append(torch.zeros(svar.shape).to(dtype=svar.dtype.value))
     if verbose:
         print(f"Generated model:\n{model}")
-    torch.onnx.export(
-        model, tuple(dummy_inputs),
-        filename,
-        input_names=input_names,
-        output_names=[f'o{i}' for i in range(model.n_output)],
-        verbose=False,
-        dynamic_axes=dynamic_axes,
-        opset_version=14)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter(
+            "default" if verbose else "ignore", category=torch.jit.TracerWarning)
+        torch.onnx.export(
+            model, tuple(dummy_inputs),
+            filename,
+            input_names=input_names,
+            output_names=[f'o{i}' for i in range(model.n_output)],
+            verbose=verbose,
+            dynamic_axes=dynamic_axes,
+            opset_version=14)
 
 
 if __name__ == "__main__":
