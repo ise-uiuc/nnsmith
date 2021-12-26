@@ -260,6 +260,7 @@ if __name__ == '__main__':
     parser.add_argument('--root', type=str, default='./fuzz_report')
     parser.add_argument('--time_budget', type=int, default=60 * 60 * 4)
     parser.add_argument('--backend', type=str, default='tvm')
+    parser.add_argument('--mode', type=str, default='table')
     args = parser.parse_args()
 
     backends = None
@@ -279,5 +280,6 @@ if __name__ == '__main__':
     fuzzing_loop = FuzzingLoop(
         root=args.root,
         backends=backends,
+        mode=args.mode,
         time_budget=args.time_budget)
     fuzzing_loop.fuzz()
