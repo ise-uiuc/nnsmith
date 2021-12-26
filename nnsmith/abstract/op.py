@@ -1046,20 +1046,6 @@ class Reshape5D(Reshape):
         self.out_dims = [5]
 
 
-class Reshape6D(Reshape):
-    def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef],
-                 dim3: Union[int, z3.ExprRef], dim4: Union[int, z3.ExprRef], dim5: Union[int, z3.ExprRef]):
-        super().__init__()
-        self.dim0 = dim0
-        self.dim1 = dim1
-        self.dim2 = dim2
-        self.dim3 = dim3
-        self.dim4 = dim4
-        self.dim5 = dim5
-        self.target_shape = [dim0, dim1, dim2, dim3, dim4, dim5]
-        self.out_dims = [6]
-
-
 class Transpose(UnaryOpBase, ABC):
     def __init__(self):
         """See https://pytorch.org/docs/stable/generated/torch.transpose.html
@@ -1095,21 +1081,6 @@ class Transpose(UnaryOpBase, ABC):
 
 
 # Sum, Min, Max, Mean, ArgMin, ArgMax, Squeeze, Size
-
-# JK: Which onnx op does this op try to model? The Size op from ONNX is different from what is being written below.
-# ONNX Size op returns nelements of the input tensor.
-class Size(UnaryOpBase):
-    def __init__(self):
-        super().__init__()
-        self.inp_dims = [-1]
-        self.out_dims = [1]
-
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        return [ShapeVar([len(input_shapes[0].shape)], DType.float32)]
-
-    def torch(self):
-        return lambda x: torch.tensor(x.shape).float()
-
 
 class ReduceBase(UnaryOpBase, ABC):
     _reduce_out_dtype = None  # None means same as input dtype
