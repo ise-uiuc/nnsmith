@@ -93,6 +93,11 @@ class TVMExecutor(DiffTestBackend):
         # TODO(JK): make sure the order matches (not sure how to do so with TVM)
         return dict(zip(self.out_names, output))
 
+    @staticmethod
+    def coverage_install():
+        from tvm.contrib import coverage
+        return coverage
+
 
 if __name__ == '__main__':
     import wget

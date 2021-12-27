@@ -8,7 +8,6 @@ import datetime
 from typing import Dict, Iterable, Union, List
 
 # Edge coverage. See https://github.com/ganler/tvm/tree/coverage
-from tvm.contrib import coverage
 import git
 import rich
 from rich.progress import Progress, BarColumn, ProgressColumn
@@ -16,13 +15,14 @@ from rich.panel import Panel
 from rich.console import RenderableType
 from rich.columns import Columns
 
-from nnsmith.error import NNSmithInternalError
+from nnsmith.error import NNSmithInternalError, SanityCheck
 from nnsmith.graph_gen import GenerationTable
-from nnsmith.backends.tvm_graph import TVMExecutor
 from nnsmith.backends import DiffTestBackend
 from nnsmith.input_gen import gen_one_input_rngs
 from nnsmith.difftest import assert_allclose
 from nnsmith.graph_input_gen import forked_execution
+
+__COV_DRIVER__ = None
 
 _METADATA_NAME_ = 'meta.txt'
 _COV_BY_TIME_NAME_ = 'cov_by_time.csv'
@@ -31,13 +31,8 @@ _COV_BY_TIME_NAME_ = 'cov_by_time.csv'
 
 
 class Reporter:  # From Tzer.
-    def __init__(self, report_folder=None) -> None:
+    def __init__(self, report_folder=None, name_hint='') -> None:
         # Checks
-        tvm_home = os.getenv('TVM_HOME')
-        if not tvm_home or not os.path.exists(tvm_home):
-            raise NNSmithInternalError(
-                'got incorrect env var `TVM_HOME`: "{tvm_home}"')
-
         self.start_time = time.perf_counter()
         self.report_folder = report_folder
 
@@ -62,9 +57,10 @@ class Reporter:  # From Tzer.
         print(f'Using `{self.report_folder}` as the fuzzing report folder')
         with open(os.path.join(self.report_folder, _METADATA_NAME_), 'w') as f:
             fuzz_repo = git.Repo(search_parent_directories=True)
-            tvm_repo = git.Repo(search_parent_directories=True)
 
             def _log_repo(f, tag, repo: git.Repo):
+                if not repo:
+                    return
                 f.write(f'{tag} GIT HASH: {repo.head.object.hexsha}\n')
                 f.write(f'{tag} GIT STATUS: ')
                 f.write(
@@ -75,7 +71,8 @@ class Reporter:  # From Tzer.
 
             f.write(f'START TIME: {datetime.datetime.now()}')
             _log_repo(f, 'Fuzzer', fuzz_repo)
-            _log_repo(f, 'TVM', tvm_repo)
+            if 'tvm' in name_hint:
+                _log_repo(f, 'TVM', os.getenv('TVM_HOME'))
 
         self.n_bug = 0
 
@@ -92,7 +89,7 @@ class Reporter:  # From Tzer.
     def record_coverage(self):
         with open(os.path.join(self.report_folder, _COV_BY_TIME_NAME_), 'a') as f:
             f.write(
-                f'{time.perf_counter() - self.start_time :.2f},{coverage.get_now()}\n')
+                f'{time.perf_counter() - self.start_time :.2f},{__COV_DRIVER__.get_now()}\n')
 
 
 class CustomProgress(Progress):
@@ -110,11 +107,12 @@ class CustomProgress(Progress):
 class FuzzingLoop:  # TODO: Support multiple backends.
     def __init__(self, backends: Dict[str, DiffTestBackend], mode='table', root=None, time_budget=60 * 60 * 4, max_nodes=32):
         self.root = root
-        self.reporter = Reporter(report_folder=root)
+        self.reporter = Reporter(
+            report_folder=root, name_hint=list(backends.keys())[0])
         self.mode = mode  # `random` or `table`
         self.table = GenerationTable() if mode == 'table' else None
 
-        assert len(backends) > 0, "Empty backends are not allowed!"
+        SanityCheck.gt(len(backends), 0, "Empty backends are not allowed!")
         self.backends = backends
 
         self.time_budget = time_budget
@@ -170,7 +168,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                 task_fuzz = progress.add_task(
                     '[green]Fuzzing time.', total=self.time_budget)
                 task_coverage = progress.add_task(
-                    '[green]Edge coverage.', total=coverage.get_total())
+                    '[green]Edge coverage.', total=__COV_DRIVER__.get_total())
 
                 while True:
                     self.reporter.record_coverage()
@@ -229,7 +227,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         self.slowest_model_eval_t = max(self.slowest_model_eval_t,
                                                         self.cur_model_eval_t)
 
-                        cur_cov = coverage.get_now()
+                        cur_cov = __COV_DRIVER__.get_now()
                         if edge_set:
                             for src, dst in edge_set:
                                 if cur_cov == last_cov:
@@ -246,14 +244,14 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     progress.update(
                         task_fuzz, completed=cur_time - self.start_time)
                     progress.update(
-                        task_coverage, completed=coverage.get_now())
+                        task_coverage, completed=__COV_DRIVER__.get_now())
 
                     if cur_time - self.start_time > self.time_budget:
                         break
         finally:  # cleanup
             if os.path.exists(_TMP_ONNX_FILE_):
                 os.remove(_TMP_ONNX_FILE_)
-            last_cov = coverage.get_now()
+            last_cov = __COV_DRIVER__.get_now()
 
 
 if __name__ == '__main__':
@@ -261,11 +259,27 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--root', type=str, default='./fuzz_report')
     parser.add_argument('--time_budget', type=int, default=60 * 60 * 4)
+    parser.add_argument('--backend', type=str, default='tvm')
+    parser.add_argument('--mode', type=str, default='table')
     args = parser.parse_args()
+
+    backends = None
+    if args.backend == 'tvm':
+        from nnsmith.backends.tvm_graph import TVMExecutor
+        backends = {'tvm-opt': TVMExecutor(opt_level=4),
+                    'tvm-debug': TVMExecutor(opt_level=0)}
+        __COV_DRIVER__ = TVMExecutor.coverage_install()
+    elif args.backend == 'ort':
+        from nnsmith.backends.ort_graph import ORTExecutor
+        backends = {'ort-opt': ORTExecutor(opt_level=3),
+                    'ort-debug': ORTExecutor(opt_level=0)}
+        __COV_DRIVER__ = ORTExecutor.coverage_install()
+    else:
+        raise NotImplementedError("Other backends not supported yet.")
 
     fuzzing_loop = FuzzingLoop(
         root=args.root,
-        backends={'tvm-opt': TVMExecutor(opt_level=4),
-                  'tvm-debug': TVMExecutor(opt_level=0)},
+        backends=backends,
+        mode=args.mode,
         time_budget=args.time_budget)
     fuzzing_loop.fuzz()

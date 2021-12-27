@@ -33,6 +33,10 @@ class DiffTestBackend(ABC):
         return onnx_model
 
     @staticmethod
+    def coverage_install():
+        raise NotImplementedError("Coverage support not implemented.")
+
+    @staticmethod
     def dtype_str(id: int) -> str:
         """See https://deeplearning4j.org/api/latest/onnx/Onnx.TensorProto.DataType.html
         """

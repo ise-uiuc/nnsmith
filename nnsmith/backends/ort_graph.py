@@ -44,6 +44,11 @@ class ORTExecutor(DiffTestBackend):
 
         return {n: r for n, r in zip(self.out_names, res)}
 
+    @staticmethod
+    def coverage_install():
+        from onnxruntime.tools import coverage
+        return coverage
+
 
 if __name__ == '__main__':
     import wget
