@@ -272,10 +272,7 @@ class SimpleGenerator:
             if self.extra_exit_check():
                 break
             node_t = self.pick_next_op_type()
-            if issubclass(node_t, Input):
-                self.insert_input_node(self.min_dims)
-            else:
-                self.try_insert_node_type(node_t)
+            self.try_insert_node_type(node_t)
         if len(self.abstract_graph.nodes) != max_node_size:
             print(
                 f'[WARNING]: graph size: {len(self.abstract_graph.nodes)} != expected size: {max_node_size}')
@@ -338,6 +335,13 @@ class SimpleGenerator:
         if self.verbose:
             print(f'Inserting node #{len(self.abstract_graph.nodes)}: '
                   f'trying to insert node type {node_t.__name__}')
+        if issubclass(node_t, Input):
+            try:
+                self.insert_input_node(self.min_dims)
+            # TODO: check the exception type (ideally only z3 check_failure), don't drop internal errors
+            except:
+                return False
+            return True
         op_param_n = signature(node_t).parameters
         op_id = len(self.abstract_graph.nodes)
         op_params = [self.new_sym('op%s_%s' % (op_id, k))
@@ -451,6 +455,8 @@ class PureSymbolGen(SimpleGenerator):
         check_res = self.check_sat()
         # FIXME sometimes the constraints are too complicated to return stable result.
         assert check_res == z3.sat, check_res
+        # TODO(JK): if constraining the summation is too complicated, causing z3.unknown,
+        # we may consider easier ones, like constraining each tensor individually.
         self.n_floats = nnsmith_add(
             self.n_floats, input_tensor_shape.nelement())
         self.n_inps += 1
