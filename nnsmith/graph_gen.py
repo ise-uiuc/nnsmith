@@ -14,7 +14,7 @@ import time
 import os
 import copy
 
-from nnsmith.error import SanityCheck, ConstraintError
+from nnsmith.error import NNSmithInternalError, SanityCheck, ConstraintError
 from nnsmith.abstract.op import *
 from nnsmith.backends import DiffTestBackend
 from nnsmith.export import torch2onnx
@@ -466,9 +466,32 @@ class PureSymbolGen(SimpleGenerator):
 
 
 class GenerationTable:
+    # Hyper-parameters
+    _MAX_CONF = 4.0
+    _BASE_VAL = 1.0
+    _MIN_CONF = 0.1
+    _INIT_VAL = 2.0
+
     def __init__(self):
         self.np_table = np.ones((len(ALL_OP_TYPES), len(
-            ALL_OP_TYPES) - 1))  # do not count Input
+            ALL_OP_TYPES) - 1)) * self._INIT_VAL  # do not count Input
+
+        # Close those impossible connections.
+        for src_t in ALL_OP_TYPES:
+            for tar_t in ALL_OP_TYPES:
+                if tar_t is Input:
+                    continue
+
+                inp_dims = tar_t(
+                    *[None for _ in signature(tar_t).parameters]).inp_dims
+                out_dims = src_t(
+                    *[None for _ in signature(src_t).parameters]).out_dims
+
+                if -1 in inp_dims or -1 in out_dims or set(inp_dims).intersection(out_dims):
+                    continue
+
+                self.np_table[self.row_mapper(
+                    src_t)][self.col_mapper(tar_t)] = 0.
 
     def row_mapper(self, t):
         if isinstance(t, int):
@@ -485,20 +508,20 @@ class GenerationTable:
             return
         val = self.np_table[self.row_mapper(src_t)][self.col_mapper(tar_t)]
         self.np_table[self.row_mapper(src_t)][self.col_mapper(
-            tar_t)] = min(4., val * 1.1)
+            tar_t)] = min(self._MAX_CONF, max(self._BASE_VAL, val * 1.1))
 
     def on_no_cov(self, src_t, tar_t):
         if self.row_mapper(src_t) == 0:
             return
         self.np_table[self.row_mapper(
-            src_t)][self.col_mapper(tar_t)] = 1.  # reset.
+            src_t)][self.col_mapper(tar_t)] = self._BASE_VAL  # reset.
 
     def on_unsolvable(self, src_t, tar_t):
         if self.row_mapper(src_t) == 0:
             return
         val = self.np_table[self.row_mapper(src_t)][self.col_mapper(tar_t)]
         self.np_table[self.row_mapper(src_t)][self.col_mapper(
-            tar_t)] = max(0.1, val * 0.9)
+            tar_t)] = max(self._MIN_CONF, min(self._BASE_VAL, val * 0.9))
 
     def lookup(self, src_t, tar_t):
         return self.np_table[self.row_mapper(src_t)][self.col_mapper(tar_t)]
@@ -511,17 +534,24 @@ class GenerationTable:
 
 
 class CoverageTableGen(PureSymbolGen):
-    def __init__(self, table, state, **kwargs):
+    def __init__(self, table: GenerationTable, state, **kwargs):
         self.table = table
         SanityCheck.true('unsolvable' in state, 'unsolvable not in state')
         self.state = state
         super(CoverageTableGen, self).__init__(**kwargs)
 
     def pick_alive_shape(self, node_t, candidates):
-        successor_probability = self.table[node_t]
-        candidate_indices = [self.table.col_mapper(
-            type(self.abstract_graph.nodes[self.alive_shapes[alive_shape_idx][0]]['op'])) for alive_shape_idx in candidates]
+        # node_t target node...
+        # candidates -> outputs of input nodes...
+        successor_probability = self.table.np_table.transpose()[
+            self.table.col_mapper(node_t)]
+        candidate_ops = [type(self.abstract_graph.nodes[self.alive_shapes[alive_shape_idx][0]]['op'])
+                         for alive_shape_idx in candidates]
+        candidate_indices = [self.table.row_mapper(op) for op in candidate_ops]
         candidate_conf = successor_probability[candidate_indices]
+        if candidate_conf.sum() == 0:
+            raise NNSmithInternalError(
+                f'Candidate prob is zero -- candidates: {[op.__name__ for op in candidate_ops]} -> {node_t}')
         return np.random.choice(candidates, p=candidate_conf / candidate_conf.sum())
 
     def pick_next_op_type(self):
