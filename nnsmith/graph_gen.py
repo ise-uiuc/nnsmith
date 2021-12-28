@@ -183,48 +183,6 @@ class SimpleGenerator:
         else:
             return z3.Int(name)
 
-    def fix_graph_dependency(self):
-        """Fix output nodes not having any dependency on any input nodes"""
-        graph = self.abstract_graph
-        dep = {node_id: False for node_id in nx.topological_sort(graph)}
-        for node_id in nx.topological_sort(graph):
-            node = graph.nodes[node_id]
-            if isinstance(node["op"], Input):
-                dep[node_id] = True
-
-            out_edges = graph.out_edges(node_id, data='operand_idx')
-            for _, to_node, (out_idx, in_idx) in out_edges:
-                dep[to_node] = dep[to_node] or dep[node_id]
-
-        # Find all output nodes
-        output_nid = [n for n, d in graph.out_degree() if d == 0]
-        out_non_dep = [n for n in output_nid if not dep[n]]
-        to_be_fixed_sids = []
-        for o_nid in out_non_dep:
-            shape_indices = graph.nodes[o_nid]['shape_indices']
-            for sid in shape_indices:
-                to_be_fixed_sids.append(sid)
-
-        # fix for each dtype
-        for dt in DType.__members__.values():
-            to_be_fixed_sids_dt = [
-                sid for sid in to_be_fixed_sids if self.alive_shapes[sid][1].dtype == dt]
-            if len(to_be_fixed_sids_dt) == 0:
-                continue
-
-            # work around z3 timeout issue by skipping the constraints
-            input_tensor_shape = ShapeVar(shape=[1, 1, 1, 1], dtype=dt)
-            input_node = Input(self.n_inps, dt, *input_tensor_shape.shape)
-            self.insert_node(input_node, [], oshapes=[input_tensor_shape])
-
-            # self.insert_input_node([1, 1, 1, 1], shape=[1, 1, 1, 1], dtype=dt)
-            in_nid = len(self.alive_shapes) - 1
-            if self.verbose:
-                print('insert input node #', in_nid)
-            for sid in to_be_fixed_sids_dt:
-                node_t = Equal if dt == DType.bool else Add
-                self.insert_node(node_t(), [in_nid, sid])
-
     @abstractmethod
     def insert_input_node(self, min_dims, shape=None, dtype=DType.float32) -> ShapeVar:
         raise NotImplementedError
