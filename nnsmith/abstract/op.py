@@ -517,7 +517,16 @@ Pow.in_dtypes = [(i, i) for i in DTYPE_FLOATS]
 # Mean = type('Mean', (BcastBinaryOp,), {'torch': lambda self: torch.mean})
 
 
-# FIXME(JK): generated onnx model too large size because of constant op
+class StopFoldConst(torch.nn.Module):
+    def __init__(self, data):
+        super().__init__()
+        self.param = torch.nn.parameter.Parameter(data, requires_grad=False)
+
+    @torch.no_grad()
+    def forward(self):
+        return self.param
+
+
 class Constant(AbsOpBase):
     in_dtypes = [()]
 
@@ -537,7 +546,7 @@ class Constant(AbsOpBase):
 
     def torch(self) -> Callable[..., torch.Tensor]:
         data = torch.randn(self.shape_var.shape)
-        return lambda: data
+        return StopFoldConst(data)
 
 
 class Constant0D(Constant):

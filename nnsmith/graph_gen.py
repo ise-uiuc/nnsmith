@@ -277,7 +277,7 @@ class SimpleGenerator:
         if len(self.abstract_graph.nodes) != max_node_size:
             print(
                 f'[WARNING]: graph size: {len(self.abstract_graph.nodes)} != expected size: {max_node_size}')
-        self.fix_graph_dependency()
+        # self.fix_graph_dependency()
 
     def shape_idx_to_op_idx(self, shape_idx: int) -> int:
         return self.alive_shapes[shape_idx][0]
@@ -590,6 +590,7 @@ def parse_args():
     parser.add_argument('--seed', type=int)
     parser.add_argument('--verbose', action='store_true')
     parser.add_argument('--use_bitvec', action='store_true')
+    parser.add_argument('--viz_graph', action='store_true')
     return parser.parse_args()
 
 
@@ -668,7 +669,7 @@ if __name__ == '__main__':
     gen, solution = random_model_gen(min_dims=args.min_dims, viz_sbs=args.viz_sbs, max_nodes=args.max_nodes,
                                      use_bitvec=args.use_bitvec, timeout=args.timeout, verbose=args.verbose)
 
-    if args.verbose:
+    if args.verbose or args.viz_graph:
         gen.viz(args.output_path + '.png')
 
     net = SymbolNet(gen.abstract_graph, solution, verbose=args.verbose,

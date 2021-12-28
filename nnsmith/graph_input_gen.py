@@ -159,7 +159,7 @@ def gen_model_and_range(
         seed = random.getrandbits(32)
     kwargs_str = ' '.join([f'--{k} {v}' for k, v in kwargs.items()])
     check_call(f'python -u -m nnsmith.graph_gen --output_path {output_path}'
-               f' --seed {seed} --max_nodes {max_node_size} --timeout {max_gen_millisec} '
+               f' --seed {seed} --max_nodes {max_node_size} --timeout {max_gen_millisec} --viz_graph'
                f'{kwargs_str} 2>&1', shell=True, timeout=max_gen_millisec * 2 / 1000)
     model = DiffTestBackend.get_onnx_proto(output_path)
     stats = pickle.load(open(output_path + '-stats.pkl', 'rb'))
