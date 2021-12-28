@@ -59,8 +59,6 @@ class Reporter:  # From Tzer.
             fuzz_repo = git.Repo(search_parent_directories=True)
 
             def _log_repo(f, tag, repo: git.Repo):
-                if not repo:
-                    return
                 f.write(f'{tag} GIT HASH: {repo.head.object.hexsha}\n')
                 f.write(f'{tag} GIT STATUS: ')
                 f.write(
@@ -71,8 +69,8 @@ class Reporter:  # From Tzer.
 
             f.write(f'START TIME: {datetime.datetime.now()}')
             _log_repo(f, 'Fuzzer', fuzz_repo)
-            if 'tvm' in name_hint:
-                _log_repo(f, 'TVM', os.getenv('TVM_HOME'))
+            if 'tvm' in name_hint and os.getenv('TVM_HOME'):
+                _log_repo(f, 'TVM', git.Repo(os.getenv('TVM_HOME')))
 
         self.n_bug = 0
 
