@@ -42,7 +42,7 @@ def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarr
         index = 0
         for key in obtained:
             testing.assert_allclose(
-                obtained[key], desired[key], rtol=1e-02, atol=1e-05)
+                obtained[key], desired[key], rtol=1e-02, atol=1e-03)
             index += 1
     except AssertionError as err:
         # print(err) # Mute.
