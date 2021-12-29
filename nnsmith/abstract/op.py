@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from enum import Enum
 from functools import reduce
+import functools
 from typing import List, Tuple, Union, Callable, Type
 from inspect import signature
 import random
@@ -1381,6 +1382,75 @@ class ArgMax5D(ArgMax):
         super().__init__(5)
         self.out_dims = [4]
         self.inp_dims = [5]
+
+
+def partialclass(cls, *args, **kwds) -> Type[AbsOpBase]:
+
+    class NewCls(cls):
+        __init__ = functools.partialmethod(cls.__init__, *args, **kwds)
+
+    return NewCls
+
+
+class Concat(AbsOpBase):
+    MAX_ARITY = 5
+    in_dtypes = [tuple(i for _ in range(5))
+                 for i in DTYPE_ALL]  # suport max concat 5 tensors
+
+    def __str__(self) -> str:
+        return 'Concat ' + str(self.extra_attrs)
+
+    def __init__(self, arity):
+        super().__init__()
+        assert arity <= self.MAX_ARITY
+        self.arity = arity
+        self.inp_dims = [-1] * arity
+        self.out_dims = [-1]
+        self.same_inp_dims = True
+
+    def _get_axis(self, ndim):
+        if 'axis' not in self.extra_attrs:
+            self.extra_attrs['axis'] = random.randint(0, ndim - 1)
+        return self.extra_attrs['axis']
+
+    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+        ndims = input_shapes[0].ndims
+        ConstraintCheck.true(ndims > 0)
+        axis = self._get_axis(ndims)
+        assert ndims > axis
+
+        assert all(s.ndims == ndims for s in input_shapes)
+        assert len(input_shapes) == self.arity
+        cons = []
+        for d in range(ndims):
+            if d != axis:
+                cons.extend(nnsmith_eq(s.shape[d], input_shapes[0].shape[d])
+                            for s in input_shapes)
+        return cons
+
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        ndims = input_shapes[0].ndims
+        ConstraintCheck.true(ndims > 0)
+        axis = self._get_axis(ndims)
+        os = ShapeVar(input_shapes[0].shape, input_shapes[0].dtype)
+        os.shape[axis] = reduce(
+            nnsmith_add, [s.shape[axis] for s in input_shapes])
+        return [os]
+
+    def torch(self):
+        axis = self.extra_attrs['axis']
+        return lambda *args: torch.cat(args, axis)
+
+
+# NOTE(JK) This is ugly. I think the root cause is we are using a class to represent a node type that we want to insert.
+# A more flexible approach is to use an instance. For example, to represent Expand node types, instead of classes [ExpandLast1, ExpandLast2, ...],
+# use instances [Expand(expand_last_dim=1, expand_n=Placeholder), Expand(2, Placeholder), ...], where the Placeholder represents the params needing z3 to model.
+
+Concat1 = partialclass(Concat, 1)
+Concat2 = partialclass(Concat, 2)
+Concat3 = partialclass(Concat, 3)
+Concat4 = partialclass(Concat, 4)
+Concat5 = partialclass(Concat, 5)
 
 
 def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
