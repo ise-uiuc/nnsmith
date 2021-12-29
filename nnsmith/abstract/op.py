@@ -1398,7 +1398,7 @@ class Concat(AbsOpBase):
                  for i in DTYPE_ALL]  # suport max concat 5 tensors
 
     def __str__(self) -> str:
-        return 'Concat{}D_{}'.format(self.extra_attrs['axis'], self.arity)
+        return 'Concat ' + str(self.extra_attrs)
 
     def __init__(self, arity):
         super().__init__()
