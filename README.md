@@ -2,7 +2,7 @@
 
 This project is under heavy development at this point.
 
-**Please** put bug reports/trackings on this [google sheet](https://docs.google.com/spreadsheets/d/15YY88x_JyZWom2YGNW2JO0JdqNVYWzPbaaRyhVxBJ_Y/edit#gid=0).
+Keep active bug tracking and please put bug reports/trackings on this [google sheet](https://docs.google.com/spreadsheets/d/15YY88x_JyZWom2YGNW2JO0JdqNVYWzPbaaRyhVxBJ_Y/edit#gid=0).
 
 ## Quick Start
 
@@ -92,21 +92,25 @@ pip install onnxruntime-gpu # the order matters; and you have to split the insta
 - [x] γ function to map abstract domain to concrete domain (PyTorch's `nn.Module`). @jiawei @jinkun
     - NOTE: Jiawei tried to convert abstract graph into PyTorch's `nn.Module` and it works. However, due to the implementation issues of PyTorch's JIT tracing, we cannot export the `nn.Module` we created into ONNX model. Therefore, our next plan is to support Keras model generation and then export keras model into ONNX.
     - FIXED: Jinkun added `nn.ModuleList` to trace the layers as a workaround.
-- [ ] Differential testing candidates: Given an ONNX model, get results from DNN libraries/compilers:
+- [x] Differential testing candidates: Given an ONNX model, get results from DNN libraries/compilers:
     - Specification: @jinkun @jiawei See `nnsmith/backends/__init__.py` for the specification.
         - Output: Output tensors (`Dict[np.ndarray]`);
-        - Input: ONNX model; Input tensors (`Dict[np.ndarray]`);
+        - Input: ONNX model; Input tensors (`Dict[np.ndarray]`); **Not implemented in the Fuzzing Phase**.
         - Bug report: ptr->model, input tensors;
-    - [ ] Oracles:
+    - [x] Oracles:
         - [x] Result consistency (allclose);
-        - [ ] Performance degradation;
-        - [ ] Crash (use sub-process when doing evaluation);
+        - [x] Crash (use sub-process when doing evaluation);
     - [x] Differential testing comparison (allclose); @jinkun
-    - [x] TVM (dynamic models: VM/Debug; & graph); @jiawei
-    - [x] ONNXRuntime (new); @jiawei
-    - [x] XLA (ONNX to TF. Compile in XLA mode); @jinkun refined@jiawei
-    - [x] TensorRT; @jiawei
-    - [ ] Glow (not prioritized); @jinkun
+    - [ ] **Model device difference: CPU/GPU Differential Testing** @jiawei
+    - DL Compiler-Driven Engines:
+      - [x] TVM (dynamic models: VM/Debug; & graph); @jiawei **7.5k star; ative community**
+      - [x] ONNXRuntime (new); @jiawei **6k star; ative community**
+      - [x] XLA (ONNX to TF. Compile in XLA mode); @jinkun refined@jiawei **162k star; ative community**
+      - [x] TensorRT; @jiawei **4.7k; NVidia Official; fastest GPU inference tool**
+      - [ ] PyTorch JIT; @jiawei **53k star; ative community**
+    - Edge Hand-Crafted Operator Engines:
+      - [ ] [NCNN](https://github.com/Tencent/ncnn/tree/master/python); @jiawei :: **13.5k star; ative community**
+      - [ ] [MNN](https://github.com/alibaba/MNN/graphs/contributors); @jiawei :: **6.3k star; Python API in Beta Version**
 - [x] Search-based input generation; @jinkun
 - [x] Add edge coverage guidance and TVM fuzzing loop; @jiawei (Install TVM's [coverage branch](https://github.com/ganler/tvm/tree/coverage))
 - [x] Fuzzing loop for TVM with `rich` monitoring (`nnsmith/fuzz.py`). @jiawei
@@ -115,17 +119,19 @@ pip install onnxruntime-gpu # the order matters; and you have to split the insta
     - If we don't set random input constraints -> very fast! but those solutions will stick to [1, 1, ..., 1] which is not realistic;
     - If we set those input constraints -> very slow (e.g., up to 25s to generate a 20-node model)... but the generated model is diverse!
 - [x] **Op Batch 2**: Focuse on multi-input & complex-shape-transfer-func models;
-    - [ ] multi-input: And, Sub, Mul, Concat, Div, Greater; @jinkun
+    - [x] multi-input: And, Sub, Mul, Concat, Div, Greater; @jinkun
     - [x] complex-shape-func: Sum, Min, Max, Mean, ArgMin, ArgMax, Squeeze, Size; @jiawei
 - [x] Coverage-guided fuzzing with relation table. @jiawei
-- [ ] Coverage feedback support for ONNXRuntime (Install ORT's [coverage branch](https://github.com/ganler/onnxruntime/tree/coverage)) @jiawei
+- [x] Coverage feedback support for ONNXRuntime (Install ORT's [coverage branch](https://github.com/ganler/onnxruntime/tree/coverage)) @jiawei
     - Make sure you have `/usr/bin/clang++` installed with compiler runtime;
     - `git clone -b coverage git@github.com:ganler/onnxruntime.git --recursive`
     - `./build.sh --config RelWithDebInfo --build_shared_lib --parallel --build_wheel --skip_onnx_tests`
     - `pip install build/Linux/RelWithDebInfo/dist/onnxruntime-1.11.0-cp38-cp38-linux_x86_64.whl --force-reinstall`
-- [ ] Dynamic model testing;
 - [x] Enable multiple inputs; @jinkun
 - [ ] **Op Batch 2**: See https://github.com/ise-uiuc/nnsmith/issues/6
     - [ ] Casting, GeLU, Dropout, Softmax;
     - [ ] BatchNorm, LayerNorm;
-    - [ ] Scalar scaling;
+- [ ] **High-Priority** Parameter-wise Fuzzing;
+- [ ] (Experimental) Improve input-searching algorithm
+    - [ ] [Gradient-based Input Searching](https://dl.acm.org/doi/pdf/10.1145/3468264.3468612)
+    - [ ] Constraint-solving based (but require much manual effort);
