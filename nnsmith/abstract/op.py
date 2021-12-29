@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from enum import Enum
 from functools import reduce
+import functools
 from typing import List, Tuple, Union, Callable, Type
 from inspect import signature
 import random
@@ -1381,6 +1382,90 @@ class ArgMax5D(ArgMax):
         super().__init__(5)
         self.out_dims = [4]
         self.inp_dims = [5]
+
+
+def partialclass(cls, *args, **kwds) -> Type[AbsOpBase]:
+
+    class NewCls(cls):
+        __init__ = functools.partialmethod(cls.__init__, *args, **kwds)
+
+    return NewCls
+
+
+class Concat(AbsOpBase):
+    MAX_ARITY = 5
+    in_dtypes = [tuple(i for _ in range(5))
+                 for i in DTYPE_ALL]  # suport max concat 5 tensors
+
+    def __str__(self) -> str:
+        return 'Concat{}D_{}'.format(self.axis, self.arity)
+
+    def __init__(self, axis, arity):
+        super().__init__()
+        assert arity <= self.MAX_ARITY
+        self.arity = arity
+        self.axis = axis
+        self.inp_dims = [-1] * arity
+        self.out_dims = [-1]
+        self.same_inp_dims = True
+
+    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+        ndims = input_shapes[0].ndims
+        ConstraintCheck.true(ndims > self.axis)
+
+        assert all(s.ndims == ndims for s in input_shapes)
+        assert len(input_shapes) == self.arity
+        cons = []
+        for d in range(ndims):
+            if d != self.axis:
+                cons.extend(nnsmith_eq(s.shape[d], input_shapes[0].shape[d])
+                            for s in input_shapes)
+        return cons
+
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        os = ShapeVar(input_shapes[0].shape, input_shapes[0].dtype)
+        os.shape[self.axis] = reduce(
+            nnsmith_add, [s.shape[self.axis] for s in input_shapes])
+        return [os]
+
+    def torch(self):
+        return lambda *args: torch.cat(args, self.axis)
+
+
+# NOTE(JK) This is ugly. I think the root cause is we are using a class to represent a node type that we want to insert.
+# A more flexible approach is to use an instance. For example, to represent Expand node types, instead of classes [ExpandLast1, ExpandLast2, ...],
+# use instances [Expand(expand_last_dim=1, expand_n=Placeholder), Expand(2, Placeholder), ...], where the Placeholder represents the params needing z3 to model.
+
+Concat0D_1 = partialclass(Concat, 0, 1)
+Concat1D_1 = partialclass(Concat, 1, 1)
+Concat2D_1 = partialclass(Concat, 2, 1)
+Concat3D_1 = partialclass(Concat, 3, 1)
+Concat4D_1 = partialclass(Concat, 4, 1)
+Concat5D_1 = partialclass(Concat, 5, 1)
+Concat0D_2 = partialclass(Concat, 0, 2)
+Concat1D_2 = partialclass(Concat, 1, 2)
+Concat2D_2 = partialclass(Concat, 2, 2)
+Concat3D_2 = partialclass(Concat, 3, 2)
+Concat4D_2 = partialclass(Concat, 4, 2)
+Concat5D_2 = partialclass(Concat, 5, 2)
+Concat0D_3 = partialclass(Concat, 0, 3)
+Concat1D_3 = partialclass(Concat, 1, 3)
+Concat2D_3 = partialclass(Concat, 2, 3)
+Concat3D_3 = partialclass(Concat, 3, 3)
+Concat4D_3 = partialclass(Concat, 4, 3)
+Concat5D_3 = partialclass(Concat, 5, 3)
+Concat0D_4 = partialclass(Concat, 0, 4)
+Concat1D_4 = partialclass(Concat, 1, 4)
+Concat2D_4 = partialclass(Concat, 2, 4)
+Concat3D_4 = partialclass(Concat, 3, 4)
+Concat4D_4 = partialclass(Concat, 4, 4)
+Concat5D_4 = partialclass(Concat, 5, 4)
+Concat0D_5 = partialclass(Concat, 0, 5)
+Concat1D_5 = partialclass(Concat, 1, 5)
+Concat2D_5 = partialclass(Concat, 2, 5)
+Concat3D_5 = partialclass(Concat, 3, 5)
+Concat4D_5 = partialclass(Concat, 4, 5)
+Concat5D_5 = partialclass(Concat, 5, 5)
 
 
 def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
