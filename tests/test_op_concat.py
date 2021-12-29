@@ -15,25 +15,48 @@ def test_concat():
     shapes = (2, 1), (3, 1), (1, 1)
     shapes_var = [ShapeVar(s, DType.float32) for s in shapes]
     torch_sh = list(torch.concat([torch.zeros(i) for i in shapes]).shape)
-    my_sh = Concat0D_3().shape_fn(shapes_var)[0].shape
+    concat = Concat3()
+    concat.extra_attrs['axis'] = 0
+    my_sh = concat.shape_fn(shapes_var)[0].shape
     assert torch_sh == my_sh, (torch_sh, my_sh)
-    assert all(Concat0D_3().requires(shapes_var))
+    assert all(concat.requires(shapes_var))
 
     shapes = (1, 1, 2), (2, 3, 1), (1, 1, 1)
     shapes_var = [ShapeVar(s, DType.float32) for s in shapes]
-    assert not all(Concat0D_3().requires(shapes_var))
+    concat = Concat3()
+    concat.extra_attrs['axis'] = 0
+    assert not all(concat.requires(shapes_var))
 
 
 def test_concat_v2():
-
     gen = PureSymbolGen(verbose=True)
     gen.insert_input_node([1, 10, 20, 30])
     gen.insert_input_node([1, 10, 20, 30])
     # gen.insert_input_node([1, 10, 20, 30])
     # gen.insert_input_node([1, 10, 20, 30])
-    assert gen.try_insert_node(Concat0D_2(), [0, 1])
-    assert gen.try_insert_node(Concat0D_2(), [0, 2])
+    concat = Concat2()
+    concat.extra_attrs['axis'] = 0
+    assert gen.try_insert_node(concat, [0, 1])
+    concat = Concat2()
+    concat.extra_attrs['axis'] = 0
+    assert gen.try_insert_node(concat, [0, 2])
     assert gen.try_insert_node(Add(), [0, 3])
+    solution = gen.get_symbol_solutions()
+    gen.viz('output.onnx.png')
+    net = SymbolNet(gen.abstract_graph, solution, verbose=False)
+    net.eval()
+    # net.set_input_spec(input_shape)
+    torch2onnx(model=net, filename='output.onnx', verbose=True)
+
+
+def test_concat_v3():
+    gen = PureSymbolGen(verbose=True)
+    gen.insert_input_node([1, 10, 20, 30])
+    gen.insert_input_node([1, 10, 20, 30])
+    # gen.insert_input_node([1, 10, 20, 30])
+    # gen.insert_input_node([1, 10, 20, 30])
+    concat = Concat2()
+    assert gen.try_insert_node(concat, [0, 1])
     solution = gen.get_symbol_solutions()
     gen.viz('output.onnx.png')
     net = SymbolNet(gen.abstract_graph, solution, verbose=False)
@@ -94,5 +117,6 @@ def test_concat_with_graph_gen():
 
 test_concat()
 test_concat_v2()
+test_concat_v3()
 test_concat_with_graph_gen()
 print('All tests passed.')
