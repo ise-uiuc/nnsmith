@@ -1474,6 +1474,29 @@ Concat4 = partialclass(Concat, 4)
 Concat5 = partialclass(Concat, 5)
 
 
+class Cast(UnaryOpBase):
+    in_dtypes = [(i,) for i in DTYPE_ALL]
+
+    def __init__(self):
+        super().__init__()
+        self.inp_dims = [-1]
+        self.out_dims = [-1]
+        self.extra_attrs = {'to': random.choice(DTYPE_ALL)}
+
+    def __str__(self) -> str:
+        return 'Cast ' + str(self.extra_attrs)
+
+    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+        return []
+
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        assert len(input_shapes) == 1
+        return [ShapeVar(input_shapes[0].shape, self.extra_attrs['to'])]
+
+    def torch(self):
+        return lambda x: x.to(dtype=self.extra_attrs['to'].value)
+
+
 def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
     ret = []
 
