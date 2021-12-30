@@ -171,7 +171,7 @@ def gen_model_and_range(
 gen_model_and_range_safe = safe_wrapper(gen_model_and_range)
 
 
-def _main(root: str, num_models, max_nodes, input_gen: InputGenBase, seed=None):
+def _main(root: str, num_models, max_nodes, input_gen: InputGenBase, seed=None, timeout=2000):
     if seed is not None:
         random.seed(seed)
     st_time = time.time()
@@ -216,7 +216,7 @@ def _main(root: str, num_models, max_nodes, input_gen: InputGenBase, seed=None):
 
                 # succ = True
                 _, rngs, stats = gen_model_and_range(
-                    str(model_path), seed=seed, max_node_size=max_nodes)
+                    str(model_path), seed=seed, max_node_size=max_nodes, max_gen_millisec=timeout)
                 succ = True
             except Exception as e:
                 e1 = e
@@ -265,6 +265,7 @@ if __name__ == '__main__':
     parser.add_argument('--input_gen_method', type=str, default='v3')
     parser.add_argument('--max_nodes', type=int)
     parser.add_argument('--seed', type=int)
+    parser.add_argument('--timeout', type=int, default=2000)
     args = parser.parse_args()
     gen_inputs_func = {
         'v1': InputGenV1(),
@@ -273,5 +274,5 @@ if __name__ == '__main__':
     }[args.input_gen_method]
     if not args.input_only:
         _main(args.root, args.num_models,
-              args.max_nodes, gen_inputs_func, seed=args.seed)
+              args.max_nodes, gen_inputs_func, seed=args.seed, timeout=args.timeout)
     # gen_inputs_for_all(args.root, args.num_inputs, args.model, gen_inputs_func)
