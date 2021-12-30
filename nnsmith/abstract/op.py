@@ -521,21 +521,25 @@ Pow.in_dtypes = [(i, i) for i in DTYPE_FLOATS]
 class StopFoldConst(torch.nn.Module):
     def __init__(self, data):
         super().__init__()
+        self.dtype = data.dtype
         self.param = torch.nn.parameter.Parameter(data, requires_grad=False)
 
     @torch.no_grad()
     def forward(self):
-        return self.param
+        return self.param.to(self.dtype)
 
 
 class Constant(AbsOpBase):
     in_dtypes = [()]
 
+    def __str__(self) -> str:
+        return super().__str__() + ' ' + str(self.extra_attrs)
+
     def __init__(self, dim: int):
         super().__init__()
         self.inp_dims = []
         self.out_dims = [dim]
-        self.shape_var: ShapeVar = None  # overload this
+        self.extra_attrs = {'dtype': random.choice(DTYPE_ALL)}
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         SanityCheck.eq(len(input_shapes), 0)
@@ -546,7 +550,7 @@ class Constant(AbsOpBase):
         return []
 
     def torch(self) -> Callable[..., torch.Tensor]:
-        data = torch.randn(self.shape_var.shape)
+        data = torch.randn(self.shape_var.shape).to(self.shape_var.dtype.value)
         return StopFoldConst(data)
 
 
@@ -554,46 +558,59 @@ class Constant0D(Constant):
     def __init__(self):
         super().__init__(0)
         # TODO more dtypes
-        self.shape_var = ShapeVar([], dtype=DType.float32)
+
+    @property
+    def shape_var(self):
+        return ShapeVar([], dtype=self.extra_attrs['dtype'])
 
 
 class Constant1D(Constant):
     def __init__(self, dim0: Union[int, z3.ExprRef]):
         super().__init__(1)
-        # TODO more dtypes
-        self.shape_var = ShapeVar([dim0], dtype=DType.float32)
         self.dim0 = dim0
+
+    @property
+    def shape_var(self):
+        return ShapeVar([self.dim0], dtype=self.extra_attrs['dtype'])
 
 
 class Constant2D(Constant):
     def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef]):
         super().__init__(2)
-        # TODO more dtypes
-        self.shape_var = ShapeVar([dim0, dim1], dtype=DType.float32)
         self.dim0 = dim0
         self.dim1 = dim1
+
+    @property
+    def shape_var(self):
+        return ShapeVar(
+            [self.dim0, self.dim1], dtype=self.extra_attrs['dtype'])
 
 
 class Constant3D(Constant):
     def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef]):
         super().__init__(3)
-        # TODO more dtypes
-        self.shape_var = ShapeVar([dim0, dim1, dim2], dtype=DType.float32)
         self.dim0 = dim0
         self.dim1 = dim1
         self.dim2 = dim2
+
+    @property
+    def shape_var(self):
+        return ShapeVar(
+            [self.dim0, self.dim1, self.dim2], dtype=self.extra_attrs['dtype'])
 
 
 class Constant4D(Constant):
     def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef], dim3: Union[int, z3.ExprRef]):
         super().__init__(4)
-        # TODO more dtypes
-        self.shape_var = ShapeVar(
-            [dim0, dim1, dim2, dim3], dtype=DType.float32)
         self.dim0 = dim0
         self.dim1 = dim1
         self.dim2 = dim2
         self.dim3 = dim3
+
+    @property
+    def shape_var(self):
+        return ShapeVar(
+            [self.dim0, self.dim1, self.dim2, self.dim3], dtype=self.extra_attrs['dtype'])
 
 
 class Input(ElementWiseUnaryOp):
@@ -861,7 +878,8 @@ class ExpandLast4(Expand):
 
 
 class NCHWConv2d(UnaryOpBase):
-    in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    # FIXME: torch exporter does not support float64, may miss bugs
+    in_dtypes = [(DType.float32,)]
 
     def __init__(self,
                  in_channels: Union[int, z3.ExprRef],
@@ -922,6 +940,8 @@ class NCHWConv2d(UnaryOpBase):
                     nnsmith_add(input_shapes[0].shape[3], 2 * self.padding)))
         cons.append(nnsmith_ge(self.stride, 1))
         cons.append(nnsmith_ge(self.padding, 0))
+        # not too extream to avoid torch exporter issue
+        cons.append(nnsmith_le(self.padding, 255))
         for c in cons:
             if isinstance(c, z3.ExprRef):
                 ret.append(c)
@@ -1162,7 +1182,8 @@ class Squeeze5D(SqueezeBase):
 
 
 class ReduceSum(ReduceBase, ABC):
-    in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+    # pytorch exporter doesn't support int32
+    in_dtypes = [(i,) for i in DTYPE_NON_BOOLS if i != DType.int32]
 
     def torch(self):
         return lambda x: x.sum(self.extra_attrs['reduce_dim'])
