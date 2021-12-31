@@ -107,6 +107,7 @@ def test_slice():
         sl = Slice(start, end, step)
         sl.extra_attrs['axis'] = axis
         sl.extra_attrs['ndims'] = len(inp)
+        sl.extra_attrs['region'] = random.choice(['left', 'mid', 'right'])
         out_sv = sl.shape_fn([inp_sv])[0]
         cons = z3.And(*sl.requires([inp_sv]))
         cons = z3.And(cons, *out_sv.gt_zero())

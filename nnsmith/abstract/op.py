@@ -1627,6 +1627,8 @@ class Slice(AbsOpBase):
         if 'axis' not in self.extra_attrs:
             self.extra_attrs['ndims'] = ndims
             self.extra_attrs['axis'] = random.randint(0, ndims - 1)
+            self.extra_attrs['region'] = random.choice(
+                ['left', 'mid', 'right'])
             if random.uniform(0, 1) < 0.1:
                 # torch exporter does not support start=INT_MIN
                 # if random.uniform(0, 1) < 0.5:
@@ -1639,17 +1641,22 @@ class Slice(AbsOpBase):
 
     def get_pos_eqv(self, inp):
         axis = self._get_attrs(inp.ndims)
+        reg = self.extra_attrs['region']
         dim = inp.shape[axis]
         if not isinstance(self.start, int):
-            start_pos_eqv = z3.If(nnsmith_lt(self.start, 0),
-                                  nnsmith_add(self.start, dim), self.start)
+            # start_pos_eqv = z3.If(nnsmith_lt(self.start, 0),
+            #                       nnsmith_add(self.start, dim), self.start)
+            start_pos_eqv = nnsmith_add(
+                self.start, dim) if reg != 'right' else self.start
         elif self.start not in [self.INT_MAX, self.INT_MIN]:
             start_pos_eqv = self.start + dim if self.start < 0 else self.start
         else:
             start_pos_eqv = 0 if self.start == self.INT_MIN else dim - 1
         if not isinstance(self.end, int):
-            end_pos_eqv = z3.If(nnsmith_lt(self.end, 0),
-                                nnsmith_add(self.end, dim), self.end)
+            # end_pos_eqv = z3.If(nnsmith_lt(self.end, 0),
+            #                     nnsmith_add(self.end, dim), self.end)
+            end_pos_eqv = nnsmith_add(
+                self.end, dim) if reg == 'left' else self.end
         elif self.end not in [self.INT_MAX, self.INT_MIN]:
             end_pos_eqv = self.end + dim if self.end < 0 else self.end
         else:
@@ -1659,11 +1666,14 @@ class Slice(AbsOpBase):
     def _requires(self, input_shapes: List[ShapeVar]):
         inp = input_shapes[0]
         axis = self._get_attrs(inp.ndims)
+        reg = self.extra_attrs['region']
         cons = []
         dim = inp.shape[axis]
         # TODO: fix negative numbers when we switch to bit_vec
-        l, r = -dim, nnsmith_sub(dim, 1)  # domain for start
-        ll, rr = -dim, dim                # domain for end
+        # domain for start
+        l, r = (0, nnsmith_sub(dim, 1)) if reg == 'right' else (-dim, -1)
+        ll, rr = (-dim, -1) if reg == 'left' else (0,
+                                                   dim)                # domain for end
         if not isinstance(self.start, int):
             cons.append(z3.And(  # start \in [l, r]
                 nnsmith_ge(self.start, l),
