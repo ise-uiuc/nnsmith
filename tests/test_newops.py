@@ -107,10 +107,11 @@ def test_slice():
         sl = Slice(start, end, step)
         sl.extra_attrs['axis'] = axis
         sl.extra_attrs['ndims'] = len(inp)
+        out_sv = sl.shape_fn([inp_sv])[0]
         cons = z3.And(*sl.requires([inp_sv]))
+        cons = z3.And(cons, *out_sv.gt_zero())
         if z3.is_false(z3.simplify(cons)):
             raise ConstraintError(f'Constraint {cons} is false')
-        out_sv = sl.shape_fn([inp_sv])[0]
         return [z3.simplify(i).as_long() if isinstance(i, z3.ExprRef) else i for i in out_sv.shape]
 
     def test(inp, start, end, axis, step, dtype):
