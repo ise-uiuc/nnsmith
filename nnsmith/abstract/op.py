@@ -306,6 +306,37 @@ def broadcast_cons_binary(*shapes: List[Union[z3.ExprRef, int]]) -> List[z3.Expr
     return cons
 
 
+def broadcast_to_cons(*shapes: List[Union[z3.ExprRef, int]]) -> List[z3.ExprRef]:
+    """Unidirectional broadcast. Last input is the target shape.
+
+    Examples of valid unidirectional broadcast:
+    [1, 2, 3] -> [0, 1, 2, 3]
+    [1] -> [3]
+
+    Examples of invalid unidirectional broadcast:
+    [0, 1, 2, 3] -> [1, 2, 3]
+    [3] -> [1]
+
+    Logic: for each dim: src_dim == tgt_dim or src_dim == 1
+    """
+    srcs, tgt = shapes[:-1], shapes[-1]
+    cons = []
+    max_dim = len(tgt)
+    for src in srcs:
+        ConstraintCheck.true(len(src) <= max_dim)
+        src = _prepend_to(src, max_dim)
+        for i in range(max_dim):
+            if isinstance(tgt[i], z3.ExprRef) or isinstance(src[i], z3.ExprRef):
+                cons.append(z3.simplify(
+                    z3.Or(src[i] == 1, nnsmith_eq(src[i], tgt[i]))))
+            else:
+                valid = src[i] == 1 or nnsmith_eq(src[i], tgt[i])
+                # TODO(JK): enable this after fixing issue #2
+                # assert valid, "Invalid broadcast shapes lhs={}, rhs={}".format(lhs, rhs)
+                cons.append(z3.BoolVal(valid))
+    return cons
+
+
 class AbsOpBase(ABC):
     # whether this op is broadcastable or not
     bcastable = False
@@ -648,6 +679,16 @@ class ReLU(ElementWiseUnaryOp):
 
     def torch(self):
         return torch.nn.ReLU()
+
+
+class GELU(ElementWiseUnaryOp):
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
+
+    def __init__(self):
+        super().__init__()
+
+    def torch(self):
+        return torch.nn.GELU()
 
 
 class LeakyReLU(ElementWiseUnaryOp):
@@ -1495,6 +1536,46 @@ class Cast(UnaryOpBase):
 
     def torch(self):
         return lambda x: x.to(dtype=self.extra_attrs['to'].value)
+
+
+class Gemm(TernaryOpBase):
+    # https://pytorch.org/docs/stable/generated/torch.addmm.html?highlight=addmm#torch.addmm
+    in_dtypes = [(i, i, i) for i in DTYPE_NON_BOOLS]
+
+    def __init__(self):
+        super().__init__()
+        self.inp_dims = [-1, 2, 2]
+        self.out_dims = [2]
+
+    def _set_or_get_extra_attrs(self, dtype=None):
+        if 'alpha' not in self.extra_attrs:
+            assert dtype is not None, 'dtype must be specified at the first time of this call'
+            alpha = random.uniform(-2, 2)
+            beta = random.uniform(-2, 2)
+            if dtype in DTYPE_INTS:
+                beta, alpha = int(beta), int(alpha)
+            self.extra_attrs['alpha'] = alpha
+            self.extra_attrs['beta'] = beta
+        return self.extra_attrs
+
+    def _requires(self, input_shapes: List[ShapeVar]):
+        ConstraintCheck.true(input_shapes[0].ndims <= 2)
+        out_shape = self.shape_fn(input_shapes)[0]
+        cons = broadcast_to_cons(input_shapes[0].shape, out_shape.shape)
+
+        # matmul constraint
+        mat1, mat2 = input_shapes[1], input_shapes[2]
+        cons.append(mat1.shape[1] == mat2.shape[0])
+        self._set_or_get_extra_attrs(input_shapes[0].dtype.value)
+        return cons
+
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        mat1, mat2 = input_shapes[1], input_shapes[2]
+        return [ShapeVar([mat1.shape[0], mat2.shape[1]], input_shapes[0].dtype)]
+
+    def torch(self):
+        extra_attrs = self._set_or_get_extra_attrs()
+        return lambda *args: torch.addmm(*args, beta=extra_attrs['beta'], alpha=extra_attrs['alpha'])
 
 
 def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:

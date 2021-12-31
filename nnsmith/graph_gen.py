@@ -121,14 +121,17 @@ class SymbolNet(nn.Module):
         for ii in self.input_info:
             self.tensors[ii.oid] = xs[ii.op.idx]
         for inst, inps, outs, op, node_id in self.instructions:
-            if self.verbose:
-                print(
-                    f'executing instruction op={op}, node_id={node_id}, inps={inps}, outs={outs}')
             input_tensors = [self.tensors[idx] for idx in inps]
             if isinstance(op, Div):
                 if (input_tensors[1] == 0).any():
                     input_tensors[1] = torch.clip(
                         input_tensors[1], torch.ones(size=[1], dtype=input_tensors[1].dtype))
+            if self.verbose:
+                print(
+                    f'executing instruction op={op}, node_id={node_id}, inps={inps}, outs={outs}')
+                print('input_tensors=')
+                for i in input_tensors:
+                    print(f'  (shape={i.shape} dtype={i.dtype})')
             outputs = inst(*input_tensors)
             if not isinstance(outputs, list):
                 outputs = [outputs]
@@ -289,6 +292,38 @@ class SimpleGenerator:
 
         if self.is_viz_sbs:
             self.viz()
+
+    def try_insert_node_type_at(self, node_t, ishape_indices: List[int]) -> bool:
+        if self.verbose:
+            print(f'Inserting node #{len(self.abstract_graph.nodes)}: '
+                  f'trying to insert node type {node_t.__name__}')
+        if issubclass(node_t, Input):
+            try:
+                self.insert_input_node(self.min_dims)
+            # TODO: check the exception type (ideally only z3 check_failure), don't drop internal errors
+            except:
+                return False
+            return True
+        op_param_n = signature(node_t).parameters
+        op_id = len(self.abstract_graph.nodes)
+        op_params = [self.new_sym('op%s_%s' % (op_id, k))
+                     for k in range(len(op_param_n))]
+
+        op: AbsOpBase = node_t(*op_params)
+
+        try:
+            if self.try_insert_node(op, ishape_indices):
+                return True
+        except RequiredDimNotFound:
+            if self.verbose:
+                traceback.print_exc()
+            return False
+        except ConstraintError:
+            if self.verbose:
+                traceback.print_exc()
+            return False
+
+        return False
 
     def try_insert_node_type(self, node_t, max_shape_var_pick_time=3) -> bool:
         if self.verbose:
