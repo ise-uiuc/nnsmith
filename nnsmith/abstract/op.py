@@ -306,6 +306,37 @@ def broadcast_cons_binary(*shapes: List[Union[z3.ExprRef, int]]) -> List[z3.Expr
     return cons
 
 
+def broadcast_to_cons(*shapes: List[Union[z3.ExprRef, int]]) -> List[z3.ExprRef]:
+    """Unidirectional broadcast. Last input is the target shape.
+
+    Examples of valid unidirectional broadcast:
+    [1, 2, 3] -> [0, 1, 2, 3]
+    [1] -> [3]
+
+    Examples of invalid unidirectional broadcast:
+    [0, 1, 2, 3] -> [1, 2, 3]
+    [3] -> [1]
+
+    Logic: for each dim: src_dim == tgt_dim or src_dim == 1
+    """
+    srcs, tgt = shapes[:-1], shapes[-1]
+    cons = []
+    max_dim = len(tgt)
+    for src in srcs:
+        ConstraintCheck.true(len(src) <= max_dim)
+        src = _prepend_to(src, max_dim)
+        for i in range(max_dim):
+            if isinstance(tgt[i], z3.ExprRef) or isinstance(src[i], z3.ExprRef):
+                cons.append(z3.simplify(
+                    z3.Or(src[i] == 1, nnsmith_eq(src[i], tgt[i]))))
+            else:
+                valid = src[i] == 1 or nnsmith_eq(src[i], tgt[i])
+                # TODO(JK): enable this after fixing issue #2
+                # assert valid, "Invalid broadcast shapes lhs={}, rhs={}".format(lhs, rhs)
+                cons.append(z3.BoolVal(valid))
+    return cons
+
+
 class AbsOpBase(ABC):
     # whether this op is broadcastable or not
     bcastable = False
@@ -521,21 +552,25 @@ Pow.in_dtypes = [(i, i) for i in DTYPE_FLOATS]
 class StopFoldConst(torch.nn.Module):
     def __init__(self, data):
         super().__init__()
+        self.dtype = data.dtype
         self.param = torch.nn.parameter.Parameter(data, requires_grad=False)
 
     @torch.no_grad()
     def forward(self):
-        return self.param
+        return self.param.to(self.dtype)
 
 
 class Constant(AbsOpBase):
     in_dtypes = [()]
 
+    def __str__(self) -> str:
+        return super().__str__() + ' ' + str(self.extra_attrs)
+
     def __init__(self, dim: int):
         super().__init__()
         self.inp_dims = []
         self.out_dims = [dim]
-        self.shape_var: ShapeVar = None  # overload this
+        self.extra_attrs = {'dtype': random.choice(DTYPE_ALL)}
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         SanityCheck.eq(len(input_shapes), 0)
@@ -546,7 +581,7 @@ class Constant(AbsOpBase):
         return []
 
     def torch(self) -> Callable[..., torch.Tensor]:
-        data = torch.randn(self.shape_var.shape)
+        data = torch.randn(self.shape_var.shape).to(self.shape_var.dtype.value)
         return StopFoldConst(data)
 
 
@@ -554,46 +589,59 @@ class Constant0D(Constant):
     def __init__(self):
         super().__init__(0)
         # TODO more dtypes
-        self.shape_var = ShapeVar([], dtype=DType.float32)
+
+    @property
+    def shape_var(self):
+        return ShapeVar([], dtype=self.extra_attrs['dtype'])
 
 
 class Constant1D(Constant):
     def __init__(self, dim0: Union[int, z3.ExprRef]):
         super().__init__(1)
-        # TODO more dtypes
-        self.shape_var = ShapeVar([dim0], dtype=DType.float32)
         self.dim0 = dim0
+
+    @property
+    def shape_var(self):
+        return ShapeVar([self.dim0], dtype=self.extra_attrs['dtype'])
 
 
 class Constant2D(Constant):
     def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef]):
         super().__init__(2)
-        # TODO more dtypes
-        self.shape_var = ShapeVar([dim0, dim1], dtype=DType.float32)
         self.dim0 = dim0
         self.dim1 = dim1
+
+    @property
+    def shape_var(self):
+        return ShapeVar(
+            [self.dim0, self.dim1], dtype=self.extra_attrs['dtype'])
 
 
 class Constant3D(Constant):
     def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef]):
         super().__init__(3)
-        # TODO more dtypes
-        self.shape_var = ShapeVar([dim0, dim1, dim2], dtype=DType.float32)
         self.dim0 = dim0
         self.dim1 = dim1
         self.dim2 = dim2
+
+    @property
+    def shape_var(self):
+        return ShapeVar(
+            [self.dim0, self.dim1, self.dim2], dtype=self.extra_attrs['dtype'])
 
 
 class Constant4D(Constant):
     def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef], dim3: Union[int, z3.ExprRef]):
         super().__init__(4)
-        # TODO more dtypes
-        self.shape_var = ShapeVar(
-            [dim0, dim1, dim2, dim3], dtype=DType.float32)
         self.dim0 = dim0
         self.dim1 = dim1
         self.dim2 = dim2
         self.dim3 = dim3
+
+    @property
+    def shape_var(self):
+        return ShapeVar(
+            [self.dim0, self.dim1, self.dim2, self.dim3], dtype=self.extra_attrs['dtype'])
 
 
 class Input(ElementWiseUnaryOp):
@@ -631,6 +679,16 @@ class ReLU(ElementWiseUnaryOp):
 
     def torch(self):
         return torch.nn.ReLU()
+
+
+class GELU(ElementWiseUnaryOp):
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
+
+    def __init__(self):
+        super().__init__()
+
+    def torch(self):
+        return torch.nn.GELU()
 
 
 class LeakyReLU(ElementWiseUnaryOp):
@@ -861,7 +919,8 @@ class ExpandLast4(Expand):
 
 
 class NCHWConv2d(UnaryOpBase):
-    in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    # FIXME: torch exporter does not support float64, may miss bugs
+    in_dtypes = [(DType.float32,)]
 
     def __init__(self,
                  in_channels: Union[int, z3.ExprRef],
@@ -922,6 +981,8 @@ class NCHWConv2d(UnaryOpBase):
                     nnsmith_add(input_shapes[0].shape[3], 2 * self.padding)))
         cons.append(nnsmith_ge(self.stride, 1))
         cons.append(nnsmith_ge(self.padding, 0))
+        # not too extream to avoid torch exporter issue
+        cons.append(nnsmith_le(self.padding, 255))
         for c in cons:
             if isinstance(c, z3.ExprRef):
                 ret.append(c)
@@ -1162,7 +1223,8 @@ class Squeeze5D(SqueezeBase):
 
 
 class ReduceSum(ReduceBase, ABC):
-    in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+    # pytorch exporter doesn't support int32
+    in_dtypes = [(i,) for i in DTYPE_NON_BOOLS if i != DType.int32]
 
     def torch(self):
         return lambda x: x.sum(self.extra_attrs['reduce_dim'])
@@ -1451,6 +1513,69 @@ Concat2 = partialclass(Concat, 2)
 Concat3 = partialclass(Concat, 3)
 Concat4 = partialclass(Concat, 4)
 Concat5 = partialclass(Concat, 5)
+
+
+class Cast(UnaryOpBase):
+    in_dtypes = [(i,) for i in DTYPE_ALL]
+
+    def __init__(self):
+        super().__init__()
+        self.inp_dims = [-1]
+        self.out_dims = [-1]
+        self.extra_attrs = {'to': random.choice(DTYPE_ALL)}
+
+    def __str__(self) -> str:
+        return 'Cast ' + str(self.extra_attrs)
+
+    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+        return []
+
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        assert len(input_shapes) == 1
+        return [ShapeVar(input_shapes[0].shape, self.extra_attrs['to'])]
+
+    def torch(self):
+        return lambda x: x.to(dtype=self.extra_attrs['to'].value)
+
+
+class Gemm(TernaryOpBase):
+    # https://pytorch.org/docs/stable/generated/torch.addmm.html?highlight=addmm#torch.addmm
+    in_dtypes = [(i, i, i) for i in DTYPE_NON_BOOLS]
+
+    def __init__(self):
+        super().__init__()
+        self.inp_dims = [-1, 2, 2]
+        self.out_dims = [2]
+
+    def _set_or_get_extra_attrs(self, dtype=None):
+        if 'alpha' not in self.extra_attrs:
+            assert dtype is not None, 'dtype must be specified at the first time of this call'
+            alpha = random.uniform(-2, 2)
+            beta = random.uniform(-2, 2)
+            if dtype in DTYPE_INTS:
+                beta, alpha = int(beta), int(alpha)
+            self.extra_attrs['alpha'] = alpha
+            self.extra_attrs['beta'] = beta
+        return self.extra_attrs
+
+    def _requires(self, input_shapes: List[ShapeVar]):
+        ConstraintCheck.true(input_shapes[0].ndims <= 2)
+        out_shape = self.shape_fn(input_shapes)[0]
+        cons = broadcast_to_cons(input_shapes[0].shape, out_shape.shape)
+
+        # matmul constraint
+        mat1, mat2 = input_shapes[1], input_shapes[2]
+        cons.append(mat1.shape[1] == mat2.shape[0])
+        self._set_or_get_extra_attrs(input_shapes[0].dtype.value)
+        return cons
+
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        mat1, mat2 = input_shapes[1], input_shapes[2]
+        return [ShapeVar([mat1.shape[0], mat2.shape[1]], input_shapes[0].dtype)]
+
+    def torch(self):
+        extra_attrs = self._set_or_get_extra_attrs()
+        return lambda *args: torch.addmm(*args, beta=extra_attrs['beta'], alpha=extra_attrs['alpha'])
 
 
 def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
