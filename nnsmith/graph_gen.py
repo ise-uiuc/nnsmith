@@ -364,6 +364,8 @@ class SimpleGenerator:
 
         try:
             for _ in range(max_shape_var_pick_time):
+                # reinstantiate to make sure extra_attrs are up-to-date
+                op: AbsOpBase = node_t(*op_params)
                 ishape_indices = self.pick_shape_var_idx(
                     node_t, dim_spec_list, random.choice(op.in_dtypes))
                 if self.try_insert_node(op, ishape_indices):
