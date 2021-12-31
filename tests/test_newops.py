@@ -78,6 +78,104 @@ def test_gemm():
                             f' when testing {inp} {mat1} {mat2} {beta} {alpha} {dtype}'
 
 
+def test_slice():
+    def test_slice_helper_torch(inp, start, end, axis, step, dtype):
+        dtype = dtype.value
+        inp_t = torch.empty(inp, dtype=dtype)
+        if axis == 0:
+            res = inp_t[start:end:step, ...]
+        elif axis == 1:
+            res = inp_t[:, start:end:step, ...]
+        elif axis == 2:
+            res = inp_t[:, :, start:end:step, ...]
+        elif axis == 3:
+            res = inp_t[:, :, :, start:end:step, ...]
+        elif axis == 4:
+            res = inp_t[:, :, :, :, start:end:step, ...]
+        elif axis == 5:
+            res = inp_t[:, :, :, :, :, start:end:step, ...]
+        elif axis == 6:
+            res = inp_t[:, :, :, :, :, :, start:end:step, ...]
+        else:
+            assert False
+        if any(i == 0 for i in list(res.shape)):
+            raise ValueError('Empty dimension')
+        return list(res.shape)
+
+    def test_slice_helper_ours(inp, start, end, axis, step, dtype):
+        inp_sv = ShapeVar(inp, dtype)
+        sl = Slice(start, end, step)
+        sl.extra_attrs['axis'] = axis
+        sl.extra_attrs['ndims'] = len(inp)
+        cons = z3.And(*sl.requires([inp_sv]))
+        if z3.is_false(z3.simplify(cons)):
+            raise ConstraintError(f'Constraint {cons} is false')
+        out_sv = sl.shape_fn([inp_sv])[0]
+        return [z3.simplify(i).as_long() if isinstance(i, z3.ExprRef) else i for i in out_sv.shape]
+
+    def test(inp, start, end, axis, step, dtype):
+        err_torch, err_ours = False, False
+        e0, e1 = None, None
+        try:
+            out_shape = test_slice_helper_torch(
+                inp, start, end, axis, step, dtype)
+        except Exception as e:
+            # import traceback
+            # traceback.print_exc()
+            e0 = e
+            err_torch = True
+        try:
+            out_shape_ours = test_slice_helper_ours(
+                inp, start, end, axis, step, dtype)
+        except ConstraintError as e:
+            e1 = e
+            err_ours = True
+        assert err_torch == err_ours, f'{err_torch}(err_torch) != {err_ours}(err_ours)' + \
+            f' when testing in_shape={inp} start={start} end={end} axis={axis} step={step} {dtype};\nTorch exception={e0}\nOur exception={e1}'
+        if err_torch:
+            return
+        assert out_shape == out_shape_ours, f'{out_shape} != {out_shape_ours}' + \
+            f' when testing in_shape={inp} start={start} end={end} axis={axis} step={step} {dtype}'
+
+    for inp in list(product([1, 7], repeat=1)) + list(product([1, 7], repeat=2)) + list(product([1, 7], repeat=3)):
+        for axis in range(len(inp)):
+            for start in list(range(-inp[axis], inp[axis])) + [-2**63]:
+                for end in list(range(-inp[axis], inp[axis] + 1)) + [2**63 - 1]:
+                    # for dtype in DTYPE_ALL:
+                    dtype = DType.float32
+                    step = random.randint(1, inp[axis])
+                    test(inp, start, end, axis, step, dtype)
+
+    i0, i1, i2 = z3.Ints('i0 i1 i2')
+    for inp in [[i0], [i0, i1, i2]]:
+        for trials in range(10):
+            start, end, step = z3.Ints('start end step')
+            dtype = DType.float32
+            min_dims = [random.randint(1, 37) for _ in range(len(inp))]
+            inp_sv = ShapeVar(inp, dtype)
+            sl = Slice(start, end, step)
+            cons = []
+            for i in range(len(inp_sv.shape)):
+                cons.append(nnsmith_ge(inp_sv.shape[i], min_dims[i]))
+            cons.extend(sl.requires([inp_sv]))
+            cons.extend(sl.shape_fn([inp_sv])[0].gt_zero())
+            s = z3.Solver()
+            s.add(*cons)
+            assert s.check() == z3.sat
+            model = s.model()
+            start = sl.start if isinstance(
+                sl.start, int) else model.evaluate(start).as_long()
+            end = sl.end if isinstance(
+                sl.end, int) else model.evaluate(end).as_long()
+            axis = sl.extra_attrs['axis']
+            step = model.evaluate(step).as_long()
+            inp_concrete = [model.evaluate(
+                i).as_long() for i in inp_sv.shape]
+            print(
+                f'testing in_shape={inp_concrete} start={start} end={end} axis={axis} step={step} {dtype}')
+            test(inp_concrete, start, end, axis, step, dtype)
+
+
 def test_gemm2():
     gen = PureSymbolGen()
     gen.insert_input_node([3, 4, 5, 6])
@@ -101,9 +199,9 @@ def test_with_graph_gen():
         def pick_next_op_type(self):
             wts = []
             for op in self.op_candidates:
-                if issubclass(op, (Gemm,)):
+                if issubclass(op, (Gemm, Slice)):
                     wts.append(50)
-                elif issubclass(op, (Cast, GELU)):
+                elif issubclass(op, (Softmax, Cast, GELU)):
                     wts.append(5)
                 else:
                     wts.append(1)
@@ -152,5 +250,6 @@ def test_with_graph_gen():
 test_cast()
 test_gemm()
 test_gemm2()
+test_slice()
 test_with_graph_gen()
 print('All tests passed.')

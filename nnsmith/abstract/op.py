@@ -138,6 +138,8 @@ def nnsmith_div(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3
     left, right = align_bvs(left, right)
     if isinstance(left, z3.BitVecRef) or isinstance(right, z3.BitVecRef):
         return z3.UDiv(left, right)
+    if isinstance(left, int) and isinstance(right, int):
+        return left // right
     return left / right
 
 
@@ -718,6 +720,23 @@ class Sigmoid(ElementWiseUnaryOp):
 
     def torch(self):
         return torch.sigmoid
+
+
+class Softmax(ElementWiseUnaryOp):
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
+
+    def __init__(self):
+        super().__init__()
+
+    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+        ndims = input_shapes[0].ndims
+        ConstraintCheck.true(ndims > 0)
+        self.extra_attrs['dim'] = random.randint(
+            0, ndims - 1)
+        return super()._requires(input_shapes)
+
+    def torch(self):
+        return torch.nn.Softmax(dim=self.extra_attrs['dim'])
 
 
 class Sin(ElementWiseUnaryOp):
@@ -1576,6 +1595,103 @@ class Gemm(TernaryOpBase):
     def torch(self):
         extra_attrs = self._set_or_get_extra_attrs()
         return lambda *args: torch.addmm(*args, beta=extra_attrs['beta'], alpha=extra_attrs['alpha'])
+
+
+class Slice(AbsOpBase):
+    # pytorch slice always exported as a stack of single-dim slices, so only model sinlge-dim slice here
+    # pytorch slice only supports forward slicing, so only model forward slicing here
+    in_dtypes = [(i,) for i in DTYPE_ALL]
+    INT_MAX = 2**63 - 1
+    INT_MIN = -2**63
+
+    def __init__(self, start, end, step):
+        super().__init__()
+        self.inp_dims = [-1]
+        self.out_dims = [-1]
+        self.start = start
+        self.end = end
+        self.step = step
+
+    def __str__(self) -> str:
+        tail = {'axis': self.extra_attrs['axis']}
+        if isinstance(self.start, int):
+            tail['start'] = self.start
+        if isinstance(self.end, int):
+            tail['end'] = self.end
+        if isinstance(self.step, int):
+            tail['step'] = self.step
+        return super().__str__() + ' ' + str(tail)
+
+    def _get_attrs(self, ndims):
+        ConstraintCheck.true(ndims > 0)
+        if 'axis' not in self.extra_attrs:
+            self.extra_attrs['ndims'] = ndims
+            self.extra_attrs['axis'] = random.randint(0, ndims - 1)
+            if random.uniform(0, 1) < 0.1:
+                # torch exporter does not support start=INT_MIN
+                # if random.uniform(0, 1) < 0.5:
+                #     # because pytorch only supports forward slicing,
+                #     # start cannot be INT_MAX, otherwise it slices empty tensor
+                #     self.start = self.INT_MIN
+                # else:
+                self.end = self.INT_MAX
+        return self.extra_attrs['axis']
+
+    def get_pos_eqv(self, inp):
+        axis = self._get_attrs(inp.ndims)
+        dim = inp.shape[axis]
+        if not isinstance(self.start, int):
+            start_pos_eqv = z3.If(nnsmith_lt(self.start, 0),
+                                  nnsmith_add(self.start, dim), self.start)
+        elif self.start not in [self.INT_MAX, self.INT_MIN]:
+            start_pos_eqv = self.start + dim if self.start < 0 else self.start
+        else:
+            start_pos_eqv = 0 if self.start == self.INT_MIN else dim - 1
+        if not isinstance(self.end, int):
+            end_pos_eqv = z3.If(nnsmith_lt(self.end, 0),
+                                nnsmith_add(self.end, dim), self.end)
+        elif self.end not in [self.INT_MAX, self.INT_MIN]:
+            end_pos_eqv = self.end + dim if self.end < 0 else self.end
+        else:
+            end_pos_eqv = -1 if self.end == self.INT_MIN else dim
+        return start_pos_eqv, end_pos_eqv
+
+    def _requires(self, input_shapes: List[ShapeVar]):
+        inp = input_shapes[0]
+        axis = self._get_attrs(inp.ndims)
+        cons = []
+        dim = inp.shape[axis]
+        # TODO: fix negative numbers when we switch to bit_vec
+        l, r = -dim, nnsmith_sub(dim, 1)  # domain for start
+        ll, rr = -dim, dim                # domain for end
+        if not isinstance(self.start, int):
+            cons.append(z3.And(  # start \in [l, r]
+                nnsmith_ge(self.start, l),
+                nnsmith_le(self.start, r)))
+        if not isinstance(self.end, int):
+            cons.append(z3.And(  # end \in [ll, rr]
+                nnsmith_ge(self.end, ll),
+                nnsmith_le(self.end, rr)))
+
+        cons.append(nnsmith_ge(self.step, 1))  # forward slicing only
+        cons.append(nnsmith_le(self.step, dim))
+        return cons
+
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        inp = input_shapes[0]
+        axis = self._get_attrs(inp.ndims)
+        start_pos_eqv, end_pos_eqv = self.get_pos_eqv(inp)
+        s = list(inp.shape)
+        s[axis] = nnsmith_div(
+            nnsmith_add(nnsmith_sub(end_pos_eqv, start_pos_eqv),
+                        nnsmith_sub(self.step, 1)),
+            self.step)
+        return [ShapeVar(s, input_shapes[0].dtype)]
+
+    def torch(self):
+        s = tuple(slice(None, None) if i != self.extra_attrs['axis'] else slice(self.start, self.end, self.step)
+                  for i in range(self.extra_attrs['ndims']))
+        return lambda x: x[s]
 
 
 def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
