@@ -1,3 +1,4 @@
+import psutil
 from nnsmith.backends import DiffTestBackend
 import multiprocessing
 import pickle
@@ -43,7 +44,9 @@ class BackendCreator:
     def __call__(self, *args, **kwargs):
         name = self.name
         if name == 'ort':
+            print('importing ort....')
             from nnsmith.backends.ort_graph import ORTExecutor
+            print('imported')
             return ORTExecutor()
         elif name == 'tvm-llvm':
             from nnsmith.backends.tvm_graph import TVMExecutor
@@ -177,7 +180,7 @@ def run_backend(root: str, output_dir: str, backend_creator: BackendCreator, tim
                 break
             time.sleep(0.01)
         # timeout; skip this task and restart the worker
-        if not done:
+        if not done or not p.is_alive():
             re_start_worker()
         return crashed
 
@@ -226,7 +229,8 @@ def run_backend(root: str, output_dir: str, backend_creator: BackendCreator, tim
                 if run_task(task):
                     crashed = True
 
-    run_task(None)
+    assert p.is_alive()
+    q.put(None)
     p.join()
 
 
