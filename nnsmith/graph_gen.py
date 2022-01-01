@@ -459,6 +459,8 @@ class PureSymbolGen(SimpleGenerator):
 
     def try_insert_node(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
         input_shapes = [self.alive_shapes[idx][1] for idx in ishape_indices]
+        node.post_symbolize(
+            input_shapes, f'op{len(self.abstract_graph.nodes)}_', self.new_sym)
         constraints = node.requires(input_shapes)
 
         if self.verbose:

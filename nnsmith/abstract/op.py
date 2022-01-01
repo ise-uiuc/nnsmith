@@ -384,6 +384,14 @@ class AbsOpBase(ABC):
     def requires(self, input_shapes):
         return self._requires(input_shapes)
 
+    def post_symbolize(self, input_shapes: List[ShapeVar], prefix: str = None, new_sym=z3.Int):
+        """Post symbolize this op according to the input shapes."""
+        pass
+
+    def custom_concretize(self, model, symbolic_op):
+        """Custom concretize this op using the given z3 model and symbolic op."""
+        pass
+
     def __repr__(self) -> str:
         return self.__class__.__name__
 
@@ -405,6 +413,7 @@ def concretize(op: AbsOpBase, model: z3.ModelRef) -> AbsOpBase:
     concrete_op.out_dims = op.out_dims
     concrete_op.same_inp_dims = op.same_inp_dims
     concrete_op.extra_attrs = op.extra_attrs
+    concrete_op.custom_concretize(model, op)
 
     return concrete_op
 
@@ -691,6 +700,16 @@ class GELU(ElementWiseUnaryOp):
 
     def torch(self):
         return torch.nn.GELU()
+
+
+class Dropout(ElementWiseUnaryOp):
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
+
+    def __init__(self):
+        super().__init__()
+
+    def torch(self):
+        return torch.nn.Dropout()
 
 
 class LeakyReLU(ElementWiseUnaryOp):
@@ -1000,7 +1019,7 @@ class NCHWConv2d(UnaryOpBase):
                     nnsmith_add(input_shapes[0].shape[3], 2 * self.padding)))
         cons.append(nnsmith_ge(self.stride, 1))
         cons.append(nnsmith_ge(self.padding, 0))
-        # not too extream to avoid torch exporter issue
+        # not too extreme to avoid torch exporter issue
         cons.append(nnsmith_le(self.padding, 255))
         for c in cons:
             if isinstance(c, z3.ExprRef):
@@ -1597,7 +1616,7 @@ class Gemm(TernaryOpBase):
         return lambda *args: torch.addmm(*args, beta=extra_attrs['beta'], alpha=extra_attrs['alpha'])
 
 
-class Slice(AbsOpBase):
+class Slice(UnaryOpBase):
     # pytorch slice always exported as a stack of single-dim slices, so only model sinlge-dim slice here
     # pytorch slice only supports forward slicing, so only model forward slicing here
     in_dtypes = [(i,) for i in DTYPE_ALL]
@@ -1704,6 +1723,95 @@ class Slice(AbsOpBase):
         return lambda x: x[s]
 
 
+class Pad(UnaryOpBase):
+    in_dtypes = [(i,) for i in DTYPE_ALL if i != DType.int64]
+    MODES = ['constant', 'reflect', 'replicate']  # onnx only supports these 3
+    BLACK_LIST = {
+        'constant': [],
+        'reflect': [DType.int64, DType.int32, DType.bool],
+        'replicate': [DType.int64, DType.int32, DType.bool],
+    }
+
+    def __init__(self):
+        super().__init__()
+        self.inp_dims = [-1]
+        self.out_dims = [-1]
+
+    def _init_extra_attrs(self, dtype: DType):
+        self.extra_attrs['mode'] = random.choice(self.MODES)
+        if self.extra_attrs['mode'] == 'constant':
+            if dtype in DTYPE_INTS:
+                value = random.randint(-1, 1)
+            elif dtype == DType.bool:
+                value = random.choice([0, 1])
+            elif dtype in DTYPE_FLOATS:
+                value = random.uniform(-1, 1)
+            else:
+                raise ValueError(f'unsupported dtype {dtype}')
+        else:
+            value = 0.0
+        self.extra_attrs['value'] = value
+
+    def post_symbolize(self, input_shapes: List[ShapeVar], prefix: str = '', new_sym=z3.Int):
+        ndims, dtype = input_shapes[0].ndims, input_shapes[0].dtype
+        ConstraintCheck.true(ndims > 0)
+        self._init_extra_attrs(input_shapes[0].dtype)
+        # special treatment since torch exporter has limited support for non-constant pad
+        ConstraintCheck.true(
+            dtype not in self.BLACK_LIST[self.extra_attrs['mode']])
+        r = ndims
+        if self.extra_attrs['mode'] != 'constant':
+            r = min(r, 3)
+        npads = random.randint(1, r)
+        self.pad = [new_sym(prefix + f'pad_{i}_0') for i in range(npads * 2)]
+        for i in range(npads):
+            # disable padding for each dimension with probability 0.5
+            if random.uniform(0, 1) < 0.5:
+                self.pad[i * 2] = 0
+                self.pad[i * 2 + 1] = 0
+
+    def custom_concretize(self, model, symbolic_op):
+        self.pad = [model.evaluate(p).as_long() if not isinstance(
+            p, int) else p for p in symbolic_op.pad]
+
+    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+        ndims = input_shapes[0].ndims
+        pad = self.pad
+        isv = input_shapes[0].shape
+        assert len(pad) % 2 == 0, pad
+        assert len(pad) // 2 <= len(isv), pad
+        if self.extra_attrs['mode'] != 'constant':
+            ConstraintCheck.true((len(pad) // 2) in [ndims - 1, ndims - 2])
+        cons = []
+        for i in range(len(self.pad) // 2):
+            j = len(isv) - 1 - i
+            # When using negative padding, neither side should erase more than the original size
+            cons.append(nnsmith_ge(nnsmith_add(self.pad[i * 2], isv[j]), 0))
+            cons.append(nnsmith_ge(nnsmith_add(
+                self.pad[i * 2 + 1], isv[j]), 0))
+            # per torch's complaint: Padding size should be less than the corresponding input dimension
+            cons.append(nnsmith_lt(self.pad[i * 2], isv[j]))
+            cons.append(nnsmith_lt(self.pad[i * 2 + 1], isv[j]))
+        return cons
+
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        isv = input_shapes[0].shape
+        assert len(self.pad) % 2 == 0, self.pad
+        assert len(self.pad) // 2 <= len(isv), self.pad
+        s = list(isv)
+        for i in range(len(self.pad) // 2):
+            j = len(isv) - 1 - i
+            s[j] = nnsmith_add(nnsmith_add(
+                s[j], self.pad[i * 2]), self.pad[i * 2 + 1])
+        return [ShapeVar(s, input_shapes[0].dtype)]
+
+    def __str__(self):
+        return super().__str__() + ' ' + str(self.extra_attrs)
+
+    def torch(self):
+        return lambda x: torch.nn.functional.pad(x, self.pad, self.extra_attrs['mode'], self.extra_attrs['value'])
+
+
 def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
     ret = []
 
@@ -1760,8 +1868,8 @@ def auto_infer_in_dtypes(verbose=False):
             print(f'Try auto inferring input dtype spec for `{op_t.__name__}`')
         valid_combs = None
         op = create_op(op_t)
-        in_dtype_combs: List[DTypeComb] = \
-            itertools.product(DTYPE_ALL, repeat=len(op.inp_dims))
+        in_dtype_combs: List[DTypeComb] = itertools.product(
+            DTYPE_ALL, repeat=len(op.inp_dims))
         valid_combs = [
             comb for comb in in_dtype_combs if _check_comb(comb, op)]
         if len(valid_combs) == 0:

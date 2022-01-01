@@ -149,7 +149,7 @@ def test_slice():
                     test(inp, start, end, axis, step, dtype)
 
     i0, i1, i2 = z3.Ints('i0 i1 i2')
-    for inp in [[i0], [i0, i1, i2]]:
+    for inp in [[i0], [i0, i1], [i0, i1, i2]]:
         for trials in range(10):
             start, end, step = z3.Ints('start end step')
             dtype = DType.float32
@@ -196,14 +196,111 @@ def test_gemm2():
     torch2onnx(model=net, filename='output.onnx', verbose=False)
 
 
+def test_pad():
+    def test_torch(inp, dtype, pad, mode, value):
+        dtype = dtype.value
+        inp_t = torch.empty(inp, dtype=dtype)
+        res = torch.nn.functional.pad(inp_t, pad, mode, value)
+        if any(i == 0 for i in list(res.shape)):
+            raise ValueError('Empty dimension')
+        return list(res.shape)
+
+    def test_ours(inp, dtype, pad, mode, value):
+        inp_sv = ShapeVar(inp, dtype)
+        op = Pad()
+        op.pad = pad
+        op.extra_attrs['mode'] = mode
+        op.extra_attrs['value'] = value
+        out_sv = op.shape_fn([inp_sv])[0]
+        cons = z3.And(*op.requires([inp_sv]))
+        cons = z3.And(cons, *out_sv.gt_zero())
+        if z3.is_false(z3.simplify(cons)):
+            raise ConstraintError(f'Constraint {cons} is false')
+        return [z3.simplify(i).as_long() if isinstance(i, z3.ExprRef) else i for i in out_sv.shape]
+
+    def test(inp, dtype, pad, mode, value):
+        err_torch, err_ours = False, False
+        e0, e1 = None, None
+        try:
+            out_shape = test_torch(
+                inp, dtype, pad, mode, value)
+        except Exception as e:
+            # import traceback
+            # traceback.print_exc()
+            e0 = e
+            err_torch = True
+        try:
+            out_shape_ours = test_ours(
+                inp, dtype, pad, mode, value)
+        except ConstraintError as e:
+            # import traceback
+            # traceback.print_exc()
+            e1 = e
+            err_ours = True
+        assert err_torch == err_ours, f'{err_torch}(err_torch) != {err_ours}(err_ours)' + \
+            f' when testing in_shape={inp} dtype={dtype} pad={pad} mode={mode} value={value};\nTorch exception={e0}\nOur exception={e1}'
+        if err_torch:
+            return
+        assert out_shape == out_shape_ours, f'{out_shape} != {out_shape_ours}' + \
+            f' when testing in_shape={inp} dtype={dtype} pad={pad} mode={mode} value={value}'
+
+    for inp in tqdm(list(product([1, 2], repeat=1)) + list(product([1, 2], repeat=2)) + list(product([2], repeat=3))):
+        _inp = sum([[i, i] for i in reversed(inp)], [])
+        for pad in tqdm(product(*[list(range(-i, i)) for i in _inp])):
+            for mode in Pad.MODES:
+                for dtype in DTYPE_ALL:
+                    if mode == 'constant':
+                        value = random.uniform(-1, 1)
+                        if dtype in DTYPE_FLOATS:
+                            value = float(value)
+                        elif dtype in DTYPE_INTS:
+                            value = int(value)
+                        else:
+                            value = random.choice([0, 1])
+                    else:
+                        value = 0.0
+                    test(inp, dtype, pad, mode, value)
+
+    i0, i1, i2 = z3.Ints('i0 i1 i2')
+    for inp in [[i0], [i0, i1], [i0, i1, i2]]:
+        for trials in range(100):
+            dtype = random.choice([i[0] for i in Pad.in_dtypes])
+            min_dims = [random.randint(1, 37) for _ in range(len(inp))]
+            inp_sv = ShapeVar(inp, dtype)
+            try:
+                op = Pad()
+                op.post_symbolize([inp_sv])
+                cons = []
+                for i in range(len(inp_sv.shape)):
+                    cons.append(nnsmith_ge(inp_sv.shape[i], min_dims[i]))
+                cons.extend(op.requires([inp_sv]))
+                cons.extend(op.shape_fn([inp_sv])[0].gt_zero())
+                s = z3.Solver()
+                s.add(*cons)
+            except ConstraintError as e:
+                continue
+            if s.check() == z3.unsat:
+                continue
+            model = s.model()
+            pad = [i if isinstance(
+                i, int) else model.evaluate(i).as_long() for i in op.pad]
+            mode = op.extra_attrs['mode']
+            value = op.extra_attrs['value']
+            inp_concrete = [model.evaluate(
+                i).as_long() for i in inp_sv.shape]
+            print(
+                f'testing in_shape={inp_concrete} dtype={dtype} pad={pad} mode={mode} value={value}')
+            test(inp_concrete, dtype, pad, mode, value)
+
+
 def test_with_graph_gen():
     class NewOpOrientedGen(graph_gen.PureSymbolGen):
         def pick_next_op_type(self):
             wts = []
             for op in self.op_candidates:
-                if issubclass(op, (Gemm, Slice)):
+                if issubclass(op, (Pad, Dropout)):
                     wts.append(50)
-                elif issubclass(op, (Softmax, Cast, GELU)):
+                elif issubclass(op, (Gemm, Slice, Softmax, Cast, GELU)):
                     wts.append(5)
                 else:
                     wts.append(1)
@@ -249,9 +346,13 @@ def test_with_graph_gen():
     os.system(f'rm -rf {d}')
 
 
-test_cast()
-test_gemm()
-test_gemm2()
-test_slice()
+import os
+
+if int(os.environ.get('NNSMITH_SKIP', 0)) != 1:
+    test_cast()
+    test_gemm()
+    test_gemm2()
+    test_slice()
+    test_pad()
 test_with_graph_gen()
 print('All tests passed.')
