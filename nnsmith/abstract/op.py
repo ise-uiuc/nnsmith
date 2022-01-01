@@ -702,16 +702,6 @@ class GELU(ElementWiseUnaryOp):
         return torch.nn.GELU()
 
 
-class Dropout(ElementWiseUnaryOp):
-    in_dtypes = [(i,) for i in DTYPE_FLOATS]
-
-    def __init__(self):
-        super().__init__()
-
-    def torch(self):
-        return torch.nn.Dropout()
-
-
 class LeakyReLU(ElementWiseUnaryOp):
     def __init__(self):
         """See https://pytorch.org/docs/stable/generated/torch.nn.LeakyReLU.html

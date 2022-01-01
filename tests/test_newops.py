@@ -298,7 +298,7 @@ def test_with_graph_gen():
         def pick_next_op_type(self):
             wts = []
             for op in self.op_candidates:
-                if issubclass(op, (Pad, Dropout)):
+                if issubclass(op, (Pad,)):
                     wts.append(50)
                 elif issubclass(op, (Gemm, Slice, Softmax, Cast, GELU)):
                     wts.append(5)
