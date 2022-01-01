@@ -870,7 +870,7 @@ class Clip_1(Clip):
 
 class Round(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
-    valid_opset_version = (10, MAX_OPSET_VERSION)
+    valid_opset_version = (11, MAX_OPSET_VERSION)
 
     def __init__(self):
         super().__init__()
