@@ -29,6 +29,7 @@ from nnsmith.error import SanityCheck, ConstraintCheck
 
 ARITH_MAX_WIDTH: int = 64
 _INFERRED = False
+DEFAULT_OPSET_VERSION = 10
 
 
 def align_bvs(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef], carry=False, mult=False):
@@ -339,6 +340,9 @@ def broadcast_to_cons(*shapes: List[Union[z3.ExprRef, int]]) -> List[z3.ExprRef]
     return cons
 
 
+MAX_OPSET_VERSION = 9999
+
+
 class AbsOpBase(ABC):
     # whether this op is broadcastable or not
     bcastable = False
@@ -347,6 +351,8 @@ class AbsOpBase(ABC):
     # For example, [(DType.float32, DType.float32), (DType.float64, DType.float64), (DType.int32, DType.int32)] means that
     # this op can accept one of float32xfloat32, float64xfloat64, and int32xint32 as input dtypes.
     in_dtypes: List[DTypeComb] = None  # Overwrite me!
+    # default to valid on all opset versions
+    valid_opset_version = (0, MAX_OPSET_VERSION)  # [min, max)
 
     def __init__(self):
         # `[3, 3]` this means this op requires 2 inputs. Where the 1st one has 2 dimensions, and the 2nd one has 3 dimensions.
@@ -538,9 +544,25 @@ Div = type('Div', (BcastBinaryOp1,), {
         lambda x, y: torch.div(x, y, rounding_mode='floor' if DType(x.dtype) in DTYPE_INTS else None)})
 # NOTE(JK): didn't find multi-input version of Max and Min in torch, so assume binary ops
 Max = type('Max', (BcastBinaryOp1,), {'torch': lambda self: torch.max})
+Max_12 = type('Max_12', (Max,), {})
+Max_12.valid_opset_version = (12, MAX_OPSET_VERSION)
+Max_1 = type('Max_1', (Max,), {})
+Max_1.valid_opset_version = (1, 12)  # below 12 only supports floats
+Max_1.in_dtypes = [(i, i) for i in DTYPE_FLOATS]
 Min = type('Min', (BcastBinaryOp1,), {'torch': lambda self: torch.min})
-
+Min_12 = type('Min_12', (Min,), {})
+Min_12.valid_opset_version = (12, MAX_OPSET_VERSION)
+Min_1 = type('Min_1', (Min,), {})
+Min_1.valid_opset_version = (1, 12)  # below 12 only supports floats
+Min_1.in_dtypes = [(i, i) for i in DTYPE_FLOATS]
 Equal = type('Equal', (BcastBinaryOp2,), {'torch': lambda self: torch.eq})
+Equal_11 = type('Equal_11', (Equal,), {})
+Equal_11.valid_opset_version = (11, MAX_OPSET_VERSION)
+Equal_1 = type('Equal_11', (Equal,), {})
+Equal_1.valid_opset_version = (1, 11)  # below 11 only supports ints
+Equal_1.in_dtypes = \
+    [(i, i) for i in [DType.bool, DType.int32, DType.int64]]
+
 Greater = type('Greater', (BcastBinaryOp2,), {'torch': lambda self: torch.gt})
 Less = type('Less', (BcastBinaryOp2,), {'torch': lambda self: torch.lt})
 
@@ -566,7 +588,7 @@ class StopFoldConst(torch.nn.Module):
         self.dtype = data.dtype
         self.param = torch.nn.parameter.Parameter(data, requires_grad=False)
 
-    @torch.no_grad()
+    @ torch.no_grad()
     def forward(self):
         return self.param.to(self.dtype)
 
@@ -669,7 +691,7 @@ class Input(ElementWiseUnaryOp):
         self.dim2 = dim2
         self.dim3 = dim3
 
-    @ property
+    @property
     def shape(self):
         return [self.dim0, self.dim1, self.dim2, self.dim3]
 
@@ -836,8 +858,19 @@ class Clip(ElementWiseUnaryOp):
         return lambda x: torch.clip(x, self.min, self.max)
 
 
+class Clip_12(Clip):
+    in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+    valid_opset_version = (12, MAX_OPSET_VERSION)
+
+
+class Clip_1(Clip):
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    valid_opset_version = (1, 12)
+
+
 class Round(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    valid_opset_version = (10, MAX_OPSET_VERSION)
 
     def __init__(self):
         super().__init__()
@@ -1568,7 +1601,8 @@ class Cast(UnaryOpBase):
 
 class Gemm(TernaryOpBase):
     # https://pytorch.org/docs/stable/generated/torch.addmm.html?highlight=addmm#torch.addmm
-    in_dtypes = [(i, i, i) for i in DTYPE_NON_BOOLS]
+    # None of ORT, TRT or XLA supports ints.
+    in_dtypes = [(i, i, i) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -1814,6 +1848,10 @@ def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
             else:
                 ret.append(c)
     _glob_leaf_op_classes_rec(AbsOpBase)
+
+    opset_version = int(os.environ.get('NNSMITH_OPV', DEFAULT_OPSET_VERSION))
+    ret = list(filter(
+        lambda op_t: op_t.valid_opset_version[0] <= opset_version < op_t.valid_opset_version[1], ret))
     return ret
 
 
@@ -1835,10 +1873,15 @@ def _check_comb(comb: DTypeComb, op: AbsOpBase):
     return True
 
 
-def auto_infer_in_dtypes(verbose=False):
-    global _INFERRED
+def auto_infer_in_dtypes(opset_version=10, verbose=False):
+    global _INFERRED, ALL_OP_TYPES
     _INFERRED = True
     _WHITE_LIST = (Input, Expand, NCHWConv2d, Reshape)
+
+    if verbose:
+        print('Operators filered out:')
+        print(list(filter(
+            lambda op_t: not (op_t.valid_opset_version[0] <= opset_version < op_t.valid_opset_version[1]), ALL_OP_TYPES)))
 
     def create_op(op_t: Type[AbsOpBase]):
         construct_param_dict = signature(op_t.__init__).parameters

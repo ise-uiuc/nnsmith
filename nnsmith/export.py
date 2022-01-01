@@ -3,13 +3,15 @@ import warnings
 import torch
 import torch.onnx
 
-from nnsmith.abstract.op import DType, ShapeVar
-
+from nnsmith.abstract.op import DType, ShapeVar, DEFAULT_OPSET_VERSION
+import os
 
 # Torch is actually not an ideal choice for graph generation,
 # as it is based on dynamic graph construction.
 # TODO: Use CUDA to accelerate the export process.
-def torch2onnx(model, filename, verbose=False):
+
+
+def torch2onnx(model, filename, verbose=False, opset_version=10):
     """Convert PyTorch model to ONNX format.
     """
     # Get dynamic axis sizes & input names
@@ -41,11 +43,12 @@ def torch2onnx(model, filename, verbose=False):
         torch.onnx.export(
             model, tuple(dummy_inputs),
             filename,
+            do_constant_folding=False,
             input_names=input_names,
             output_names=[f'o{i}' for i in range(model.n_output)],
             verbose=verbose,
             dynamic_axes=dynamic_axes,
-            opset_version=14)
+            opset_version=int(os.environ.get('NNSMITH_OPV', DEFAULT_OPSET_VERSION)))
 
 
 if __name__ == "__main__":
