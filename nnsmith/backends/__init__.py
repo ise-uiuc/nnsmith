@@ -31,14 +31,14 @@ class DiffTestBackend(ABC):
             onnx_model = model
         return onnx_model
 
-    @staticmethod
-    def _coverage_install():
+    @classmethod
+    def _coverage_install(cls):
         raise NotImplementedError("Coverage support not implemented.")
 
-    @staticmethod
-    def coverage_install():
+    @classmethod
+    def coverage_install(cls):
         try:
-            return DiffTestBackend._coverage_install()
+            return cls._coverage_install()
         except Exception as e:
             print(f'Coverage support not implemented: {e}')
             print(f'Falling back to no coverage support.')
