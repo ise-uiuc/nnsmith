@@ -65,7 +65,16 @@ def known_bug(report: dict, db: List[dict]):
         return (report['backend'] == BackendCreator.NAME_MAP['trt'] and
                 'INVALID_NODE: Invalid Node - Clip' in report['stdout'])
 
-    filters = [same_model_same_stderr, trt_clip_int32]
+    def tvm_int_mismatch(report: dict):
+        return (report['backend'] == BackendCreator.NAME_MAP['tvm'] and
+                'TypeError: mismatched types. int64 vs. int32' in report['stdout'])
+
+    def tvm_layout_argmin(report: dict):
+        return (report['backend'] == BackendCreator.NAME_MAP['tvm'] and
+                'Invalid layout' in report['stdout'] and '(exist_axis[axis' in report['stdout'])
+
+    filters = [same_model_same_stderr, trt_clip_int32,
+               tvm_int_mismatch, tvm_layout_argmin]
     for f in filters:
         if f(report):
             return True
