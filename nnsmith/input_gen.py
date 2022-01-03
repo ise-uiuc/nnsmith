@@ -72,26 +72,6 @@ class InputGenV1(InputGenBase):
 
 class NaNChecker:
     def load_model(self, model):
-        raise NotImplementedError
-
-    def no_nan(self, l, r):
-        '''must call load_model before calling this function. return True if there is no NaN in the output or any of the intermediate tensors'''
-        raise NotImplementedError
-
-
-class ORTNaNChecker(NaNChecker):
-    '''WARNING: this class does not check intermidiate tensors.'''
-    THRES = 1
-
-    def __init__(self, max_rng_trials=3) -> None:
-        from nnsmith.backends.ort_graph import ORTExecutor
-        super().__init__()
-        self.max_rng_trials = max_rng_trials
-        # reference model
-        self.rf_exe = ORTExecutor(opt_level=0, providers=[
-                                  'CPUExecutionProvider'])
-
-    def load_model(self, model):
         self.model = model
         self.inp_spec = DiffTestBackend.analyze_onnx_io(model)[0]
 
@@ -107,7 +87,20 @@ class ORTNaNChecker(NaNChecker):
         return True  # succ / (ntrials + 1) >= self.THRES
 
 
-class TorchNaNChecker(ORTNaNChecker):
+class ORTNaNChecker(NaNChecker):
+    '''WARNING: this class does not check intermidiate tensors.'''
+    THRES = 1
+
+    def __init__(self, max_rng_trials=3) -> None:
+        from nnsmith.backends.ort_graph import ORTExecutor
+        super().__init__()
+        self.max_rng_trials = max_rng_trials
+        # reference model
+        self.rf_exe = ORTExecutor(opt_level=0, providers=[
+                                  'CPUExecutionProvider'])
+
+
+class TorchNaNChecker(NaNChecker):
     '''WARNING: this class does not check intermidiate tensors.'''
     THRES = 1
 
