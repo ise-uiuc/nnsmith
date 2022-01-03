@@ -45,7 +45,7 @@ class ORTExecutor(DiffTestBackend):
         return {n: r for n, r in zip(self.out_names, res)}
 
     @staticmethod
-    def coverage_install():
+    def _coverage_install():
         from onnxruntime.tools import coverage
         return coverage
 

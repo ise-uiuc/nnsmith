@@ -94,7 +94,7 @@ class TVMExecutor(DiffTestBackend):
         return dict(zip(self.out_names, output))
 
     @staticmethod
-    def coverage_install():
+    def _coverage_install():
         from tvm.contrib import coverage
         return coverage
 

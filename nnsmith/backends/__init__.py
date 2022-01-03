@@ -6,7 +6,6 @@ import os
 import onnx
 import numpy as np
 
-
 ShapeType = namedtuple('ShapeType', ['shape', 'dtype'])
 
 
@@ -33,8 +32,27 @@ class DiffTestBackend(ABC):
         return onnx_model
 
     @staticmethod
-    def coverage_install():
+    def _coverage_install():
         raise NotImplementedError("Coverage support not implemented.")
+
+    @staticmethod
+    def coverage_install():
+        try:
+            return DiffTestBackend._coverage_install()
+        except Exception as e:
+            print(f'Coverage support not implemented: {e}')
+            print(f'Falling back to no coverage support.')
+
+            class FallbackCoverage:
+                @staticmethod
+                def get_now():
+                    return 0
+
+                @staticmethod
+                def get_total():
+                    return 0
+
+            return FallbackCoverage()
 
     @staticmethod
     def dtype_str(id: int) -> str:
