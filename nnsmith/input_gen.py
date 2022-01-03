@@ -188,9 +188,11 @@ class InputGenV3(InputGenBase):
         return rngs
 
 
-def gen_one_input_for_model(model: Union[str, onnx.GraphProto], input_gen: InputGenBase = InputGenV3(), seed=None):
+def gen_one_input_for_model(model: Union[str, onnx.GraphProto], input_gen=None, seed=None):
     """Convenient wrapper for gen_one_input_rngs. This function requires only one input that specified the model. 
     Under the hood, it parses the model to extract the input spec and invokes input_gen to infer the domain."""
+    if input_gen is None:
+        input_gen = InputGenV3()
     inp_spec = DiffTestBackend.analyze_onnx_io(model)[0]
     return gen_one_input_rngs(inp_spec, input_gen.infer_domain(model), seed)
 
