@@ -576,14 +576,11 @@ class StopFoldConst(torch.nn.Module):
 class Constant(AbsOpBase):
     in_dtypes = [()]
 
-    def __str__(self) -> str:
-        return super().__str__() + ' ' + str(self.extra_attrs)
-
-    def __init__(self, dim: int):
+    def __init__(self, dim: int, dtype):
         super().__init__()
         self.inp_dims = []
         self.out_dims = [dim]
-        self.extra_attrs = {'dtype': random.choice(DTYPE_ALL)}
+        self.extra_attrs = {'dtype': dtype}
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         SanityCheck.eq(len(input_shapes), 0)
@@ -599,8 +596,8 @@ class Constant(AbsOpBase):
 
 
 class Constant0D(Constant):
-    def __init__(self):
-        super().__init__(0)
+    def __init__(self, dtype):
+        super().__init__(0, dtype)
         # TODO more dtypes
 
     @property
@@ -609,8 +606,8 @@ class Constant0D(Constant):
 
 
 class Constant1D(Constant):
-    def __init__(self, dim0: Union[int, z3.ExprRef]):
-        super().__init__(1)
+    def __init__(self, dtype, dim0: Union[int, z3.ExprRef]):
+        super().__init__(1, dtype)
         self.dim0 = dim0
 
     @property
@@ -619,8 +616,8 @@ class Constant1D(Constant):
 
 
 class Constant2D(Constant):
-    def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef]):
-        super().__init__(2)
+    def __init__(self, dtype, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef]):
+        super().__init__(2, dtype)
         self.dim0 = dim0
         self.dim1 = dim1
 
@@ -631,8 +628,8 @@ class Constant2D(Constant):
 
 
 class Constant3D(Constant):
-    def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef]):
-        super().__init__(3)
+    def __init__(self, dtype, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef]):
+        super().__init__(3, dtype)
         self.dim0 = dim0
         self.dim1 = dim1
         self.dim2 = dim2
@@ -644,8 +641,8 @@ class Constant3D(Constant):
 
 
 class Constant4D(Constant):
-    def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef], dim3: Union[int, z3.ExprRef]):
-        super().__init__(4)
+    def __init__(self, dtype, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef], dim3: Union[int, z3.ExprRef]):
+        super().__init__(4, dtype)
         self.dim0 = dim0
         self.dim1 = dim1
         self.dim2 = dim2
@@ -655,6 +652,45 @@ class Constant4D(Constant):
     def shape_var(self):
         return ShapeVar(
             [self.dim0, self.dim1, self.dim2, self.dim3], dtype=self.extra_attrs['dtype'])
+
+
+def const_maker(name, dim, dtype) -> Type[AbsOpBase]:
+    cls = [Constant0D, Constant1D, Constant2D, Constant3D, Constant4D][dim]
+    new_cls = type(name, (cls,),
+                   {'__init__': functools.partialmethod(cls.__init__, dtype)})
+    new_cls.out_dtypes = [(dtype,)]
+    return new_cls
+
+
+Constant0DFloat32 = const_maker('Constant0DFloat32', 0, DType.float32)
+Constant0DFloat64 = const_maker('Constant0DFloat64', 0, DType.float64)
+Constant0DInt32 = const_maker('Constant0DInt32', 0, DType.int32)
+Constant0DInt64 = const_maker('Constant0DInt64', 0, DType.int64)
+Constant0DBool = const_maker('Constant0DBool', 0, DType.bool)
+
+Constant1DFloat32 = const_maker('Constant1DFloat32', 1, DType.float32)
+Constant1DFloat64 = const_maker('Constant1DFloat64', 1, DType.float64)
+Constant1DInt32 = const_maker('Constant1DInt32', 1, DType.int32)
+Constant1DInt64 = const_maker('Constant1DInt64', 1, DType.int64)
+Constant1DBool = const_maker('Constant1DBool', 1, DType.bool)
+
+Constant2DFloat32 = const_maker('Constant2DFloat32', 2, DType.float32)
+Constant2DFloat64 = const_maker('Constant2DFloat64', 2, DType.float64)
+Constant2DInt32 = const_maker('Constant2DInt32', 2, DType.int32)
+Constant2DInt64 = const_maker('Constant2DInt64', 2, DType.int64)
+Constant2DBool = const_maker('Constant2DBool', 2, DType.bool)
+
+Constant3DFloat32 = const_maker('Constant3DFloat32', 3, DType.float32)
+Constant3DFloat64 = const_maker('Constant3DFloat64', 3, DType.float64)
+Constant3DInt32 = const_maker('Constant3DInt32', 3, DType.int32)
+Constant3DInt64 = const_maker('Constant3DInt64', 3, DType.int64)
+Constant3DBool = const_maker('Constant3DBool', 3, DType.bool)
+
+Constant4DFloat32 = const_maker('Constant4DFloat32', 4, DType.float32)
+Constant4DFloat64 = const_maker('Constant4DFloat64', 4, DType.float64)
+Constant4DInt32 = const_maker('Constant4DInt32', 4, DType.int32)
+Constant4DInt64 = const_maker('Constant4DInt64', 4, DType.int64)
+Constant4DBool = const_maker('Constant4DBool', 4, DType.bool)
 
 
 class Input(ElementWiseUnaryOp):
@@ -719,6 +755,7 @@ class ReLU(ElementWiseUnaryOp):
     # FIXME(JK): ints are somehow not supported in onnxruntime, which we use to gen inputs.
     # Make it include ints once we use other backends other than onnxruntime.
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -729,6 +766,7 @@ class ReLU(ElementWiseUnaryOp):
 
 class GELU(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -758,6 +796,7 @@ class PReLU(ElementWiseUnaryOp):
 
 class Sigmoid(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -768,6 +807,7 @@ class Sigmoid(ElementWiseUnaryOp):
 
 class Sin(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -778,6 +818,7 @@ class Sin(ElementWiseUnaryOp):
 
 class Cos(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -788,6 +829,7 @@ class Cos(ElementWiseUnaryOp):
 
 class Asin(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -801,6 +843,7 @@ class Asin(ElementWiseUnaryOp):
 
 class Acos(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -814,6 +857,7 @@ class Acos(ElementWiseUnaryOp):
 
 class Tan(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -824,6 +868,7 @@ class Tan(ElementWiseUnaryOp):
 
 class Atan(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -842,6 +887,7 @@ class Abs(ElementWiseUnaryOp):
 
 class Ceil(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -862,6 +908,7 @@ class Clip(ElementWiseUnaryOp):
 
 class Round(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -872,6 +919,7 @@ class Round(ElementWiseUnaryOp):
 
 class Sqrt(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -886,6 +934,7 @@ class Sqrt(ElementWiseUnaryOp):
 
 class Log2(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -1393,6 +1442,7 @@ class ReduceMax5D(ReduceMax):
 
 class ReduceMean(ReduceBase, ABC):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def torch(self):
         return lambda x: x.mean(self.extra_attrs['reduce_dim'])
@@ -1509,12 +1559,9 @@ class ArgMax5D(ArgMax):
         self.inp_dims = [5]
 
 
-def partialclass(cls, *args, **kwds) -> Type[AbsOpBase]:
-
-    class NewCls(cls):
-        __init__ = functools.partialmethod(cls.__init__, *args, **kwds)
-
-    return NewCls
+def partialclass(cls, name, *args, **kwds) -> Type[AbsOpBase]:
+    return type(name, (cls,),
+                {'__init__': functools.partialmethod(cls.__init__, *args, **kwds)})
 
 
 class Concat(AbsOpBase):
@@ -1571,24 +1618,21 @@ class Concat(AbsOpBase):
 # A more flexible approach is to use an instance. For example, to represent Expand node types, instead of classes [ExpandLast1, ExpandLast2, ...],
 # use instances [Expand(expand_last_dim=1, expand_n=Placeholder), Expand(2, Placeholder), ...], where the Placeholder represents the params needing z3 to model.
 
-Concat1 = partialclass(Concat, 1)
-Concat2 = partialclass(Concat, 2)
-Concat3 = partialclass(Concat, 3)
-Concat4 = partialclass(Concat, 4)
-Concat5 = partialclass(Concat, 5)
+Concat1 = partialclass(Concat, 'Concat1', 1)
+Concat2 = partialclass(Concat, 'Concat2', 2)
+Concat3 = partialclass(Concat, 'Concat3', 3)
+Concat4 = partialclass(Concat, 'Concat4', 4)
+Concat5 = partialclass(Concat, 'Concat5', 5)
 
 
 class Cast(UnaryOpBase):
     in_dtypes = [(i,) for i in DTYPE_ALL]
 
-    def __init__(self):
+    def __init__(self, dtype):
         super().__init__()
         self.inp_dims = [-1]
         self.out_dims = [-1]
-        self.extra_attrs = {'to': random.choice(DTYPE_ALL)}
-
-    def __str__(self) -> str:
-        return 'Cast ' + str(self.extra_attrs)
+        self.extra_attrs = {'to': dtype}
 
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
         return []
@@ -1599,6 +1643,18 @@ class Cast(UnaryOpBase):
 
     def torch(self):
         return lambda x: x.to(dtype=self.extra_attrs['to'].value)
+
+
+CastFloat32 = partialclass(Cast, 'CastFloat32', DType.float32)
+CastFloat64 = partialclass(Cast, 'CastFloat64', DType.float64)
+CastInt32 = partialclass(Cast, 'CastInt32', DType.int32)
+CastInt64 = partialclass(Cast, 'CastInt64', DType.int64)
+CastBool = partialclass(Cast, 'CastBool', DType.bool)
+CastFloat32.out_dtypes = [(DType.float32,)]
+CastFloat64.out_dtypes = [(DType.float64,)]
+CastInt32.out_dtypes = [(DType.int32,)]
+CastInt64.out_dtypes = [(DType.int64,)]
+CastBool.out_dtypes = [(DType.bool,)]
 
 
 class Gemm(TernaryOpBase):
