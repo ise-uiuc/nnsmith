@@ -53,7 +53,7 @@ class TVMExecutor(DiffTestBackend):
         self.inp_spec, self.out_names = inp_spec, out_names
         shape_dict = {name: inp_spec[name].shape for name in inp_spec}
         for name in shape_dict:
-            if shape_dict[name][0] == -1:  # Freeze batch size
+            if len(shape_dict[name]) > 0 and shape_dict[name][0] == -1:  # Freeze batch size
                 shape_dict[name][0] = 1
                 print("Freezing batch size to 1 for {}".format(name))
 
