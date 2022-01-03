@@ -226,7 +226,9 @@ class SimpleGenerator:
             "timeout",
             max_gen_millisec // 3,
         )
-        for _ in range((max_node_size + 9) // 10):
+        num_inputs = max(
+            1, int((max_node_size + 9) // 10 + random.gauss(0, 1)))
+        for _ in range(num_inputs):
             self.insert_input_node(self.min_dims)
         init_time = time.time()
         while time.time() - init_time < max_gen_millisec / 1000 and len(
