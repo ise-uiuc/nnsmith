@@ -524,10 +524,29 @@ class GenerationTable:
     _MIN_CONF = 0.1
     _INIT_VAL = 2.0
 
+    def distribute_wts(self):
+        wts = [1] * len(ALL_OP_TYPES)
+        normalize_op_t = [Constant, Cast]
+        op_t_idx = {}
+        for i in range(len(ALL_OP_TYPES)):
+            for op_t in normalize_op_t:
+                if issubclass(ALL_OP_TYPES[i], op_t):
+                    op_t_idx[op_t] = op_t_idx.get(op_t, []) + [i]
+
+        for idx in op_t_idx.values():
+            for i in idx:
+                wts[i] = 1.0 / len(idx)
+
+        for i in range(len(ALL_OP_TYPES)):
+            ii = self.row_mapper(ALL_OP_TYPES[i])
+            jj = self.col_mapper(ALL_OP_TYPES[i])
+            self.np_table[ii] *= wts[i]
+            self.np_table[jj] *= wts[i]
+
     def __init__(self):
         self.np_table = np.ones((len(ALL_OP_TYPES), len(
             ALL_OP_TYPES) - 1)) * self._INIT_VAL  # do not count Input
-
+        self.distribute_wts()
         # Close those impossible connections.
         for src_t in ALL_OP_TYPES:
             for tar_t in ALL_OP_TYPES:
