@@ -4,6 +4,7 @@ tmp/
 *.png
 *.pdf
 *.dot
+*.pkl
 fuzz_report/
 
 # Byte-compiled / optimized / DLL files
