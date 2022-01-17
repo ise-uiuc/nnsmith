@@ -668,8 +668,10 @@ class Input(ElementWiseUnaryOp):
 # FIXME: Div will cause fuzzing crash.
 Div = type('Div', (BcastBinaryOp1,), {
     'torch': lambda self:
-        lambda x, y: torch.div(x, y, rounding_mode='floor' if DType(x.dtype) in DTYPE_INTS else None),
-    'torch_loss': lambda self, x : torch.where(x.abs() < 1e-3, torch.ones_like(x), torch.zeros_like(x))})
+        lambda x, y: torch.div(x, y, rounding_mode='floor' if DType(
+            x.dtype) in DTYPE_INTS else None),
+    'torch_loss': lambda self, x: torch.where(x.abs() < 1e-3, torch.ones_like(x), torch.zeros_like(x))})
+
 
 class ReLU(ElementWiseUnaryOp):
     # FIXME(JK): ints are somehow not supported in onnxruntime, which we use to gen inputs.
@@ -750,7 +752,7 @@ class Asin(ElementWiseUnaryOp):
 
     def torch(self):
         return torch.asin
-    
+
     def torch_loss(self, x):
         return torch.where(x.abs() - 1.0, torch.ones_like(x), torch.zeros_like(x))
 
@@ -763,7 +765,7 @@ class Acos(ElementWiseUnaryOp):
 
     def torch(self):
         return torch.acos
-    
+
     def torch_loss(self, x):
         return torch.where(x.abs() - 1.0, torch.ones_like(x), torch.zeros_like(x))
 
@@ -835,7 +837,7 @@ class Sqrt(ElementWiseUnaryOp):
     def torch(self):
         return torch.sqrt
 
-    def torch_loss(self, x: torch.Tensor):
+    def torch_loss(self, x):
         return torch.max(torch.tensor(0.), x) - 0.
 
 
@@ -848,8 +850,9 @@ class Log2(ElementWiseUnaryOp):
     def torch(self):
         return torch.log2
 
-    def torch_loss(self, x: torch.Tensor):
+    def torch_loss(self, x):
         return torch.max(torch.tensor(0.), x) - 0.
+
 
 class Neg(ElementWiseUnaryOp):
     def __init__(self):

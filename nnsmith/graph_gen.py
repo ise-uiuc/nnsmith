@@ -115,6 +115,7 @@ class SymbolNet(nn.Module):
 
     def training_reset(self):
         self.loss = torch.tensor(0.)
+        self.loss.requires_grad = True
 
     def stop_training(self):
         self.use_gradient = False
@@ -139,7 +140,24 @@ class SymbolNet(nn.Module):
             SanityCheck.eq(out.dtype, self.alive_shapes[shape_idx][1].dtype.value, msg_head +
                            f'torch dtype ({out.dtype}) != symbolic dtype ({self.alive_shapes[shape_idx][1].dtype.value})')
 
-    @torch.no_grad()
+    def grad_input_gen(self, max_iter=10):
+        self.enable_training()
+
+        sat_inputs = None
+        for _ in range(max_iter):
+            need_to_train = False
+            for out in self():
+                if torch.isnan(out).any() or torch.isinf(out).any():
+                    need_to_train = True
+                    break
+            if need_to_train:
+                self.backward()
+            else:
+                sat_inputs = [v.data for v in self.inputs_as_param]
+
+        self.stop_training()
+        return sat_inputs
+
     def forward(self, *xs):
         local_ref_cnt = self.ref_cnt.copy()
         self.tensors = [None for _ in self.tensors]
@@ -642,6 +660,7 @@ def parse_args():
     parser.add_argument('--viz_sbs', action='store_true',
                         help='visualize the step by step')
     parser.add_argument('--output_path', type=str, default='output.onnx')
+    parser.add_argument('--input_gen', type=str, default='v3')
     parser.add_argument('--seed', type=int)
     parser.add_argument('--verbose', action='store_true')
     parser.add_argument('--use_bitvec', action='store_true')
@@ -729,17 +748,27 @@ if __name__ == '__main__':
 
     net = SymbolNet(gen.abstract_graph, solution, verbose=args.verbose,
                     alive_shapes=gen.alive_shapes)
-    net.eval()
-    torch2onnx(model=net, filename=args.output_path, verbose=args.verbose)
+
+    with torch.no_grad():
+        net.eval()
+        torch2onnx(model=net, filename=args.output_path, verbose=args.verbose)
 
     model = DiffTestBackend.get_onnx_proto(args.output_path)
 
     # turn this on so that nan in the intermediate tensors can be detected too
-    net.record_intermediate = True
-    input_gen = InputGenV3(TorchNaNChecker(net))
     input_st = time.time()
-    rngs = input_gen.infer_domain(model)
-    infer_succ = rngs is not None
+
+    sat_inputs = None
+    rngs = None
+    if args.input_gen == 'v3':
+        net.record_intermediate = True
+        input_gen = InputGenV3(TorchNaNChecker(net))
+        rngs = input_gen.infer_domain(model)
+        infer_succ = rngs is not None
+    elif args.input_gen == 'grad':
+        sat_inputs = net.grad_input_gen()
+        infer_succ = sat_inputs is not None
+
     ed_time = time.time()
 
     stats = {
@@ -749,6 +778,7 @@ if __name__ == '__main__':
         'gen_model_time': input_st - strt_time,
         'infer_domain_time': ed_time - input_st,
         'rngs': rngs,
+        'sat_inputs': sat_inputs,
         'seed': seed,
     }
     pickle.dump(stats, open(args.output_path + '-stats.pkl', 'wb'))

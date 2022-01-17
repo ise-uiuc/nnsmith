@@ -128,7 +128,7 @@ def forked_execution(
 def gen_model_and_range(
         output_path,
         seed=None,
-        # input_gen: InputGenBase = InputGenV3(),
+        input_gen: str = 'v3',
         max_node_size=10,
         max_gen_millisec=2000,
         **kwargs):
@@ -160,7 +160,7 @@ def gen_model_and_range(
         seed = random.getrandbits(32)
     kwargs_str = ' '.join([f'--{k} {v}' for k, v in kwargs.items()])
     check_call(f'python -u -m nnsmith.graph_gen --output_path {output_path}'
-               f' --seed {seed} --max_nodes {max_node_size} --timeout {max_gen_millisec} --viz_graph'
+               f' --seed {seed} --max_nodes {max_node_size} --timeout {max_gen_millisec} --viz_graph --input_gen {input_gen}'
                f'{kwargs_str} 2>&1', shell=True, timeout=max_gen_millisec * 2 / 1000)
     model = DiffTestBackend.get_onnx_proto(output_path)
     stats = pickle.load(open(output_path + '-stats.pkl', 'rb'))
@@ -171,12 +171,11 @@ def gen_model_and_range(
 gen_model_and_range_safe = safe_wrapper(gen_model_and_range)
 
 
-def _main(root: str, num_models, max_nodes, input_gen: InputGenBase, seed=None, timeout=2000):
+def _main(root: str, num_models, max_nodes, input_gen: str, seed=None, timeout=2000):
     if seed is not None:
         random.seed(seed)
     st_time = time.time()
     profile = []
-    profile_inputs = []
     root = Path(root)  # type: Path
     if len(list(root.glob('model*'))) > 0:
         cont = input('The output directory already exists. Continue? y/n.')
@@ -203,18 +202,6 @@ def _main(root: str, num_models, max_nodes, input_gen: InputGenBase, seed=None, 
             gen_model_st = time.time()
             stats = {}
             try:
-                # check_call(
-                #     f'python -u -m nnsmith.graph_gen --output_path {model} --seed {seed} {gen_args} 2>&1', shell=True)
-                # gen_succ = True
-                # input_st = time.time()
-
-                # # infer input range
-                # rngs = input_gen.infer_domain(
-                #     DiffTestBackend.get_onnx_proto(str(model)))
-                # infer_succ = rngs is not None
-                # pickle.dump(rngs, open(model.parent / 'domain.pkl', 'wb'))
-
-                # succ = True
                 _, rngs, stats = gen_model_and_range(
                     str(model_path), seed=seed, max_node_size=max_nodes, max_gen_millisec=timeout)
                 succ = True
@@ -267,12 +254,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int)
     parser.add_argument('--timeout', type=int, default=2000)
     args = parser.parse_args()
-    gen_inputs_func = {
-        'v1': InputGenV1(),
-        # 'v2': InputGenV2(),
-        'v3': InputGenV3(),
-    }[args.input_gen_method]
     if not args.input_only:
         _main(args.root, args.num_models,
-              args.max_nodes, gen_inputs_func, seed=args.seed, timeout=args.timeout)
+              args.max_nodes, args.input_gen_method, seed=args.seed, timeout=args.timeout)
     # gen_inputs_for_all(args.root, args.num_inputs, args.model, gen_inputs_func)

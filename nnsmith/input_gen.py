@@ -1,12 +1,10 @@
-import numpy as np
-import os
-from pathlib import Path
-
-import onnx
 from nnsmith.backends import DiffTestBackend
+
+import numpy as np
+import onnx
 import pickle
-from subprocess import check_call
-from tqdm import tqdm
+import torch
+
 from typing import List, Dict, Tuple, Union
 import time
 
@@ -178,6 +176,7 @@ class InputGenV3(InputGenBase):
             valid_rngs = None
         return valid_rngs
 
+    @torch.no_grad()
     def infer_domain(self, model):
         self.nan_checker.load_model(model)
         if self.nan_checker.no_nan(0, 1):
