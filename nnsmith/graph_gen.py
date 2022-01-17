@@ -18,7 +18,7 @@ from nnsmith.error import NNSmithInternalError, SanityCheck, ConstraintError
 from nnsmith.abstract.op import *
 from nnsmith.backends import DiffTestBackend
 from nnsmith.export import torch2onnx
-from nnsmith.input_gen import InputGenV3, TorchNaNChecker
+from nnsmith.input_gen import InputGenV3, TorchNumericChecker
 
 
 class RequiredDimNotFound(Exception):
@@ -704,7 +704,7 @@ if __name__ == '__main__':
 
     # turn this on so that nan in the intermediate tensors can be detected too
     net.record_intermediate = True
-    input_gen = InputGenV3(TorchNaNChecker(net))
+    input_gen = InputGenV3(TorchNumericChecker(net))
     input_st = time.time()
     rngs = input_gen.infer_domain(model)
     infer_succ = rngs is not None

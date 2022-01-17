@@ -14,7 +14,7 @@ from nnsmith.abstract.op import ALL_OP_STR2TYPE, ALL_OP_TYPES
 from nnsmith.backends import DiffTestBackend
 from nnsmith.error import SanityCheck
 from nnsmith.graph_gen import SymbolNet, torch2onnx, random_model_gen, table_model_gen
-from nnsmith.input_gen import InputGenBase, InputGenV1, InputGenV3, TorchNaNChecker
+from nnsmith.input_gen import InputGenBase, InputGenV1, InputGenV3, TorchNumericChecker
 
 
 class ModelGenSubProcesssError(Exception):
@@ -70,7 +70,7 @@ def forked_execution(
         model = DiffTestBackend.get_onnx_proto(output_path)
 
         net.record_intermediate = True
-        input_gen = InputGenV3(TorchNaNChecker(net))
+        input_gen = InputGenV3(TorchNumericChecker(net))
         rngs = input_gen.infer_domain(model)
         ipc_dict['ranges'] = rngs
 
