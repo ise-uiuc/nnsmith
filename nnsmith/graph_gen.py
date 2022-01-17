@@ -30,13 +30,14 @@ ALIVE_SHAPE_TYPE = List[Tuple[int, ShapeVar, int]]
 
 class SymbolNet(nn.Module):
     def __init__(self, graph: nx.MultiDiGraph, model: z3.ModelRef, verbose=False, alive_shapes: ALIVE_SHAPE_TYPE = None,
-                 record_intermediate=False):
+                 record_intermediate=False, use_gradient=False):
         super(SymbolNet, self).__init__()
         self.verbose = verbose
         self.tensors = []  # 1) edges; 2) leaf nodes; 3) input -> 0;
         self.ref_cnt = []  # ref cnt -> tensors; erased on 0;
         self.instructions = []  # <Func, <input idx>, <output idx>>
         self.n_output = 0
+
         # keep track of layers and weights so that the tracing can work properly
         self.mlist = nn.ModuleList()
         self.graph = graph
@@ -103,6 +104,30 @@ class SymbolNet(nn.Module):
         self.plausible_input_shape = {f'i{ii.op.idx}': ShapeVar(
             ii.op.shape, dtype=ii.op.dtype) for ii in self.input_info}
 
+        self.use_gradient = use_gradient
+        if use_gradient:
+            self.enable_training()
+
+    def backward(self):
+        self.optimizer.zero_grad()
+        self.loss.backward()
+        self.optimizer.step()
+
+    def training_reset(self):
+        self.loss = torch.tensor(0.)
+
+    def stop_training(self):
+        self.use_gradient = False
+        self.loss = None
+        self.inputs_as_param = None
+
+    def enable_training(self):
+        self.use_gradient = True
+        self.inputs_as_param = [torch.nn.parameter.Parameter(
+            torch.rand(ii.op.shape)) for ii in self.input_info]
+        self.optimizer = torch.optim.AdamW(self.parameters(), lr=1e-3)
+        self.training_reset()
+
     def _check_out_dtype(self, outputs, node_id, op):
         if self.alive_shapes is None:
             return
@@ -118,8 +143,10 @@ class SymbolNet(nn.Module):
     def forward(self, *xs):
         local_ref_cnt = self.ref_cnt.copy()
         self.tensors = [None for _ in self.tensors]
+
         for ii in self.input_info:
-            self.tensors[ii.oid] = xs[ii.op.idx]
+            self.tensors[ii.oid] = self.inputs_as_param[ii.op.idx] if self.use_gradient else xs[ii.op.idx]
+
         for inst, inps, outs, op, node_id in self.instructions:
             input_tensors = [self.tensors[idx] for idx in inps]
             if isinstance(op, Div):
@@ -136,6 +163,13 @@ class SymbolNet(nn.Module):
             if not isinstance(outputs, list):
                 outputs = [outputs]
             self._check_out_dtype(outputs, node_id, op)
+
+            if self.use_gradient and op.torch_loss is not None:
+                for out in outputs:
+                    if torch.isnan(out).any() or torch.isinf(out).any():
+                        self.loss += op.torch_loss(*input_tensors).mean()
+                        break
+
             if self.verbose:
                 print('outputs=', ','.join(
                     f'(shape={i.shape} dtype={i.dtype})' for i in outputs))
