@@ -43,10 +43,9 @@ def gen_one_input_rngs(inp_spec: Union[str, Dict], rngs: Union[str, List[Range],
     return gen_one_input(inp_spec, *rngs[np.random.randint(len(rngs))], seed)
 
 
-def has_nan(output: Dict[str, np.ndarray]):
+def is_invalid(output: Dict[str, np.ndarray]):
     for k, o in output.items():
-        if np.isnan(o).any():
-            # print(f'NaN in {k}')
+        if np.isnan(o).any() or np.isinf(o).any():
             return True
     return False
 
@@ -68,24 +67,24 @@ class InputGenV1(InputGenBase):
         return [(0, 1)]
 
 
-class NaNChecker:
+class NumericChecker:
     def load_model(self, model):
         self.model = model
         self.inp_spec = DiffTestBackend.analyze_onnx_io(model)[0]
 
-    def no_nan(self, l, r):
+    def all_valid(self, l, r):
         succ = 0
         for ntrials in range(self.max_rng_trials):
             inp = gen_one_input(self.inp_spec, l, r)
             out = self.rf_exe.predict(self.model, inp)
-            succ += not has_nan(out)
+            succ += not is_invalid(out)
             remain = self.max_rng_trials - ntrials - 1
             if (succ + remain) / self.max_rng_trials < self.THRES:
                 return False  # fast failure
         return True  # succ / (ntrials + 1) >= self.THRES
 
 
-class ORTNaNChecker(NaNChecker):
+class ORTNumericChecker(NumericChecker):
     '''WARNING: this class does not check intermidiate tensors.'''
     THRES = 1
 
@@ -98,7 +97,7 @@ class ORTNaNChecker(NaNChecker):
                                   'CPUExecutionProvider'])
 
 
-class TorchNaNChecker(NaNChecker):
+class TorchNumericChecker(NumericChecker):
     '''WARNING: this class does not check intermidiate tensors.'''
     THRES = 1
 
@@ -118,7 +117,7 @@ class TorchNaNChecker(NaNChecker):
         super().__init__()
         self.max_rng_trials = max_rng_trials
         self.torch_model = torch_model
-        self.rf_exe = TorchNaNChecker.TorchExecutor(torch_model)
+        self.rf_exe = TorchNumericChecker.TorchExecutor(torch_model)
 
 
 class InputGenV3(InputGenBase):
@@ -126,9 +125,9 @@ class InputGenV3(InputGenBase):
     R = 10
     EPS = 1e-3
 
-    def __init__(self, nan_checker: NaNChecker = None) -> None:
+    def __init__(self, numeric_checker: NumericChecker = None) -> None:
         super().__init__()
-        self.nan_checker = nan_checker or ORTNaNChecker()
+        self.numeric_checker = numeric_checker or ORTNumericChecker()
 
     def _get_range(self):
         a = np.linspace(-1, 1, 10)
@@ -155,19 +154,19 @@ class InputGenV3(InputGenBase):
             for rng in valid_rngs:
                 if rng[0] <= valid_point <= rng[1]:
                     included = True
-            if included or not self.nan_checker.no_nan(valid_point, valid_point):
+            if included or not self.numeric_checker.all_valid(valid_point, valid_point):
                 continue
 
             # try expand previous range
-            if len(valid_rngs) > 0 and self.nan_checker.no_nan(valid_rngs[-1][0], valid_point):
+            if len(valid_rngs) > 0 and self.numeric_checker.all_valid(valid_rngs[-1][0], valid_point):
                 valid_rngs[-1] = (valid_rngs[-1][0], valid_point)
                 continue
 
             last_r = self.L if len(valid_rngs) == 0 else valid_rngs[-1][1]
             l = binary_search(last_r, valid_point,
-                              lambda l: self.nan_checker.no_nan(l, valid_point))
+                              lambda l: self.numeric_checker.all_valid(l, valid_point))
             r = -binary_search(-self.R, -valid_point,
-                               lambda r: self.nan_checker.no_nan(l, -r))
+                               lambda r: self.numeric_checker.all_valid(l, -r))
             last_r = r
             valid_rngs.append((l, r))
 
@@ -178,8 +177,8 @@ class InputGenV3(InputGenBase):
 
     @torch.no_grad()
     def infer_domain(self, model):
-        self.nan_checker.load_model(model)
-        if self.nan_checker.no_nan(0, 1):
+        self.numeric_checker.load_model(model)
+        if self.numeric_checker.all_valid(0, 1):
             rngs = [(0, 1)]
         else:
             rngs = self._get_range()

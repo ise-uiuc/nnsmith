@@ -18,7 +18,7 @@ from nnsmith.error import NNSmithInternalError, SanityCheck, ConstraintError
 from nnsmith.abstract.op import *
 from nnsmith.backends import DiffTestBackend
 from nnsmith.export import torch2onnx
-from nnsmith.input_gen import InputGenV3, TorchNaNChecker
+from nnsmith.input_gen import InputGenV3, TorchNumericChecker
 
 
 class RequiredDimNotFound(Exception):
@@ -762,7 +762,7 @@ if __name__ == '__main__':
     rngs = None
     if args.input_gen == 'v3':
         net.record_intermediate = True
-        input_gen = InputGenV3(TorchNaNChecker(net))
+        input_gen = InputGenV3(TorchNumericChecker(net))
         rngs = input_gen.infer_domain(model)
         infer_succ = rngs is not None
     elif args.input_gen == 'grad':
