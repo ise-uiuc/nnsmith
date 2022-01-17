@@ -7,7 +7,6 @@ from inspect import signature
 import random
 import itertools
 import warnings
-import os
 
 # Import z3 ahead of torch (See https://github.com/Z3Prover/z3/issues/5656)
 import z3
@@ -358,6 +357,7 @@ class AbsOpBase(ABC):
         self.same_inp_dims = False
         # NOTE: the input of operator constructors are all Union[int, z3.ExprRef].
         self.extra_attrs = {}
+        self.torch_loss = None
 
     @abstractmethod  # Overload me!
     # Exception means rejection.
@@ -521,10 +521,6 @@ class Where(TernaryOpBase):
 Add = type('Add', (BcastBinaryOp1,), {'torch': lambda self: torch.add})
 Sub = type('Sub', (BcastBinaryOp1,), {'torch': lambda self: torch.sub})
 Mul = type('Mul', (BcastBinaryOp1,), {'torch': lambda self: torch.mul})
-# FIXME: Div will cause fuzzing crash.
-Div = type('Div', (BcastBinaryOp1,), {
-    'torch': lambda self:
-        lambda x, y: torch.div(x, y, rounding_mode='floor' if DType(x.dtype) in DTYPE_INTS else None)})
 # NOTE(JK): didn't find multi-input version of Max and Min in torch, so assume binary ops
 Max = type('Max', (BcastBinaryOp1,), {'torch': lambda self: torch.max})
 Min = type('Min', (BcastBinaryOp1,), {'torch': lambda self: torch.min})
@@ -669,6 +665,12 @@ class Input(ElementWiseUnaryOp):
         raise NotImplementedError("This should never be called")
 
 
+# FIXME: Div will cause fuzzing crash.
+Div = type('Div', (BcastBinaryOp1,), {
+    'torch': lambda self:
+        lambda x, y: torch.div(x, y, rounding_mode='floor' if DType(x.dtype) in DTYPE_INTS else None),
+    'torch_loss': lambda self, x : torch.where(x.abs() < 1e-3, torch.ones_like(x), torch.zeros_like(x))})
+
 class ReLU(ElementWiseUnaryOp):
     # FIXME(JK): ints are somehow not supported in onnxruntime, which we use to gen inputs.
     # Make it include ints once we use other backends other than onnxruntime.
@@ -748,6 +750,9 @@ class Asin(ElementWiseUnaryOp):
 
     def torch(self):
         return torch.asin
+    
+    def torch_loss(self, x):
+        return torch.where(x.abs() - 1.0, torch.ones_like(x), torch.zeros_like(x))
 
 
 class Acos(ElementWiseUnaryOp):
@@ -758,6 +763,9 @@ class Acos(ElementWiseUnaryOp):
 
     def torch(self):
         return torch.acos
+    
+    def torch_loss(self, x):
+        return torch.where(x.abs() - 1.0, torch.ones_like(x), torch.zeros_like(x))
 
 
 class Tan(ElementWiseUnaryOp):
@@ -827,6 +835,9 @@ class Sqrt(ElementWiseUnaryOp):
     def torch(self):
         return torch.sqrt
 
+    def torch_loss(self, x: torch.Tensor):
+        return torch.max(torch.tensor(0.), x) - 0.
+
 
 class Log2(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -837,6 +848,8 @@ class Log2(ElementWiseUnaryOp):
     def torch(self):
         return torch.log2
 
+    def torch_loss(self, x: torch.Tensor):
+        return torch.max(torch.tensor(0.), x) - 0.
 
 class Neg(ElementWiseUnaryOp):
     def __init__(self):
