@@ -226,8 +226,6 @@ class SimpleGenerator:
             max_gen_millisec // 3,
         )
         self.insert_input_node(self.min_dims)
-        self.insert_input_node(self.min_dims)
-        self.insert_input_node(self.min_dims)
         init_time = time.time()
         while time.time() - init_time < max_gen_millisec / 1000 and len(
                 self.abstract_graph.nodes) < max_node_size:

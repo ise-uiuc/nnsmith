@@ -1586,8 +1586,7 @@ def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
         for c in cls.__subclasses__():
             if c.__subclasses__():
                 _glob_leaf_op_classes_rec(c)
-            # elif c is not Input:
-            else:
+            elif c is not Input:
                 ret.append(c)
     _glob_leaf_op_classes_rec(AbsOpBase)
     return ret
