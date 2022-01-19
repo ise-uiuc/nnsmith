@@ -109,24 +109,26 @@ class SymbolNet(nn.Module):
             self.enable_training()
 
     def backward(self):
-        self.optimizer.zero_grad()
         self.loss.backward()
         self.optimizer.step()
+        self.optimizer.zero_grad()
 
     def training_reset(self):
-        self.loss = torch.tensor(0.)
-        self.loss.requires_grad = True
+        self.loss = None
+        self.stop_updating_loss = False
 
     def stop_training(self):
         self.use_gradient = False
         self.loss = None
-        self.inputs_as_param = None
 
-    def enable_training(self):
+    def enable_training(self, extra_trainable=[]):
         self.use_gradient = True
-        self.inputs_as_param = [torch.nn.parameter.Parameter(
-            torch.rand(ii.op.shape)) for ii in self.input_info]
-        self.optimizer = torch.optim.AdamW(self.parameters(), lr=1e-3)
+        to_train = []
+        for t in extra_trainable:
+            to_train.append(t)
+        for t in self.parameters():
+            to_train.append(t)
+        self.optimizer = torch.optim.Adamax(to_train, lr=1e-1)
         self.training_reset()
 
     def _check_out_dtype(self, outputs, node_id, op):
@@ -141,21 +143,33 @@ class SymbolNet(nn.Module):
                            f'torch dtype ({out.dtype}) != symbolic dtype ({self.alive_shapes[shape_idx][1].dtype.value})')
 
     def grad_input_gen(self, max_iter=10):
-        self.enable_training()
+        inputs = [torch.nn.parameter.Parameter(torch.rand(ii.op.shape))
+                  for ii in self.input_info]
+        self.enable_training(extra_trainable=inputs)
 
         sat_inputs = None
         for _ in range(max_iter):
+            self.training_reset()
+
             need_to_train = False
-            for out in self():
+            outs = self(*inputs)
+            for out in outs:
                 if torch.isnan(out).any() or torch.isinf(out).any():
                     need_to_train = True
                     break
+
             if need_to_train:
                 self.backward()
+                print('Graph input :: min', inputs[0].min(
+                ).data, 'max', inputs[0].max().data)
+                print('input grad', inputs[0].grad.mean())
             else:
-                sat_inputs = [v.data for v in self.inputs_as_param]
+                sat_inputs = [v.data for v in inputs]
+                break
 
         self.stop_training()
+        if sat_inputs is None:
+            print('[grad] no valid range found!!!')
         return sat_inputs
 
     def forward(self, *xs):
@@ -163,7 +177,7 @@ class SymbolNet(nn.Module):
         self.tensors = [None for _ in self.tensors]
 
         for ii in self.input_info:
-            self.tensors[ii.oid] = self.inputs_as_param[ii.op.idx] if self.use_gradient else xs[ii.op.idx]
+            self.tensors[ii.oid] = xs[ii.op.idx]
 
         for inst, inps, outs, op, node_id in self.instructions:
             input_tensors = [self.tensors[idx] for idx in inps]
@@ -182,11 +196,22 @@ class SymbolNet(nn.Module):
                 outputs = [outputs]
             self._check_out_dtype(outputs, node_id, op)
 
-            if self.use_gradient and op.torch_loss is not None:
+            if self.use_gradient and hasattr(op, 'torch_loss') and not self.stop_updating_loss:
                 for out in outputs:
                     if torch.isnan(out).any() or torch.isinf(out).any():
-                        self.loss += op.torch_loss(*input_tensors).mean()
-                        break
+                        print(
+                            f'Detected NaN or Inf in outputs ~ {op} ~ id {node_id}.')
+                        for inp_i, inp in enumerate(input_tensors):
+                            print(
+                                f'[inp]@{inp_i} :: min:{inp.min().data} ~ max:{inp.max().data}')
+                        vul_op_loss = op.torch_loss(*input_tensors).mean()
+                        print('vulnerable op loss', vul_op_loss.item())
+                        if self.loss is None:
+                            self.loss = vul_op_loss
+                        else:
+                            self.loss += vul_op_loss
+                        self.stop_updating_loss = True
+                        return outputs
 
             if self.verbose:
                 print('outputs=', ','.join(
@@ -205,6 +230,10 @@ class SymbolNet(nn.Module):
 
 class SimpleGenerator:
     def __init__(self, min_dims=[1, 3, 48, 48], skip=[], viz_sbs=False, megabyte_lim=6 * 1024, seed=None, verbose=False, use_bitvec=False):
+        if seed is not None:
+            np.random.seed(seed)
+            random.seed(seed)
+
         self.verbose = verbose
         auto_infer_in_dtypes(self.verbose)
 
@@ -736,11 +765,9 @@ if __name__ == '__main__':
     if seed is None:
         # If we have not selected a seed, choose random one.
         seed = random.getrandbits(32)
-    np.random.seed(seed)  # debugging purposes for input_gen
     print(f"Using seed {seed}")
-    random.seed(seed)
 
-    gen, solution = random_model_gen(min_dims=args.min_dims, viz_sbs=args.viz_sbs, max_nodes=args.max_nodes,
+    gen, solution = random_model_gen(min_dims=args.min_dims, seed=seed, viz_sbs=args.viz_sbs, max_nodes=args.max_nodes,
                                      use_bitvec=args.use_bitvec, timeout=args.timeout, verbose=args.verbose)
 
     if args.verbose or args.viz_graph:
@@ -749,23 +776,24 @@ if __name__ == '__main__':
     net = SymbolNet(gen.abstract_graph, solution, verbose=args.verbose,
                     alive_shapes=gen.alive_shapes)
 
-    with torch.no_grad():
-        net.eval()
-        torch2onnx(model=net, filename=args.output_path, verbose=args.verbose)
-
-    model = DiffTestBackend.get_onnx_proto(args.output_path)
-
     # turn this on so that nan in the intermediate tensors can be detected too
     input_st = time.time()
 
     sat_inputs = None
     rngs = None
     if args.input_gen == 'v3':
+        with torch.no_grad():
+            net.eval()
+            torch2onnx(model=net, filename=args.output_path,
+                       verbose=args.verbose)
+
+        model = DiffTestBackend.get_onnx_proto(args.output_path)
         net.record_intermediate = True
         input_gen = InputGenV3(TorchNumericChecker(net))
         rngs = input_gen.infer_domain(model)
         infer_succ = rngs is not None
     elif args.input_gen == 'grad':
+        net.record_intermediate = False
         sat_inputs = net.grad_input_gen()
         infer_succ = sat_inputs is not None
 

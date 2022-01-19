@@ -171,7 +171,7 @@ class InputGenV3(InputGenBase):
             valid_rngs.append((l, r))
 
         if len(valid_rngs) == 0:
-            print('no valid range found!!!')
+            print('[input-v3] no valid range found!!!')
             valid_rngs = None
         return valid_rngs
 

@@ -357,7 +357,6 @@ class AbsOpBase(ABC):
         self.same_inp_dims = False
         # NOTE: the input of operator constructors are all Union[int, z3.ExprRef].
         self.extra_attrs = {}
-        self.torch_loss = None
 
     @abstractmethod  # Overload me!
     # Exception means rejection.
@@ -556,88 +555,88 @@ class StopFoldConst(torch.nn.Module):
         return self.param.to(self.dtype)
 
 
-class Constant(AbsOpBase):
-    in_dtypes = [()]
+# class Constant(AbsOpBase):
+#     in_dtypes = [()]
 
-    def __str__(self) -> str:
-        return super().__str__() + ' ' + str(self.extra_attrs)
+#     def __str__(self) -> str:
+#         return super().__str__() + ' ' + str(self.extra_attrs)
 
-    def __init__(self, dim: int):
-        super().__init__()
-        self.inp_dims = []
-        self.out_dims = [dim]
-        self.extra_attrs = {'dtype': random.choice(DTYPE_ALL)}
+#     def __init__(self, dim: int):
+#         super().__init__()
+#         self.inp_dims = []
+#         self.out_dims = [dim]
+#         self.extra_attrs = {'dtype': random.choice(DTYPE_ALL)}
 
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        SanityCheck.eq(len(input_shapes), 0)
-        return [self.shape_var]
+#     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+#         SanityCheck.eq(len(input_shapes), 0)
+#         return [self.shape_var]
 
-    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
-        SanityCheck.eq(len(input_shapes), 0)
-        return []
+#     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+#         SanityCheck.eq(len(input_shapes), 0)
+#         return []
 
-    def torch(self) -> Callable[..., torch.Tensor]:
-        data = torch.randn(self.shape_var.shape).to(self.shape_var.dtype.value)
-        return StopFoldConst(data)
-
-
-class Constant0D(Constant):
-    def __init__(self):
-        super().__init__(0)
-        # TODO more dtypes
-
-    @property
-    def shape_var(self):
-        return ShapeVar([], dtype=self.extra_attrs['dtype'])
+#     def torch(self) -> Callable[..., torch.Tensor]:
+#         data = torch.randn(self.shape_var.shape).to(self.shape_var.dtype.value)
+#         return StopFoldConst(data)
 
 
-class Constant1D(Constant):
-    def __init__(self, dim0: Union[int, z3.ExprRef]):
-        super().__init__(1)
-        self.dim0 = dim0
+# class Constant0D(Constant):
+#     def __init__(self):
+#         super().__init__(0)
+#         # TODO more dtypes
 
-    @property
-    def shape_var(self):
-        return ShapeVar([self.dim0], dtype=self.extra_attrs['dtype'])
-
-
-class Constant2D(Constant):
-    def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef]):
-        super().__init__(2)
-        self.dim0 = dim0
-        self.dim1 = dim1
-
-    @property
-    def shape_var(self):
-        return ShapeVar(
-            [self.dim0, self.dim1], dtype=self.extra_attrs['dtype'])
+#     @property
+#     def shape_var(self):
+#         return ShapeVar([], dtype=self.extra_attrs['dtype'])
 
 
-class Constant3D(Constant):
-    def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef]):
-        super().__init__(3)
-        self.dim0 = dim0
-        self.dim1 = dim1
-        self.dim2 = dim2
+# class Constant1D(Constant):
+#     def __init__(self, dim0: Union[int, z3.ExprRef]):
+#         super().__init__(1)
+#         self.dim0 = dim0
 
-    @property
-    def shape_var(self):
-        return ShapeVar(
-            [self.dim0, self.dim1, self.dim2], dtype=self.extra_attrs['dtype'])
+#     @property
+#     def shape_var(self):
+#         return ShapeVar([self.dim0], dtype=self.extra_attrs['dtype'])
 
 
-class Constant4D(Constant):
-    def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef], dim3: Union[int, z3.ExprRef]):
-        super().__init__(4)
-        self.dim0 = dim0
-        self.dim1 = dim1
-        self.dim2 = dim2
-        self.dim3 = dim3
+# class Constant2D(Constant):
+#     def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef]):
+#         super().__init__(2)
+#         self.dim0 = dim0
+#         self.dim1 = dim1
 
-    @property
-    def shape_var(self):
-        return ShapeVar(
-            [self.dim0, self.dim1, self.dim2, self.dim3], dtype=self.extra_attrs['dtype'])
+#     @property
+#     def shape_var(self):
+#         return ShapeVar(
+#             [self.dim0, self.dim1], dtype=self.extra_attrs['dtype'])
+
+
+# class Constant3D(Constant):
+#     def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef]):
+#         super().__init__(3)
+#         self.dim0 = dim0
+#         self.dim1 = dim1
+#         self.dim2 = dim2
+
+#     @property
+#     def shape_var(self):
+#         return ShapeVar(
+#             [self.dim0, self.dim1, self.dim2], dtype=self.extra_attrs['dtype'])
+
+
+# class Constant4D(Constant):
+#     def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef], dim3: Union[int, z3.ExprRef]):
+#         super().__init__(4)
+#         self.dim0 = dim0
+#         self.dim1 = dim1
+#         self.dim2 = dim2
+#         self.dim3 = dim3
+
+#     @property
+#     def shape_var(self):
+#         return ShapeVar(
+#             [self.dim0, self.dim1, self.dim2, self.dim3], dtype=self.extra_attrs['dtype'])
 
 
 class Input(ElementWiseUnaryOp):
@@ -754,7 +753,7 @@ class Asin(ElementWiseUnaryOp):
         return torch.asin
 
     def torch_loss(self, x):
-        return torch.where(x.abs() - 1.0, torch.ones_like(x), torch.zeros_like(x))
+        return torch.where(x.abs() > 1, x.abs() - 1, torch.zeros_like(x))
 
 
 class Acos(ElementWiseUnaryOp):
@@ -767,7 +766,7 @@ class Acos(ElementWiseUnaryOp):
         return torch.acos
 
     def torch_loss(self, x):
-        return torch.where(x.abs() - 1.0, torch.ones_like(x), torch.zeros_like(x))
+        return torch.where(x.abs() > 1, x.abs() - 1, torch.zeros_like(x))
 
 
 class Tan(ElementWiseUnaryOp):
@@ -838,7 +837,8 @@ class Sqrt(ElementWiseUnaryOp):
         return torch.sqrt
 
     def torch_loss(self, x):
-        return torch.max(torch.tensor(0.), x) - 0.
+        # return torch.max(torch.tensor(0.), x) - 0.
+        return torch.where(x <= 0, -x, torch.zeros_like(x))
 
 
 class Log2(ElementWiseUnaryOp):
