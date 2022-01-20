@@ -532,9 +532,7 @@ And = type('And', (BcastBinaryOp3,), {'torch': lambda self: torch.logical_and})
 Or = type('Or', (BcastBinaryOp3,), {'torch': lambda self: torch.logical_or})
 Xor = type('Xor', (BcastBinaryOp3,), {'torch': lambda self: torch.logical_xor})
 
-Pow = type('Pow', (BcastBinaryOp,), {'torch': lambda self: torch.pow})
 # TODO: support exactly what onnx spec says (e.g., int support in the rhs)
-Pow.in_dtypes = [(i, i) for i in DTYPE_FLOATS]
 # lhs_dtypes = (DType.int32, DType.int64, DType.float32, DType.float64)
 # rhs_dtypes = (DType.int32, DType.int64, DType.float32, DType.float64)
 # Pow.in_dtypes = itertools.product(lhs_dtypes, rhs_dtypes)
@@ -669,7 +667,32 @@ Div = type('Div', (BcastBinaryOp1,), {
     'torch': lambda self:
         lambda x, y: torch.div(x, y, rounding_mode='floor' if DType(
             x.dtype) in DTYPE_INTS else None),
-    'torch_loss': lambda self, x: torch.where(x.abs() < 1e-3, torch.ones_like(x), torch.zeros_like(x))})
+    'torch_loss': lambda self, x: torch.where(x.abs() < 1e-3, x.abs(), torch.zeros_like(x))})
+
+
+class Pow(BcastBinaryOp):
+    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+
+    def torch(self):
+        return torch.pow
+
+    def torch_loss(self, a, b):
+        return (a - 1).abs() + torch.where(b > 32., b.abs(), torch.zeros_like(b))
+        # Another complicated proposal but not working:
+        # See: https://en.cppreference.com/w/c/numeric/math/pow
+        # Inf:
+        #   a > 1, b is too big => b should be smaller.
+        #   a = 0, b < 0 => a should be bigger.
+        # Nan: a < 0, 0 < b < 1 => either a should be positive or |b| should be bigger.
+        # res = torch.pow(a, b)
+        # return torch.where(
+        #     torch.isinf(res),
+        #     torch.where(b > 32.,
+        #                 b,
+        #                 torch.where(a == 0., a, )),
+        #     torch.where(torch.isnan(res),
+        #                 torch.where(a > 0, torch.zeros_like(a), a.abs()),
+        #                 torch.zeros_like(a)))
 
 
 class ReLU(ElementWiseUnaryOp):
@@ -766,7 +789,7 @@ class Acos(ElementWiseUnaryOp):
         return torch.acos
 
     def torch_loss(self, x):
-        return torch.where(x.abs() > 1, x.abs() - 1, torch.zeros_like(x))
+        return torch.where(x.abs() > 1, x.abs(), torch.zeros_like(x))
 
 
 class Tan(ElementWiseUnaryOp):
@@ -851,7 +874,7 @@ class Log2(ElementWiseUnaryOp):
         return torch.log2
 
     def torch_loss(self, x):
-        return torch.max(torch.tensor(0.), x) - 0.
+        return torch.where(x <= 0, -x, torch.zeros_like(x))
 
 
 class Neg(ElementWiseUnaryOp):

@@ -109,9 +109,10 @@ class SymbolNet(nn.Module):
             self.enable_training()
 
     def backward(self):
-        self.loss.backward()
-        self.optimizer.step()
-        self.optimizer.zero_grad()
+        if self.loss is not None:
+            self.loss.backward()
+            self.optimizer.step()
+            self.optimizer.zero_grad()
 
     def training_reset(self):
         self.loss = None
@@ -128,7 +129,7 @@ class SymbolNet(nn.Module):
             to_train.append(t)
         for t in self.parameters():
             to_train.append(t)
-        self.optimizer = torch.optim.Adamax(to_train, lr=1e-1)
+        self.optimizer = torch.optim.Adam(to_train, lr=5e-2)
         self.training_reset()
 
     def _check_out_dtype(self, outputs, node_id, op):
@@ -160,9 +161,8 @@ class SymbolNet(nn.Module):
 
             if need_to_train:
                 self.backward()
-                print('Graph input :: min', inputs[0].min(
-                ).data, 'max', inputs[0].max().data)
-                print('input grad', inputs[0].grad.mean())
+                print(
+                    f'Graph input :: {inputs[0].min().data:.5f} ~ {inputs[0].max().data:.5f}')
             else:
                 sat_inputs = [v.data for v in inputs]
                 break
@@ -196,20 +196,25 @@ class SymbolNet(nn.Module):
                 outputs = [outputs]
             self._check_out_dtype(outputs, node_id, op)
 
-            if self.use_gradient and hasattr(op, 'torch_loss') and not self.stop_updating_loss:
+            if self.use_gradient and not self.stop_updating_loss:
                 for out in outputs:
                     if torch.isnan(out).any() or torch.isinf(out).any():
                         print(
                             f'Detected NaN or Inf in outputs ~ {op} ~ id {node_id}.')
                         for inp_i, inp in enumerate(input_tensors):
                             print(
-                                f'[inp]@{inp_i} :: min:{inp.min().data} ~ max:{inp.max().data}')
-                        vul_op_loss = op.torch_loss(*input_tensors).mean()
-                        print('vulnerable op loss', vul_op_loss.item())
+                                f'[inp]@{inp_i} :: {inp.min().data:.5f} ~ {inp.max().data:.5f}')
+
+                        assert hasattr(
+                            op, 'torch_loss'), f'op={op} has no `torch_loss` but produces NaN or INF!'
+                        vul_op_loss = op.torch_loss(*input_tensors)
+
+                        print(
+                            f'vulnerable op loss :: {vul_op_loss.min().data:.5f} ~ {vul_op_loss.max().data:.5f}')
                         if self.loss is None:
-                            self.loss = vul_op_loss
+                            self.loss = vul_op_loss.mean()
                         else:
-                            self.loss += vul_op_loss
+                            self.loss += vul_op_loss.mean()
                         self.stop_updating_loss = True
                         return outputs
 
@@ -766,6 +771,7 @@ if __name__ == '__main__':
         # If we have not selected a seed, choose random one.
         seed = random.getrandbits(32)
     print(f"Using seed {seed}")
+    torch.manual_seed(seed)
 
     gen, solution = random_model_gen(min_dims=args.min_dims, seed=seed, viz_sbs=args.viz_sbs, max_nodes=args.max_nodes,
                                      use_bitvec=args.use_bitvec, timeout=args.timeout, verbose=args.verbose)
