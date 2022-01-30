@@ -14,7 +14,7 @@ import time
 import os
 import copy
 
-from nnsmith.error import NNSmithInternalError, SanityCheck, ConstraintError
+from nnsmith.error import NNSmithInternalError, SanityCheck, ConstraintCheck, ConstraintError
 from nnsmith.abstract.op import *
 from nnsmith.backends import DiffTestBackend
 from nnsmith.export import torch2onnx
@@ -153,7 +153,12 @@ class SymbolNet(nn.Module):
             self.training_reset()
 
             need_to_train = False
-            outs = self(*inputs)
+
+            try:
+                outs = self(*inputs)
+            except ConstraintError as _:
+                break
+
             for out in outs:
                 if torch.isnan(out).any() or torch.isinf(out).any():
                     need_to_train = True
@@ -205,8 +210,8 @@ class SymbolNet(nn.Module):
                             print(
                                 f'[inp]@{inp_i} :: {inp.min().data:.5f} ~ {inp.max().data:.5f}')
 
-                        assert hasattr(
-                            op, 'torch_loss'), f'op={op} has no `torch_loss` but produces NaN or INF!'
+                        ConstraintCheck.true(hasattr(
+                            op, 'torch_loss'), f'op={op} has no `torch_loss` but produces NaN or INF!')
                         vul_op_loss = op.torch_loss(*input_tensors)
 
                         print(
@@ -330,9 +335,14 @@ class SimpleGenerator:
     def check_sat(self, *assumptions):
         start = time.time()
         cres = self.solver.check(*assumptions)
+
+        checking_time = int((time.time() - start) * 1000)
+        if checking_time > 3000 and self.cur_node:  # 3s
+            warnings.warn(
+                f'[WARNING] check {self.cur_node} {checking_time} ms')
+
         if self.verbose:
-            print(cres, '<-- checking time:',
-                  int((time.time() - start) * 1000), 'ms')
+            print(cres, '<-- checking time:', checking_time, 'ms')
 
             if cres == z3.unsat:
                 print(f'Unsat core: {self.solver.unsat_core()}')
@@ -559,8 +569,9 @@ class PureSymbolGen(SimpleGenerator):
         for s in output_shapes:
             self.n_floats = nnsmith_add(self.n_floats, s.nelement())
 
+        self.cur_node = node
         check_res = self.check_sat(
-            *constraints, nnsmith_le(self.n_floats, self.limit_float))
+            *constraints, nnsmith_le(n_floats, self.limit_float))
         if check_res == z3.unknown:  # Timeout thing.
             self.on_timeout(node, ishape_indices)
 
