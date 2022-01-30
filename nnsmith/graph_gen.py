@@ -472,11 +472,12 @@ class PureSymbolGen(SimpleGenerator):
             for c in shape.gt_zero():
                 constraints.append(c)
 
+        tmp_n_floats = self.n_floats
         for s in output_shapes:
-            self.n_floats = nnsmith_add(self.n_floats, s.nelement())
+            tmp_n_floats = nnsmith_add(tmp_n_floats, s.nelement())
 
         check_res = self.check_sat(
-            *constraints, nnsmith_le(self.n_floats, self.limit_float))
+            *constraints, nnsmith_le(tmp_n_floats, self.limit_float))
         if check_res == z3.unknown:  # Timeout thing.
             self.on_timeout(node, ishape_indices)
 
@@ -485,6 +486,7 @@ class PureSymbolGen(SimpleGenerator):
 
         for c in constraints:
             self.solver.add(c)
+        self.n_floats = tmp_n_floats
 
         self.insert_node(node, ishape_indices, output_shapes)
         return True
