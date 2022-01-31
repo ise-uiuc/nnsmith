@@ -667,7 +667,7 @@ Div = type('Div', (BcastBinaryOp1,), {
     'torch': lambda self:
         lambda x, y: torch.div(x, y, rounding_mode='floor' if DType(
             x.dtype) in DTYPE_INTS else None),
-    'torch_loss': lambda self, x: torch.where(x.abs() < 1e-3, x.abs(), torch.zeros_like(x))})
+    'torch_loss': lambda self, _, x: torch.where(x.abs() < 1e-3, x.abs(), torch.zeros_like(x))})
 
 
 class Pow(BcastBinaryOp):
@@ -861,7 +861,7 @@ class Sqrt(ElementWiseUnaryOp):
 
     def torch_loss(self, x):
         # return torch.max(torch.tensor(0.), x) - 0.
-        return torch.where(x <= 0, -x, torch.zeros_like(x))
+        return torch.where(x <= 0, 1. - x, torch.zeros_like(x))
 
 
 class Log2(ElementWiseUnaryOp):
@@ -874,7 +874,7 @@ class Log2(ElementWiseUnaryOp):
         return torch.log2
 
     def torch_loss(self, x):
-        return torch.where(x <= 0, -x, torch.zeros_like(x))
+        return torch.where(x <= 0, 1. - x, torch.zeros_like(x))
 
 
 class Neg(ElementWiseUnaryOp):
@@ -1165,6 +1165,7 @@ class Transpose(UnaryOpBase, ABC):
 
     def _init_swap_dims(self, input_shape: List[Union[int, z3.ExprRef]]):
         ConstraintCheck.ge(len(input_shape), 2)
+        self.inp_dims = [len(input_shape)]
         if 'dim0' not in self.extra_attrs or 'dim1' not in self.extra_attrs:
             max_dim = len(input_shape) - 1
             self.extra_attrs['dim0'] = random.randint(0, max_dim)
