@@ -107,6 +107,8 @@ class SymbolNet(nn.Module):
         self.use_gradient = use_gradient
         if use_gradient:
             self.enable_training()
+        self.check_intermediate_numeric = False
+        self.invalid_found_last = None
 
     def backward(self):
         if self.loss is not None:
@@ -143,9 +145,13 @@ class SymbolNet(nn.Module):
             SanityCheck.eq(out.dtype, self.alive_shapes[shape_idx][1].dtype.value, msg_head +
                            f'torch dtype ({out.dtype}) != symbolic dtype ({self.alive_shapes[shape_idx][1].dtype.value})')
 
-    def grad_input_gen(self, max_iter=10):
-        inputs = [torch.nn.parameter.Parameter(torch.rand(ii.op.shape))
-                  for ii in self.input_info]
+    def grad_input_gen(self, max_iter=10, init_tensors=None):
+        if init_tensors is None:
+            inputs = [torch.nn.parameter.Parameter(torch.rand(ii.op.shape))
+                      for ii in self.input_info]
+        else:
+            inputs = [torch.nn.parameter.Parameter(
+                tensor.data) for tensor in init_tensors]
         self.enable_training(extra_trainable=inputs)
 
         sat_inputs = None
@@ -201,27 +207,31 @@ class SymbolNet(nn.Module):
                 outputs = [outputs]
             self._check_out_dtype(outputs, node_id, op)
 
-            if self.use_gradient and not self.stop_updating_loss:
-                for out in outputs:
-                    if torch.isnan(out).any() or torch.isinf(out).any():
-                        print(
-                            f'Detected NaN or Inf in outputs ~ {op} ~ id {node_id}.')
-                        for inp_i, inp in enumerate(input_tensors):
-                            print(
-                                f'[inp]@{inp_i} :: {inp.min().data:.5f} ~ {inp.max().data:.5f}')
+            if self.check_intermediate_numeric or (self.use_gradient and not self.stop_updating_loss):
+                with torch.no_grad():
+                    invalid_mask = [torch.isnan(out).any() or torch.isinf(
+                        out).any() for out in outputs]
 
-                        ConstraintCheck.true(hasattr(
-                            op, 'torch_loss'), f'op={op} has no `torch_loss` but produces NaN or INF!')
-                        vul_op_loss = op.torch_loss(*input_tensors)
-
+                self.invalid_found_last = any(invalid_mask)
+                if self.invalid_found_last and (self.use_gradient and not self.stop_updating_loss):
+                    print(
+                        f'Detected NaN or Inf in outputs ~ {op} ~ id {node_id}.')
+                    for inp_i, inp in enumerate(input_tensors):
                         print(
-                            f'vulnerable op loss :: {vul_op_loss.min().data:.5f} ~ {vul_op_loss.max().data:.5f}')
-                        if self.loss is None:
-                            self.loss = vul_op_loss.mean()
-                        else:
-                            self.loss += vul_op_loss.mean()
-                        self.stop_updating_loss = True
-                        return outputs
+                            f'[inp]@{inp_i} :: {inp.min().data:.5f} ~ {inp.max().data:.5f}')
+
+                    ConstraintCheck.true(hasattr(
+                        op, 'torch_loss'), f'op={op} has no `torch_loss` but produces NaN or INF!')
+                    vul_op_loss = op.torch_loss(*input_tensors)
+
+                    print(
+                        f'vulnerable op loss :: {vul_op_loss.min().data:.5f} ~ {vul_op_loss.max().data:.5f}')
+                    if self.loss is None:
+                        self.loss = vul_op_loss.mean()
+                    else:
+                        self.loss += vul_op_loss.mean()
+                    self.stop_updating_loss = True
+                    return outputs
 
             if self.verbose:
                 print('outputs=', ','.join(

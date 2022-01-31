@@ -2,10 +2,8 @@
 simply generate a bunch of models and see if the can find viable inputs.
 """
 
+from nnsmith.error import ConstraintCheck, ConstraintError
 from nnsmith.graph_gen import random_model_gen, SymbolNet
-from nnsmith.backends import DiffTestBackend
-from nnsmith.input_gen import InputGenV3, TorchNumericChecker
-from nnsmith.export import torch2onnx
 
 import torch
 import numpy as np
@@ -15,7 +13,6 @@ from tqdm import tqdm
 import time
 import argparse
 import random
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -43,9 +40,13 @@ if __name__ == '__main__':
     results = {
         'model_seed': [],
         'n_nodes': [],
+
         'v3-time': [],
+        'v3-try': [],
         'v3-succ': [],
+
         'grad-time': [],
+        'grad-try': [],
         'grad-succ': [],
     }
 
@@ -59,24 +60,44 @@ if __name__ == '__main__':
         results['n_nodes'].append(len(net.graph.nodes))
         results['model_seed'].append(model_seed)
 
+        init_tensor_samples = []
+        for v in np.linspace(-1, 1, 10):
+            init_tensors = [torch.ones(ii.op.shape)
+                            * v for ii in net.input_info]
+            init_tensor_samples.append(init_tensors)
+
         # Test v3
         strt_time = time.time()
-        net.record_intermediate = True
+        succ_v3 = False
+        try_times = 0
+
+        net.check_intermediate_numeric = True
         with torch.no_grad():
-            net.eval()
-            torch2onnx(model=net, filename=args.output_path,
-                       verbose=args.verbose)
-        model = DiffTestBackend.get_onnx_proto(args.output_path)
-        input_gen = InputGenV3(TorchNumericChecker(net))
-        rngs = input_gen.infer_domain(model)
-        results['v3-succ'].append(rngs is not None)
+            for init_tensors in init_tensor_samples:
+                try_times += 1
+                _ = net(*init_tensors)
+                if not net.invalid_found_last:
+                    succ_v3 = True
+                    break
+
+        net.check_intermediate_numeric = False
         results['v3-time'].append(time.time() - strt_time)
+        results['v3-try'].append(try_times)
+        results['v3-succ'].append(succ_v3)
 
         # Test grad
         strt_time = time.time()
-        # net.record_intermediate = False
-        sat_inputs = net.grad_input_gen()
-        results['grad-succ'].append(sat_inputs is not None)
+        try_times = 0
+        succ_grad = False
+        for init_tensors in init_tensor_samples:
+            try_times += 1
+            sat_inputs = net.grad_input_gen(init_tensors=init_tensors)
+            if sat_inputs is not None:
+                succ_grad = True
+                break
+
+        results['grad-succ'].append(succ_grad)
+        results['grad-try'].append(try_times)
         results['grad-time'].append(time.time() - strt_time)
 
     pd.DataFrame(results).to_csv(exp_name, index=False)
