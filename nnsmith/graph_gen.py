@@ -112,9 +112,10 @@ class SymbolNet(nn.Module):
 
     def backward(self):
         if self.loss is not None:
-            self.loss.backward()
-            self.optimizer.step()
             self.optimizer.zero_grad()
+            self.loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.parameters(), 1e-1)
+            self.optimizer.step()
 
     def training_reset(self):
         self.loss = None
@@ -145,7 +146,7 @@ class SymbolNet(nn.Module):
             SanityCheck.eq(out.dtype, self.alive_shapes[shape_idx][1].dtype.value, msg_head +
                            f'torch dtype ({out.dtype}) != symbolic dtype ({self.alive_shapes[shape_idx][1].dtype.value})')
 
-    def grad_input_gen(self, max_iter=10, init_tensors=None):
+    def grad_input_gen(self, max_iter=10, init_tensors=None, use_cuda=False):
         if init_tensors is None:
             inputs = [torch.nn.parameter.Parameter(torch.rand(ii.op.shape))
                       for ii in self.input_info]
@@ -154,26 +155,26 @@ class SymbolNet(nn.Module):
                 tensor.data) for tensor in init_tensors]
         self.enable_training(extra_trainable=inputs)
 
+        last_check_intermediate_numeric = self.check_intermediate_numeric
+        self.check_intermediate_numeric = True
+
+        if use_cuda:
+            inputs = [inp.cuda() for inp in inputs]
+            self = self.cuda()
+
         sat_inputs = None
         for _ in range(max_iter):
             self.training_reset()
 
-            need_to_train = False
-
             try:
-                outs = self(*inputs)
+                _ = self(*inputs)
             except ConstraintError as _:
                 break
 
-            for out in outs:
-                if torch.isnan(out).any() or torch.isinf(out).any():
-                    need_to_train = True
-                    break
-
-            if need_to_train:
+            if self.invalid_found_last:  # need_to_train
                 self.backward()
-                print(
-                    f'Graph input :: {inputs[0].min().data:.5f} ~ {inputs[0].max().data:.5f}')
+                # print(
+                #     f'Graph input :: {inputs[0].min().data:.5f} ~ {inputs[0].max().data:.5f}')
             else:
                 sat_inputs = [v.data for v in inputs]
                 break
@@ -181,11 +182,14 @@ class SymbolNet(nn.Module):
         self.stop_training()
         if sat_inputs is None:
             print('[grad] no valid range found!!!')
+
+        self.check_intermediate_numeric = last_check_intermediate_numeric
         return sat_inputs
 
     def forward(self, *xs):
         local_ref_cnt = self.ref_cnt.copy()
         self.tensors = [None for _ in self.tensors]
+        self.invalid_found_last = False
 
         for ii in self.input_info:
             self.tensors[ii.oid] = xs[ii.op.idx]
@@ -212,7 +216,7 @@ class SymbolNet(nn.Module):
                     invalid_mask = [torch.isnan(out).any() or torch.isinf(
                         out).any() for out in outputs]
 
-                self.invalid_found_last = any(invalid_mask)
+                self.invalid_found_last |= any(invalid_mask)
                 if self.invalid_found_last and (self.use_gradient and not self.stop_updating_loss):
                     print(
                         f'Detected NaN or Inf in outputs ~ {op} ~ id {node_id}.')
@@ -259,7 +263,6 @@ class SimpleGenerator:
 
         self.op_candidates = [op for op in ALL_OP_TYPES if op not in skip]
         self.solver = z3.Solver()
-        self.solver.set("threads", 4)
         # 4 bytes per float (assume we use float32)
         self.limit_float = 1024**2 * megabyte_lim / 4
 
