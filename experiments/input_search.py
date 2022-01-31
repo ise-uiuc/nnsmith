@@ -2,7 +2,6 @@
 simply generate a bunch of models and see if the can find viable inputs.
 """
 
-from nnsmith.error import ConstraintCheck, ConstraintError
 from nnsmith.graph_gen import random_model_gen, SymbolNet
 
 import torch
@@ -21,6 +20,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_model', type=int, default=50)
     parser.add_argument('--min_dims', type=list, default=[1, 3, 48, 48])
     parser.add_argument('--timeout', type=int, default=50000)
+    parser.add_argument('--use_cuda', action='store_true')
     parser.add_argument('--verbose', action='store_true')
     parser.add_argument('--use_bitvec', action='store_true')
     parser.add_argument('--viz_graph', action='store_true')
@@ -36,7 +36,7 @@ if __name__ == '__main__':
     random.seed(exp_seed)
     torch.manual_seed(exp_seed)
 
-    exp_name = f'r{exp_seed}-msize{args.n_model}-mnode{args.max_nodes}-inp-search.csv'
+    exp_name = f'r{exp_seed}-model{args.n_model}-node{args.max_nodes}-inp-search.csv'
     results = {
         'model_seed': [],
         'n_nodes': [],
@@ -61,43 +61,55 @@ if __name__ == '__main__':
         results['model_seed'].append(model_seed)
 
         init_tensor_samples = []
+        n_step = 10
+        interval = 1 / n_step
         for v in np.linspace(-1, 1, 10):
-            init_tensors = [torch.ones(ii.op.shape)
-                            * v for ii in net.input_info]
+            init_tensors = [v + torch.rand(ii.op.shape)
+                            * interval for ii in net.input_info]
             init_tensor_samples.append(init_tensors)
 
         # Test v3
         strt_time = time.time()
         succ_v3 = False
-        try_times = 0
+        try_times_v3 = 0
 
         net.check_intermediate_numeric = True
         with torch.no_grad():
             for init_tensors in init_tensor_samples:
-                try_times += 1
+                try_times_v3 += 1
                 _ = net(*init_tensors)
                 if not net.invalid_found_last:
                     succ_v3 = True
                     break
 
-        net.check_intermediate_numeric = False
         results['v3-time'].append(time.time() - strt_time)
-        results['v3-try'].append(try_times)
+        results['v3-try'].append(try_times_v3)
         results['v3-succ'].append(succ_v3)
 
         # Test grad
+        # If v3 can succeed, grad can succeed too as their initial input are the same.
         strt_time = time.time()
-        try_times = 0
         succ_grad = False
+        try_times_grad = 0
         for init_tensors in init_tensor_samples:
-            try_times += 1
-            sat_inputs = net.grad_input_gen(init_tensors=init_tensors)
+            try_times_grad += 1
+            try:
+                sat_inputs = net.grad_input_gen(
+                    init_tensors=init_tensors, use_cuda=args.use_cuda)
+            except RuntimeError as e:
+                if 'element 0 of tensors does not require grad and does not have a grad_fn' in str(e):
+                    # means some op are not differentiable.
+                    succ_grad = succ_v3
+                    try_times_grad = try_times_v3
+                    break
+                raise e
             if sat_inputs is not None:
                 succ_grad = True
                 break
 
+        # Some operator is not differentiable that will fall back to v3.
         results['grad-succ'].append(succ_grad)
-        results['grad-try'].append(try_times)
+        results['grad-try'].append(try_times_grad)
         results['grad-time'].append(time.time() - strt_time)
 
     pd.DataFrame(results).to_csv(exp_name, index=False)
