@@ -1,9 +1,17 @@
-import matplotlib.pyplot as plt
-import pandas as pd
 import os
 import re
 import argparse
+import datetime
+
+import matplotlib.pyplot as plt
+import pandas as pd
 import numpy as np
+
+
+def modification_date(filename):
+    t = os.path.getmtime(filename)
+    return datetime.datetime.fromtimestamp(t)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -14,6 +22,9 @@ if __name__ == '__main__':
     REGEX_PATTERN = 'r(\d+)-model(\d+)-node(\d+)-inp-search.csv'
 
     plot_data = {}
+
+    files_to_plot = {}
+    file_to_plot_date = {}
 
     for fname in os.listdir('.'):
         res = re.match(REGEX_PATTERN, fname)
@@ -27,11 +38,17 @@ if __name__ == '__main__':
             elif MODEL_SIZE_TO_GLOB != n_model:
                 continue
 
-            data = pd.read_csv(fname)
-            plot_data.setdefault('sampling', {})[
-                n_nodes] = sum(data['v3-succ'])
-            plot_data.setdefault('sampling + gradient', {}
-                                 )[n_nodes] = (sum(data['grad-succ']))
+            # use the latest data
+            if n_nodes not in files_to_plot or modification_date(fname) > file_to_plot_date[n_nodes]:
+                file_to_plot_date[n_nodes] = modification_date(fname)
+                files_to_plot[n_nodes] = fname
+
+    for n_nodes, fname in files_to_plot.items():
+        data = pd.read_csv(fname)
+        plot_data.setdefault('sampling', {})[
+            n_nodes] = sum(data['v3-succ'])
+        plot_data.setdefault('sampling + gradient', {}
+                             )[n_nodes] = sum(data['grad-succ'])
 
     if not plot_data:
         print('No data found, please check the regex pattern', REGEX_PATTERN)
