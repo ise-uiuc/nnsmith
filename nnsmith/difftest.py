@@ -5,9 +5,7 @@ from numpy import testing
 from nnsmith.error import *
 import pickle
 from pathlib import Path
-from tqdm import tqdm
 from nnsmith.backend_executor import BackendCreator
-import pandas as pd
 
 
 def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarray], obtained_name: str, oracle_name: str, nan_as_err=True):
@@ -32,7 +30,7 @@ def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarr
             if np.isnan(desired[key]).any():
                 err_msg += f'{oracle_name} has NaN'
             if err_msg != '':
-                err_msg = f'At tensor #{index}: ' + err_msg
+                err_msg = f'At tensor #{index} named {key}: ' + err_msg
                 # print(err_msg) # Mute.
                 raise NaNError(err_msg)
 
@@ -47,7 +45,7 @@ def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarr
     except AssertionError as err:
         # print(err) # Mute.
         raise IncorrectResult(
-            f'{obtained_name} v.s. {oracle_name} mismatch in #{index} tensor: {str(err)}')
+            f'{obtained_name} v.s. {oracle_name} mismatch in #{index} tensor named {key}: {str(err)}')
 
 
 def known_bug(report: dict, db: List[dict]):
@@ -102,6 +100,7 @@ def unsupported_feature(report: dict, db: List[dict]):
 
 
 def difftest(root: str):
+    import pandas as pd
     """
     This function compares the outputs of each backend and generate bug reports.
     Note: `run_backend` must run before this function.
