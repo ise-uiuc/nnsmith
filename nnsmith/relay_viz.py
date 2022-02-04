@@ -13,6 +13,25 @@ from tvm.topi.utils import get_const_tuple
 from tvm.relay.frontend.common import infer_shape, infer_type
 from graphviz import Digraph
 import onnx
+import textwrap
+
+
+def select_mod(mod, select):
+    if select is None:
+        return mod
+    fields = []
+    for s in select:
+        t = mod['main'].body
+        for idx, i in enumerate(s.split('.')):
+            i = int(i)
+            if idx == 0:
+                t = t.fields[i]
+            else:
+                t = t.args[i]
+        fields.append(t)
+    func = relay.Function(mod['main'].params, relay.Tuple(
+        fields) if len(fields) > 1 else fields[0])
+    return tvm.IRModule.from_expr(func)
 
 
 def call_node_infer_type(node):
@@ -140,6 +159,9 @@ class Namer(object):
         if isinstance(node, relay.expr.Call):
             # name = 'CallNode(' + node.op.name + ')'
             name = node.op.name
+            if node.attrs is not None:
+                name += ', ' + str({k: node.attrs[k]
+                                   for k in node.attrs.keys()})
         elif isinstance(node, relay.expr.Var):
             name = 'Var(' + node.name_hint + ')'
         elif isinstance(node, relay.expr.TupleGetItem):
@@ -149,6 +171,7 @@ class Namer(object):
             name = type(node).__name__
             if len(name) > 47:
                 name = name[:47] + '...'
+        name = textwrap.fill(name, width=60)
         return name
 
     def get_type_info(self, node):
@@ -178,12 +201,15 @@ class Namer(object):
         return '#' + str(self.node_id[node]) + ': ' + name
 
 
-def visualize(expr_or_mod, show_full_bn=False, node_id=None,
-              layout=None, show_full_tuple=True, auto_infer_type=False, name_me=None):
-    if isinstance(expr_or_mod, tvm.IRModule):
-        expr = expr_or_mod["main"].body
+def _visualize(expr_or_mod, show_full_bn=True, node_id=None,
+               layout=None, show_full_tuple=True, auto_infer_type=False, name_me=None):
+    if not isinstance(expr_or_mod, tvm.IRModule):
+        mod = tvm.IRModule.from_expr(expr_or_mod)
     else:
-        expr = expr_or_mod
+        mod = expr_or_mod
+
+    mod = DefuseOps()(mod)  # not support subgraph (multiple functions). Inline them first
+    expr = mod["main"].body
     assert isinstance(expr, relay.Expr), expr
     dot = Digraph(format='svg')
     dot.attr(rankdir='BT')
@@ -216,10 +242,16 @@ def visualize(expr_or_mod, show_full_bn=False, node_id=None,
     return dot
 
 
+def visualize(mod, output, select=None, **kwargs):
+    mod = select_mod(mod, select)
+    mod = relay.transform.InferType()(mod)
+    _visualize(mod, **kwargs).render(cleanup=True, outfile=output)
+
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', type=str, required=True,
+    parser.add_argument('model', type=str, required=True,
                         help='onnx model path')
     parser.add_argument('--output', type=str, required=True,
                         help='output figure path')
@@ -231,11 +263,4 @@ if __name__ == '__main__':
     shape_dict = {name: inp_spec[name].shape for name in inp_spec}
     mod, params = relay.frontend.from_onnx(
         onnx_model, shape_dict, freeze_params=True)
-    if args.select is not None:
-        func = mod["main"]
-        func_1 = relay.Function(
-            func.params, relay.Tuple([func.body.fields[i] for i in args.select]))
-        mod = tvm.IRModule.from_expr(func_1)
-    mod = relay.transform.InferType()(mod)
-
-    visualize(mod, show_full_bn=True).render(cleanup=True, outfile=args.output)
+    visualize(mod, args.output, args.select)
