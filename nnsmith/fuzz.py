@@ -300,8 +300,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     if cur_time - self.start_time > self.time_budget:
                         break
         finally:  # cleanup
-            if os.path.exists(_TMP_ONNX_FILE_):
-                os.remove(_TMP_ONNX_FILE_)
+            os.system('rm ' + _TMP_ONNX_FILE_ + '*')
             last_cov = __COV_DRIVER__.get_now()
         self.reporter.flush(self)
 
