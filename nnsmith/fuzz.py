@@ -98,11 +98,17 @@ class Reporter:  # From Tzer.
 
     def flush(self, fuzz):
         if fuzz.table is not None:
+            os.system('mv {} {}'.format(
+                os.path.join(self.report_folder, f'state.pkl'),
+                os.path.join(self.report_folder, f'state.pkl.bak')))
             pickle.dump({'table': fuzz.table}, open(
-                os.path.join(self.report_folder, f'state_{self.record_coverage_cnt}.pkl'), 'wb'), protocol=4)
+                os.path.join(self.report_folder, f'state.pkl'), 'wb'), protocol=4)
         profile = fuzz.profile  # type: pd.DataFrame
+        os.system('mv {} {}'.format(
+            os.path.join(self.report_folder, f'profile.pkl'),
+            os.path.join(self.report_folder, f'profile.pkl.bak')))
         profile.to_pickle(os.path.join(self.report_folder,
-                          f'profile_{self.record_coverage_cnt}.pkl'), protocol=4)
+                          f'profile.pkl'), protocol=4)
 
     def record_coverage(self, fuzz):
         if self.record_coverage_cnt % 10 == 0:
