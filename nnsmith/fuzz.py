@@ -308,7 +308,7 @@ if __name__ == '__main__':
         from nnsmith.backends.ort_graph import ORTExecutor
         backends = {'trt-opt': TRTBackend(),
                     'ort-debug': ORTExecutor(opt_level=0)}
-        __COV_DRIVER__ = ORTExecutor.coverage_install()
+        __COV_DRIVER__ = TRTBackend.coverage_install()
     else:
         raise NotImplementedError("Other backends not supported yet.")
 
