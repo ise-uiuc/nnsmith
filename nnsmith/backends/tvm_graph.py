@@ -34,11 +34,24 @@ class TVMExecutor(DiffTestBackend):
         """Pack output tensor(s) into a list
         """
         # TODO(jinkun): may not work for nested list / dynamic shape
+# <<<<<<< HEAD
+# Not sure I understand the code below. commenting out for now.
         assert output is not None, "Output should not be None"
-        output = [r.numpy() for r in output]
-        if isinstance(out_shape, (tuple, list, tvm.ir.type.TupleType)):
-            out_shape = [tuple(r.shape) for r in out_shape.fields]
-        elif isinstance(out_shape, tvm.ir.tensor_type.TensorType):
+        # output = [r.numpy() for r in output]
+        # if isinstance(out_shape, (tuple, list, tvm.ir.type.TupleType)):
+        #     out_shape = [tuple(r.shape) for r in out_shape.fields]
+        # elif isinstance(out_shape, tvm.ir.tensor_type.TensorType):
+# =======
+        if isinstance(output, (tvm.runtime.container.ADT, list)):
+            output = [r.numpy() for r in output]
+            if isinstance(out_shape, relay.TupleType):
+                out_shapes = out_shape.fields
+            else:
+                out_shapes = [out_shape]
+            out_shape = [tuple(r.shape) for r in out_shapes]
+        elif output is not None:
+            output = [output.numpy()]
+# >>>>>>> e569ea8... fix tvm-graph and support disable infer domain in backend_exe
             out_shape = [tuple(out_shape.shape)]
         else:
             raise NNSmithInternalError(

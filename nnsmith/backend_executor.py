@@ -69,7 +69,7 @@ class BackendCreator:
             raise ValueError(f'unknown backend: {name}')
 
 
-def run_backend_single_model(model_path: str, domain_path: str, backend: BackendCreator, dump_raw: str, seed: int = None):
+def run_backend_single_model(model_path: str, domain_path: str, backend: BackendCreator, dump_raw: str, seed: int = None, infer_domain=True):
     """This function is for debugging purpose.
     Run the backend on the same process.
     Compared to run_backend_single_model_raw_input, this is new version with input gen on the fly
@@ -79,10 +79,11 @@ def run_backend_single_model(model_path: str, domain_path: str, backend: Backend
     inp_spec = DiffTestBackend.analyze_onnx_io(model)[0]
     if domain_path is not None:
         rngs = pickle.load(open(domain_path, 'rb'))
-    else:
-        # rngs = None
+    elif infer_domain:
         rngs = input_gen.InputGenV3().infer_domain(model)
         print('inferred domain', rngs)
+    else:
+        rngs = None
     inputs = input_gen.gen_one_input_rngs(
         inp_spec, rngs, seed)
     outputs = backend.predict(model_path, inputs)
@@ -135,6 +136,8 @@ if __name__ == '__main__':
                         help='to generate random input data')
     parser.add_argument('--cmp_with', type=str, default=None,
                         help='the backend to compare with')
+    parser.add_argument('--no_infer', action='store_true',
+                        help='Use default domain instead of inferring')
 
     # TODO: Add support for passing backend-specific options
     args = parser.parse_args()
@@ -154,7 +157,7 @@ if __name__ == '__main__':
         if args.raw_input is not None:
             return run_backend_single_model_raw_input(args.model, args.raw_input, bknd, dump_raw)
         else:
-            return run_backend_single_model(args.model, args.input_domain, bknd, dump_raw, seed)
+            return run_backend_single_model(args.model, args.input_domain, bknd, dump_raw, seed, not args.no_infer)
 
     outputs = run_backend(BackendCreator(args.backend), args.dump_raw)
     if args.cmp_with is not None:
