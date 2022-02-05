@@ -25,6 +25,7 @@ from nnsmith.backends import DiffTestBackend
 from nnsmith.input_gen import gen_one_input_rngs
 from nnsmith.difftest import assert_allclose
 from nnsmith.graph_input_gen import forked_execution
+import networkx as nx
 
 __COV_DRIVER__ = None
 
@@ -79,10 +80,12 @@ class Reporter:  # From Tzer.
         self.n_bug = 0
         self.record_coverage_cnt = 0
 
-    def report_bug(self, err_type: Exception, buggy_onnx_path: str, message: str, stdout: str, stderr: str):
+    def report_bug(self, err_type: Exception, buggy_onnx_path: str, message: str, stdout: str, stderr: str, graph_path: str):
         dir = f'{type(err_type).__name__}__{self.n_bug}'
         os.mkdir(os.path.join(self.report_folder, dir))
-
+        G = pickle.load(open(graph_path, 'rb'))
+        nx.drawing.nx_pydot.to_pydot(G).write_png(os.path.join(
+            self.report_folder, dir, 'graph.png'))
         shutil.move(buggy_onnx_path, os.path.join(
             self.report_folder, dir, 'model.onnx'))
         shutil.move(stdout, os.path.join(
@@ -270,8 +273,9 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     except Exception as e:
                         stdout = f'{_TMP_ONNX_FILE_}.stdout'
                         stderr = f'{_TMP_ONNX_FILE_}.stderr'
+                        graph = f'{_TMP_ONNX_FILE_}-graph.pkl'
                         self.reporter.report_bug(
-                            e, _TMP_ONNX_FILE_, str(e), stdout, stderr)
+                            e, _TMP_ONNX_FILE_, str(e), stdout, stderr, graph)
 
                     cur_time = time.time()
                     progress.update(

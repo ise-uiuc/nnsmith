@@ -67,6 +67,8 @@ def forked_execution(
                         alive_shapes=gen.alive_shapes)
         net.eval()
         torch2onnx(model=net, filename=output_path, verbose=False)
+        pickle.dump(gen.picklable_graph, open(
+            output_path + '-graph.pkl', 'wb'))
         model = DiffTestBackend.get_onnx_proto(output_path)
 
         net.record_intermediate = True

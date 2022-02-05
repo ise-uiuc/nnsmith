@@ -165,6 +165,7 @@ class SimpleGenerator:
         # Node -> op: AbsOpBase
         # Edge -> shape_idx:-> self.alive_shapes
         self.abstract_graph = nx.MultiDiGraph()
+        self.picklable_graph = nx.MultiDiGraph()
 
         # <op idx, shape variable, output operand idx>
         self.alive_shapes: ALIVE_SHAPE_TYPE = []
@@ -284,10 +285,15 @@ class SimpleGenerator:
         self.abstract_graph.add_node(
             new_node_idx, op=node, nin=len(ishape_indices), nout=len(oshapes),
             label=f'#{new_node_idx}, [{shape_idx_st},{shape_idx_ed}), {node}', shape_indices=shape_indices)
+        self.picklable_graph.add_node(
+            new_node_idx, nin=len(ishape_indices), nout=len(oshapes),
+            label=f'#{new_node_idx}, [{shape_idx_st},{shape_idx_ed}), {node}', shape_indices=shape_indices)
 
         for in_operand_idx, idx in enumerate(ishape_indices):
             old_node_idx, svar, out_operand_idx = self.alive_shapes[idx]
             self.abstract_graph.add_edge(old_node_idx, new_node_idx, shape_idx=idx, operand_idx=(
+                out_operand_idx, in_operand_idx), label=f'{out_operand_idx}-{in_operand_idx}: {svar}')
+            self.picklable_graph.add_edge(old_node_idx, new_node_idx, shape_idx=idx, operand_idx=(
                 out_operand_idx, in_operand_idx), label=f'{out_operand_idx}-{in_operand_idx}: {svar}')
 
         if self.is_viz_sbs:
