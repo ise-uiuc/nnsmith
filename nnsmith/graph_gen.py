@@ -156,6 +156,8 @@ class SimpleGenerator:
         self.verbose = verbose
         auto_infer_in_dtypes(self.verbose)
 
+        if 'NNSMITH_SKIP' in os.environ:
+            skip.extend(get_skip_op())
         self.op_candidates = [op for op in ALL_OP_TYPES if op not in skip]
         self.solver = z3.Solver()
         self.solver.set("threads", 4)
@@ -187,15 +189,15 @@ class SimpleGenerator:
         else:
             return z3.Int(name)
 
-    @abstractmethod
+    @ abstractmethod
     def insert_input_node(self, min_dims, shape=None, dtype=DType.float32) -> ShapeVar:
         raise NotImplementedError
 
-    @abstractmethod
+    @ abstractmethod
     def try_insert_node(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
         raise NotImplementedError
 
-    @abstractmethod
+    @ abstractmethod
     def get_symbol_solutions(self) -> List:
         raise NotImplementedError
 

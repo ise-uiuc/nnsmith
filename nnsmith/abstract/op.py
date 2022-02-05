@@ -1597,6 +1597,22 @@ ALL_OP_TYPES = _glob_leaf_op_classes()
 ALL_OP_STR2TYPE = {c.__name__: c for c in ALL_OP_TYPES}
 
 
+def get_skip_op():
+    SKIP_FOR_BKEND = {
+        'trt': [Round, Acos, Xor],
+        'tvm': [],
+        'ort': [],
+        'xla': [],
+    }
+    skip = []
+    for op in os.environ.get('NNSMITH_SKIP', '').split(','):
+        if op.startswith('backend:'):
+            skip.extend(SKIP_FOR_BKEND[op[len('backend:'):]])
+        else:
+            skip.append(globals()[op])
+    return skip
+
+
 def _check_comb(comb: DTypeComb, op: AbsOpBase):
     inps = []
     for dtype, ndims in zip(comb, op.inp_dims):
