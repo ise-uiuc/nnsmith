@@ -1,4 +1,5 @@
 import pickle
+import sys
 import time
 import os
 import uuid
@@ -16,6 +17,7 @@ from rich.progress import Progress, BarColumn, ProgressColumn
 from rich.panel import Panel
 from rich.console import RenderableType
 from rich.columns import Columns
+from nnsmith import util
 
 from nnsmith.error import NNSmithInternalError, SanityCheck
 from nnsmith.graph_gen import GenerationTable
@@ -77,12 +79,16 @@ class Reporter:  # From Tzer.
         self.n_bug = 0
         self.record_coverage_cnt = 0
 
-    def report_bug(self, err_type: Exception, buggy_onnx_path: str, message: str):
+    def report_bug(self, err_type: Exception, buggy_onnx_path: str, message: str, stdout: str, stderr: str):
         dir = f'{type(err_type).__name__}__{self.n_bug}'
         os.mkdir(os.path.join(self.report_folder, dir))
 
         shutil.move(buggy_onnx_path, os.path.join(
             self.report_folder, dir, 'model.onnx'))
+        shutil.move(stdout, os.path.join(
+            self.report_folder, dir, 'stdout.log'))
+        shutil.move(stderr, os.path.join(
+            self.report_folder, dir, 'stderr.log'))
         with open(os.path.join(self.report_folder, dir, 'err.txt'), 'w') as f:
             f.write(message)
         self.n_bug += 1
@@ -226,12 +232,16 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         inp = gen_one_input_rngs(input_spec, rngs)
 
                         difftest_pool = {}
-                        for bname in self.backends:
-                            st = time.time()
-                            difftest_pool[bname] = self.backends[bname].predict(
-                                onnx_model, inp)
-                            info['model_eval_t_' + bname] = time.time() - st
+                        progress.stop()
+                        with util.stdout_redirected(f"{_TMP_ONNX_FILE_}.stdout", sys.__stdout__), \
+                                util.stdout_redirected(f"{_TMP_ONNX_FILE_}.stderr", sys.__stderr__):
+                            for bname in self.backends:
+                                st = time.time()
+                                difftest_pool[bname] = self.backends[bname].predict(
+                                    onnx_model, inp)
+                                info['model_eval_t_' + bname] = time.time() - st
 
+                        progress.start()
                         keys = list(difftest_pool.keys())
                         for idx in range(1, len(keys)):
                             assert_allclose(
@@ -258,7 +268,10 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         # for the whole graph
                         # self.table.on_no_cov()
                     except Exception as e:
-                        self.reporter.report_bug(e, _TMP_ONNX_FILE_, str(e))
+                        stdout = f'{_TMP_ONNX_FILE_}.stdout'
+                        stderr = f'{_TMP_ONNX_FILE_}.stderr'
+                        self.reporter.report_bug(
+                            e, _TMP_ONNX_FILE_, str(e), stdout, stderr)
 
                     cur_time = time.time()
                     progress.update(
