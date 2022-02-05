@@ -1,3 +1,4 @@
+import pickle
 import time
 import os
 import uuid
@@ -9,6 +10,7 @@ from typing import Dict, Iterable, Union, List
 
 # Edge coverage. See https://github.com/ganler/tvm/tree/coverage
 import git
+import pandas as pd
 import rich
 from rich.progress import Progress, BarColumn, ProgressColumn
 from rich.panel import Panel
@@ -73,6 +75,7 @@ class Reporter:  # From Tzer.
                 _log_repo(f, 'TVM', git.Repo(os.getenv('TVM_HOME')))
 
         self.n_bug = 0
+        self.record_coverage_cnt = 0
 
     def report_bug(self, err_type: Exception, buggy_onnx_path: str, message: str):
         dir = f'{type(err_type).__name__}__{self.n_bug}'
@@ -84,7 +87,18 @@ class Reporter:  # From Tzer.
             f.write(message)
         self.n_bug += 1
 
-    def record_coverage(self):
+    def flush(self, fuzz):
+        if fuzz.table is not None:
+            pickle.dump({'table': fuzz.table}, open(
+                os.path.join(self.report_folder, f'state_{self.record_coverage_cnt}.pkl'), 'wb'), protocol=4)
+        profile = fuzz.profile  # type: pd.DataFrame
+        profile.to_pickle(os.path.join(self.report_folder,
+                          f'profile_{self.record_coverage_cnt}.pkl'), protocol=4)
+
+    def record_coverage(self, fuzz):
+        if self.record_coverage_cnt % 10 == 0:
+            self.flush(fuzz)
+        self.record_coverage_cnt += 1
         with open(os.path.join(self.report_folder, _COV_BY_TIME_NAME_), 'a') as f:
             f.write(
                 f'{time.perf_counter() - self.start_time :.2f},{__COV_DRIVER__.get_now()}\n')
@@ -124,6 +138,9 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         self.slowest_model_eval_t = -float("inf")
         self.fastest_model_eval_t = float("inf")
 
+        self.profile = pd.DataFrame(
+            columns=['model_gen_t', 'model_eval_t', 'bugs', 'edge_cov'])
+
         rich.print(
             f'[bold yellow]To exit the program: `kill {os.getpid()}`[/bold yellow]')
         rich.print(
@@ -135,15 +152,17 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                 f'{datetime.timedelta(seconds=round(time.time()-self.start_time))} ~ '
                 f'{datetime.timedelta(seconds=self.time_budget)}',
                 title="Time Left ~ Total Time"),
-            Panel.fit(f'{self.reporter.n_bug}',
-                      title="#Bugs", style="magenta"),
+            Panel.fit(f'{self.reporter.n_bug}/{len(self.profile)}',
+                      title="Bug/Iter", style="magenta"),
             Panel.fit(f'[green]Fast: {self.fastest_model_gen_t:.3f}s[/green]|'
-                      f'[bold]Cur: {self.cur_model_gen_t:.3f}s[/bold]|'
-                      f'[red]Slow: {self.slowest_model_gen_t:.3f}s',
+                      f'[bold]Cur: {self.cur_model_gen_t:.3f}s[/bold]\n'
+                      f'[red]Slow: {self.slowest_model_gen_t:.3f}s[/red]|'
+                      f'[red]Avg: {self.profile["model_gen_t"].mean():.3f}s',
                       title="Model Generation Time"),
             Panel.fit(f'[green]Fast: {self.fastest_model_eval_t:.3f}s[/green]|'
-                      f'[bold]Cur: {self.cur_model_eval_t:.3f}s[/bold]|'
-                      f'[red]Slow: {self.slowest_model_eval_t:.3f}s',
+                      f'[bold]Cur: {self.cur_model_eval_t:.3f}s[/bold]\n'
+                      f'[red]Slow: {self.slowest_model_eval_t:.3f}s[/red]|'
+                      f'[red]Avg: {self.profile["model_eval_t"].mean():.3f}s',
                       title="Model Evaluation Time"),
         ])
 
@@ -169,7 +188,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     '[green]Edge coverage.', total=__COV_DRIVER__.get_total())
 
                 while True:
-                    self.reporter.record_coverage()
+                    self.reporter.record_coverage(self)
 
                     gen_t_s = time.time()
                     # gen = PureSymbolGen()
@@ -198,6 +217,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
 
                     try:  # TODO: multi-process support for isolation.
                         eval_t_s = time.time()
+                        info = {}
 
                         onnx_model = DiffTestBackend.get_onnx_proto(
                             _TMP_ONNX_FILE_)
@@ -207,8 +227,10 @@ class FuzzingLoop:  # TODO: Support multiple backends.
 
                         difftest_pool = {}
                         for bname in self.backends:
+                            st = time.time()
                             difftest_pool[bname] = self.backends[bname].predict(
                                 onnx_model, inp)
+                            info['model_eval_t_' + bname] = time.time() - st
 
                         keys = list(difftest_pool.keys())
                         for idx in range(1, len(keys)):
@@ -243,6 +265,14 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         task_fuzz, completed=cur_time - self.start_time)
                     progress.update(
                         task_coverage, completed=__COV_DRIVER__.get_now())
+                    info.update({
+                        'model_gen_t': self.cur_model_gen_t,
+                        'model_eval_t': self.cur_model_eval_t,
+                        'edge_cov': __COV_DRIVER__.get_now(),
+                        'bugs': self.reporter.n_bug,
+                        'time_stamp': time.perf_counter() - self.start_time,
+                    })
+                    self.profile = self.profile.append(info, ignore_index=True)
 
                     if cur_time - self.start_time > self.time_budget:
                         break
@@ -250,6 +280,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             if os.path.exists(_TMP_ONNX_FILE_):
                 os.remove(_TMP_ONNX_FILE_)
             last_cov = __COV_DRIVER__.get_now()
+        self.reporter.flush(self)
 
 
 if __name__ == '__main__':
@@ -270,6 +301,12 @@ if __name__ == '__main__':
     elif args.backend == 'ort':
         from nnsmith.backends.ort_graph import ORTExecutor
         backends = {'ort-opt': ORTExecutor(opt_level=3),
+                    'ort-debug': ORTExecutor(opt_level=0)}
+        __COV_DRIVER__ = ORTExecutor.coverage_install()
+    elif args.backend == 'trt':
+        from nnsmith.backends.trt_graph import TRTBackend
+        from nnsmith.backends.ort_graph import ORTExecutor
+        backends = {'trt-opt': TRTBackend(),
                     'ort-debug': ORTExecutor(opt_level=0)}
         __COV_DRIVER__ = ORTExecutor.coverage_install()
     else:
