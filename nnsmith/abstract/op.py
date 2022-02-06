@@ -163,6 +163,13 @@ class DType(Enum):
     def __repr__(self) -> str:
         return self.name
 
+    @staticmethod
+    def from_str(s):
+        for i in list(DType.__members__.values()):
+            if str(i.value).endswith(s):
+                return i
+        raise ValueError(f"Unknown dtype: {s}")
+
 
 DTypeComb = Tuple[DType, ...]
 
@@ -1599,7 +1606,13 @@ ALL_OP_STR2TYPE = {c.__name__: c for c in ALL_OP_TYPES}
 
 def get_skip_op():
     SKIP_FOR_BKEND = {
-        'trt': [Round, Acos, Xor],
+        'trt': [
+            # unsupported
+            'Round:float64', 'Acos:float64', 'Asin:float64', 'Atan:float64', 'Xor', 'Ceil:float64',
+            'Cos:float64', 'Sin:float64', 'Tan:float64', 'GELU:float64', 'LeakyReLU:float64',
+            # buggy, see https://github.com/NVIDIA/TensorRT/issues/1780
+            'Less', 'Greater', 'Equal',
+        ],
         'tvm': [],
         'ort': [],
         'xla': [],
@@ -1609,8 +1622,23 @@ def get_skip_op():
         if op.startswith('backend:'):
             skip.extend(SKIP_FOR_BKEND[op[len('backend:'):]])
         else:
-            skip.append(globals()[op])
-    return skip
+            skip.append(op)
+    ret = []
+    for op_name in skip:
+        skip_comb = None
+        if op_name.find(':') != -1:
+            op_name, skip_comb = op_name.split(':')
+            skip_comb = skip_comb.split(',')
+        op = globals()[op_name]  # type: Type[AbsOpBase]
+        msg = ['skip op:', op_name]
+        if skip_comb is not None:
+            skip_comb = tuple(map(DType.from_str, skip_comb))
+            msg += ['skip dtype combination:', skip_comb]
+            op.in_dtypes.remove(skip_comb)
+
+        ret.append(op)
+        print(*msg)
+    return ret
 
 
 def _check_comb(comb: DTypeComb, op: AbsOpBase):
