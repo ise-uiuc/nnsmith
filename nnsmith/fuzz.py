@@ -1,3 +1,4 @@
+import pickle
 import time
 import os
 import uuid
@@ -151,6 +152,8 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         _TMP_ONNX_FILE_ = f'tmp_{uuid.uuid4()}.onnx'
         _PER_MODEL_TIMEOUT_ = 1000  # milliseconds
         self.start_time = time.time()
+        use_torch = any(i.__class__.__name__ ==
+                        'TchExecutor' for i in self.backends.values())
 
         last_cov = 0
 
@@ -187,7 +190,8 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                                                              table=self.table,
                                                              max_node_size=random.randint(
                                                                  1, self.max_nodes),
-                                                             max_gen_millisec=_PER_MODEL_TIMEOUT_)
+                                                             max_gen_millisec=_PER_MODEL_TIMEOUT_,
+                                                             save_torch=use_torch)
 
                     # Generation time logging.
                     self.cur_model_gen_t = time.time() - gen_t_s
@@ -201,6 +205,11 @@ class FuzzingLoop:  # TODO: Support multiple backends.
 
                         onnx_model = DiffTestBackend.get_onnx_proto(
                             _TMP_ONNX_FILE_)
+                        if use_torch:
+                            torch_model = pickle.load(
+                                open(_TMP_ONNX_FILE_ + '.pt', 'rb'))
+                        else:
+                            torch_model = None
                         input_spec, onames = DiffTestBackend.analyze_onnx_io(
                             onnx_model)
                         inp = gen_one_input_rngs(input_spec, rngs)
@@ -208,7 +217,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         difftest_pool = {}
                         for bname in self.backends:
                             difftest_pool[bname] = self.backends[bname].predict(
-                                onnx_model, inp)
+                                onnx_model, inp, torch_model=torch_model)
 
                         keys = list(difftest_pool.keys())
                         for idx in range(1, len(keys)):
@@ -272,6 +281,17 @@ if __name__ == '__main__':
         backends = {'ort-opt': ORTExecutor(opt_level=3),
                     'ort-debug': ORTExecutor(opt_level=0)}
         __COV_DRIVER__ = ORTExecutor.coverage_install()
+    elif args.backend == 'trt':
+        from nnsmith.backends.trt_graph import TRTBackend
+        from nnsmith.backends.tch_graph import TchExecutor
+        backends = {'trt-opt': TRTBackend(),
+                    'tch-debug': TchExecutor(opt_level=0, dev='cpu')}
+        __COV_DRIVER__ = TRTBackend.coverage_install()
+    elif args.backend == 'tch':
+        from nnsmith.backends.tch_graph import TchExecutor
+        backends = {'tch-opt': TchExecutor(dev='cuda'),
+                    'tch-debug': TchExecutor(opt_level=0, dev='cpu')}
+        __COV_DRIVER__ = TchExecutor.coverage_install()
     else:
         raise NotImplementedError("Other backends not supported yet.")
 

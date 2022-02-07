@@ -71,7 +71,7 @@ class TVMExecutor(DiffTestBackend):
             ).evaluate()
         self.sess = executor
 
-    def predict(self, model, inputs, check_naming=True):
+    def predict(self, model, inputs, check_naming=True, **kwargs):
         self.load_model(model)
         with tvm.transform.PassContext(opt_level=self.opt_level):
             output = self.sess(

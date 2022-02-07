@@ -20,7 +20,7 @@ class HostDeviceMem(object):
 
 
 class TRTBackend(DiffTestBackend):
-    def predict(self, model, inputs):
+    def predict(self, model, inputs, **kwargs):
         import pycuda.autoinit
         onnx_model = self.get_onnx_proto(model)
         engine = self.build_engine_onnx(onnx_model)

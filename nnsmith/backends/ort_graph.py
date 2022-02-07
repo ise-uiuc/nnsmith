@@ -38,7 +38,7 @@ class ORTExecutor(DiffTestBackend):
             onnx._serialize(onnx_model), providers=self.providers, sess_options=sess_options)
         _, self.out_names = self.analyze_onnx_io(onnx_model)
 
-    def predict(self, model, inputs):
+    def predict(self, model, inputs, **kwargs):
         self.load_model(model)
         res = self.sess.run(self.out_names, inputs)
 

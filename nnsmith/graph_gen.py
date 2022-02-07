@@ -28,8 +28,13 @@ class RequiredDimNotFound(Exception):
 ALIVE_SHAPE_TYPE = List[Tuple[int, ShapeVar, int]]
 
 
+InputInfo = NamedTuple(
+    'InputInfo', [('op', Input), ('oid', int), ('node_id', int), ('input_name', str)])
+
+
 class SymbolNet(nn.Module):
-    def __init__(self, graph: nx.MultiDiGraph, model: z3.ModelRef, verbose=False, alive_shapes: ALIVE_SHAPE_TYPE = None,
+
+    def __init__(self, graph: nx.MultiDiGraph, model, verbose=False, alive_shapes: ALIVE_SHAPE_TYPE = None,
                  record_intermediate=False):
         super(SymbolNet, self).__init__()
         self.verbose = verbose
@@ -48,8 +53,6 @@ class SymbolNet(nn.Module):
         # whether or not to register intermediate tensors as output tensors. Useful (at least) for checking nan
         self.record_intermediate = record_intermediate
 
-        InputInfo = NamedTuple(
-            'InputInfo', [('op', Input), ('oid', int), ('node_id', int), ('input_name', str)])
         self.input_info: List[InputInfo] = []
 
         tmp_op_output_map = {}  # node id -> output idx in tensors;
@@ -102,6 +105,12 @@ class SymbolNet(nn.Module):
             f'i{ii.op.idx}': ii.op.shape for ii in self.input_info}
         self.plausible_input_shape = {f'i{ii.op.idx}': ShapeVar(
             ii.op.shape, dtype=ii.op.dtype) for ii in self.input_info}
+        self.first_run = True
+        self.hacked = {}  # make forward deterministic
+
+    def to_picklable(self):
+        self.alive_shapes = None
+        del self.graph
 
     def _check_out_dtype(self, outputs, node_id, op):
         if self.alive_shapes is None:
@@ -115,7 +124,16 @@ class SymbolNet(nn.Module):
                            f'torch dtype ({out.dtype}) != symbolic dtype ({self.alive_shapes[shape_idx][1].dtype.value})')
 
     @torch.no_grad()
-    def forward(self, *xs):
+    def forward(self, *args, **kwargs):
+        # required: input_info, tensors, ref_cnt, instructions, hacked, first_run verbose # alive_shapes, graph
+
+        xs = [None] * len(self.input_info)
+        for i in range(len(args)):
+            xs[i] = args[i]
+        for ii in self.input_info:
+            if ii.input_name in kwargs:
+                xs[ii.op.idx] = kwargs[ii.input_name]
+        assert all(x is not None for x in xs), xs
         local_ref_cnt = self.ref_cnt.copy()
         self.tensors = [None for _ in self.tensors]
         for ii in self.input_info:
@@ -123,9 +141,14 @@ class SymbolNet(nn.Module):
         for inst, inps, outs, op, node_id in self.instructions:
             input_tensors = [self.tensors[idx] for idx in inps]
             if isinstance(op, Div):
-                if (input_tensors[1] == 0).any():
+                if not self.first_run:
+                    cond = self.hacked[node_id]
+                else:
+                    cond = (input_tensors[1] == 0).any()
+                if cond:
                     input_tensors[1] = torch.clip(
-                        input_tensors[1], torch.ones(size=[1], dtype=input_tensors[1].dtype))
+                        input_tensors[1], torch.ones(size=[1], dtype=input_tensors[1].dtype).to(input_tensors[1].device))
+                self.hacked[node_id] = cond
             if self.verbose:
                 print(
                     f'executing instruction op={op}, node_id={node_id}, inps={inps}, outs={outs}')
@@ -148,6 +171,7 @@ class SymbolNet(nn.Module):
                     idx))
                 if local_ref_cnt[idx] > 0:  # Will be used.
                     self.tensors[idx] = output
+        self.first_run = False
         return tuple(t for t in self.tensors if t is not None)
 
 
@@ -711,7 +735,14 @@ if __name__ == '__main__':
     rngs = input_gen.infer_domain(model)
     infer_succ = rngs is not None
     ed_time = time.time()
+    import cloudpickle
 
+    st = time.time()
+    net.to_picklable()
+    net.record_intermediate = False
+    # maybe a better options is to pickle only the necessary states, for better forward compatibility
+    torch.save(net, args.output_path + ".pt", pickle_module=cloudpickle)
+    print('torch save time:', time.time() - st)
     stats = {
         'gen_succ': True,
         'infer_succ': infer_succ,

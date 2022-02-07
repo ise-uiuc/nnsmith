@@ -24,7 +24,7 @@ class DiffTestBackend(ABC):
         return False
 
     @abstractmethod
-    def predict(self, model: Union[onnx.ModelProto, str], inputs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+    def predict(self, model: Union[onnx.ModelProto, str], inputs: Dict[str, np.ndarray], **kwargs) -> Dict[str, np.ndarray]:
         raise NotImplementedError
 
     @staticmethod
