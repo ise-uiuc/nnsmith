@@ -2,6 +2,7 @@ from pathlib import Path
 import pickle
 from subprocess import CalledProcessError, check_call
 import multiprocessing as mp
+import traceback
 import psutil
 import time
 import random
@@ -28,10 +29,9 @@ def safe_wrapper(func):
             try:
                 res = func(*args, **kwargs)
                 succ = True
-            except CalledProcessError:
-                pass
-            except ModelGenSubProcesssError:
-                pass
+            except Exception as e:
+                traceback.print_exc()
+                print('retrying...')
         return res
     return wrapper
 

@@ -474,6 +474,7 @@ class PureSymbolGen(SimpleGenerator):
 
         # make a copy
         output_shapes = node.shape_fn(copy.deepcopy(input_shapes))
+        extra_shapes = node.param_shapes(input_shapes)
 
         for shape in output_shapes:
             for c in shape.gt_zero():
@@ -481,6 +482,8 @@ class PureSymbolGen(SimpleGenerator):
 
         tmp_n_floats = self.n_floats
         for s in output_shapes:
+            tmp_n_floats = nnsmith_add(tmp_n_floats, s.nelement())
+        for s in extra_shapes:
             tmp_n_floats = nnsmith_add(tmp_n_floats, s.nelement())
 
         check_res = self.check_sat(

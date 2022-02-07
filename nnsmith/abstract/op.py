@@ -394,6 +394,9 @@ class AbsOpBase(ABC):
     def requires(self, input_shapes):
         return self._requires(input_shapes)
 
+    def param_shapes(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        return []
+
     def __repr__(self) -> str:
         return self.__class__.__name__
 
@@ -1005,6 +1008,9 @@ class NCHWConv2d(UnaryOpBase):
     def torch(self):
         return torch.nn.Conv2d(self.in_channels, self.out_channels, kernel_size=(self.kernel_h_size, self.kernel_w_size), stride=self.stride,
                                padding=self.padding)
+
+    def param_shapes(self, input_shapes):
+        return [ShapeVar([self.out_channels, self.in_channels, self.kernel_h_size, self.kernel_w_size], dtype=input_shapes[0].dtype)]
 
 
 class Reshape(UnaryOpBase, ABC):
