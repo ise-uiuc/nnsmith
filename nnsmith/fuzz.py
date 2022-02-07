@@ -17,6 +17,7 @@ from rich.progress import Progress, BarColumn, ProgressColumn
 from rich.panel import Panel
 from rich.console import RenderableType
 from rich.columns import Columns
+from nnsmith.abstract.op import ALL_OP_TYPES, auto_infer_in_dtypes, config_skip_op
 from nnsmith import util
 
 from nnsmith.error import NNSmithInternalError, SanityCheck
@@ -316,11 +317,6 @@ if __name__ == '__main__':
         '--skip', help='Node types to skip. Split by `,`. By default a blacklist for each backend is also appended.', type=str)
     args = parser.parse_args()
 
-    skip = 'backend:' + args.backend
-    if args.skip is not None:
-        skip += ',' + args.skip
-    os.environ['NNSMITH_SKIP'] = skip
-
     backends = None
     if args.backend == 'tvm':
         from nnsmith.backends.tvm_graph import TVMExecutor
@@ -340,7 +336,11 @@ if __name__ == '__main__':
         __COV_DRIVER__ = TRTBackend.coverage_install()
     else:
         raise NotImplementedError("Other backends not supported yet.")
-
+    skip = 'backend:' + args.backend
+    if args.skip is not None:
+        skip += ',' + args.skip
+    auto_infer_in_dtypes()
+    config_skip_op(skip)
     fuzzing_loop = FuzzingLoop(
         root=args.root,
         backends=backends,

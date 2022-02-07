@@ -165,10 +165,13 @@ class DType(Enum):
 
     @staticmethod
     def from_str(s):
-        for i in list(DType.__members__.values()):
-            if str(i.value).endswith(s):
-                return i
-        raise ValueError(f"Unknown dtype: {s}")
+        return {
+            'float32': DType.float32,
+            'float64': DType.float64,
+            'int32': DType.int32,
+            'int64': DType.int64,
+            'bool': DType.bool,
+        }[s]
 
 
 DTypeComb = Tuple[DType, ...]
@@ -352,6 +355,8 @@ class AbsOpBase(ABC):
     # For example, [(DType.float32, DType.float32), (DType.float64, DType.float64), (DType.int32, DType.int32)] means that
     # this op can accept one of float32xfloat32, float64xfloat64, and int32xint32 as input dtypes.
     in_dtypes: List[DTypeComb] = None  # Overwrite me!
+    # whether to disable the op during graph generation
+    _skip = False
 
     def __init__(self):
         # `[3, 3]` this means this op requires 2 inputs. Where the 1st one has 2 dimensions, and the 2nd one has 3 dimensions.
@@ -1604,26 +1609,29 @@ ALL_OP_TYPES = _glob_leaf_op_classes()
 ALL_OP_STR2TYPE = {c.__name__: c for c in ALL_OP_TYPES}
 
 
-def get_skip_op():
+def config_skip_op(skip_config):
     SKIP_FOR_BKEND = {
         'trt': [
             # unsupported
-            'Round:float64', 'Acos:float64', 'Asin:float64', 'Atan:float64', 'Xor', 'Ceil:float64',
-            'Cos:float64', 'Sin:float64', 'Tan:float64', 'GELU:float64', 'LeakyReLU:float64',
-            # buggy, see https://github.com/NVIDIA/TensorRT/issues/1780
-            'Less', 'Greater', 'Equal',
+            'Xor',
+            # 'Acos:float64', 'Asin:float64', 'Atan:float64', 'Ceil:float64',
+            # 'Cos:float64', 'Sin:float64', 'Tan:float64', 'GELU:float64', 'LeakyReLU:float64',
+            # 'Abs:int64', 'Abs:int32',
+            # # buggy, see https://github.com/NVIDIA/TensorRT/issues/1781
+            # 'Less', 'Greater', 'Equal',
         ],
         'tvm': [],
         'ort': [],
         'xla': [],
     }
+    print('skip config:', skip_config)
+    skip_config = skip_config.split(',')
     skip = []
-    for op in os.environ.get('NNSMITH_SKIP', '').split(','):
+    for op in skip_config:
         if op.startswith('backend:'):
             skip.extend(SKIP_FOR_BKEND[op[len('backend:'):]])
         else:
             skip.append(op)
-    ret = []
     for op_name in skip:
         skip_comb = None
         if op_name.find(':') != -1:
@@ -1631,14 +1639,16 @@ def get_skip_op():
             skip_comb = skip_comb.split(',')
         op = globals()[op_name]  # type: Type[AbsOpBase]
         msg = ['skip op:', op_name]
-        if skip_comb is not None:
+        if skip_comb is not None:  # only skip some dtype combinations
             skip_comb = tuple(map(DType.from_str, skip_comb))
             msg += ['skip dtype combination:', skip_comb]
+            assert skip_comb in op.in_dtypes, 'combination {} not found in op({}).in_dtypes: {}'.format(
+                skip_comb, op_name, op.in_dtypes)
             op.in_dtypes.remove(skip_comb)
-
-        ret.append(op)
+        else:  # skip entire op
+            msg += ['skip entire']
+            op._skip = True
         print(*msg)
-    return ret
 
 
 def _check_comb(comb: DTypeComb, op: AbsOpBase):

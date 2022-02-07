@@ -156,9 +156,8 @@ class SimpleGenerator:
         self.verbose = verbose
         auto_infer_in_dtypes(self.verbose)
 
-        if 'NNSMITH_SKIP' in os.environ:
-            skip.extend(get_skip_op())
-        self.op_candidates = [op for op in ALL_OP_TYPES if op not in skip]
+        self.op_candidates = [
+            op for op in ALL_OP_TYPES if op not in skip and not op._skip]
         self.solver = z3.Solver()
         self.solver.set("threads", 4)
         # 4 bytes per float (assume we use float32)
