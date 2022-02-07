@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
 from enum import Enum
+import fnmatch
 from functools import reduce
 import functools
-import re
 from typing import List, Tuple, Union, Callable, Type
 from inspect import signature
 import random
@@ -1690,10 +1690,8 @@ def config_skip_op(skip_config):
         if op_name_pattern.find(':') != -1:
             op_name_pattern, skip_comb = op_name_pattern.split(':')
             skip_comb = skip_comb.split(',')
-        matcher = re.compile(op_name_pattern)
-        matched_ops = [i for i in ALL_OP_TYPES if matcher.match(i.__name__)]
-        for op in matched_ops:
-            op_name = op.__name__
+        for op_name in fnmatch.filter(map(lambda x: x.__name__, ALL_OP_TYPES), op_name_pattern):
+            op = globals()[op_name]
             msg = ['skip op:', op_name]
             if skip_comb is not None:  # only skip some dtype combinations
                 skip_comb = tuple(map(DType.from_str, skip_comb))
