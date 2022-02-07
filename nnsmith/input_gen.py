@@ -131,12 +131,30 @@ class TVMNumericChecker(NumericChecker):
 
         class TVMExecutorWrapper(TVMExecutor):
             def load_model(self, model):
+                if self.cache_hit(model):
+                    return
+
                 import tvm
                 from tvm import relay
                 super().load_model(model)
                 func = self.mod['main']
+                outs = func.body
+                if isinstance(outs, relay.Tuple):
+                    outs = outs.fields
+                else:
+                    outs = [outs]
+                all_nodes = []
+
+                def collect_nodes(node):
+                    if isinstance(node, (relay.expr.Call, relay.Var, relay.Constant)):
+                        all_nodes.append(node)
+                relay.analysis.post_order_visit(func.body, collect_nodes)
+                for i in outs:
+                    assert i in all_nodes, f'{i}\n{all_nodes}'
+                self.out_names = [f'o{i}' for i in range(
+                    len(all_nodes))]  # fake names
                 func = relay.Function(
-                    func.params, relay.Tuple(relay.analysis.all_vars(func)))
+                    func.params, relay.Tuple(all_nodes))
                 self.mod = relay.transform.InferType()(tvm.IRModule.from_expr(func))
                 with tvm.transform.PassContext(opt_level=0):
                     executor = relay.build_module.create_executor(

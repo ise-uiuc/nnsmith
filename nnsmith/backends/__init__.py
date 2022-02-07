@@ -18,6 +18,11 @@ class DiffTestBackend(ABC):
         self.last_loaded_model = model
         return False
 
+    def cache_hit(self, model: Union[onnx.ModelProto, str]) -> bool:
+        if hasattr(self, 'last_loaded_model') and self.last_loaded_model == model:
+            return True  # hit
+        return False
+
     @abstractmethod
     def predict(self, model: Union[onnx.ModelProto, str], inputs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
         raise NotImplementedError
