@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from functools import reduce
 import functools
+import re
 from typing import List, Tuple, Union, Callable, Type
 from inspect import signature
 import random
@@ -1669,6 +1670,8 @@ def config_skip_op(skip_config):
             # 'Abs:int64', 'Abs:int32',
             # # buggy, see https://github.com/NVIDIA/TensorRT/issues/1781
             # 'Less', 'Greater', 'Equal',
+            # buggy
+            'Constant*',
         ],
         'tvm': [],
         'ort': [],
@@ -1682,23 +1685,26 @@ def config_skip_op(skip_config):
             skip.extend(SKIP_FOR_BKEND[op[len('backend:'):]])
         else:
             skip.append(op)
-    for op_name in skip:
+    for op_name_pattern in skip:
         skip_comb = None
-        if op_name.find(':') != -1:
-            op_name, skip_comb = op_name.split(':')
+        if op_name_pattern.find(':') != -1:
+            op_name_pattern, skip_comb = op_name_pattern.split(':')
             skip_comb = skip_comb.split(',')
-        op = globals()[op_name]  # type: Type[AbsOpBase]
-        msg = ['skip op:', op_name]
-        if skip_comb is not None:  # only skip some dtype combinations
-            skip_comb = tuple(map(DType.from_str, skip_comb))
-            msg += ['skip dtype combination:', skip_comb]
-            assert skip_comb in op.in_dtypes, 'combination {} not found in op({}).in_dtypes: {}'.format(
-                skip_comb, op_name, op.in_dtypes)
-            op.in_dtypes.remove(skip_comb)
-        else:  # skip entire op
-            msg += ['skip entire']
-            op._skip = True
-        print(*msg)
+        matcher = re.compile(op_name_pattern)
+        matched_ops = [i for i in ALL_OP_TYPES if matcher.match(i.__name__)]
+        for op in matched_ops:
+            op_name = op.__name__
+            msg = ['skip op:', op_name]
+            if skip_comb is not None:  # only skip some dtype combinations
+                skip_comb = tuple(map(DType.from_str, skip_comb))
+                msg += ['skip dtype combination:', skip_comb]
+                assert skip_comb in op.in_dtypes, 'combination {} not found in op({}).in_dtypes: {}'.format(
+                    skip_comb, op_name, op.in_dtypes)
+                op.in_dtypes.remove(skip_comb)
+            else:  # skip entire op
+                msg += ['skip entire']
+                op._skip = True
+            print(*msg)
 
 
 def _check_comb(comb: DTypeComb, op: AbsOpBase):
