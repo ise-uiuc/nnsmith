@@ -360,6 +360,8 @@ class AbsOpBase(ABC):
     # For example, [(DType.float32, DType.float32), (DType.float64, DType.float64), (DType.int32, DType.int32)] means that
     # this op can accept one of float32xfloat32, float64xfloat64, and int32xint32 as input dtypes.
     in_dtypes: List[DTypeComb] = None  # Overwrite me!
+    # whether to disable the op during graph generation
+    _skip = False
 
     def __init__(self):
         # `[3, 3]` this means this op requires 2 inputs. Where the 1st one has 2 dimensions, and the 2nd one has 3 dimensions.
@@ -396,6 +398,9 @@ class AbsOpBase(ABC):
     @check_require_fn  # Public API.
     def requires(self, input_shapes):
         return self._requires(input_shapes)
+
+    def param_shapes(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        return []
 
     def __repr__(self) -> str:
         return self.__class__.__name__
@@ -1009,6 +1014,9 @@ class NCHWConv2d(UnaryOpBase):
         return torch.nn.Conv2d(self.in_channels, self.out_channels, kernel_size=(self.kernel_h_size, self.kernel_w_size), stride=self.stride,
                                padding=self.padding)
 
+    def param_shapes(self, input_shapes):
+        return [ShapeVar([self.out_channels, self.in_channels, self.kernel_h_size, self.kernel_w_size], dtype=input_shapes[0].dtype)]
+
 
 class Reshape(UnaryOpBase, ABC):
     in_dtypes = [(i,) for i in DTYPE_ALL]
@@ -1610,6 +1618,48 @@ def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
 
 ALL_OP_TYPES = _glob_leaf_op_classes()
 ALL_OP_STR2TYPE = {c.__name__: c for c in ALL_OP_TYPES}
+
+
+def config_skip_op(skip_config):
+    SKIP_FOR_BKEND = {
+        'trt': [
+            # unsupported
+            'Xor',
+            # 'Acos:float64', 'Asin:float64', 'Atan:float64', 'Ceil:float64',
+            # 'Cos:float64', 'Sin:float64', 'Tan:float64', 'GELU:float64', 'LeakyReLU:float64',
+            # 'Abs:int64', 'Abs:int32',
+            # # buggy, see https://github.com/NVIDIA/TensorRT/issues/1781
+            # 'Less', 'Greater', 'Equal',
+        ],
+        'tvm': [],
+        'ort': [],
+        'xla': [],
+    }
+    print('skip config:', skip_config)
+    skip_config = skip_config.split(',')
+    skip = []
+    for op in skip_config:
+        if op.startswith('backend:'):
+            skip.extend(SKIP_FOR_BKEND[op[len('backend:'):]])
+        else:
+            skip.append(op)
+    for op_name in skip:
+        skip_comb = None
+        if op_name.find(':') != -1:
+            op_name, skip_comb = op_name.split(':')
+            skip_comb = skip_comb.split(',')
+        op = globals()[op_name]  # type: Type[AbsOpBase]
+        msg = ['skip op:', op_name]
+        if skip_comb is not None:  # only skip some dtype combinations
+            skip_comb = tuple(map(DType.from_str, skip_comb))
+            msg += ['skip dtype combination:', skip_comb]
+            assert skip_comb in op.in_dtypes, 'combination {} not found in op({}).in_dtypes: {}'.format(
+                skip_comb, op_name, op.in_dtypes)
+            op.in_dtypes.remove(skip_comb)
+        else:  # skip entire op
+            msg += ['skip entire']
+            op._skip = True
+        print(*msg)
 
 
 def _check_comb(comb: DTypeComb, op: AbsOpBase):

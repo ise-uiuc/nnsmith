@@ -3,6 +3,7 @@ from pathlib import Path
 import pickle
 from subprocess import CalledProcessError, check_call
 import multiprocessing as mp
+import traceback
 import psutil
 import time
 import random
@@ -31,10 +32,9 @@ def safe_wrapper(func):
             try:
                 res = func(*args, **kwargs)
                 succ = True
-            except CalledProcessError:
-                pass
-            except ModelGenSubProcesssError:
-                pass
+            except Exception as e:
+                traceback.print_exc()
+                print('retrying...')
         return res
     return wrapper
 
@@ -70,6 +70,8 @@ def forked_execution(
                         alive_shapes=gen.alive_shapes)
         net.eval()
         torch2onnx(model=net, filename=output_path, verbose=False)
+        pickle.dump(gen.picklable_graph, open(
+            output_path + '-graph.pkl', 'wb'))
         model = DiffTestBackend.get_onnx_proto(output_path)
 
         net.record_intermediate = True

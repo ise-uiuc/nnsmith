@@ -180,7 +180,8 @@ class SimpleGenerator:
         self.verbose = verbose
         auto_infer_in_dtypes(self.verbose)
 
-        self.op_candidates = [op for op in ALL_OP_TYPES if op not in skip]
+        self.op_candidates = [
+            op for op in ALL_OP_TYPES if op not in skip and not op._skip]
         self.solver = z3.Solver()
         self.solver.set("threads", 4)
         # 4 bytes per float (assume we use float32)
@@ -189,6 +190,7 @@ class SimpleGenerator:
         # Node -> op: AbsOpBase
         # Edge -> shape_idx:-> self.alive_shapes
         self.abstract_graph = nx.MultiDiGraph()
+        self.picklable_graph = nx.MultiDiGraph()
 
         # <op idx, shape variable, output operand idx>
         self.alive_shapes: ALIVE_SHAPE_TYPE = []
@@ -210,15 +212,15 @@ class SimpleGenerator:
         else:
             return z3.Int(name)
 
-    @abstractmethod
+    @ abstractmethod
     def insert_input_node(self, min_dims, shape=None, dtype=DType.float32) -> ShapeVar:
         raise NotImplementedError
 
-    @abstractmethod
+    @ abstractmethod
     def try_insert_node(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
         raise NotImplementedError
 
-    @abstractmethod
+    @ abstractmethod
     def get_symbol_solutions(self) -> List:
         raise NotImplementedError
 
@@ -308,10 +310,15 @@ class SimpleGenerator:
         self.abstract_graph.add_node(
             new_node_idx, op=node, nin=len(ishape_indices), nout=len(oshapes),
             label=f'#{new_node_idx}, [{shape_idx_st},{shape_idx_ed}), {node}', shape_indices=shape_indices)
+        self.picklable_graph.add_node(
+            new_node_idx, nin=len(ishape_indices), nout=len(oshapes),
+            label=f'#{new_node_idx}, [{shape_idx_st},{shape_idx_ed}), {node}', shape_indices=shape_indices)
 
         for in_operand_idx, idx in enumerate(ishape_indices):
             old_node_idx, svar, out_operand_idx = self.alive_shapes[idx]
             self.abstract_graph.add_edge(old_node_idx, new_node_idx, shape_idx=idx, operand_idx=(
+                out_operand_idx, in_operand_idx), label=f'{out_operand_idx}-{in_operand_idx}: {svar}')
+            self.picklable_graph.add_edge(old_node_idx, new_node_idx, shape_idx=idx, operand_idx=(
                 out_operand_idx, in_operand_idx), label=f'{out_operand_idx}-{in_operand_idx}: {svar}')
 
         if self.is_viz_sbs:
@@ -491,6 +498,7 @@ class PureSymbolGen(SimpleGenerator):
 
         # make a copy
         output_shapes = node.shape_fn(copy.deepcopy(input_shapes))
+        extra_shapes = node.param_shapes(input_shapes)
 
         for shape in output_shapes:
             for c in shape.gt_zero():
@@ -498,6 +506,8 @@ class PureSymbolGen(SimpleGenerator):
 
         tmp_n_floats = self.n_floats
         for s in output_shapes:
+            tmp_n_floats = nnsmith_add(tmp_n_floats, s.nelement())
+        for s in extra_shapes:
             tmp_n_floats = nnsmith_add(tmp_n_floats, s.nelement())
 
         check_res = self.check_sat(
