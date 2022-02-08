@@ -39,7 +39,7 @@ python nnsmith/fuzz.py --report $target
 #                    - err.txt    ~ error message
 #                    - model.onnx ~ error model
 
-python plot_cov.py -f $target # -cl 80000
+python experiments/plot_cov.py -f $target # -cl 80000
 # use `-cl` to set the axis bias.
 ```
 
@@ -60,6 +60,14 @@ python ./nnsmith/backend_executor.py --model <model_path> --backend tvm-llvm --c
 
 ```
 
+### Evaluate input searching algorithm
+
+```shell
+python experiments/input_search.py --max_nodes 15 --n_model 100 --n_inp_sample 1
+
+# visualization
+python experiments/plot_inp_search.py
+```
 
 ## Notes
 
@@ -132,9 +140,6 @@ pip install onnxruntime-gpu # the order matters; and you have to split the insta
       - [x] XLA (ONNX to TF. Compile in XLA mode); @jinkun refined@jiawei **162k star; ative community**
       - [x] TensorRT; @jiawei **4.7k; NVidia Official; fastest GPU inference tool**
       - [ ] PyTorch JIT; @jiawei **53k star; ative community**
-    - Edge Hand-Crafted Operator Engines:
-      - [ ] [NCNN](https://github.com/Tencent/ncnn/tree/master/python); @jiawei :: **13.5k star; ative community**
-      - [ ] [MNN](https://github.com/alibaba/MNN/graphs/contributors); @jiawei :: **6.3k star; Python API in Beta Version**
 - [x] Search-based input generation; @jinkun
 - [x] Add edge coverage guidance and TVM fuzzing loop; @jiawei (Install TVM's [coverage branch](https://github.com/ganler/tvm/tree/coverage))
 - [x] Fuzzing loop for TVM with `rich` monitoring (`nnsmith/fuzz.py`). @jiawei
@@ -156,6 +161,7 @@ pip install onnxruntime-gpu # the order matters; and you have to split the insta
     - [ ] Casting, GeLU, Dropout, Softmax;
     - [ ] BatchNorm, LayerNorm;
 - [ ] **High-Priority** Parameter-wise Fuzzing;
-- [ ] (Experimental) Improve input-searching algorithm
-    - [ ] [Gradient-based Input Searching](https://dl.acm.org/doi/pdf/10.1145/3468264.3468612)
-    - [ ] Constraint-solving based (but require much manual effort);
+- [x] (Experimental) Improve input-searching algorithm @jiawei
+    - [x] [Gradient-based Input Searching](https://dl.acm.org/doi/pdf/10.1145/3468264.3468612)
+- [ ] Implement the re-designed graph construction algorithm (mixed forward/backward construction) @jiawei
+

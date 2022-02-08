@@ -6,7 +6,7 @@ from torch import nn
 import numpy as np
 
 import pickle
-from typing import Dict, NamedTuple, Tuple, List
+from typing import Dict, NamedTuple, Tuple, List, Optional
 from inspect import signature
 import traceback
 import random
@@ -154,7 +154,35 @@ class SymbolNet(nn.Module):
             SanityCheck.eq(out.dtype, self.alive_shapes[shape_idx][1].dtype.value, msg_head +
                            f'torch dtype ({out.dtype}) != symbolic dtype ({self.alive_shapes[shape_idx][1].dtype.value})')
 
-    def grad_input_gen(self, max_iter=10, init_tensors=None, use_cuda=False):
+    def get_random_inps(self) -> List[torch.Tensor]:
+        return [torch.rand(ii.op.shape) for ii in self.input_info]
+
+    def rand_input_gen(self, max_iter=10, use_cuda=False) -> Optional[List[torch.Tensor]]:
+        last_check_intermediate_numeric = self.check_intermediate_numeric
+        self.check_intermediate_numeric = True
+
+        sat_inputs = None
+
+        n_step = max_iter
+        interval = 1 / n_step
+        for v in np.linspace(-1, 1, n_step):
+            inputs = [v + torch.rand(ii.op.shape)
+                      * interval for ii in self.input_info]
+
+            if use_cuda:
+                inputs = [inp.cuda() for inp in inputs]
+                self = self.cuda()
+
+            self.forward(*inputs)
+
+            if not self.invalid_found_last:
+                sat_inputs = inputs
+                break
+
+        self.check_intermediate_numeric = last_check_intermediate_numeric
+        return sat_inputs
+
+    def grad_input_gen(self, max_iter=10, init_tensors=None, use_cuda=False) -> Optional[List[torch.Tensor]]:
         if init_tensors is None:
             inputs = [torch.nn.parameter.Parameter(torch.rand(ii.op.shape))
                       for ii in self.input_info]
@@ -886,16 +914,9 @@ if __name__ == '__main__':
     if args.input_gen == 'v3':
         with torch.no_grad():
             net.eval()
-            torch2onnx(model=net, filename=args.output_path,
-                       verbose=args.verbose)
-
-        model = DiffTestBackend.get_onnx_proto(args.output_path)
-        net.record_intermediate = True
-        input_gen = InputGenV3(TorchNumericChecker(net))
-        rngs = input_gen.infer_domain(model)
-        infer_succ = rngs is not None
+            sat_inputs = net.rand_input_gen()
+            infer_succ = sat_inputs is not None
     elif args.input_gen == 'grad':
-        net.record_intermediate = False
         sat_inputs = net.grad_input_gen()
         infer_succ = sat_inputs is not None
 
@@ -904,7 +925,7 @@ if __name__ == '__main__':
 
     st = time.time()
     net.to_picklable()
-    net.record_intermediate = False
+
     # maybe a better options is to pickle only the necessary states, for better forward compatibility
     torch.save(net, args.output_path + ".pt", pickle_module=cloudpickle)
     print('torch save time:', time.time() - st)
@@ -914,7 +935,6 @@ if __name__ == '__main__':
         'elapsed_time': ed_time - strt_time,
         'gen_model_time': input_st - strt_time,
         'infer_domain_time': ed_time - input_st,
-        'rngs': rngs,
         'sat_inputs': sat_inputs,
         'seed': seed,
     }
