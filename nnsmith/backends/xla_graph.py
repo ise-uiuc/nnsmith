@@ -38,7 +38,7 @@ class XLAExecutor(DiffTestBackend):
 
         self.cvtd_model = tf_rep
 
-    def predict(self, model, inputs):
+    def predict(self, model, inputs, **kwargs):
         self.load_model(model)
         tf_rep = self.cvtd_model
         outputs = tf_rep.run(

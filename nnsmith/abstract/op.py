@@ -163,6 +163,11 @@ class DType(Enum):
     def __repr__(self) -> str:
         return self.name
 
+    def __str__(self) -> str:
+        s = super().__str__()
+        assert s.startswith('DType.'), s
+        return s[len('DType.'):]
+
     @staticmethod
     def from_str(s):
         return {
@@ -223,8 +228,6 @@ class ShapeVar:
 
 def check_shape_fn(func):
     def wrapper_check_shape_fn(self, input_shapes):
-        SanityCheck.true(
-            _INFERRED, "Please call auto_infer_in_dtypes before using this function")
         SanityCheck.true(self.out_dims, "Empty output dimensions in {}".format(
             self.__class__.__name__))
         SanityCheck.eq(len(input_shapes), len(self.inp_dims), "{} requires {} inputs, but got {}".format(
@@ -240,6 +243,8 @@ def check_shape_fn(func):
 
 def check_require_fn(func):
     def wrapper_check_require_fn(self, input_shapes):
+        SanityCheck.true(
+            _INFERRED, "Please call auto_infer_in_dtypes before using this function")
         SanityCheck.eq(len(input_shapes), len(self.inp_dims), "{} requires {} inputs, but got {}".format(
             self.__class__.__name__,
             len(self.inp_dims), len(input_shapes)))

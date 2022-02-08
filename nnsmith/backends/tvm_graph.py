@@ -60,6 +60,7 @@ class TVMExecutor(DiffTestBackend):
         mod, params = relay.frontend.from_onnx(
             onnx_model, shape_dict, freeze_params=True)
         mod = relay.transform.InferType()(mod)
+        self.params = params
         self.mod = mod  # for debugging purposes
 
         self.out_shape = mod['main'].ret_type
@@ -70,7 +71,7 @@ class TVMExecutor(DiffTestBackend):
             ).evaluate()
         self.sess = executor
 
-    def predict(self, model, inputs):
+    def predict(self, model, inputs, check_naming=True, **kwargs):
         self.load_model(model)
         with tvm.transform.PassContext(opt_level=self.opt_level):
             output = self.sess(
@@ -88,8 +89,9 @@ class TVMExecutor(DiffTestBackend):
         #     # get outputs
         #     output = m.get_output(0, tvm.nd.empty(out_shape)).asnumpy()
         output_shape = list(map(lambda x: x.shape, output))
-        assert list_eq(out_shape, output_shape),\
-            f"Shape mismatch between {out_shape} and {output_shape}"
+        if check_naming:
+            assert list_eq(out_shape, output_shape),\
+                f"Shape mismatch between {out_shape} and {output_shape}"
         # TODO(JK): make sure the order matches (not sure how to do so with TVM)
         return dict(zip(self.out_names, output))
 

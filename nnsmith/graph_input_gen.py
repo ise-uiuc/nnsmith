@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import pickle
 from subprocess import CalledProcessError, check_call
@@ -16,6 +17,8 @@ from nnsmith.backends import DiffTestBackend
 from nnsmith.error import SanityCheck
 from nnsmith.graph_gen import SymbolNet, torch2onnx, random_model_gen, table_model_gen
 from nnsmith.input_gen import InputGenBase, InputGenV1, InputGenV3, TorchNumericChecker
+
+import cloudpickle
 
 
 class ModelGenSubProcesssError(Exception):
@@ -38,7 +41,7 @@ def safe_wrapper(func):
 
 @safe_wrapper
 def forked_execution(
-        gen_method, output_path, seed=None, max_nodes=10, max_gen_millisec=2000, table=None, **kwargs):
+        gen_method, output_path, seed=None, max_nodes=10, max_gen_millisec=2000, table=None, save_torch=False, **kwargs):
     if seed is None:
         seed = random.getrandbits(32)
 
@@ -76,6 +79,12 @@ def forked_execution(
         rngs = input_gen.infer_domain(model)
         ipc_dict['ranges'] = rngs
 
+        if save_torch:
+            net.to_picklable()
+            net.record_intermediate = False
+            cloudpickle.dump(net, open(output_path + '.pt', 'wb'), protocol=4)
+        # maybe a better options is to pickle only the necessary states, for better forward compatibility
+
     with mp.Manager() as manager:
         # NOTE: Please only try to transfer primitive data types. e.g., str.
         # That is why I use `ALL_OP_STR2TYPE` to map strings to original types.
@@ -85,43 +94,49 @@ def forked_execution(
         ipc_dict['state'] = manager.dict()
         ipc_dict['state']['unsolvable'] = manager.list()
         ipc_dict['edges'] = set()
-        p = mp.Process(target=subprocess_call, args=(ipc_dict,))
+        if os.environ.get('NNSMITH_FORK', '0') == '1':  # let's try to get rid of fork
+            p = mp.Process(target=subprocess_call, args=(ipc_dict,))
 
-        p_duration = None
-        try:
-            process_time_tolerance = max_gen_millisec * 2 / 1000
-            p.start()
-            p_strt_time = time.time()
-            p.join(process_time_tolerance)
-            p_duration = time.time() - p_strt_time
-        finally:
-            if p.is_alive():
-                for child in psutil.Process(p.pid).children(recursive=False):
-                    child: psutil.Process  # type: ignore
-                    try:
-                        child.terminate()
-                        child.wait()
-                    except psutil.NoSuchProcess:
-                        pass
-                p.terminate()
-                p.join()
+            p_duration = None
+            try:
+                process_time_tolerance = max_gen_millisec * 2 / 1000
+                p.start()
+                p_strt_time = time.time()
+                p.join(process_time_tolerance)
+                p_duration = time.time() - p_strt_time
+            finally:
+                if p.is_alive():
+                    for child in psutil.Process(p.pid).children(recursive=False):
+                        child: psutil.Process  # type: ignore
+                        try:
+                            child.terminate()
+                            child.wait()
+                        except psutil.NoSuchProcess:
+                            pass
+                    p.terminate()
+                    p.join()
 
-                if p_duration is not None and p_duration >= process_time_tolerance:
-                    print('We got timeout due to process hang.')
-                    raise ModelGenSubProcesssError(
-                        f'process hang {process_time_tolerance}')
+                    if p_duration is not None and p_duration >= process_time_tolerance:
+                        print('We got timeout due to process hang.')
+                        raise ModelGenSubProcesssError(
+                            f'process hang {process_time_tolerance}')
 
+                for src, dst in ipc_dict['state']['unsolvable']:
+                    table.on_unsolvable(
+                        ALL_OP_STR2TYPE[src], ALL_OP_STR2TYPE[dst])
+
+            SanityCheck.false(
+                p.is_alive(), 'Process should be terminated but still alive.')
+
+            if p.exitcode != 0:
+                print(
+                    f'Return code not zero in model generation process: {p.exitcode}')
+                raise ModelGenSubProcesssError(
+                    'return code not zero: {}'.format(p.exitcode))
+        else:
+            subprocess_call(ipc_dict)
             for src, dst in ipc_dict['state']['unsolvable']:
                 table.on_unsolvable(ALL_OP_STR2TYPE[src], ALL_OP_STR2TYPE[dst])
-
-        SanityCheck.false(
-            p.is_alive(), 'Process should be terminated but still alive.')
-
-        if p.exitcode != 0:
-            print(
-                f'Return code not zero in model generation process: {p.exitcode}')
-            raise ModelGenSubProcesssError(
-                'return code not zero: {}'.format(p.exitcode))
 
         return ipc_dict['ranges'], ipc_dict['state'], ipc_dict['edges']
 
