@@ -15,13 +15,6 @@ def stdout_redirected(to=os.devnull, stdout=None):
     # credit: https://stackoverflow.com/questions/4675728/redirect-stdout-to-a-file-in-python/22434262#22434262
     if stdout is None:
         stdout = sys.stdout
-    if stdout is sys.stdout:
-        stream = 'stdout'
-    elif stdout is sys.stderr:
-        stream = 'stderr'
-    else:
-        raise ValueError("Expected `sys.stdout` or `sys.stderr`")
-
     stdout_fd = fileno(stdout)
     # copy stdout_fd before it is overwritten
     # NOTE: `copied` is inheritable on Windows when duplicating a standard stream

@@ -2,6 +2,7 @@
 # pip install tlcpack-nightly-cu102 -f https://tlcpack.ai/wheels
 
 from nnsmith.backends import DiffTestBackend
+from nnsmith.error import NNSmithInternalError
 
 import tvm
 from tvm import relay
@@ -33,14 +34,15 @@ class TVMExecutor(DiffTestBackend):
         """Pack output tensor(s) into a list
         """
         # TODO(jinkun): may not work for nested list / dynamic shape
-        if isinstance(output, (tvm.runtime.container.ADT, list)):
-            output = [r.numpy() for r in output]
+        assert output is not None, "Output should not be None"
+        output = [r.numpy() for r in output]
+        if isinstance(out_shape, (tuple, list, tvm.ir.type.TupleType)):
             out_shape = [tuple(r.shape) for r in out_shape.fields]
-        elif output is not None:
-            output = [output.numpy()]
+        elif isinstance(out_shape, tvm.ir.tensor_type.TensorType):
             out_shape = [tuple(out_shape.shape)]
         else:
-            assert False, "output is None"
+            raise NNSmithInternalError(
+                f"out_shape is not tuple/list/tensorType but {type(out_shape)}")
         return output, out_shape
 
     def load_model(self, model):
@@ -60,6 +62,7 @@ class TVMExecutor(DiffTestBackend):
         mod, params = relay.frontend.from_onnx(
             onnx_model, shape_dict, freeze_params=True)
         mod = relay.transform.InferType()(mod)
+        self.params = params
         self.mod = mod  # for debugging purposes
 
         self.out_shape = mod['main'].ret_type
@@ -70,7 +73,7 @@ class TVMExecutor(DiffTestBackend):
             ).evaluate()
         self.sess = executor
 
-    def predict(self, model, inputs):
+    def predict(self, model, inputs, check_naming=True, **kwargs):
         self.load_model(model)
         with tvm.transform.PassContext(opt_level=self.opt_level):
             output = self.sess(
@@ -88,8 +91,9 @@ class TVMExecutor(DiffTestBackend):
         #     # get outputs
         #     output = m.get_output(0, tvm.nd.empty(out_shape)).asnumpy()
         output_shape = list(map(lambda x: x.shape, output))
-        assert list_eq(out_shape, output_shape),\
-            f"Shape mismatch between {out_shape} and {output_shape}"
+        if check_naming:
+            assert list_eq(out_shape, output_shape),\
+                f"Shape mismatch between {out_shape} and {output_shape}"
         # TODO(JK): make sure the order matches (not sure how to do so with TVM)
         return dict(zip(self.out_names, output))
 

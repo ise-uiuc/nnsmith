@@ -28,6 +28,10 @@ class RequiredDimNotFound(Exception):
 ALIVE_SHAPE_TYPE = List[Tuple[int, ShapeVar, int]]
 
 
+InputInfo = NamedTuple(
+    'InputInfo', [('op', Input), ('oid', int), ('node_id', int), ('input_name', str)])
+
+
 class SymbolNet(nn.Module):
     def __init__(self, graph: nx.MultiDiGraph, model: z3.ModelRef, verbose=False, alive_shapes: ALIVE_SHAPE_TYPE = None,
                  record_intermediate=False, use_gradient=False):
@@ -49,8 +53,6 @@ class SymbolNet(nn.Module):
         # whether or not to register intermediate tensors as output tensors. Useful (at least) for checking nan
         self.record_intermediate = record_intermediate
 
-        InputInfo = NamedTuple(
-            'InputInfo', [('op', Input), ('oid', int), ('node_id', int), ('input_name', str)])
         self.input_info: List[InputInfo] = []
 
         tmp_op_output_map = {}  # node id -> output idx in tensors;
@@ -103,12 +105,18 @@ class SymbolNet(nn.Module):
             f'i{ii.op.idx}': ii.op.shape for ii in self.input_info}
         self.plausible_input_shape = {f'i{ii.op.idx}': ShapeVar(
             ii.op.shape, dtype=ii.op.dtype) for ii in self.input_info}
+        self.first_run = True
+        self.hacked = {}  # make forward deterministic
 
         self.use_gradient = use_gradient
         if use_gradient:
             self.enable_training()
         self.check_intermediate_numeric = False
         self.invalid_found_last = None
+
+    def to_picklable(self):
+        self.alive_shapes = None
+        del self.graph
 
     def backward(self):
         if self.loss is not None:
@@ -184,7 +192,15 @@ class SymbolNet(nn.Module):
         self.check_intermediate_numeric = last_check_intermediate_numeric
         return sat_inputs
 
-    def forward(self, *xs):
+    def forward(self, *args, **kwargs):
+        # required: input_info, tensors, ref_cnt, instructions, hacked, first_run verbose # alive_shapes, graph
+        xs = [None] * len(self.input_info)
+        for i in range(len(args)):
+            xs[i] = args[i]
+        for ii in self.input_info:
+            if ii.input_name in kwargs:
+                xs[ii.op.idx] = kwargs[ii.input_name]
+        assert all(x is not None for x in xs), xs
         local_ref_cnt = self.ref_cnt.copy()
         self.tensors = [None for _ in self.tensors]
         self.invalid_found_last = False
@@ -195,9 +211,14 @@ class SymbolNet(nn.Module):
         for inst, inps, outs, op, node_id in self.instructions:
             input_tensors = [self.tensors[idx] for idx in inps]
             if isinstance(op, Div):
-                if (input_tensors[1] == 0).any():
+                if not self.first_run:
+                    cond = self.hacked[node_id]
+                else:
+                    cond = (input_tensors[1] == 0).any()
+                if cond:
                     input_tensors[1] = torch.clip(
-                        input_tensors[1], torch.ones(size=[1], dtype=input_tensors[1].dtype))
+                        input_tensors[1], torch.ones(size=[1], dtype=input_tensors[1].dtype).to(input_tensors[1].device))
+                self.hacked[node_id] = cond
             if self.verbose:
                 print(
                     f'executing instruction op={op}, node_id={node_id}, inps={inps}, outs={outs}')
@@ -249,11 +270,12 @@ class SymbolNet(nn.Module):
                     idx))
                 if local_ref_cnt[idx] > 0:  # Will be used.
                     self.tensors[idx] = output
+        self.first_run = False
         return tuple(t for t in self.tensors if t is not None)
 
 
 class SimpleGenerator:
-    def __init__(self, min_dims=[1, 3, 48, 48], skip=[], viz_sbs=False, megabyte_lim=6 * 1024, seed=None, verbose=False, use_bitvec=False):
+    def __init__(self, min_dims=[1, 3, 48, 48], skip=[Input], viz_sbs=False, megabyte_lim=6 * 1024, seed=None, verbose=False, use_bitvec=False):
         if seed is not None:
             np.random.seed(seed)
             random.seed(seed)
@@ -261,7 +283,8 @@ class SimpleGenerator:
         self.verbose = verbose
         auto_infer_in_dtypes(self.verbose)
 
-        self.op_candidates = [op for op in ALL_OP_TYPES if op not in skip]
+        self.op_candidates = [
+            op for op in ALL_OP_TYPES if op not in skip and not op._skip]
         self.solver = z3.Solver()
         # 4 bytes per float (assume we use float32)
         self.limit_float = 1024**2 * megabyte_lim / 4
@@ -269,6 +292,7 @@ class SimpleGenerator:
         # Node -> op: AbsOpBase
         # Edge -> shape_idx:-> self.alive_shapes
         self.abstract_graph = nx.MultiDiGraph()
+        self.picklable_graph = nx.MultiDiGraph()
 
         # <op idx, shape variable, output operand idx>
         self.alive_shapes: ALIVE_SHAPE_TYPE = []
@@ -283,6 +307,7 @@ class SimpleGenerator:
         self.n_floats = 0
         self.n_inps = 0
         self.last_soln = None
+        self.wts = None
 
     def new_sym(self, name):
         if self.use_bitvec:
@@ -290,15 +315,15 @@ class SimpleGenerator:
         else:
             return z3.Int(name)
 
-    @abstractmethod
+    @ abstractmethod
     def insert_input_node(self, min_dims, shape=None, dtype=DType.float32) -> ShapeVar:
         raise NotImplementedError
 
-    @abstractmethod
+    @ abstractmethod
     def try_insert_node(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
         raise NotImplementedError
 
-    @abstractmethod
+    @ abstractmethod
     def get_symbol_solutions(self) -> List:
         raise NotImplementedError
 
@@ -329,7 +354,10 @@ class SimpleGenerator:
             "timeout",
             max_gen_millisec // 3,
         )
-        self.insert_input_node(self.min_dims)
+        num_inputs = max(
+            1, int((max_node_size + 9) // 10 + random.gauss(0, 1)))
+        for _ in range(num_inputs):
+            self.insert_input_node(self.min_dims)
         init_time = time.time()
         while time.time() - init_time < max_gen_millisec / 1000 and len(
                 self.abstract_graph.nodes) < max_node_size:
@@ -363,8 +391,23 @@ class SimpleGenerator:
             self.last_soln = self.solver.model()
         return cres
 
+    def compute_wts(self):
+        self.wts = [1] * len(self.op_candidates)
+        normalize_op_t = [Constant, Cast]
+        op_t_idx = {}
+        for i in range(len(self.op_candidates)):
+            for op_t in normalize_op_t:
+                if issubclass(self.op_candidates[i], op_t):
+                    op_t_idx[op_t] = op_t_idx.get(op_t, []) + [i]
+
+        for idx in op_t_idx.values():
+            for i in idx:
+                self.wts[i] = 1.0 / len(idx)
+
     def pick_next_op_type(self):
-        return random.choice(self.op_candidates)
+        if self.wts is None:
+            self.compute_wts()
+        return random.choices(self.op_candidates, k=1, weights=self.wts)[0]
 
     def insert_node(self, node: AbsOpBase, ishape_indices: List[int], oshapes: List[ShapeVar] = None):
         if oshapes is None:
@@ -391,10 +434,15 @@ class SimpleGenerator:
         self.abstract_graph.add_node(
             new_node_idx, op=node, nin=len(ishape_indices), nout=len(oshapes),
             label=f'#{new_node_idx}, [{shape_idx_st},{shape_idx_ed}), {node}', shape_indices=shape_indices)
+        self.picklable_graph.add_node(
+            new_node_idx, nin=len(ishape_indices), nout=len(oshapes),
+            label=f'#{new_node_idx}, [{shape_idx_st},{shape_idx_ed}), {node}', shape_indices=shape_indices)
 
         for in_operand_idx, idx in enumerate(ishape_indices):
             old_node_idx, svar, out_operand_idx = self.alive_shapes[idx]
             self.abstract_graph.add_edge(old_node_idx, new_node_idx, shape_idx=idx, operand_idx=(
+                out_operand_idx, in_operand_idx), label=f'{out_operand_idx}-{in_operand_idx}: {svar}')
+            self.picklable_graph.add_edge(old_node_idx, new_node_idx, shape_idx=idx, operand_idx=(
                 out_operand_idx, in_operand_idx), label=f'{out_operand_idx}-{in_operand_idx}: {svar}')
 
         if self.is_viz_sbs:
@@ -574,6 +622,7 @@ class PureSymbolGen(SimpleGenerator):
 
         # make a copy
         output_shapes = node.shape_fn(copy.deepcopy(input_shapes))
+        extra_shapes = node.param_shapes(input_shapes)
 
         for shape in output_shapes:
             for c in shape.gt_zero():
@@ -581,6 +630,8 @@ class PureSymbolGen(SimpleGenerator):
 
         tmp_n_floats = self.n_floats
         for s in output_shapes:
+            tmp_n_floats = nnsmith_add(tmp_n_floats, s.nelement())
+        for s in extra_shapes:
             tmp_n_floats = nnsmith_add(tmp_n_floats, s.nelement())
 
         self.cur_node = node
@@ -617,10 +668,29 @@ class GenerationTable:
     _MIN_CONF = 0.1
     _INIT_VAL = 2.0
 
+    def distribute_wts(self):
+        wts = [1] * len(ALL_OP_TYPES)
+        normalize_op_t = [Constant, Cast]
+        op_t_idx = {}
+        for i in range(len(ALL_OP_TYPES)):
+            for op_t in normalize_op_t:
+                if issubclass(ALL_OP_TYPES[i], op_t):
+                    op_t_idx[op_t] = op_t_idx.get(op_t, []) + [i]
+
+        for idx in op_t_idx.values():
+            for i in idx:
+                wts[i] = 1.0 / len(idx)
+
+        for i in range(len(ALL_OP_TYPES)):
+            ii = self.row_mapper(ALL_OP_TYPES[i])
+            jj = self.col_mapper(ALL_OP_TYPES[i])
+            self.np_table[ii] *= wts[i]
+            self.np_table[jj] *= wts[i]
+
     def __init__(self):
         self.np_table = np.ones((len(ALL_OP_TYPES), len(
             ALL_OP_TYPES) - 1)) * self._INIT_VAL  # do not count Input
-
+        self.distribute_wts()
         # Close those impossible connections.
         for src_t in ALL_OP_TYPES:
             for tar_t in ALL_OP_TYPES:
@@ -830,7 +900,14 @@ if __name__ == '__main__':
         infer_succ = sat_inputs is not None
 
     ed_time = time.time()
+    import cloudpickle
 
+    st = time.time()
+    net.to_picklable()
+    net.record_intermediate = False
+    # maybe a better options is to pickle only the necessary states, for better forward compatibility
+    torch.save(net, args.output_path + ".pt", pickle_module=cloudpickle)
+    print('torch save time:', time.time() - st)
     stats = {
         'gen_succ': True,
         'infer_succ': infer_succ,

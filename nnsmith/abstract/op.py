@@ -162,6 +162,21 @@ class DType(Enum):
     def __repr__(self) -> str:
         return self.name
 
+    def __str__(self) -> str:
+        s = super().__str__()
+        assert s.startswith('DType.'), s
+        return s[len('DType.'):]
+
+    @staticmethod
+    def from_str(s):
+        return {
+            'float32': DType.float32,
+            'float64': DType.float64,
+            'int32': DType.int32,
+            'int64': DType.int64,
+            'bool': DType.bool,
+        }[s]
+
 
 DTypeComb = Tuple[DType, ...]
 
@@ -212,8 +227,6 @@ class ShapeVar:
 
 def check_shape_fn(func):
     def wrapper_check_shape_fn(self, input_shapes):
-        SanityCheck.true(
-            _INFERRED, "Please call auto_infer_in_dtypes before using this function")
         SanityCheck.true(self.out_dims, "Empty output dimensions in {}".format(
             self.__class__.__name__))
         SanityCheck.eq(len(input_shapes), len(self.inp_dims), "{} requires {} inputs, but got {}".format(
@@ -229,6 +242,8 @@ def check_shape_fn(func):
 
 def check_require_fn(func):
     def wrapper_check_require_fn(self, input_shapes):
+        SanityCheck.true(
+            _INFERRED, "Please call auto_infer_in_dtypes before using this function")
         SanityCheck.eq(len(input_shapes), len(self.inp_dims), "{} requires {} inputs, but got {}".format(
             self.__class__.__name__,
             len(self.inp_dims), len(input_shapes)))
@@ -344,6 +359,8 @@ class AbsOpBase(ABC):
     # For example, [(DType.float32, DType.float32), (DType.float64, DType.float64), (DType.int32, DType.int32)] means that
     # this op can accept one of float32xfloat32, float64xfloat64, and int32xint32 as input dtypes.
     in_dtypes: List[DTypeComb] = None  # Overwrite me!
+    # whether to disable the op during graph generation
+    _skip = False
 
     def __init__(self):
         # `[3, 3]` this means this op requires 2 inputs. Where the 1st one has 2 dimensions, and the 2nd one has 3 dimensions.
@@ -380,6 +397,9 @@ class AbsOpBase(ABC):
     @check_require_fn  # Public API.
     def requires(self, input_shapes):
         return self._requires(input_shapes)
+
+    def param_shapes(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        return []
 
     def __repr__(self) -> str:
         return self.__class__.__name__
@@ -553,88 +573,88 @@ class StopFoldConst(torch.nn.Module):
         return self.param.to(self.dtype)
 
 
-# class Constant(AbsOpBase):
-#     in_dtypes = [()]
+class Constant(AbsOpBase):
+    in_dtypes = [()]
 
-#     def __str__(self) -> str:
-#         return super().__str__() + ' ' + str(self.extra_attrs)
+    def __str__(self) -> str:
+        return super().__str__() + ' ' + str(self.extra_attrs)
 
-#     def __init__(self, dim: int):
-#         super().__init__()
-#         self.inp_dims = []
-#         self.out_dims = [dim]
-#         self.extra_attrs = {'dtype': random.choice(DTYPE_ALL)}
+    def __init__(self, dim: int):
+        super().__init__()
+        self.inp_dims = []
+        self.out_dims = [dim]
+        self.extra_attrs = {'dtype': random.choice(DTYPE_ALL)}
 
-#     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-#         SanityCheck.eq(len(input_shapes), 0)
-#         return [self.shape_var]
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        SanityCheck.eq(len(input_shapes), 0)
+        return [self.shape_var]
 
-#     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
-#         SanityCheck.eq(len(input_shapes), 0)
-#         return []
+    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+        SanityCheck.eq(len(input_shapes), 0)
+        return []
 
-#     def torch(self) -> Callable[..., torch.Tensor]:
-#         data = torch.randn(self.shape_var.shape).to(self.shape_var.dtype.value)
-#         return StopFoldConst(data)
-
-
-# class Constant0D(Constant):
-#     def __init__(self):
-#         super().__init__(0)
-#         # TODO more dtypes
-
-#     @property
-#     def shape_var(self):
-#         return ShapeVar([], dtype=self.extra_attrs['dtype'])
+    def torch(self) -> Callable[..., torch.Tensor]:
+        data = torch.randn(self.shape_var.shape).to(self.shape_var.dtype.value)
+        return StopFoldConst(data)
 
 
-# class Constant1D(Constant):
-#     def __init__(self, dim0: Union[int, z3.ExprRef]):
-#         super().__init__(1)
-#         self.dim0 = dim0
+class Constant0D(Constant):
+    def __init__(self):
+        super().__init__(0)
+        # TODO more dtypes
 
-#     @property
-#     def shape_var(self):
-#         return ShapeVar([self.dim0], dtype=self.extra_attrs['dtype'])
-
-
-# class Constant2D(Constant):
-#     def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef]):
-#         super().__init__(2)
-#         self.dim0 = dim0
-#         self.dim1 = dim1
-
-#     @property
-#     def shape_var(self):
-#         return ShapeVar(
-#             [self.dim0, self.dim1], dtype=self.extra_attrs['dtype'])
+    @property
+    def shape_var(self):
+        return ShapeVar([], dtype=self.extra_attrs['dtype'])
 
 
-# class Constant3D(Constant):
-#     def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef]):
-#         super().__init__(3)
-#         self.dim0 = dim0
-#         self.dim1 = dim1
-#         self.dim2 = dim2
+class Constant1D(Constant):
+    def __init__(self, dim0: Union[int, z3.ExprRef]):
+        super().__init__(1)
+        self.dim0 = dim0
 
-#     @property
-#     def shape_var(self):
-#         return ShapeVar(
-#             [self.dim0, self.dim1, self.dim2], dtype=self.extra_attrs['dtype'])
+    @property
+    def shape_var(self):
+        return ShapeVar([self.dim0], dtype=self.extra_attrs['dtype'])
 
 
-# class Constant4D(Constant):
-#     def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef], dim3: Union[int, z3.ExprRef]):
-#         super().__init__(4)
-#         self.dim0 = dim0
-#         self.dim1 = dim1
-#         self.dim2 = dim2
-#         self.dim3 = dim3
+class Constant2D(Constant):
+    def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef]):
+        super().__init__(2)
+        self.dim0 = dim0
+        self.dim1 = dim1
 
-#     @property
-#     def shape_var(self):
-#         return ShapeVar(
-#             [self.dim0, self.dim1, self.dim2, self.dim3], dtype=self.extra_attrs['dtype'])
+    @property
+    def shape_var(self):
+        return ShapeVar(
+            [self.dim0, self.dim1], dtype=self.extra_attrs['dtype'])
+
+
+class Constant3D(Constant):
+    def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef]):
+        super().__init__(3)
+        self.dim0 = dim0
+        self.dim1 = dim1
+        self.dim2 = dim2
+
+    @property
+    def shape_var(self):
+        return ShapeVar(
+            [self.dim0, self.dim1, self.dim2], dtype=self.extra_attrs['dtype'])
+
+
+class Constant4D(Constant):
+    def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef], dim3: Union[int, z3.ExprRef]):
+        super().__init__(4)
+        self.dim0 = dim0
+        self.dim1 = dim1
+        self.dim2 = dim2
+        self.dim3 = dim3
+
+    @property
+    def shape_var(self):
+        return ShapeVar(
+            [self.dim0, self.dim1, self.dim2, self.dim3], dtype=self.extra_attrs['dtype'])
 
 
 class Input(ElementWiseUnaryOp):
@@ -1032,6 +1052,9 @@ class NCHWConv2d(UnaryOpBase):
     def torch(self):
         return torch.nn.Conv2d(self.in_channels, self.out_channels, kernel_size=(self.kernel_h_size, self.kernel_w_size), stride=self.stride,
                                padding=self.padding)
+
+    def param_shapes(self, input_shapes):
+        return [ShapeVar([self.out_channels, self.in_channels, self.kernel_h_size, self.kernel_w_size], dtype=input_shapes[0].dtype)]
 
 
 class Reshape(UnaryOpBase, ABC):
@@ -1634,6 +1657,48 @@ def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
 
 ALL_OP_TYPES = _glob_leaf_op_classes()
 ALL_OP_STR2TYPE = {c.__name__: c for c in ALL_OP_TYPES}
+
+
+def config_skip_op(skip_config):
+    SKIP_FOR_BKEND = {
+        'trt': [
+            # unsupported
+            'Xor',
+            # 'Acos:float64', 'Asin:float64', 'Atan:float64', 'Ceil:float64',
+            # 'Cos:float64', 'Sin:float64', 'Tan:float64', 'GELU:float64', 'LeakyReLU:float64',
+            # 'Abs:int64', 'Abs:int32',
+            # # buggy, see https://github.com/NVIDIA/TensorRT/issues/1781
+            # 'Less', 'Greater', 'Equal',
+        ],
+        'tvm': [],
+        'ort': [],
+        'xla': [],
+    }
+    print('skip config:', skip_config)
+    skip_config = skip_config.split(',')
+    skip = []
+    for op in skip_config:
+        if op.startswith('backend:'):
+            skip.extend(SKIP_FOR_BKEND[op[len('backend:'):]])
+        else:
+            skip.append(op)
+    for op_name in skip:
+        skip_comb = None
+        if op_name.find(':') != -1:
+            op_name, skip_comb = op_name.split(':')
+            skip_comb = skip_comb.split(',')
+        op = globals()[op_name]  # type: Type[AbsOpBase]
+        msg = ['skip op:', op_name]
+        if skip_comb is not None:  # only skip some dtype combinations
+            skip_comb = tuple(map(DType.from_str, skip_comb))
+            msg += ['skip dtype combination:', skip_comb]
+            assert skip_comb in op.in_dtypes, 'combination {} not found in op({}).in_dtypes: {}'.format(
+                skip_comb, op_name, op.in_dtypes)
+            op.in_dtypes.remove(skip_comb)
+        else:  # skip entire op
+            msg += ['skip entire']
+            op._skip = True
+        print(*msg)
 
 
 def _check_comb(comb: DTypeComb, op: AbsOpBase):

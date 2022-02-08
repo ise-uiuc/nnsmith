@@ -6,6 +6,8 @@ Keep active bug tracking and please put bug reports/trackings on this [google sh
 
 ## Quick Start
 
+### Fuzz all backends simultaneously
+
 ```shell
 export root='./tmp/seed1' # the path storing (to store) the model and inputs (outputs and bug reports)
 # See difftest.py for the spec of the file structure
@@ -13,15 +15,19 @@ export root='./tmp/seed1' # the path storing (to store) the model and inputs (ou
 python ./nnsmith/graph_input_gen.py --root ./tmp/seed1 # generate models and inputs
 
 ... # setup your enviroment for ort
-python -m nnsmith.backend_executor --root $root --gen_input 10 --backend ort # test
+python ./nnsmith/run_batch_model.py --root $root --gen_input 10 --backend ort # test
 
 ... # setup your enviroment for xla
-python -m nnsmith.backend_executor --root $root --gen_input 10 --backend xla # test
+python ./nnsmith/run_batch_model.py --root $root --gen_input 10 --backend xla # test
 # ...
 
 # compare the result (all close)
 python -m nnsmith.difftest --root $root
+```
 
+### Fuzz a single backend
+
+```shell
 # fuzzing
 export target=fuzz_report
 python nnsmith/fuzz.py --report $target
@@ -36,6 +42,24 @@ python nnsmith/fuzz.py --report $target
 python plot_cov.py -f $target # -cl 80000
 # use `-cl` to set the axis bias.
 ```
+
+### Examine a single model
+
+```shell
+# run <model_path> with tvm-llvm backend with automatically generated input. Input domain is automatically inferred
+python ./nnsmith/backend_executor.py --model <model_path> --backend tvm-llvm
+
+# supply input domain with <domain_path> 
+python ./nnsmith/backend_executor.py --model <model_path> --backend tvm-llvm --raw_input <input_path> --input_domain <domain_path>
+
+# supply <input_path> instead of random input generation
+python ./nnsmith/backend_executor.py --model <model_path> --backend tvm-llvm --raw_input <input_path>
+
+# do differential testing against `tvm-debug` backend
+python ./nnsmith/backend_executor.py --model <model_path> --backend tvm-llvm --cmp_with tvm-debug
+
+```
+
 
 ## Notes
 

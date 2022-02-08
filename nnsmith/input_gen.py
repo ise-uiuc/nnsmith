@@ -120,6 +120,55 @@ class TorchNumericChecker(NumericChecker):
         self.rf_exe = TorchNumericChecker.TorchExecutor(torch_model)
 
 
+class TVMNumericChecker(NumericChecker):
+    '''This class DOES check intermidiate tensors.'''
+    THRES = 1
+
+    def __init__(self, max_rng_trials=3) -> None:
+        from nnsmith.backends.tvm_graph import TVMExecutor
+
+        class TVMExecutorWrapper(TVMExecutor):
+            def load_model(self, model):
+                if self.cache_hit(model):
+                    return
+
+                import tvm
+                from tvm import relay
+                super().load_model(model)
+                func = self.mod['main']
+                outs = func.body
+                if isinstance(outs, relay.Tuple):
+                    outs = outs.fields
+                else:
+                    outs = [outs]
+                all_nodes = []
+
+                def collect_nodes(node):
+                    if isinstance(node, (relay.expr.Call, relay.Var, relay.Constant)):
+                        all_nodes.append(node)
+                relay.analysis.post_order_visit(func.body, collect_nodes)
+                for i in outs:
+                    assert i in all_nodes, f'{i}\n{all_nodes}'
+                self.out_names = [f'o{i}' for i in range(
+                    len(all_nodes))]  # fake names
+                func = relay.Function(
+                    func.params, relay.Tuple(all_nodes))
+                self.mod = relay.transform.InferType()(tvm.IRModule.from_expr(func))
+                with tvm.transform.PassContext(opt_level=0):
+                    executor = relay.build_module.create_executor(
+                        'debug', self.mod, tvm.cpu(), "llvm", self.params
+                    ).evaluate()
+                self.sess = executor
+
+            def predict(self, *args, **kwargs):
+                kwargs['check_naming'] = False
+                return super().predict(*args, **kwargs)
+
+        super().__init__()
+        self.max_rng_trials = max_rng_trials
+        self.rf_exe = TVMExecutorWrapper()
+
+
 class InputGenV3(InputGenBase):
     L = -10
     R = 10
@@ -127,7 +176,13 @@ class InputGenV3(InputGenBase):
 
     def __init__(self, numeric_checker: NumericChecker = None) -> None:
         super().__init__()
-        self.numeric_checker = numeric_checker or ORTNumericChecker()
+        if numeric_checker is None:
+            try:
+                import tvm
+                numeric_checker = TVMNumericChecker()
+            except ImportError:
+                numeric_checker = ORTNumericChecker()  # fallback to ORT
+        self.numeric_checker = numeric_checker
 
     def _get_range(self):
         a = np.linspace(-1, 1, 10)
