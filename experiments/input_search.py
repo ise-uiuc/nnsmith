@@ -17,6 +17,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--max_nodes', type=int, default=25)
     parser.add_argument('--exp-seed', type=int)
+    parser.add_argument('--n_inp_sample', type=int, default=10)
     parser.add_argument('--n_model', type=int, default=50)
     parser.add_argument('--min_dims', type=list, default=[1, 3, 48, 48])
     parser.add_argument('--timeout', type=int, default=50000)
@@ -61,9 +62,9 @@ if __name__ == '__main__':
         results['model_seed'].append(model_seed)
 
         init_tensor_samples = []
-        n_step = 10
+        n_step = args.n_inp_sample
         interval = 1 / n_step
-        for v in np.linspace(-1, 1, 10):
+        for v in np.linspace(-1, 1, n_step):
             init_tensors = [v + torch.rand(ii.op.shape)
                             * interval for ii in net.input_info]
             init_tensor_samples.append(init_tensors)
