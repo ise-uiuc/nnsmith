@@ -2,6 +2,7 @@
 # pip install tlcpack-nightly-cu102 -f https://tlcpack.ai/wheels
 
 from nnsmith.backends import DiffTestBackend
+from nnsmith.error import NNSmithInternalError
 
 import tvm
 from tvm import relay
@@ -33,14 +34,15 @@ class TVMExecutor(DiffTestBackend):
         """Pack output tensor(s) into a list
         """
         # TODO(jinkun): may not work for nested list / dynamic shape
-        if isinstance(output, (tvm.runtime.container.ADT, list)):
-            output = [r.numpy() for r in output]
+        assert output is not None, "Output should not be None"
+        output = [r.numpy() for r in output]
+        if isinstance(out_shape, (tuple, list, tvm.ir.type.TupleType)):
             out_shape = [tuple(r.shape) for r in out_shape.fields]
-        elif output is not None:
-            output = [output.numpy()]
+        elif isinstance(out_shape, tvm.ir.tensor_type.TensorType):
             out_shape = [tuple(out_shape.shape)]
         else:
-            assert False, "output is None"
+            raise NNSmithInternalError(
+                f"out_shape is not tuple/list/tensorType but {type(out_shape)}")
         return output, out_shape
 
     def load_model(self, model):
