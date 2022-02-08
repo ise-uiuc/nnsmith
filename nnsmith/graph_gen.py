@@ -173,8 +173,6 @@ class SymbolNet(nn.Module):
 
             if self.invalid_found_last:  # need_to_train
                 self.backward()
-                # print(
-                #     f'Graph input :: {inputs[0].min().data:.5f} ~ {inputs[0].max().data:.5f}')
             else:
                 sat_inputs = [v.data for v in inputs]
                 break
@@ -220,16 +218,18 @@ class SymbolNet(nn.Module):
                 if self.invalid_found_last and (self.use_gradient and not self.stop_updating_loss):
                     print(
                         f'Detected NaN or Inf in outputs ~ {op} ~ id {node_id}.')
-                    for inp_i, inp in enumerate(input_tensors):
-                        print(
-                            f'[inp]@{inp_i} :: {inp.min().data:.5f} ~ {inp.max().data:.5f}')
+                    if self.verbose:
+                        for inp_i, inp in enumerate(input_tensors):
+                            print(
+                                f'[inp]@{inp_i} :: {inp.min().data:.5f} ~ {inp.max().data:.5f}')
 
                     ConstraintCheck.true(hasattr(
                         op, 'torch_loss'), f'op={op} has no `torch_loss` but produces NaN or INF!')
                     vul_op_loss = op.torch_loss(*input_tensors)
 
-                    print(
-                        f'vulnerable op loss :: {vul_op_loss.min().data:.5f} ~ {vul_op_loss.max().data:.5f}')
+                    if self.verbose:
+                        print(
+                            f'vulnerable op loss :: {vul_op_loss.min().data:.5f} ~ {vul_op_loss.max().data:.5f}')
                     if self.loss is None:
                         self.loss = vul_op_loss.mean()
                     else:
