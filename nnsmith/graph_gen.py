@@ -176,7 +176,7 @@ class SymbolNet(nn.Module):
 
 
 class SimpleGenerator:
-    def __init__(self, min_dims=[1, 3, 48, 48], skip=[], viz_sbs=False, megabyte_lim=6 * 1024, seed=None, verbose=False, use_bitvec=False):
+    def __init__(self, min_dims=[1, 3, 48, 48], skip=[Input], viz_sbs=False, megabyte_lim=6 * 1024, seed=None, verbose=False, use_bitvec=False):
         self.verbose = verbose
         auto_infer_in_dtypes(self.verbose)
 
@@ -205,6 +205,7 @@ class SimpleGenerator:
         self.n_floats = 0
         self.n_inps = 0
         self.last_soln = None
+        self.wts = None
 
     def new_sym(self, name):
         if self.use_bitvec:
@@ -251,9 +252,10 @@ class SimpleGenerator:
             "timeout",
             max_gen_millisec // 3,
         )
-        self.insert_input_node(self.min_dims)
-        self.insert_input_node(self.min_dims)
-        self.insert_input_node(self.min_dims)
+        num_inputs = max(
+            1, int((max_node_size + 9) // 10 + random.gauss(0, 1)))
+        for _ in range(num_inputs):
+            self.insert_input_node(self.min_dims)
         init_time = time.time()
         while time.time() - init_time < max_gen_millisec / 1000 and len(
                 self.abstract_graph.nodes) < max_node_size:
@@ -282,8 +284,23 @@ class SimpleGenerator:
             self.last_soln = self.solver.model()
         return cres
 
+    def compute_wts(self):
+        self.wts = [1] * len(self.op_candidates)
+        normalize_op_t = [Constant, Cast]
+        op_t_idx = {}
+        for i in range(len(self.op_candidates)):
+            for op_t in normalize_op_t:
+                if issubclass(self.op_candidates[i], op_t):
+                    op_t_idx[op_t] = op_t_idx.get(op_t, []) + [i]
+
+        for idx in op_t_idx.values():
+            for i in idx:
+                self.wts[i] = 1.0 / len(idx)
+
     def pick_next_op_type(self):
-        return random.choice(self.op_candidates)
+        if self.wts is None:
+            self.compute_wts()
+        return random.choices(self.op_candidates, k=1, weights=self.wts)[0]
 
     def insert_node(self, node: AbsOpBase, ishape_indices: List[int], oshapes: List[ShapeVar] = None):
         if oshapes is None:
@@ -543,10 +560,29 @@ class GenerationTable:
     _MIN_CONF = 0.1
     _INIT_VAL = 2.0
 
+    def distribute_wts(self):
+        wts = [1] * len(ALL_OP_TYPES)
+        normalize_op_t = [Constant, Cast]
+        op_t_idx = {}
+        for i in range(len(ALL_OP_TYPES)):
+            for op_t in normalize_op_t:
+                if issubclass(ALL_OP_TYPES[i], op_t):
+                    op_t_idx[op_t] = op_t_idx.get(op_t, []) + [i]
+
+        for idx in op_t_idx.values():
+            for i in idx:
+                wts[i] = 1.0 / len(idx)
+
+        for i in range(len(ALL_OP_TYPES)):
+            ii = self.row_mapper(ALL_OP_TYPES[i])
+            jj = self.col_mapper(ALL_OP_TYPES[i])
+            self.np_table[ii] *= wts[i]
+            self.np_table[jj] *= wts[i]
+
     def __init__(self):
         self.np_table = np.ones((len(ALL_OP_TYPES), len(
             ALL_OP_TYPES) - 1)) * self._INIT_VAL  # do not count Input
-
+        self.distribute_wts()
         # Close those impossible connections.
         for src_t in ALL_OP_TYPES:
             for tar_t in ALL_OP_TYPES:
