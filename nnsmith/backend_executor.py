@@ -8,6 +8,8 @@ import time
 import numpy as np
 from tqdm import tqdm
 from nnsmith import difftest, util, input_gen
+import onnx
+import onnx.checker
 
 
 class CrashExecutor(DiffTestBackend):
@@ -152,6 +154,9 @@ if __name__ == '__main__':
     else:
         seed = args.seed
     print('Using seed:', seed)
+
+    onnx_model = onnx.load(args.model)
+    onnx.checker.check_model(onnx_model, full_check=True)
 
     def run_backend(bknd, dump_raw):
         if args.raw_input is not None:
