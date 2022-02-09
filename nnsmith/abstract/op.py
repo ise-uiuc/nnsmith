@@ -1665,6 +1665,8 @@ def config_skip_op(skip_config):
         'trt': [
             # unsupported
             'Xor',
+            'Equal:bool,bool',
+            'Gemm:int32,int32,int32',
             # 'Acos:float64', 'Asin:float64', 'Atan:float64', 'Ceil:float64',
             # 'Cos:float64', 'Sin:float64', 'Tan:float64', 'GELU:float64', 'LeakyReLU:float64',
             # 'Abs:int64', 'Abs:int32',
