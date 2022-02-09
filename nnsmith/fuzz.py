@@ -21,7 +21,7 @@ from rich.columns import Columns
 from nnsmith.abstract.op import ALL_OP_TYPES, auto_infer_in_dtypes, config_skip_op
 from nnsmith import util
 
-from nnsmith.error import NNSmithInternalError, SanityCheck
+from nnsmith.error import IncorrectResult, NNSmithInternalError, SanityCheck
 from nnsmith.graph_gen import GenerationTable
 from nnsmith.backends import DiffTestBackend
 from nnsmith.input_gen import gen_one_input_rngs
@@ -260,6 +260,8 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         progress.stop()
                         with util.stdout_redirected(f"{_TMP_ONNX_FILE_}.stdout", sys.__stdout__), \
                                 util.stdout_redirected(f"{_TMP_ONNX_FILE_}.stderr", sys.__stderr__):
+                            if rngs is None:
+                                print('No valid ranges found.')
                             for bname in self.backends:
                                 st = time.time()
                                 difftest_pool[bname] = self.backends[bname].predict(
@@ -293,11 +295,13 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         # for the whole graph
                         # self.table.on_no_cov()
                     except Exception as e:
-                        stdout = f'{_TMP_ONNX_FILE_}.stdout'
-                        stderr = f'{_TMP_ONNX_FILE_}.stderr'
-                        graph = f'{_TMP_ONNX_FILE_}-graph.pkl'
-                        self.reporter.report_bug(
-                            e, _TMP_ONNX_FILE_, _TMP_ONNX_FILE_ + '.pt', str(e), stdout, stderr, graph)
+                        # ignore models with invalid inputs
+                        if not isinstance(e, IncorrectResult) or rngs is not None:
+                            stdout = f'{_TMP_ONNX_FILE_}.stdout'
+                            stderr = f'{_TMP_ONNX_FILE_}.stderr'
+                            graph = f'{_TMP_ONNX_FILE_}-graph.pkl'
+                            self.reporter.report_bug(
+                                e, _TMP_ONNX_FILE_, _TMP_ONNX_FILE_ + '.pt', str(e), stdout, stderr, graph)
 
                     cur_time = time.time()
                     progress.update(
