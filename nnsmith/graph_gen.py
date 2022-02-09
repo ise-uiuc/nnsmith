@@ -1,3 +1,4 @@
+import textwrap
 import z3  # Always import z3 first to avoid incompatibility issue.
 # See https://github.com/Z3Prover/z3/issues/5656
 import networkx as nx
@@ -303,12 +304,14 @@ class SymbolNet(nn.Module):
 
 
 class SimpleGenerator:
-    def __init__(self, min_dims=[1, 3, 48, 48], skip=[Input], viz_sbs=False, megabyte_lim=6 * 1024, seed=None, verbose=False, use_bitvec=False):
+
+    def __init__(self, min_dims=[1, 3, 48, 48], skip=[Input], viz_sbs=False, megabyte_lim=6 * 1024, seed=None, verbose=False, use_bitvec=False,
+                 viz_verbose=False):
         if seed is not None:
             np.random.seed(seed)
             random.seed(seed)
-
         self.verbose = verbose
+        self.viz_verbose = viz_verbose
         auto_infer_in_dtypes(self.verbose)
 
         self.op_candidates = [
@@ -461,7 +464,9 @@ class SimpleGenerator:
 
         self.abstract_graph.add_node(
             new_node_idx, op=node, nin=len(ishape_indices), nout=len(oshapes),
-            label=f'#{new_node_idx}, [{shape_idx_st},{shape_idx_ed}), {node}', shape_indices=shape_indices)
+            label=textwrap.fill(
+                (f'#{new_node_idx}, [{shape_idx_st},{shape_idx_ed}), ' if not self.viz_verbose else '') +
+                f'{node}', width=30), shape_indices=shape_indices)
         self.picklable_graph.add_node(
             new_node_idx, nin=len(ishape_indices), nout=len(oshapes),
             label=f'#{new_node_idx}, [{shape_idx_st},{shape_idx_ed}), {node}', shape_indices=shape_indices)
@@ -469,7 +474,7 @@ class SimpleGenerator:
         for in_operand_idx, idx in enumerate(ishape_indices):
             old_node_idx, svar, out_operand_idx = self.alive_shapes[idx]
             self.abstract_graph.add_edge(old_node_idx, new_node_idx, shape_idx=idx, operand_idx=(
-                out_operand_idx, in_operand_idx), label=f'{out_operand_idx}-{in_operand_idx}: {svar}')
+                out_operand_idx, in_operand_idx), label=f'{out_operand_idx}-{in_operand_idx}: {svar}' if not self.viz_verbose else '')
             self.picklable_graph.add_edge(old_node_idx, new_node_idx, shape_idx=idx, operand_idx=(
                 out_operand_idx, in_operand_idx), label=f'{out_operand_idx}-{in_operand_idx}: {svar}')
 
