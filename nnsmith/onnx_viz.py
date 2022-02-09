@@ -251,8 +251,7 @@ def visualize(mod, output, select=None, **kwargs):
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('model', type=str, required=True,
-                        help='onnx model path')
+    parser.add_argument('model', type=str, help='onnx model path')
     parser.add_argument('--output', type=str, required=True,
                         help='output figure path')
     parser.add_argument('--select', type=int, nargs='+',

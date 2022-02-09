@@ -7,8 +7,8 @@ from tvm import relay, topi
 from tvm.relay import transform, analysis
 from tvm.relay.testing.temp_op_attr import TempOpAttr
 import onnx
-from nnsmith import relay_viz
-from nnsmith.relay_viz import select_mod
+from nnsmith import onnx_viz
+from nnsmith.onnx_viz import select_mod
 
 
 @tvm.instrument.pass_instrument
@@ -48,14 +48,14 @@ def from_onnx(model_path, select=None, target="llvm", viz_out=None, print_pass=F
     print('-' * 50, 'running debug')
     with tvm.transform.PassContext(opt_level=0):
         if viz_out:
-            relay_viz.visualize(mod, viz_out + '.debug.png')
+            onnx_viz.visualize(mod, viz_out + '.debug.png')
         res1 = relay.build_module.create_executor(
             'debug', mod, target='llvm', device=tvm.cpu()).evaluate()(**inp)
     print('-' * 50, 'running opt')
     with tvm.transform.PassContext(opt_level=4, instruments=[PrintIR()] if print_pass else []):
         mod, _ = relay.optimize(mod, target=target)
         if viz_out:
-            relay_viz.visualize(mod, viz_out)
+            onnx_viz.visualize(mod, viz_out)
         res = relay.build_module.create_executor(
             'graph', mod, target=target, device=tvm.cuda() if target == 'cuda' else tvm.cpu()).evaluate()(**inp)
     assert len(res) == len(res1)
