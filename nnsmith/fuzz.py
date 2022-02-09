@@ -1,3 +1,4 @@
+from pathlib import Path
 import pickle
 import sys
 import time
@@ -95,6 +96,10 @@ class Reporter:  # From Tzer.
             self.report_folder, dir, 'stdout.log'))
         shutil.move(stderr, os.path.join(
             self.report_folder, dir, 'stderr.log'))
+        for i in Path('.').glob('mlist.*'):
+            shutil.move(str(i), os.path.join(
+                self.report_folder, dir, i.stem))
+
         with open(os.path.join(self.report_folder, dir, 'err.txt'), 'w') as f:
             f.write(message)
         self.n_bug += 1
