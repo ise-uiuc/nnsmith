@@ -81,7 +81,7 @@ class Reporter:  # From Tzer.
         self.n_bug = 0
         self.record_coverage_cnt = 0
 
-    def report_bug(self, err_type: Exception, buggy_onnx_path: str, message: str, stdout: str, stderr: str, graph_path: str):
+    def report_bug(self, err_type: Exception, buggy_onnx_path: str, buggy_torch_path: str, message: str, stdout: str, stderr: str, graph_path: str):
         dir = f'{type(err_type).__name__}__{self.n_bug}'
         os.mkdir(os.path.join(self.report_folder, dir))
         G = pickle.load(open(graph_path, 'rb'))
@@ -89,6 +89,8 @@ class Reporter:  # From Tzer.
             self.report_folder, dir, 'graph.png'))
         shutil.move(buggy_onnx_path, os.path.join(
             self.report_folder, dir, 'model.onnx'))
+        shutil.move(buggy_torch_path, os.path.join(
+            self.report_folder, dir, 'model.pt'))
         shutil.move(stdout, os.path.join(
             self.report_folder, dir, 'stdout.log'))
         shutil.move(stderr, os.path.join(
@@ -290,7 +292,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         stderr = f'{_TMP_ONNX_FILE_}.stderr'
                         graph = f'{_TMP_ONNX_FILE_}-graph.pkl'
                         self.reporter.report_bug(
-                            e, _TMP_ONNX_FILE_, str(e), stdout, stderr, graph)
+                            e, _TMP_ONNX_FILE_, _TMP_ONNX_FILE_ + '.pt', str(e), stdout, stderr, graph)
 
                     cur_time = time.time()
                     progress.update(

@@ -1678,6 +1678,7 @@ def config_skip_op(skip_config):
         'tvm': [],
         'ort': [],
         'xla': [],
+        'tch': [],
     }
     print('skip config:', skip_config)
     skip_config = skip_config.split(',')
@@ -1723,6 +1724,8 @@ def _check_comb(comb: DTypeComb, op: AbsOpBase):
 
 def auto_infer_in_dtypes(verbose=False):
     global _INFERRED
+    if _INFERRED:
+        return
     _INFERRED = True
     _WHITE_LIST = (Input, Expand, NCHWConv2d, Reshape)
 
