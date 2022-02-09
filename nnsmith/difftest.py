@@ -8,7 +8,8 @@ from pathlib import Path
 from nnsmith.backend_executor import BackendCreator
 
 
-def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarray], obtained_name: str, oracle_name: str, nan_as_err=True):
+def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarray], obtained_name: str, oracle_name: str,
+                    nan_as_err=True, mismatch_cnt_tol=0.01):
     err_msg = ''
     if obtained is None:
         err_msg += f'{obtained_name} crashed'
@@ -39,8 +40,11 @@ def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarr
         SanityCheck.eq(set(obtained.keys()), set(desired.keys()))
         index = 0
         for key in obtained:
-            testing.assert_allclose(
+            eq = np.isclose(
                 obtained[key], desired[key], rtol=1e-02, atol=1e-03)
+            if 1 - np.mean(eq) > mismatch_cnt_tol:  # allow 1% of mismatch elements
+                testing.assert_allclose(
+                    obtained[key], desired[key], rtol=1e-02, atol=1e-03)
             index += 1
     except AssertionError as err:
         # print(err) # Mute.
