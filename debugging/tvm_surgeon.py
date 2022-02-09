@@ -7,8 +7,8 @@ from tvm import relay, topi
 from tvm.relay import transform, analysis
 from tvm.relay.testing.temp_op_attr import TempOpAttr
 import onnx
-from nnsmith import onnx_viz
-from nnsmith.onnx_viz import select_mod
+from debugging import onnx_viz
+from debugging.onnx_viz import select_mod
 
 
 @tvm.instrument.pass_instrument
