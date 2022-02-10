@@ -16,10 +16,8 @@ import os
 import copy
 
 from nnsmith.error import NNSmithInternalError, SanityCheck, ConstraintCheck, ConstraintError
-from nnsmith.abstract.op import *
-from nnsmith.backends import DiffTestBackend
 from nnsmith.export import torch2onnx
-from nnsmith.input_gen import InputGenV3, TorchNumericChecker
+from nnsmith.abstract.op import *
 
 
 class RequiredDimNotFound(Exception):
@@ -909,25 +907,26 @@ if __name__ == '__main__':
     input_st = time.time()
 
     sat_inputs = None
-    rngs = None
     if args.input_gen == 'v3':
         with torch.no_grad():
             net.eval()
             sat_inputs = net.rand_input_gen()
             infer_succ = sat_inputs is not None
     elif args.input_gen == 'grad':
-        sat_inputs = net.grad_input_gen()
-        infer_succ = sat_inputs is not None
+        try:
+            sat_inputs = net.grad_input_gen()
+        except RuntimeError as e:
+            if 'does not have a grad_fn' in str(e):
+                # means some op are not differentiable.
+                pass
+            else:
+                raise e
 
     ed_time = time.time()
-    import cloudpickle
 
-    st = time.time()
-    net.to_picklable()
+    if sat_inputs is not None:
+        torch2onnx(net, args.output_path, verbose=args.verbose)
 
-    # maybe a better options is to pickle only the necessary states, for better forward compatibility
-    torch.save(net, args.output_path + ".pt", pickle_module=cloudpickle)
-    print('torch save time:', time.time() - st)
     stats = {
         'gen_succ': True,
         'infer_succ': infer_succ,
