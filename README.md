@@ -41,6 +41,9 @@ python nnsmith/fuzz.py --report $target
 
 python experiments/plot_cov.py -f $target # -cl 80000
 # use `-cl` to set the axis bias.
+
+# To fuzz with gradient driven approach (inp_gen=`random` by default)
+python nnsmith/fuzz.py --report $target --inp_gen grad
 ```
 
 ### Examine a single model
