@@ -90,8 +90,9 @@ class Reporter:  # From Tzer.
             self.report_folder, dir, 'graph.png'))
         shutil.move(buggy_onnx_path, os.path.join(
             self.report_folder, dir, 'model.onnx'))
-        shutil.move(buggy_torch_path, os.path.join(
-            self.report_folder, dir, 'model.pt'))
+        if buggy_torch_path is not None:
+            shutil.move(buggy_torch_path, os.path.join(
+                self.report_folder, dir, 'model.pt'))
         shutil.move(stdout, os.path.join(
             self.report_folder, dir, 'stdout.log'))
         shutil.move(stderr, os.path.join(
@@ -300,8 +301,9 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                             stdout = f'{_TMP_ONNX_FILE_}.stdout'
                             stderr = f'{_TMP_ONNX_FILE_}.stderr'
                             graph = f'{_TMP_ONNX_FILE_}-graph.pkl'
+                            torch_path = f'{_TMP_ONNX_FILE_}.pt' if use_torch else None
                             self.reporter.report_bug(
-                                e, _TMP_ONNX_FILE_, _TMP_ONNX_FILE_ + '.pt', str(e), stdout, stderr, graph)
+                                e, _TMP_ONNX_FILE_, torch_path, str(e), stdout, stderr, graph)
 
                     cur_time = time.time()
                     progress.update(
