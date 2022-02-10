@@ -383,7 +383,8 @@ class AbsOpBase(ABC):
 
     @check_shape_fn  # Public API.
     def shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        return self._shape_fn(input_shapes)
+        self.last_outs = self._shape_fn(input_shapes)
+        return self.last_outs
 
     # Overload me!
     # Extra constraints for the input tensors.
@@ -399,8 +400,8 @@ class AbsOpBase(ABC):
     def requires(self, input_shapes):
         return self._requires(input_shapes)
 
-    def param_shapes(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        return []
+    def n_floats(self, input_shapes: List[ShapeVar]) -> z3.ExprRef:
+        return reduce(nnsmith_add, [i.nelement() for i in self.last_outs])
 
     def __repr__(self) -> str:
         return self.__class__.__name__
@@ -1054,8 +1055,16 @@ class NCHWConv2d(UnaryOpBase):
         return torch.nn.Conv2d(self.in_channels, self.out_channels, kernel_size=(self.kernel_h_size, self.kernel_w_size), stride=self.stride,
                                padding=self.padding)
 
-    def param_shapes(self, input_shapes):
-        return [ShapeVar([self.out_channels, self.in_channels, self.kernel_h_size, self.kernel_w_size], dtype=input_shapes[0].dtype)]
+    def n_floats(self, input_shapes):
+        padded_data = ShapeVar(
+            input_shapes[0].shape, dtype=input_shapes[0].dtype)
+        padded_data.shape[2] = nnsmith_add(
+            padded_data.shape[2], nnsmith_mul(2, self.padding))
+        padded_data.shape[3] = nnsmith_add(
+            padded_data.shape[3], nnsmith_mul(2, self.padding))
+        w = ShapeVar([self.out_channels, self.in_channels, self.kernel_h_size,
+                     self.kernel_w_size], dtype=input_shapes[0].dtype)
+        return nnsmith_add(w.nelement(), padded_data.nelement())
 
 
 class Reshape(UnaryOpBase, ABC):
