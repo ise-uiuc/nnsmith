@@ -1064,7 +1064,8 @@ class NCHWConv2d(UnaryOpBase):
             padded_data.shape[3], nnsmith_mul(2, self.padding))
         w = ShapeVar([self.out_channels, self.in_channels, self.kernel_h_size,
                      self.kernel_w_size], dtype=input_shapes[0].dtype)
-        return nnsmith_add(w.nelement(), padded_data.nelement())
+        outs = super().n_floats(input_shapes)
+        return nnsmith_add(nnsmith_add(w.nelement(), padded_data.nelement()), outs)
 
 
 class Reshape(UnaryOpBase, ABC):
