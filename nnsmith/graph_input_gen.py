@@ -1,24 +1,24 @@
 import os
 from pathlib import Path
 import pickle
-from subprocess import CalledProcessError, check_call
+from subprocess import check_call
 import multiprocessing as mp
 import traceback
 import psutil
 import time
 import random
+import warnings
 
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from nnsmith.abstract.op import ALL_OP_STR2TYPE, ALL_OP_TYPES
+import torch
 
+from nnsmith.abstract.op import ALL_OP_STR2TYPE, ALL_OP_TYPES
 from nnsmith.backends import DiffTestBackend
 from nnsmith.error import SanityCheck
-from nnsmith.graph_gen import SymbolNet, torch2onnx, random_model_gen, table_model_gen
-from nnsmith.input_gen import InputGenV3, TorchNumericChecker
-
-import cloudpickle
+from nnsmith.graph_gen import SymbolNet, random_model_gen, table_model_gen
+from nnsmith.export import torch2onnx
 
 
 class ModelGenSubProcesssError(Exception):
@@ -41,7 +41,7 @@ def safe_wrapper(func):
 
 @safe_wrapper
 def forked_execution(
-        gen_method, output_path, seed=None, max_nodes=10, max_gen_millisec=2000, table=None, save_torch=False, **kwargs):
+        gen_method, output_path, seed=None, max_nodes=10, max_gen_millisec=2000, table=None, save_torch=False, inp_gen='random', **kwargs):
     if seed is None:
         seed = random.getrandbits(32)
 
@@ -68,22 +68,29 @@ def forked_execution(
 
         net = SymbolNet(gen.abstract_graph, solution, verbose=False,
                         alive_shapes=gen.alive_shapes)
-        net.eval()
-        torch2onnx(model=net, filename=output_path, verbose=False)
+
+        sat_inputs = None
+        if inp_gen == 'random':
+            with torch.no_grad():
+                net.eval()
+                sat_inputs = net.rand_input_gen()
+        elif inp_gen == 'grad':
+            sat_inputs = net.grad_input_gen()
+
+        if sat_inputs is not None:
+            ret_inputs = {}
+            for i, name in enumerate(net.input_spec):
+                ret_inputs[name] = sat_inputs[i].cpu().numpy()
+            ipc_dict['sat_inputs'] = ret_inputs
+        else:
+            ipc_dict['sat_inputs'] = None
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            torch2onnx(net, output_path)
+
         pickle.dump(gen.picklable_graph, open(
             output_path + '-graph.pkl', 'wb'))
-        model = DiffTestBackend.get_onnx_proto(output_path)
-
-        net.record_intermediate = True
-        input_gen = InputGenV3(TorchNumericChecker(net))
-        rngs = input_gen.infer_domain(model)
-        ipc_dict['ranges'] = rngs
-
-        if save_torch:
-            net.to_picklable()
-            net.record_intermediate = False
-            cloudpickle.dump(net, open(output_path + '.pt', 'wb'), protocol=4)
-        # maybe a better options is to pickle only the necessary states, for better forward compatibility
 
     with mp.Manager() as manager:
         # NOTE: Please only try to transfer primitive data types. e.g., str.
@@ -138,7 +145,7 @@ def forked_execution(
             for src, dst in ipc_dict['state']['unsolvable']:
                 table.on_unsolvable(ALL_OP_STR2TYPE[src], ALL_OP_STR2TYPE[dst])
 
-        return ipc_dict['ranges'], ipc_dict['state'], ipc_dict['edges']
+        return ipc_dict['sat_inputs'], ipc_dict['state'], ipc_dict['edges']
 
 
 # TODO(from Jiawei @Jinkun): stop using this implementation.

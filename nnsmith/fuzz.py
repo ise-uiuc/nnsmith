@@ -18,13 +18,13 @@ from rich.progress import Progress, BarColumn, ProgressColumn
 from rich.panel import Panel
 from rich.console import RenderableType
 from rich.columns import Columns
+
 from nnsmith.abstract.op import ALL_OP_TYPES, auto_infer_in_dtypes, config_skip_op
 from nnsmith import util
-
 from nnsmith.error import IncorrectResult, NNSmithInternalError, SanityCheck
 from nnsmith.graph_gen import GenerationTable
 from nnsmith.backends import DiffTestBackend
-from nnsmith.input_gen import gen_one_input_rngs
+from nnsmith.input_gen import gen_one_input
 from nnsmith.difftest import assert_allclose
 from nnsmith.graph_input_gen import forked_execution
 import networkx as nx
@@ -82,7 +82,7 @@ class Reporter:  # From Tzer.
         self.n_bug = 0
         self.record_coverage_cnt = 0
 
-    def report_bug(self, err_type: Exception, buggy_onnx_path: str, buggy_torch_path: str, message: str, stdout: str, stderr: str, graph_path: str):
+    def report_bug(self, err_type: Exception, buggy_onnx_path: str, buggy_torch_path: str, message: str, stdout: str, stderr: str, graph_path: str, sat_inputs=None):
         dir = f'{type(err_type).__name__}__{self.n_bug}'
         os.mkdir(os.path.join(self.report_folder, dir))
         G = pickle.load(open(graph_path, 'rb'))
@@ -103,6 +103,11 @@ class Reporter:  # From Tzer.
 
         with open(os.path.join(self.report_folder, dir, 'err.txt'), 'w') as f:
             f.write(message)
+
+        if sat_inputs is not None:
+            pickle.dump(sat_inputs, open(os.path.join(
+                self.report_folder, dir, 'sat_inputs.pkl'), 'wb'))
+
         self.n_bug += 1
 
     def flush(self, fuzz):
@@ -113,9 +118,10 @@ class Reporter:  # From Tzer.
             pickle.dump({'table': fuzz.table}, open(
                 os.path.join(self.report_folder, f'state.pkl'), 'wb'), protocol=4)
         profile = fuzz.profile  # type: pd.DataFrame
-        os.system('mv {} {}'.format(
-            os.path.join(self.report_folder, f'profile.pkl'),
-            os.path.join(self.report_folder, f'profile.pkl.bak')))
+        if os.path.exists(os.path.join(self.report_folder, f'profile.pkl')):
+            os.system('mv {} {}'.format(
+                os.path.join(self.report_folder, f'profile.pkl'),
+                os.path.join(self.report_folder, f'profile.pkl.bak')))
         profile.to_pickle(os.path.join(self.report_folder,
                           f'profile.pkl'), protocol=4)
 
@@ -141,11 +147,12 @@ class CustomProgress(Progress):
 
 
 class FuzzingLoop:  # TODO: Support multiple backends.
-    def __init__(self, backends: Dict[str, DiffTestBackend], mode='table', root=None, time_budget=60 * 60 * 4, max_nodes=32):
+    def __init__(self, backends: Dict[str, DiffTestBackend], mode='table', root=None, time_budget=60 * 60 * 4, max_nodes=32, inp_gen='random'):
         self.root = root
         self.reporter = Reporter(
             report_folder=root, name_hint=list(backends.keys())[0])
         self.mode = mode  # `random` or `table`
+        self.inp_gen = inp_gen  # `random` or `grad`
         self.table = GenerationTable() if mode == 'table' else None
 
         SanityCheck.gt(len(backends), 0, "Empty backends are not allowed!")
@@ -217,23 +224,15 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     self.reporter.record_coverage(self)
 
                     gen_t_s = time.time()
-                    # gen = PureSymbolGen()
-                    # gen.abstract_gen(max_node_size=random.randint(1, self.max_nodes),
-                    #                  max_gen_millisec=_PER_MODEL_TIMEOUT_)
-                    # solution = gen.get_symbol_solutions()
-                    # # input_shape = gen.concretize_input_shape(solution)
-                    # net = SymbolNet(gen.abstract_graph, solution)
-                    # net.eval()
-                    # # net.set_input_spec(input_shape)
-                    # torch2onnx(model=net, filename=_TMP_ONNX_FILE_)
 
-                    rngs, state, edge_set = forked_execution(self.mode,
-                                                             _TMP_ONNX_FILE_,
-                                                             table=self.table,
-                                                             max_node_size=random.randint(
-                                                                 1, self.max_nodes),
-                                                             max_gen_millisec=_PER_MODEL_TIMEOUT_,
-                                                             save_torch=use_torch)
+                    sat_inputs, state, edge_set = forked_execution(self.mode,
+                                                                   _TMP_ONNX_FILE_,
+                                                                   table=self.table,
+                                                                   max_node_size=random.randint(
+                                                                       1, self.max_nodes),
+                                                                   max_gen_millisec=_PER_MODEL_TIMEOUT_,
+                                                                   inp_gen=self.inp_gen,
+                                                                   save_torch=use_torch)
 
                     # Generation time logging.
                     self.cur_model_gen_t = time.time() - gen_t_s
@@ -242,34 +241,37 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     self.slowest_model_gen_t = max(
                         self.slowest_model_gen_t, self.cur_model_gen_t)
 
+                    onnx_model = DiffTestBackend.get_onnx_proto(
+                        _TMP_ONNX_FILE_)
+
+                    eval_inputs = None
+                    if sat_inputs is not None:
+                        # sat_inputs is already a dict.
+                        eval_inputs = sat_inputs
+                    else:  # make some random inputs
+                        input_spec, onames = DiffTestBackend.analyze_onnx_io(
+                            onnx_model)
+                        eval_inputs = gen_one_input(input_spec, 0, 1)
+
                     try:  # TODO: multi-process support for isolation.
                         eval_t_s = time.time()
                         info = {}
 
-                        onnx_model = DiffTestBackend.get_onnx_proto(
-                            _TMP_ONNX_FILE_)
                         if use_torch:
                             torch_model = pickle.load(
                                 open(_TMP_ONNX_FILE_ + '.pt', 'rb'))
                         else:
                             torch_model = None
-                        input_spec, onames = DiffTestBackend.analyze_onnx_io(
-                            onnx_model)
-                        inp = gen_one_input_rngs(input_spec, rngs)
 
                         difftest_pool = {}
-                        progress.stop()
                         with util.stdout_redirected(f"{_TMP_ONNX_FILE_}.stdout", sys.__stdout__), \
                                 util.stdout_redirected(f"{_TMP_ONNX_FILE_}.stderr", sys.__stderr__):
-                            if rngs is None:
-                                print('No valid ranges found.')
                             for bname in self.backends:
                                 st = time.time()
                                 difftest_pool[bname] = self.backends[bname].predict(
-                                    onnx_model, inp, torch_model=torch_model)
+                                    onnx_model, eval_inputs, torch_model=torch_model)
                                 info['model_eval_t_' + bname] = time.time() - st
 
-                        progress.start()
                         keys = list(difftest_pool.keys())
                         for idx in range(1, len(keys)):
                             assert_allclose(
@@ -293,17 +295,15 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                                 else:
                                     self.table.on_new_cov(src, dst)
 
-                        # for the whole graph
-                        # self.table.on_no_cov()
                     except Exception as e:
                         # ignore models with invalid inputs
-                        if not isinstance(e, IncorrectResult) or rngs is not None:
+                        if not isinstance(e, IncorrectResult) or sat_inputs is not None:
                             stdout = f'{_TMP_ONNX_FILE_}.stdout'
                             stderr = f'{_TMP_ONNX_FILE_}.stderr'
                             graph = f'{_TMP_ONNX_FILE_}-graph.pkl'
                             torch_path = f'{_TMP_ONNX_FILE_}.pt' if use_torch else None
                             self.reporter.report_bug(
-                                e, _TMP_ONNX_FILE_, torch_path, str(e), stdout, stderr, graph)
+                                e, _TMP_ONNX_FILE_, torch_path, str(e), stdout, stderr, graph, sat_inputs=sat_inputs)
 
                     cur_time = time.time()
                     progress.update(
@@ -336,6 +336,7 @@ if __name__ == '__main__':
     parser.add_argument('--mode', type=str, default='table')
     parser.add_argument(
         '--skip', help='Node types to skip. Split by `,`. By default a blacklist for each backend is also appended.', type=str)
+    parser.add_argument('--inp_gen', type=str, default='random')
     args = parser.parse_args()
 
     backends = None
@@ -371,5 +372,6 @@ if __name__ == '__main__':
         root=args.root,
         backends=backends,
         mode=args.mode,
-        time_budget=args.time_budget)
+        time_budget=args.time_budget,
+        inp_gen=args.inp_gen)
     fuzzing_loop.fuzz()
