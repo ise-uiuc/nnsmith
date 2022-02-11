@@ -1520,12 +1520,9 @@ class ArgMax5D(ArgMax):
         self.inp_dims = [5]
 
 
-def partialclass(cls, *args, **kwds) -> Type[AbsOpBase]:
-
-    class NewCls(cls):
-        __init__ = functools.partialmethod(cls.__init__, *args, **kwds)
-
-    return NewCls
+def partialclass(cls, name, *args, **kwds) -> Type[AbsOpBase]:
+    return type(name, (cls,),
+                {'__init__': functools.partialmethod(cls.__init__, *args, **kwds)})
 
 
 class Concat(AbsOpBase):
@@ -1582,11 +1579,11 @@ class Concat(AbsOpBase):
 # A more flexible approach is to use an instance. For example, to represent Expand node types, instead of classes [ExpandLast1, ExpandLast2, ...],
 # use instances [Expand(expand_last_dim=1, expand_n=Placeholder), Expand(2, Placeholder), ...], where the Placeholder represents the params needing z3 to model.
 
-Concat1 = partialclass(Concat, 1)
-Concat2 = partialclass(Concat, 2)
-Concat3 = partialclass(Concat, 3)
-Concat4 = partialclass(Concat, 4)
-Concat5 = partialclass(Concat, 5)
+Concat1 = partialclass(Concat, 'Concat1', 1)
+Concat2 = partialclass(Concat, 'Concat2', 2)
+Concat3 = partialclass(Concat, 'Concat3', 3)
+Concat4 = partialclass(Concat, 'Concat4', 4)
+Concat5 = partialclass(Concat, 'Concat5', 5)
 
 
 class Cast(UnaryOpBase):
