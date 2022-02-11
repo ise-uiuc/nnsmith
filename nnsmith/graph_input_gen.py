@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 import pickle
+import cloudpickle
 from subprocess import check_call
 import multiprocessing as mp
 import traceback
@@ -89,8 +90,8 @@ def forked_execution(
             warnings.simplefilter("ignore")
             torch2onnx(net, output_path)
 
-        pickle.dump(gen.picklable_graph, open(
-            output_path + '-graph.pkl', 'wb'))
+        cloudpickle.dump(net.concrete_graph, open(
+            output_path + '-graph.pkl', 'wb'), protocol=4)
 
     with mp.Manager() as manager:
         # NOTE: Please only try to transfer primitive data types. e.g., str.

@@ -7,6 +7,7 @@ from torch import nn
 import numpy as np
 
 import pickle
+import cloudpickle
 from typing import Dict, NamedTuple, Tuple, List, Optional
 from inspect import signature
 import traceback
@@ -44,6 +45,7 @@ class SymbolNet(nn.Module):
         # keep track of layers and weights so that the tracing can work properly
         self.mlist = nn.ModuleList()
         self.graph = graph
+        self.concrete_graph = graph.copy()
         # NOTE: All leaf nodes are output tensors.
         self.alive_shapes = alive_shapes
         if alive_shapes is None:
@@ -67,6 +69,7 @@ class SymbolNet(nn.Module):
             input_idx = [None] * n_inp
             output_idx = [None] * n_out
             op = concretize(graph.nodes[node_id]['op'], model)
+            self.concrete_graph.nodes[node_id]['op'] = op
 
             # Glob inputs
             for from_node, _, (out_idx, in_idx) in graph.in_edges(node_id, data='operand_idx'):
@@ -937,3 +940,7 @@ if __name__ == '__main__':
         'seed': seed,
     }
     pickle.dump(stats, open(args.output_path + '-stats.pkl', 'wb'))
+
+    net.to_picklable()
+    cloudpickle.dump(net, open(args.output_path +
+                     '-net.pkl', 'wb'), protocol=4)
