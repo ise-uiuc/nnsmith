@@ -29,6 +29,8 @@ from nnsmith.difftest import assert_allclose
 from nnsmith.graph_input_gen import forked_execution
 import networkx as nx
 
+from summary import ParamShapeSummary, SummaryBase
+
 __COV_DRIVER__ = None
 
 _METADATA_NAME_ = 'meta.txt'
@@ -124,6 +126,9 @@ class Reporter:  # From Tzer.
                 os.path.join(self.report_folder, f'profile.pkl.bak')))
         profile.to_pickle(os.path.join(self.report_folder,
                           f'profile.pkl'), protocol=4)
+        for i in fuzz.summaries:
+            i.dump(os.path.join(self.report_folder,
+                   f'{i.__class__.__name__}.pkl'))
 
     def record_coverage(self, fuzz):
         if self.record_coverage_cnt % 10 == 0:
@@ -147,7 +152,8 @@ class CustomProgress(Progress):
 
 
 class FuzzingLoop:  # TODO: Support multiple backends.
-    def __init__(self, backends: Dict[str, DiffTestBackend], mode='table', root=None, time_budget=60 * 60 * 4, max_nodes=32, inp_gen='random'):
+    def __init__(self, backends: Dict[str, DiffTestBackend], mode='table', root=None, time_budget=60 * 60 * 4, max_nodes=32, inp_gen='random',
+                 summaries: List[SummaryBase] = None):
         self.root = root
         self.reporter = Reporter(
             report_folder=root, name_hint=list(backends.keys())[0])
@@ -171,6 +177,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
 
         self.profile = pd.DataFrame(
             columns=['model_gen_t', 'model_eval_t', 'bugs', 'edge_cov'])
+        self.summaries = summaries or []
 
         rich.print(
             f'[bold yellow]To exit the program: `kill {os.getpid()}`[/bold yellow]')
@@ -232,7 +239,8 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                                                                        1, self.max_nodes),
                                                                    max_gen_millisec=_PER_MODEL_TIMEOUT_,
                                                                    inp_gen=self.inp_gen,
-                                                                   save_torch=use_torch)
+                                                                   save_torch=use_torch,
+                                                                   summaries=self.summaries)
 
                     # Generation time logging.
                     self.cur_model_gen_t = time.time() - gen_t_s
@@ -305,6 +313,12 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                             self.reporter.report_bug(
                                 e, _TMP_ONNX_FILE_, torch_path, str(e), stdout, stderr, graph, sat_inputs=sat_inputs)
 
+                    summaries_st = time.time()
+                    graph = pickle.load(
+                        open(_TMP_ONNX_FILE_ + '-graph.pkl', 'rb'))
+                    for i in self.summaries:
+                        i.update(graph)
+                    summaries_t = time.time() - summaries_st
                     cur_time = time.time()
                     progress.update(
                         task_fuzz, completed=cur_time - self.start_time)
@@ -316,6 +330,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         'edge_cov': __COV_DRIVER__.get_now(),
                         'bugs': self.reporter.n_bug,
                         'time_stamp': time.perf_counter() - self.start_time,
+                        'summaries_update_time': summaries_t,
                     })
                     self.profile = self.profile.append(info, ignore_index=True)
 
@@ -373,5 +388,7 @@ if __name__ == '__main__':
         backends=backends,
         mode=args.mode,
         time_budget=args.time_budget,
-        inp_gen=args.inp_gen)
+        inp_gen=args.inp_gen,
+        summaries=[ParamShapeSummary()]
+    )
     fuzzing_loop.fuzz()

@@ -1,7 +1,10 @@
+from collections import Counter, defaultdict
+import math
 import textwrap
 import z3  # Always import z3 first to avoid incompatibility issue.
 # See https://github.com/Z3Prover/z3/issues/5656
 import networkx as nx
+from summary import ParamShapeSummary
 import torch
 from torch import nn
 import numpy as np
@@ -57,6 +60,7 @@ class SymbolNet(nn.Module):
         self.input_info: List[InputInfo] = []
 
         tmp_op_output_map = {}  # node id -> output idx in tensors;
+        shape_vars = {}
         for node_id in nx.topological_sort(graph):
             n_inp = graph.nodes[node_id]['nin']
             n_out = graph.nodes[node_id]['nout']
@@ -101,6 +105,22 @@ class SymbolNet(nn.Module):
                 SanityCheck.eq(len(output_idx), 1)
                 self.input_info.append(
                     InputInfo(op=op, oid=output_idx[0], node_id=node_id, input_name=f'i{op.idx}'))
+
+            # concretize shapevars
+            ishape_indices = self.graph.nodes[node_id]['ishape_indices']
+            shape_indices = self.graph.nodes[node_id]['shape_indices']
+            for shape_idx in shape_indices:
+                shape = self.alive_shapes[shape_idx][1].shape
+                dtype = self.alive_shapes[shape_idx][1].dtype
+                shape = [model.eval(i).as_long() if isinstance(
+                    i, z3.ExprRef) else i for i in shape]
+                assert shape_idx not in shape_vars
+                shape_vars[shape_idx] = ShapeVar(shape, dtype)
+            self.concrete_graph.nodes[node_id]['in_svs'] = [
+                shape_vars[i] for i in ishape_indices]
+            self.concrete_graph.nodes[node_id]['out_svs'] = [
+                shape_vars[i] for i in shape_indices]
+
         if self.verbose:
             print('input_info=', self.input_info)
         self.input_spec = {
@@ -467,17 +487,12 @@ class SimpleGenerator:
             new_node_idx, op=node, nin=len(ishape_indices), nout=len(oshapes),
             label=textwrap.fill(
                 (f'#{new_node_idx}, [{shape_idx_st},{shape_idx_ed}), ' if not self.viz_verbose else '') +
-                f'{node}', width=30), shape_indices=shape_indices)
-        self.picklable_graph.add_node(
-            new_node_idx, nin=len(ishape_indices), nout=len(oshapes),
-            label=f'#{new_node_idx}, [{shape_idx_st},{shape_idx_ed}), {node}', shape_indices=shape_indices)
+                f'{node}', width=30), shape_indices=shape_indices, ishape_indices=ishape_indices)
 
         for in_operand_idx, idx in enumerate(ishape_indices):
             old_node_idx, svar, out_operand_idx = self.alive_shapes[idx]
             self.abstract_graph.add_edge(old_node_idx, new_node_idx, shape_idx=idx, operand_idx=(
                 out_operand_idx, in_operand_idx), label=f'{out_operand_idx}-{in_operand_idx}: {svar}' if not self.viz_verbose else '')
-            self.picklable_graph.add_edge(old_node_idx, new_node_idx, shape_idx=idx, operand_idx=(
-                out_operand_idx, in_operand_idx), label=f'{out_operand_idx}-{in_operand_idx}: {svar}')
 
         if self.is_viz_sbs:
             self.viz()
@@ -621,7 +636,7 @@ class SimpleGenerator:
 
 
 class PureSymbolGen(SimpleGenerator):
-    def insert_input_node(self, min_dims, dtype=DType.float32) -> ShapeVar:
+    def insert_input_node(self, min_dims, dtype=DType.float32, constrain_min=True) -> ShapeVar:
         input_tensor_shape = ShapeVar(
             shape=[self.new_sym('i%s_s%s' % (self.n_inps, k)) for k in range(len(min_dims))], dtype=dtype)
         input_node = Input(self.n_inps, dtype, *input_tensor_shape.shape)
@@ -630,7 +645,7 @@ class PureSymbolGen(SimpleGenerator):
         for c in input_tensor_shape.gt_zero():
             self.solver.add(c)
 
-        if not self.use_bitvec:  # bit vector is randomizable
+        if not self.use_bitvec and constrain_min:  # bit vector is randomizable
             # The batch size should not have a big min size (avoid unnecessary computation);
             # FIXME: input constraints will make SMT solving costly.
             for i in range(len(input_tensor_shape.shape)):
@@ -643,6 +658,10 @@ class PureSymbolGen(SimpleGenerator):
             self.n_floats, input_tensor_shape.nelement())
         self.n_inps += 1
         return input_tensor_shape
+
+    # subclasses may override this
+    def extra_constraints(self, node: AbsOpBase, ishape_indices: List[int]):
+        return []
 
     def try_insert_node(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
         input_shapes = [self.alive_shapes[idx][1] for idx in ishape_indices]
@@ -663,6 +682,7 @@ class PureSymbolGen(SimpleGenerator):
                 constraints.append(c)
 
         self.cur_node = node
+        constraints.extend(self.extra_constraints(node, ishape_indices))
         check_res = self.check_sat(
             *constraints, nnsmith_le(tmp_n_floats, self.limit_float))
         if check_res == z3.unknown:  # Timeout thing.
