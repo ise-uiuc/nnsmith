@@ -871,7 +871,7 @@ class Bin:
 
 
 class GuidedGen(PureSymbolGen):
-    def __init__(self, summaries, scale='log', base=2, default_bins=8, **kwargs):
+    def __init__(self, summaries=None, scale='log', base=2, default_bins=8, **kwargs):
         super(GuidedGen, self).__init__(**kwargs)
 
         self.base = 2
@@ -934,6 +934,7 @@ def parse_args():
     parser.add_argument('--verbose', action='store_true')
     parser.add_argument('--use_bitvec', action='store_true')
     parser.add_argument('--viz_graph', action='store_true')
+    parser.add_argument('--mode', default='random')
     return parser.parse_args()
 
 
@@ -944,12 +945,18 @@ def random_model_gen(
         seed=None,
         use_bitvec=False,
         timeout=50000,
-        verbose=False):
+        verbose=False,
+        mode='random',
+        **kwargs):
     if verbose:
         strt_time = time.time()
 
-    gen = PureSymbolGen(min_dims=min_dims,
-                        viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec)
+    GenCls = {
+        'random': PureSymbolGen,
+        'guided': GuidedGen,
+    }[mode]
+    gen = GenCls(min_dims=min_dims,
+                 viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec, **kwargs)
     gen.abstract_gen(max_node_size=max_nodes,
                      max_gen_millisec=timeout)
     if verbose:
@@ -1009,7 +1016,7 @@ if __name__ == '__main__':
     torch.manual_seed(seed)
 
     gen, solution = random_model_gen(min_dims=args.min_dims, seed=seed, viz_sbs=args.viz_sbs, max_nodes=args.max_nodes,
-                                     use_bitvec=args.use_bitvec, timeout=args.timeout, verbose=args.verbose)
+                                     use_bitvec=args.use_bitvec, timeout=args.timeout, verbose=args.verbose, mode=args.mode)
 
     if args.verbose or args.viz_graph:
         gen.viz(args.output_path + '.png')
