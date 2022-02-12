@@ -48,6 +48,7 @@ def forked_execution(
 
     def subprocess_call(ipc_dict):
         random.seed(seed if seed is not None else random.getrandbits(32))
+        ipc_dict['seed'] = seed
 
         if gen_method == 'random':
             gen, solution = random_model_gen(
@@ -154,7 +155,7 @@ def forked_execution(
             for src, dst in ipc_dict['state']['unsolvable']:
                 table.on_unsolvable(ALL_OP_STR2TYPE[src], ALL_OP_STR2TYPE[dst])
 
-        return ipc_dict['sat_inputs'], ipc_dict['state'], ipc_dict['edges']
+        return ipc_dict['sat_inputs'], ipc_dict['state'], ipc_dict['edges'], ipc_dict['seed']
 
 
 # TODO(from Jiawei @Jinkun): stop using this implementation.

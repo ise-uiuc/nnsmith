@@ -233,15 +233,15 @@ class FuzzingLoop:  # TODO: Support multiple backends.
 
                     gen_t_s = time.time()
 
-                    sat_inputs, state, edge_set = forked_execution(self.mode,
-                                                                   _TMP_ONNX_FILE_,
-                                                                   table=self.table,
-                                                                   max_node_size=random.randint(
-                                                                       1, self.max_nodes),
-                                                                   max_gen_millisec=_PER_MODEL_TIMEOUT_,
-                                                                   inp_gen=self.inp_gen,
-                                                                   save_torch=use_torch,
-                                                                   summaries=self.summaries)
+                    sat_inputs, state, edge_set, seed = forked_execution(self.mode,
+                                                                         _TMP_ONNX_FILE_,
+                                                                         table=self.table,
+                                                                         max_node_size=random.randint(
+                                                                             1, self.max_nodes),
+                                                                         max_gen_millisec=_PER_MODEL_TIMEOUT_,
+                                                                         inp_gen=self.inp_gen,
+                                                                         save_torch=use_torch,
+                                                                         summaries=self.summaries)
 
                     # Generation time logging.
                     self.cur_model_gen_t = time.time() - gen_t_s
@@ -333,6 +333,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         'time_stamp': time.perf_counter() - self.start_time,
                         'summaries_update_time': summaries_t,
                         'record_coverage_time': record_coverage_t,
+                        'seed': seed,
                     })
                     for s in self.summaries:
                         info.update(
