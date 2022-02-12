@@ -227,7 +227,9 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     '[green]Edge coverage.', total=__COV_DRIVER__.get_total())
 
                 while True:
+                    st = time.time()
                     self.reporter.record_coverage(self)
+                    record_coverage_t = time.time() - st
 
                     gen_t_s = time.time()
 
@@ -330,6 +332,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         'bugs': self.reporter.n_bug,
                         'time_stamp': time.perf_counter() - self.start_time,
                         'summaries_update_time': summaries_t,
+                        'record_coverage_time': record_coverage_t,
                     })
                     for s in self.summaries:
                         info.update(

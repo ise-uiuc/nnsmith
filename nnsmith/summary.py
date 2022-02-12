@@ -95,9 +95,9 @@ class GraphSummary(SummaryBase):
             'input_comb_cnt': sum(len(v) for k, v in self.input_comb_cnt.items()),
             'edge_cnt': len([_ for _, count in self.edge_cnt.items() if count > 0]),
             'node_cnt': len([_ for _, count in self.node_cnt.items() if count > 0]),
-            'tot_input_comb_cnt': self.tot_ic,
-            'tot_edge_cnt': len(self.edge_cnt),
-            'tot_node_cnt': len(self.node_cnt)
+            # 'tot_input_comb_cnt': self.tot_ic,
+            # 'tot_edge_cnt': len(self.edge_cnt),
+            # 'tot_node_cnt': len(self.node_cnt)
         }
 
     def merge_nodes(self, level):
