@@ -841,6 +841,84 @@ class CoverageTableGen(PureSymbolGen):
                 (type(node).__name__, type(self.abstract_graph.nodes[self.alive_shapes[idx][0]]['op']).__name__))
 
 
+class Bin:
+    def __init__(self, lb, ub, scale='linear', base=None):
+        self.lb = lb
+        self.ub = ub
+        assert scale in ['linear', 'log']
+        self.scale = scale
+        self.base = base
+
+    def to_linear(self, x):
+        if self.scale == 'log':
+            x = math.pow(self.base, x)
+        return int(x)
+
+    def sample(self):
+        x = random.uniform(self.lb, self.ub)
+        return self.to_linear(x)
+
+    def sample_range(self):
+        if self.ub == None:  # one-sided
+            return self.to_linear(self.lb), None
+        lb = self.sample()
+        ub = self.sample()
+        if lb > ub:
+            lb, ub = ub, lb
+        if lb == ub:
+            ub = lb + 1
+        return lb, ub
+
+
+class GuidedGen(PureSymbolGen):
+    def __init__(self, summaries, scale='log', base=2, default_bins=8, **kwargs):
+        super(GuidedGen, self).__init__(**kwargs)
+
+        self.base = 2
+        self.param_config = {
+            'NCHWConv2d': {
+                'kernel_h_size': [Bin(i, i + 1, scale=scale, base=base) for i in range(8)],
+                'kernel_w_size': [Bin(i, i + 1, scale=scale, base=base) for i in range(8)],
+                'stride': [Bin(i, i + 1, scale=scale, base=base) for i in range(8)],
+                'padding': [Bin(i, i + 1, scale=scale, base=base) for i in range(8)] + [Bin(0, 1)],
+                'in_channels': [Bin(i, i + 1, scale=scale, base=base) for i in range(8)] +
+                [Bin(8, None, scale=scale, base=base)],
+                'out_channels': [],  # skip
+            },
+        }
+        self.default_config = defaultdict(
+            lambda: [Bin(i, i + 1, scale=scale, base=base) for i in range(default_bins)])
+
+    def range_constrain(self, param, lb, ub):
+        ret = []
+        if lb is not None:
+            ret.append(nnsmith_ge(param, lb))
+        if ub is not None:
+            ret.append(nnsmith_lt(param, ub))
+        return ret
+
+    def extra_constraints(self, node: AbsOpBase, ishape_indices: List[int]):
+        ret = []
+        construct_param_dict = signature(node.__init__).parameters
+        config = self.param_config.get(
+            node.__class__.__name__, self.default_config)
+
+        # if len(construct_param_dict) > 0:
+        #     print('Op {} constraint:'.format(node))
+        for idx, key in enumerate(construct_param_dict):
+            # pc = counter['param_' + key]  # type: Counter
+            param = getattr(node, key)
+            # bin_id = min(pc.keys(), key=lambda k: pc)
+            bins = config[key]
+            if len(bins) == 0:
+                continue
+            bin_id = random.randint(0, len(bins) - 1)
+            lb, ub = bins[bin_id].sample_range()
+            # print('\t{} <= {} < {}'.format(lb, key, ub))
+            ret.extend(self.range_constrain(param, lb, ub))
+        return ret
+
+
 def parse_args():
     import argparse
 

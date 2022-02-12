@@ -64,6 +64,13 @@ def forked_execution(
                     type(abs_graph.nodes[dst]['op'])) - 1)
                 unique_set.add(pair)
             ipc_dict['edges'] = unique_set
+        elif gen_method == 'guided':
+            from nnsmith.graph_gen import GuidedGen
+            gen = GuidedGen(
+                seed=seed, summaries=ipc_dict['state']['summaries'])
+            gen.abstract_gen(max_node_size=max_nodes,
+                             max_gen_millisec=max_gen_millisec)
+            solution = gen.get_symbol_solutions()
         else:
             SanityCheck.true(False, f'Unknown gen_method: {gen_method}')
 
@@ -101,6 +108,7 @@ def forked_execution(
         ipc_dict = manager.dict()
         ipc_dict['state'] = manager.dict()
         ipc_dict['state']['unsolvable'] = manager.list()
+        ipc_dict['state']['summaries'] = kwargs['summaries']
         ipc_dict['edges'] = set()
         if os.environ.get('NNSMITH_FORK', '0') == '1':  # let's try to get rid of fork
             p = mp.Process(target=subprocess_call, args=(ipc_dict,))
