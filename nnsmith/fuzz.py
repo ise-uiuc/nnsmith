@@ -29,7 +29,7 @@ from nnsmith.difftest import assert_allclose
 from nnsmith.graph_input_gen import forked_execution
 import networkx as nx
 
-from summary import ParamShapeSummary, SummaryBase
+from summary import GraphSummary, ParamShapeSummary, SummaryBase
 
 __COV_DRIVER__ = None
 
@@ -127,8 +127,7 @@ class Reporter:  # From Tzer.
         profile.to_pickle(os.path.join(self.report_folder,
                           f'profile.pkl'), protocol=4)
         for i in fuzz.summaries:
-            i.dump(os.path.join(self.report_folder,
-                   f'{i.__class__.__name__}.pkl'))
+            i.dump(os.path.join(self.report_folder, f'{i}.pkl'))
 
     def record_coverage(self, fuzz):
         if self.record_coverage_cnt % 10 == 0:
@@ -332,6 +331,9 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         'time_stamp': time.perf_counter() - self.start_time,
                         'summaries_update_time': summaries_t,
                     })
+                    for s in self.summaries:
+                        info.update(
+                            {'s_' + k: v for k, v in s.report().items()})
                     self.profile = self.profile.append(info, ignore_index=True)
 
                     if cur_time - self.start_time > self.time_budget:
@@ -389,6 +391,6 @@ if __name__ == '__main__':
         mode=args.mode,
         time_budget=args.time_budget,
         inp_gen=args.inp_gen,
-        summaries=[ParamShapeSummary()]
+        summaries=[ParamShapeSummary(), GraphSummary(), GraphSummary(level=1)]
     )
     fuzzing_loop.fuzz()
