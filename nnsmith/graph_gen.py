@@ -571,7 +571,7 @@ class SimpleGenerator:
         try:
             for _ in range(max_shape_var_pick_time):
                 ishape_indices = self.pick_shape_var_idx(
-                    node_t, dim_spec_list, random.choice(op.in_dtypes))
+                    node_t, dim_spec_list, op.in_dtypes)
                 if self.try_insert_node(op, ishape_indices):
                     return True
         except RequiredDimNotFound:
@@ -586,7 +586,6 @@ class SimpleGenerator:
         return False
 
     def filter_alive_shapes(self, ndim, dtype):
-        # TODO(JK): consider same_in_dtypes
         cans = range(len(self.alive_shapes))
 
         cans = list(filter(  # filter with ndim
@@ -595,18 +594,19 @@ class SimpleGenerator:
             raise RequiredDimNotFound(
                 'Cannot find a shape variable with #dimensions %s.' % ndim)
 
-        cans = list(filter(  # filter with dtype
-            lambda sid: self.alive_shapes[sid][1].dtype == dtype, cans))
-        if len(cans) == 0:
-            raise RequiredDimNotFound(
-                'Cannot find a shape variable with #dimensions %s and dtype %s.' % (ndim, dtype))
+        if dtype is not None:
+            cans = list(filter(  # filter with dtype
+                lambda sid: self.alive_shapes[sid][1].dtype == dtype, cans))
+            if len(cans) == 0:
+                raise RequiredDimNotFound(
+                    'Cannot find a shape variable with #dimensions %s and dtype %s.' % (ndim, dtype))
 
         return cans
 
     def pick_alive_shape(self, node_t, candidates):
         return random.choice(candidates)
 
-    def pick_shape_var_idx(self, node_t, ndim_list: List[int], dtype_comb: DTypeComb) -> List[int]:
+    def pick_shape_var_idx(self, node_t, ndim_list: List[int], dtype_combs: List[DTypeComb]) -> List[int]:
         """Randomly pick indices to shape variables from the output pool.
 
         Args:
@@ -618,8 +618,19 @@ class SimpleGenerator:
 
         shape_var_candidates = []
         if self.verbose:
-            print('dtype_comb:', dtype_comb)
+            print('dtype_combs:', dtype_combs)
 
+        all_can_dtypes = []
+        for i, ndim in enumerate(ndim_list):
+            all_can_dtypes.extend([self.alive_shapes[i][1].dtype for i in self.filter_alive_shapes(
+                ndim=ndim, dtype=None)])
+        # only use dtypes currently available after ndim filtering
+        dtype_combs = [comb for comb in dtype_combs if all(
+            i in all_can_dtypes for i in comb)]
+        if len(dtype_combs) == 0:
+            raise RequiredDimNotFound('Op %s: Cannot find a shape variable with dim_spec %s and dtype combinations %s.' % (
+                node_t, ndim_list, dtype_combs))
+        dtype_comb = random.choice(dtype_combs)
         for i, ndim in enumerate(ndim_list):
             candidates = self.filter_alive_shapes(
                 ndim=ndim, dtype=dtype_comb[i])
