@@ -405,6 +405,8 @@ class SimpleGenerator:
             "random",
             "timeout",
             max_gen_millisec // 3,
+            "memory_max_size",
+            16 * 1024,  # MB
         )
         num_inputs = max(
             1, int((max_node_size + 9) // 10 + random.gauss(0, 1)))
