@@ -27,7 +27,7 @@ from nnsmith.error import SanityCheck, ConstraintCheck
 # FIXME: Z3 solving is way slower than numerical computing. Try to use exceptions to reject invalid inputs;
 # TODO: add interval analysis for shape dimension size;
 
-ARITH_MAX_WIDTH: int = 8
+ARITH_MAX_WIDTH: int = 10
 _INFERRED = False
 
 
