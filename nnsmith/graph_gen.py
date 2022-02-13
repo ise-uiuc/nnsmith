@@ -337,7 +337,11 @@ class SimpleGenerator:
 
         self.op_candidates = [
             op for op in ALL_OP_TYPES if op not in skip and not op._skip]
-        self.solver = z3.Solver()
+        if use_bitvec:
+            self.solver = z3.SolverFor("QF_BVRE")
+        else:
+            self.solver = z3.Solver()
+
         # 4 bytes per float (assume we use float32)
         self.limit_float = 1024**2 * megabyte_lim / 4
 

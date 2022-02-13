@@ -39,7 +39,10 @@ def align_bvs(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.E
         return (left, right)
     # We assume that the width of an arithmetic type is ARITH_MAX_WIDTH.
     if left_is_arith:
-        left_size = ARITH_MAX_WIDTH
+        if isinstance(left, int):
+            left_size = left.bit_length()
+        else:
+            left_size = 64
     elif isinstance(left, z3.BitVecRef):
         left_size = left.size()
     else:
@@ -47,7 +50,10 @@ def align_bvs(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.E
             f"Unsupported alignment value {left} of type {type(left)}")
     # We assume that the width of an arithmetic type is ARITH_MAX_WIDTH.
     if right_is_arith:
-        right_size = ARITH_MAX_WIDTH
+        if isinstance(right, int):
+            right_size = right.bit_length()
+        else:
+            right_size = 64
     elif isinstance(right, z3.BitVecRef):
         right_size = right.size()
     else:
@@ -61,23 +67,30 @@ def align_bvs(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.E
     SanityCheck.le(right_size, ARITH_MAX_WIDTH,
                    f"Bitvector sizes must not exceed {ARITH_MAX_WIDTH} bits.")
     diff = left_size - right_size
-    if left_is_arith and diff >= 0:
-        right = z3.ZeroExt(diff, right)
-        return left, right
-    if right_is_arith and diff <= 0:
-        left = z3.ZeroExt(abs(diff), left)
-        return left, right
+    if left_is_arith:
+        if diff > 0:
+            right = z3.Concat(z3.BitVecVal(0, diff), right)
+        return z3.BitVecVal(left, right.size()), z3.simplify(right)
+    if right_is_arith:
+        if diff < 0:
+            left = z3.Concat(z3.BitVecVal(0, abs(diff)), left)
+        return left, z3.BitVecVal(right, left.size())
     if diff < 0:
-        left = z3.ZeroExt(abs(diff), left)
+        left = z3.Concat(z3.BitVecVal(0, abs(diff)), left)
     elif diff > 0:
-        right = z3.ZeroExt(diff, right)
+        right = z3.Concat(z3.BitVecVal(0, diff), right)
+
     if carry and max(left_size, right_size) < ARITH_MAX_WIDTH:
-        left = z3.ZeroExt(1, left)
-        right = z3.ZeroExt(1, right)
+        left = z3.Concat(z3.BitVecVal(0, 1), left)
+        right = z3.Concat(z3.BitVecVal(0, 1), right)
     if mult:
-        max_val = min(max(left_size, right_size), ARITH_MAX_WIDTH)
-        left = z3.ZeroExt(max_val, left)
-        right = z3.ZeroExt(max_val, right)
+        max_val = right.size() + left.size()
+        if max_val > ARITH_MAX_WIDTH:
+            return (left, right)
+        else:
+            max_val = ARITH_MAX_WIDTH - max_val
+        left = z3.Concat(z3.BitVecVal(0, max_val), left)
+        right = z3.Concat(z3.BitVecVal(0, max_val), right)
     return (left, right)
 
 
