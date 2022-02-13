@@ -318,7 +318,8 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                                 difftest_pool[keys[0]],
                                 difftest_pool[keys[idx]],
                                 keys[0], keys[idx],
-                                nan_as_err=False)
+                                nan_as_err=False,
+                                safe_mode=True)
 
                         self.stage = f'cleanup'
                         # Evaluation time logging.

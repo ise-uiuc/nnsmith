@@ -9,7 +9,8 @@ from nnsmith.backend_executor import BackendCreator
 
 
 def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarray], obtained_name: str, oracle_name: str,
-                    nan_as_err=True, mismatch_cnt_tol=0.01):
+                    nan_as_err=True, mismatch_cnt_tol=0.01, safe_mode=False):
+    # when safe_mode is turned on, it will use less memory
     err_msg = ''
     if obtained is None:
         err_msg += f'{obtained_name} crashed'
@@ -40,11 +41,26 @@ def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarr
         SanityCheck.eq(set(obtained.keys()), set(desired.keys()))
         index = 0
         for key in obtained:
-            eq = np.isclose(
-                obtained[key], desired[key], rtol=1e-02, atol=1e-03)
-            if 1 - np.mean(eq) > mismatch_cnt_tol:  # allow 1% of mismatch elements
-                testing.assert_allclose(
-                    obtained[key], desired[key], rtol=1e-02, atol=1e-03)
+            ac = obtained[key]
+            de = desired[key]
+            assert ac.shape == de.shape, f'Shape mismatch {ac.shape} vs. {de.shape}'
+            assert ac.dtype == de.dtype, f'Dtype mismatch {ac.dtype} vs. {de.dtype}'
+            if safe_mode:
+                ac = ac.ravel()
+                de = de.ravel()
+                # avoid OOM by slicing
+                STRIDE = 2**26
+                eq = np.empty_like(ac, bool)
+                for i in range(0, ac.shape[0], STRIDE):
+                    eq[i:i + STRIDE] = np.isclose(
+                        ac[i:i + STRIDE], de[i:i + STRIDE], rtol=1e-02, atol=1e-03)
+                # allow 1% of mismatch elements
+                assert 1 - np.mean(eq) <= mismatch_cnt_tol, \
+                    f'{(1-np.mean(eq))*100}% of mismatch'
+            else:
+                eq = np.isclose(ac, de, rtol=1e-02, atol=1e-03)
+                if 1 - np.mean(eq) > mismatch_cnt_tol:  # allow 1% of mismatch elements
+                    testing.assert_allclose(ac, de, rtol=1e-02, atol=1e-03)
             index += 1
     except AssertionError as err:
         # print(err) # Mute.
