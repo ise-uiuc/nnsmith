@@ -338,7 +338,7 @@ class SimpleGenerator:
         self.op_candidates = [
             op for op in ALL_OP_TYPES if op not in skip and not op._skip]
         if use_bitvec:
-            self.solver = z3.SolverFor("QF_BVRE")
+            self.solver = z3.SolverFor("QF_UFBV")
         else:
             self.solver = z3.Solver()
 
@@ -431,8 +431,16 @@ class SimpleGenerator:
     def shape_idx_to_op_idx(self, shape_idx: int) -> int:
         return self.alive_shapes[shape_idx][0]
 
+    def check_arith_ref(self, var):
+        SanityCheck.true(isinstance(var, (z3.BitVecRef, z3.BoolRef)), f"{type(var)}not supported.")
+        for child in var.children():
+            self.check_arith_ref(child)
+
     def check_sat(self, *assumptions):
         start = time.time()
+        if self.use_bitvec:
+            for assump in assumptions:
+                self.check_arith_ref(assump)
         cres = self.solver.check(*assumptions)
 
         checking_time = int((time.time() - start) * 1000)
@@ -1021,13 +1029,11 @@ if __name__ == '__main__':
 
     gen, solution = random_model_gen(min_dims=args.min_dims, seed=seed, viz_sbs=args.viz_sbs, max_nodes=args.max_nodes,
                                      use_bitvec=args.use_bitvec, timeout=args.timeout, verbose=args.verbose, mode=args.mode)
-
     if args.verbose or args.viz_graph:
         gen.viz(args.output_path + '.png')
 
     net = SymbolNet(gen.abstract_graph, solution, verbose=args.verbose,
                     alive_shapes=gen.alive_shapes)
-
     # turn this on so that nan in the intermediate tensors can be detected too
     input_st = time.time()
 

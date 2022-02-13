@@ -27,7 +27,7 @@ from nnsmith.error import SanityCheck, ConstraintCheck
 # FIXME: Z3 solving is way slower than numerical computing. Try to use exceptions to reject invalid inputs;
 # TODO: add interval analysis for shape dimension size;
 
-ARITH_MAX_WIDTH: int = 64
+ARITH_MAX_WIDTH: int = 8
 _INFERRED = False
 
 
@@ -40,9 +40,9 @@ def align_bvs(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.E
     # We assume that the width of an arithmetic type is ARITH_MAX_WIDTH.
     if left_is_arith:
         if isinstance(left, int):
-            left_size = left.bit_length()
+            left_size = min(ARITH_MAX_WIDTH, left.bit_length())
         else:
-            left_size = 64
+            left_size = ARITH_MAX_WIDTH
     elif isinstance(left, z3.BitVecRef):
         left_size = left.size()
     else:
@@ -51,9 +51,9 @@ def align_bvs(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.E
     # We assume that the width of an arithmetic type is ARITH_MAX_WIDTH.
     if right_is_arith:
         if isinstance(right, int):
-            right_size = right.bit_length()
+            right_size = min(ARITH_MAX_WIDTH, right.bit_length())
         else:
-            right_size = 64
+            right_size = ARITH_MAX_WIDTH
     elif isinstance(right, z3.BitVecRef):
         right_size = right.size()
     else:
@@ -270,7 +270,8 @@ def _prepend_to(x, max_dim):
 
 
 def z3_bcast(x: Union[int, z3.ExprRef], y: Union[int, z3.ExprRef], *args: Union[int, z3.ExprRef]):
-    return z3.If(y == 1, x, y) if len(args) == 0 else z3_bcast(z3_bcast(x, y), *args)
+    x, y = align_bvs(x, y)
+    return z3.If(nnsmith_eq(y, 1), x, y) if len(args) == 0 else z3_bcast(z3_bcast(x, y), *args)
 
 
 def broadcast_shapes(*shapes: List[Union[z3.ExprRef, int]]) -> List[Union[z3.ExprRef, int]]:
@@ -301,12 +302,13 @@ def broadcast_cons(*shapes: List[Union[z3.ExprRef, int]]) -> List[z3.ExprRef]:
             for x in shapes:
                 if len(x) > j:
                     axis_cons.append(
-                        z3.Or(nnsmith_eq(x[i], tgt_shape[i]), x[i] == 1))
+                        z3.Or(nnsmith_eq(x[i], tgt_shape[i]), nnsmith_eq(x[i], 1)))
             axis_cons = z3.simplify(z3.And(*axis_cons))
             cons.append(axis_cons)
         else:
             args_dim_sz = [_prepend_to(x, max_dim)[i] for x in shapes]
-            valid = all(s == tgt_shape[i] or s == 1 for s in args_dim_sz)
+            valid = all(nnsmith_eq(s, tgt_shape[i]) or nnsmith_eq(
+                s, 1) for s in args_dim_sz)
             # TODO(JK): enable this after fixing issue #2
             # assert valid, "Invalid broadcast shapes {}. Specific dim sizes: {}".format(shapes, args_dim_sz)
             cons.append(z3.BoolVal(valid))
@@ -325,9 +327,10 @@ def broadcast_cons_binary(*shapes: List[Union[z3.ExprRef, int]]) -> List[z3.Expr
         i = -j - 1
         if isinstance(tgt_shape[i], z3.ExprRef):
             cons.append(z3.simplify(
-                z3.Or(lhs[i] == 1, rhs[i] == 1, nnsmith_eq(lhs[i], rhs[i]))))
+                z3.Or(nnsmith_eq(lhs[i], 1), nnsmith_eq(rhs[i], 1), nnsmith_eq(lhs[i], rhs[i]))))
         else:
-            valid = lhs[i] == 1 or rhs[i] == 1 or nnsmith_eq(lhs[i], rhs[i])
+            valid = nnsmith_eq(lhs[i], 1) or nnsmith_eq(
+                rhs[i], 1) or nnsmith_eq(lhs[i], rhs[i])
             # TODO(JK): enable this after fixing issue #2
             # assert valid, "Invalid broadcast shapes lhs={}, rhs={}".format(lhs, rhs)
             cons.append(z3.BoolVal(valid))
@@ -356,9 +359,9 @@ def broadcast_to_cons(*shapes: List[Union[z3.ExprRef, int]]) -> List[z3.ExprRef]
         for i in range(max_dim):
             if isinstance(tgt[i], z3.ExprRef) or isinstance(src[i], z3.ExprRef):
                 cons.append(z3.simplify(
-                    z3.Or(src[i] == 1, nnsmith_eq(src[i], tgt[i]))))
+                    z3.Or(nnsmith_eq(src[i], 1), nnsmith_eq(src[i], tgt[i]))))
             else:
-                valid = src[i] == 1 or nnsmith_eq(src[i], tgt[i])
+                valid = nnsmith_eq(src[i], 1) or nnsmith_eq(src[i], tgt[i])
                 # TODO(JK): enable this after fixing issue #2
                 # assert valid, "Invalid broadcast shapes lhs={}, rhs={}".format(lhs, rhs)
                 cons.append(z3.BoolVal(valid))
@@ -544,7 +547,7 @@ class Where(TernaryOpBase):
 
     def _requires(self, input_shapes):
         return broadcast_cons(*(ish.shape for ish in input_shapes)) \
-            + [input_shapes[1].dtype == input_shapes[2].dtype]
+            + [z3.BoolVal(input_shapes[1].dtype == input_shapes[2].dtype)]
 
     def torch(self):
         return torch.where
