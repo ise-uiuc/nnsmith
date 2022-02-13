@@ -32,8 +32,8 @@ _INFERRED = False
 
 
 def align_bvs(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef], carry=False, mult=False):
-    left_is_arith = isinstance(left, (int, float, z3.ArithRef))
-    right_is_arith = isinstance(right, (int, float, z3.ArithRef))
+    left_is_arith = isinstance(left, (int, float, z3.IntNumRef))
+    right_is_arith = isinstance(right, (int, float, z3.IntNumRef))
     # If both values are of arithmetic type, we do not need to do anything.
     if left_is_arith and right_is_arith:
         return (left, right)
@@ -70,10 +70,14 @@ def align_bvs(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.E
     if left_is_arith:
         if diff > 0:
             right = z3.Concat(z3.BitVecVal(0, diff), right)
+        if isinstance(left, z3.IntNumRef):
+            left = left.as_long()
         return z3.BitVecVal(left, right.size()), z3.simplify(right)
     if right_is_arith:
         if diff < 0:
             left = z3.Concat(z3.BitVecVal(0, abs(diff)), left)
+        if isinstance(left, z3.IntNumRef):
+            left = left.as_long()
         return left, z3.BitVecVal(right, left.size())
     if diff < 0:
         left = z3.Concat(z3.BitVecVal(0, abs(diff)), left)
@@ -85,7 +89,7 @@ def align_bvs(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.E
         right = z3.Concat(z3.BitVecVal(0, 1), right)
     if mult:
         max_val = right.size() + left.size()
-        if max_val > ARITH_MAX_WIDTH:
+        if max_val >= ARITH_MAX_WIDTH:
             return (left, right)
         else:
             max_val = ARITH_MAX_WIDTH - max_val
@@ -271,7 +275,7 @@ def _prepend_to(x, max_dim):
 
 def z3_bcast(x: Union[int, z3.ExprRef], y: Union[int, z3.ExprRef], *args: Union[int, z3.ExprRef]):
     x, y = align_bvs(x, y)
-    return z3.If(nnsmith_eq(y, 1), x, y) if len(args) == 0 else z3_bcast(z3_bcast(x, y), *args)
+    return z3.simplify(z3.If(nnsmith_eq(y, 1), x, y)) if len(args) == 0 else z3_bcast(z3_bcast(x, y), *args)
 
 
 def broadcast_shapes(*shapes: List[Union[z3.ExprRef, int]]) -> List[Union[z3.ExprRef, int]]:
