@@ -29,7 +29,7 @@ from nnsmith.input_gen import gen_one_input
 from nnsmith.difftest import assert_allclose
 from nnsmith.graph_input_gen import forked_execution
 import networkx as nx
-
+import onnx
 from summary import GraphSummary, ParamShapeSummary, SummaryBase
 
 __COV_DRIVER__ = None
@@ -179,6 +179,8 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         self.cur_node_size = 'nan'
         self.fork_bkn = fork_bkn
 
+        self.stage = 'init'
+
         self._PER_MODEL_TIMEOUT_ = _PER_MODEL_TIMEOUT_  # milliseconds
 
         self.profile = pd.DataFrame(
@@ -198,7 +200,8 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                 f'\ncur_seed: {self.cur_seed}'
                 f'\ncur_node_size: {self.cur_node_size}',
                 title="Time Left ~ Total Time"),
-            Panel.fit(f'{self.reporter.n_bug}/{len(self.profile)}',
+            Panel.fit(f'{self.reporter.n_bug}/{len(self.profile)}'
+                      f'\n{self.stage}',
                       title="Bug/Iter", style="magenta"),
             Panel.fit(f'[green]Fast: {self.fastest_model_gen_t:.3f}s[/green]|'
                       f'[bold]Cur: {self.cur_model_gen_t:.3f}s[/bold]\n'
@@ -246,6 +249,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                             self.cur_seed = seed
                             self.cur_node_size = random.randint(
                                 1, self.max_nodes)
+                            self.stage = 'gen model'
                             progress.refresh()
                             sat_inputs, state, edge_set, seed = forked_execution(self.mode,
                                                                                  _TMP_ONNX_FILE_,
@@ -256,6 +260,16 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                                                                                  save_torch=use_torch,
                                                                                  summaries=self.summaries,
                                                                                  seed=seed)
+                            self.stage = 'load model'
+                            load_t_s = time.time()
+                            onnx_model = DiffTestBackend.get_onnx_proto(
+                                _TMP_ONNX_FILE_)
+                            load_model_time = time.time() - load_t_s
+                            check_t_s = time.time()
+                            self.stage = 'check model'
+                            onnx.checker.check_model(
+                                onnx_model, full_check=True)
+                            check_model_time = time.time() - check_t_s
                             break
                         except Exception as e:
                             traceback.print_exc()
@@ -267,9 +281,6 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         self.fastest_model_gen_t, self.cur_model_gen_t)
                     self.slowest_model_gen_t = max(
                         self.slowest_model_gen_t, self.cur_model_gen_t)
-
-                    onnx_model = DiffTestBackend.get_onnx_proto(
-                        _TMP_ONNX_FILE_)
 
                     eval_inputs = None
                     if sat_inputs is not None:
@@ -294,10 +305,12 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         with util.stdout_redirected(f"{_TMP_ONNX_FILE_}.stdout", sys.__stdout__), \
                                 util.stdout_redirected(f"{_TMP_ONNX_FILE_}.stderr", sys.__stderr__):
                             for bname in self.backends:
+                                self.stage = f'eval {bname}'
                                 st = time.time()
                                 difftest_pool[bname] = self.backends[bname].predict(
                                     onnx_model, eval_inputs, torch_model=torch_model)
                                 info['model_eval_t_' + bname] = time.time() - st
+                        self.stage = f'diff testing'
 
                         keys = list(difftest_pool.keys())
                         for idx in range(1, len(keys)):
@@ -307,6 +320,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                                 keys[0], keys[idx],
                                 nan_as_err=False)
 
+                        self.stage = f'cleanup'
                         # Evaluation time logging.
                         self.cur_model_eval_t = time.time() - eval_t_s
                         self.fastest_model_eval_t = min(
@@ -323,6 +337,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                                     self.table.on_new_cov(src, dst)
 
                     except Exception as e:
+                        self.stage = f'reporting bug'
                         # ignore models with invalid inputs
                         if not isinstance(e, IncorrectResult) or sat_inputs is not None:
                             stdout = f'{_TMP_ONNX_FILE_}.stdout'
@@ -353,6 +368,8 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         'record_coverage_time': record_coverage_t,
                         'seed': seed,
                         'node_size': self.cur_node_size,
+                        'load_model_time': load_model_time,
+                        'check_model_time': check_model_time,
                     })
                     for s in self.summaries:
                         info.update(
