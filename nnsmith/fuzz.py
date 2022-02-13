@@ -3,6 +3,7 @@ import pickle
 import sys
 import time
 import os
+import traceback
 import uuid
 import datetime
 import random
@@ -152,7 +153,7 @@ class CustomProgress(Progress):
 
 class FuzzingLoop:  # TODO: Support multiple backends.
     def __init__(self, backends: Dict[str, DiffTestBackend], mode='table', root=None, time_budget=60 * 60 * 4, max_nodes=32, inp_gen='random',
-                 summaries: List[SummaryBase] = None):
+                 summaries: List[SummaryBase] = None, fork_bkn=False, _PER_MODEL_TIMEOUT_=1000):
         self.root = root
         self.reporter = Reporter(
             report_folder=root, name_hint=list(backends.keys())[0])
@@ -174,6 +175,12 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         self.slowest_model_eval_t = -float("inf")
         self.fastest_model_eval_t = float("inf")
 
+        self.cur_seed = 'nan'
+        self.cur_node_size = 'nan'
+        self.fork_bkn = fork_bkn
+
+        self._PER_MODEL_TIMEOUT_ = _PER_MODEL_TIMEOUT_  # milliseconds
+
         self.profile = pd.DataFrame(
             columns=['model_gen_t', 'model_eval_t', 'bugs', 'edge_cov'])
         self.summaries = summaries or []
@@ -187,7 +194,9 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         return Columns([
             Panel.fit(
                 f'{datetime.timedelta(seconds=round(time.time()-self.start_time))} ~ '
-                f'{datetime.timedelta(seconds=self.time_budget)}',
+                f'{datetime.timedelta(seconds=self.time_budget)}'
+                f'\ncur_seed: {self.cur_seed}'
+                f'\ncur_node_size: {self.cur_node_size}',
                 title="Time Left ~ Total Time"),
             Panel.fit(f'{self.reporter.n_bug}/{len(self.profile)}',
                       title="Bug/Iter", style="magenta"),
@@ -205,7 +214,6 @@ class FuzzingLoop:  # TODO: Support multiple backends.
 
     def fuzz(self):
         _TMP_ONNX_FILE_ = f'tmp_{uuid.uuid4()}.onnx'
-        _PER_MODEL_TIMEOUT_ = 1000  # milliseconds
         self.start_time = time.time()
         use_torch = any(i.__class__.__name__ ==
                         'TchExecutor' for i in self.backends.values())
@@ -232,16 +240,26 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     record_coverage_t = time.time() - st
 
                     gen_t_s = time.time()
-
-                    sat_inputs, state, edge_set, seed = forked_execution(self.mode,
-                                                                         _TMP_ONNX_FILE_,
-                                                                         table=self.table,
-                                                                         max_node_size=random.randint(
-                                                                             1, self.max_nodes),
-                                                                         max_gen_millisec=_PER_MODEL_TIMEOUT_,
-                                                                         inp_gen=self.inp_gen,
-                                                                         save_torch=use_torch,
-                                                                         summaries=self.summaries)
+                    while True:
+                        try:
+                            seed = random.getrandbits(32)
+                            self.cur_seed = seed
+                            self.cur_node_size = random.randint(
+                                1, self.max_nodes)
+                            progress.refresh()
+                            sat_inputs, state, edge_set, seed = forked_execution(self.mode,
+                                                                                 _TMP_ONNX_FILE_,
+                                                                                 table=self.table,
+                                                                                 max_node_size=self.cur_node_size,
+                                                                                 max_gen_millisec=self._PER_MODEL_TIMEOUT_,
+                                                                                 inp_gen=self.inp_gen,
+                                                                                 save_torch=use_torch,
+                                                                                 summaries=self.summaries,
+                                                                                 seed=seed)
+                            break
+                        except Exception as e:
+                            traceback.print_exc()
+                            print('retrying...')
 
                     # Generation time logging.
                     self.cur_model_gen_t = time.time() - gen_t_s
@@ -334,6 +352,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         'summaries_update_time': summaries_t,
                         'record_coverage_time': record_coverage_t,
                         'seed': seed,
+                        'node_size': self.cur_node_size,
                     })
                     for s in self.summaries:
                         info.update(
@@ -358,6 +377,8 @@ if __name__ == '__main__':
     parser.add_argument(
         '--skip', help='Node types to skip. Split by `,`. By default a blacklist for each backend is also appended.', type=str)
     parser.add_argument('--inp_gen', type=str, default='random')
+    parser.add_argument('--gen_timeout', type=int,
+                        default=1000, help='in milliseconds')
     args = parser.parse_args()
 
     backends = None
@@ -395,6 +416,7 @@ if __name__ == '__main__':
         mode=args.mode,
         time_budget=args.time_budget,
         inp_gen=args.inp_gen,
-        summaries=[ParamShapeSummary(), GraphSummary(), GraphSummary(level=1)]
+        summaries=[ParamShapeSummary(), GraphSummary(), GraphSummary(level=1)],
+        _PER_MODEL_TIMEOUT_=args.gen_timeout
     )
     fuzzing_loop.fuzz()

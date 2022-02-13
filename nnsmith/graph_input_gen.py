@@ -1,3 +1,4 @@
+import gc
 import os
 from pathlib import Path
 import pickle
@@ -40,79 +41,86 @@ def safe_wrapper(func):
     return wrapper
 
 
-@safe_wrapper
+def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, output_path, ipc_dict):
+    random.seed(seed if seed is not None else random.getrandbits(32))
+    ipc_dict['seed'] = seed
+
+    if gen_method == 'random':
+        gen, solution = random_model_gen(
+            max_nodes=max_nodes, timeout=max_gen_millisec)
+    elif gen_method == 'table':
+        gen, solution = table_model_gen(
+            table=ipc_dict['table'],
+            state=ipc_dict['state'],
+            max_nodes=max_nodes, timeout=max_gen_millisec)
+        abs_graph = gen.abstract_graph
+        unique_set = set()
+        for src, dst in abs_graph.edges():
+            pair = (ALL_OP_TYPES.index(type(abs_graph.nodes[src]['op'])), ALL_OP_TYPES.index(
+                type(abs_graph.nodes[dst]['op'])) - 1)
+            unique_set.add(pair)
+        ipc_dict['edges'] = unique_set
+    elif gen_method == 'guided':
+        from nnsmith.graph_gen import GuidedGen
+        gen = GuidedGen(
+            seed=seed, summaries=ipc_dict['state']['summaries'])
+        gen.abstract_gen(max_node_size=max_nodes,
+                         max_gen_millisec=max_gen_millisec)
+        solution = gen.get_symbol_solutions()
+    else:
+        SanityCheck.true(False, f'Unknown gen_method: {gen_method}')
+
+    net = SymbolNet(gen.abstract_graph, solution, verbose=False,
+                    alive_shapes=gen.alive_shapes)
+
+    sat_inputs = None
+    if inp_gen == 'random':
+        with torch.no_grad():
+            net.eval()
+            sat_inputs = net.rand_input_gen()
+    elif inp_gen == 'grad':
+        sat_inputs = net.grad_input_gen()
+
+    if sat_inputs is not None:
+        ret_inputs = {}
+        for i, name in enumerate(net.input_spec):
+            ret_inputs[name] = sat_inputs[i].cpu().numpy()
+        ipc_dict['sat_inputs'] = ret_inputs
+    else:
+        ipc_dict['sat_inputs'] = None
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        torch2onnx(net, output_path)
+
+    cloudpickle.dump(net.concrete_graph, open(
+        output_path + '-graph.pkl', 'wb'), protocol=4)
+
+
+# @safe_wrapper
 def forked_execution(
         gen_method, output_path, seed=None, max_nodes=10, max_gen_millisec=2000, table=None, save_torch=False, inp_gen='random', **kwargs):
     if seed is None:
         seed = random.getrandbits(32)
-
-    def subprocess_call(ipc_dict):
-        random.seed(seed if seed is not None else random.getrandbits(32))
-        ipc_dict['seed'] = seed
-
-        if gen_method == 'random':
-            gen, solution = random_model_gen(
-                max_nodes=max_nodes, timeout=max_gen_millisec)
-        elif gen_method == 'table':
-            gen, solution = table_model_gen(
-                table=table,
-                state=ipc_dict['state'],
-                max_nodes=max_nodes, timeout=max_gen_millisec)
-            abs_graph = gen.abstract_graph
-            unique_set = set()
-            for src, dst in abs_graph.edges():
-                pair = (ALL_OP_TYPES.index(type(abs_graph.nodes[src]['op'])), ALL_OP_TYPES.index(
-                    type(abs_graph.nodes[dst]['op'])) - 1)
-                unique_set.add(pair)
-            ipc_dict['edges'] = unique_set
-        elif gen_method == 'guided':
-            from nnsmith.graph_gen import GuidedGen
-            gen = GuidedGen(
-                seed=seed, summaries=ipc_dict['state']['summaries'])
-            gen.abstract_gen(max_node_size=max_nodes,
-                             max_gen_millisec=max_gen_millisec)
-            solution = gen.get_symbol_solutions()
-        else:
-            SanityCheck.true(False, f'Unknown gen_method: {gen_method}')
-
-        net = SymbolNet(gen.abstract_graph, solution, verbose=False,
-                        alive_shapes=gen.alive_shapes)
-
-        sat_inputs = None
-        if inp_gen == 'random':
-            with torch.no_grad():
-                net.eval()
-                sat_inputs = net.rand_input_gen()
-        elif inp_gen == 'grad':
-            sat_inputs = net.grad_input_gen()
-
-        if sat_inputs is not None:
-            ret_inputs = {}
-            for i, name in enumerate(net.input_spec):
-                ret_inputs[name] = sat_inputs[i].cpu().numpy()
-            ipc_dict['sat_inputs'] = ret_inputs
-        else:
-            ipc_dict['sat_inputs'] = None
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            torch2onnx(net, output_path)
-
-        cloudpickle.dump(net.concrete_graph, open(
-            output_path + '-graph.pkl', 'wb'), protocol=4)
 
     with mp.Manager() as manager:
         # NOTE: Please only try to transfer primitive data types. e.g., str.
         # That is why I use `ALL_OP_STR2TYPE` to map strings to original types.
         # You might want to use `dill` to serialize some special stuff, e.g., lambda.
         # Also see https://stackoverflow.com/questions/25348532/can-python-pickle-lambda-functions
+        mp.set_forkserver_preload(
+            ['collections', 'math', 'textwrap', 'z3', 'networkx', 'torch', 'torch.nn', 'numpy', 'pickle', 'cloudpickle', 'inspect', 'nnsmith.abstract.op.*'])
         ipc_dict = manager.dict()
         ipc_dict['state'] = manager.dict()
         ipc_dict['state']['unsolvable'] = manager.list()
         ipc_dict['state']['summaries'] = kwargs['summaries']
         ipc_dict['edges'] = set()
-        if os.environ.get('NNSMITH_FORK', '0') == '1':  # let's try to get rid of fork
-            p = mp.Process(target=subprocess_call, args=(ipc_dict,))
+        ipc_dict['table'] = table
+        nnsmith_fork = os.environ.get(
+            'NNSMITH_FORK', 'forkserver')  # specify the fork method
+        if nnsmith_fork != 'inprocess':  # let's try to get rid of fork
+            p = mp.get_context(nnsmith_fork).Process(
+                target=subprocess_call, args=(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, output_path, ipc_dict,))
 
             p_duration = None
             try:
@@ -151,7 +159,8 @@ def forked_execution(
                 raise ModelGenSubProcesssError(
                     'return code not zero: {}'.format(p.exitcode))
         else:
-            subprocess_call(ipc_dict)
+            subprocess_call(gen_method, seed, max_nodes,
+                            max_gen_millisec, inp_gen, output_path, ipc_dict)
             for src, dst in ipc_dict['state']['unsolvable']:
                 table.on_unsolvable(ALL_OP_STR2TYPE[src], ALL_OP_STR2TYPE[dst])
 
