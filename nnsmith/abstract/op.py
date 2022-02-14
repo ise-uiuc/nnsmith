@@ -636,6 +636,8 @@ class Constant(AbsOpBase):
 class Placeholder:
     def __init__(self, out_shape: ShapeVar):
         self.out_shape = out_shape
+        self.inp_dims = []
+        self.out_dims = [out_shape.ndims]
 
     def __repr__(self):
         return f'Placeholder({self.out_shape}, {self.dtype})'

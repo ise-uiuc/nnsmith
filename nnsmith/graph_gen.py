@@ -469,7 +469,7 @@ class SimpleGenerator:
             self.compute_wts()
         return random.choices(self.op_candidates, k=1, weights=self.wts)[0]
 
-    def forward_insert_node(self, node: AbsOpBase, ishape_indices: List[int], oshapes: List[ShapeVar] = None):
+    def forward_insert_node(self, node: AbsOpBase, ishape_indices: List[int], oshapes: List[ShapeVar] = None, force_shape_indices=None) -> int:
         if oshapes is None:
             input_shapes = [self.alive_shapes[idx][1]
                             for idx in ishape_indices]
@@ -479,42 +479,105 @@ class SimpleGenerator:
         if isinstance(node, Placeholder):
             self.placeholders.append(succ_nid)
 
-        shape_idx_st = len(self.alive_shapes)
         shape_indices = []
-        for i, shape_var in enumerate(oshapes):
-            if node.out_dims[i] == -1:
-                node.out_dims[i] = len(shape_var.shape)
-            else:
-                SanityCheck.eq(node.out_dims[i], len(shape_var.shape), "{}'s dimension size is not {} in {}".format(
-                    shape_var.shape, node.out_dims[i], node.__class__.__name__))
-            shape_idx = len(self.alive_shapes)
-            shape_indices.append(shape_idx)
-            self.alive_shapes.append((succ_nid, shape_var, i))
-            self.dim2shape_idx.setdefault(
-                len(shape_var.shape), []).append(shape_idx)
-        shape_idx_ed = len(self.alive_shapes)
+        if force_shape_indices is None:
+            for i, shape_var in enumerate(oshapes):
+                if node.out_dims[i] == -1:
+                    node.out_dims[i] = len(shape_var.shape)
+                else:
+                    SanityCheck.eq(node.out_dims[i], len(shape_var.shape), "{}'s dimension size is not {} in {}".format(
+                        shape_var.shape, node.out_dims[i], node.__class__.__name__))
+                shape_idx = len(self.alive_shapes)
+                shape_indices.append(shape_idx)
+                self.alive_shapes.append((succ_nid, shape_var, i))
+                self.dim2shape_idx.setdefault(
+                    len(shape_var.shape), []).append(shape_idx)
+        else:
+            shape_indices = force_shape_indices
 
-        # NOTE: because of backward insertion, we may not be able to limit the symbol size as there will be some 
+        # NOTE: because of backward insertion, we may not be able to limit the symbol size as there will be some
         # trivially equivalent symbols which harms the readability. (e.g., relations like `a = b` is not known).
         self.abstract_graph.add_node(
-            succ_nid, op=node, nin=len(ishape_indices), nout=len(oshapes),
+            succ_nid, op=node,
+            nin=len(ishape_indices),
+            nout=len(oshapes),
+            shape_indices=shape_indices,
+            ishape_indices=ishape_indices,
             label=textwrap.fill(
-                (f'#{succ_nid}, [{shape_idx_st},{shape_idx_ed}), ' if not self.viz_verbose else '') +
-                f'{node}', width=30), shape_indices=shape_indices, ishape_indices=ishape_indices)
+                f'#{succ_nid} ~ {node}' if not self.viz_verbose else '', width=30))
 
         for in_operand_idx, idx in enumerate(ishape_indices):
             pred_nid, svar, out_operand_idx = self.alive_shapes[idx]
             self.abstract_graph.add_edge(pred_nid, succ_nid, shape_idx=idx, operand_idx=(
-                out_operand_idx, in_operand_idx), label=f'{out_operand_idx}-{in_operand_idx}: {svar}' if not self.viz_verbose else '')
+                out_operand_idx, in_operand_idx), label=f'{out_operand_idx}-{in_operand_idx}: <{svar.dtype}>{svar.shape}' if not self.viz_verbose else '')
 
         if self.is_viz_sbs:
             self.viz()
-    
-    # TODO(JIAWEI)
+
+        return succ_nid
+
     def backward_insert_node(self, node, input_nodes: List[Union[int, Placeholder]], occupied_idx):
-        # Replace `occupied_idx`;
-        # Insert `input_nodes`;
-        pass
+        # self.placeholder idx -> nx graph node idx
+        occ_holder_idx_nx = [self.placeholders[i] for i in occupied_idx]
+
+        def get_new_node_id():
+            return len(self.abstract_graph.nodes)
+
+        ishape_indices = []
+        for input_node in input_nodes:
+            # Insert Placeholder in `input_nodes`
+            if isinstance(input_node, Placeholder):
+                nid = get_new_node_id()
+                shape_idx = len(self.alive_shapes)
+                self.alive_shapes.append((nid, input_node.out_shape, 0))
+                self.dim2shape_idx.setdefault(
+                    len(input_node.out_shape.ndims), []
+                ).append(shape_idx)
+                self.abstract_graph.add_node(
+                    nid,
+                    op=input_node,
+                    nin=0,
+                    nout=1,
+                    ishape_indices=[],
+                    shape_indices=[shape_idx],
+                    label=textwrap.fill(
+                        f'#{nid} ~ {input_node}' if not self.viz_verbose else '', width=30),
+                )
+                ishape_indices.append(shape_idx)
+            else:
+                ishape_indices.append(input_node)
+
+        # Insert node
+        op_nx_idx = self.forward_insert_node(
+            node,
+            ishape_indices,
+            [self.alive_shapes[nx_node.shape_indices[0]][1]
+                for nx_node in occ_holder_idx_nx],
+            force_shape_indices=[nx_node.shape_indices[0] for nx_node in occ_holder_idx_nx])
+
+        # Insert edges and remove placeholders
+        for i, nx_idx in enumerate(occ_holder_idx_nx):
+            for (src, dst) in self.abstract_graph.edges(nx_idx):
+                # multi-graph
+                for edge_idx, succ_node in self.abstract_graph.get_edge_data(src, dst).items():
+                    _, svar, out_operand_idx = self.alive_shapes[succ_node.shape_idx]
+                    out_operand_idx = i
+                    in_operand_idx = succ_node.operand_idx[1]
+                    self.abstract_graph.add_edge(
+                        op_nx_idx,
+                        dst,
+                        shape_idx=succ_node.shape_idx, # reuse old alive shape
+                        operand_idx=(out_operand_idx, in_operand_idx),
+                        label=f'{out_operand_idx}-{in_operand_idx}: <{svar.dtype}>{svar.shape}' if not self.viz_verbose else ''
+                    )
+                    self.alive_shapes[succ_node.shape_idx][0] = op_nx_idx
+                    self.abstract_graph.remove_edge(edge_idx)
+                
+            # remove placeholders
+            self.abstract_graph.remove_node(nx_idx)
+
+        if self.is_viz_sbs:
+            self.viz()
 
     def try_insert_node_type_at(self, node_t, ishape_indices: List[int]) -> bool:
         if self.verbose:
@@ -742,12 +805,13 @@ class PureSymbolGen(SimpleGenerator):
         self.forward_insert_node(node, ishape_indices, output_shapes)
         return True
 
-    def try_occupy_placeholder(self, node: AbsOpBase, placeholder_indices: List[int]) -> bool:
+    def try_occupy_placeholder(self, node: AbsOpBase, occ_holder_indices: List[int]) -> bool:
         # S2 - create X: X can be
         #                   - a new placeholder (fallback)
         #                   - an existing alive shape
 
-        to_occupy = [self.abstract_graph.nodes[self.placeholders[i]].op for i in placeholder_indices]
+        to_occupy = [self.abstract_graph.nodes[self.placeholders[i]
+                                               ].op for i in occ_holder_indices]
 
         occupied_holder_shapes = [holder.out_shape for holder in to_occupy]
 
@@ -772,7 +836,7 @@ class PureSymbolGen(SimpleGenerator):
         for i, shape in enumerate(output_shapes):
             constraints.extend(shape.eq(occupied_holder_shapes[i]))
             constraints.extend(shape.gt_zero())
-        
+
         self.cur_node = node
         # TODO: not considering extra constraints for now.
         # TODO: consider nfloats.
@@ -780,11 +844,12 @@ class PureSymbolGen(SimpleGenerator):
 
         if check_res != z3.sat:
             return False
-        
+
         for c in constraints:
             self.solver.add(c)
 
-        self.backward_insert_node(node, new_inp_placeholders, to_occupy)
+        self.backward_insert_node(
+            node, new_inp_placeholders, occ_holder_indices)
 
         return True
 
