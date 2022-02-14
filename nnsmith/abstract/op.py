@@ -196,14 +196,23 @@ class ShapeVar:
     def __repr__(self):
         return f'ShapeVar(shape={str(self.shape)}, dtype={self.dtype.value})'
 
-    def gt_zero(self, no_replica=[]):
+    def gt_zero(self):
         ret = []
         for s in self.shape:
             if isinstance(s, z3.ExprRef):
-                if not any(str(replica) == str(s) for replica in no_replica):
-                    ret.append(nnsmith_gt(s, 0))
+                ret.append(nnsmith_gt(s, 0))
             else:
                 ConstraintCheck.gt(s, 0)
+        return ret
+    
+    def eq(self, other):
+        SanityCheck.eq(self.ndims, other.ndims)
+        ret = []
+        for i in range(self.ndims):
+            if isinstance(self.shape[i], z3.ExprRef) or isinstance(other.shape[i], z3.ExprRef):
+                ret.append(nnsmith_eq(self.shape[i], other.shape[i]))
+            else:
+                ConstraintCheck.gt(self.shape[i], other.shape[i])
         return ret
 
     def torch(self):

@@ -347,7 +347,7 @@ class SimpleGenerator:
         self.picklable_graph = nx.MultiDiGraph()
 
         # <op idx>
-        self.placeholders: List[Placeholder] = []
+        self.placeholders: List[int] = []
         init_placeholder = self.create_placeholder(len(min_dims))
         self.forward_insert_node(init_placeholder, [], oshapes=[
                                  init_placeholder.out_shape])
@@ -364,14 +364,16 @@ class SimpleGenerator:
         self.min_dims = min_dims
         self.n_floats = 0
         self.n_inps = 0
+        self.monotonic_placeholder_id = 0
         self.last_soln = None
         self.wts = None
 
     def create_placeholder(self, dim, dtype=None):
         shapevar = ShapeVar(
-            shape=[self.new_sym('i%s_s%s' % (self.n_inps, k))
-                   for k in range(len(dim))],
+            shape=[self.new_sym('var%s_%s' % (
+                self.monotonic_placeholder_id, k)) for k in range(len(dim))],
             dtype=dtype if dtype is not None else random.choice(DTYPE_ALL))
+        self.monotonic_placeholder_id += 1
         return Placeholder(shapevar)
 
     def new_sym(self, name):
@@ -416,10 +418,6 @@ class SimpleGenerator:
             "memory_max_size",
             16 * 1024,  # MB
         )
-        num_inputs = max(
-            1, int((max_node_size + 9) // 10 + random.gauss(0, 1)))
-        for _ in range(num_inputs):
-            self.insert_input_node(self.min_dims)
         init_time = time.time()
         while time.time() - init_time < max_gen_millisec / 1000 and len(
                 self.abstract_graph.nodes) < max_node_size:
@@ -496,6 +494,8 @@ class SimpleGenerator:
                 len(shape_var.shape), []).append(shape_idx)
         shape_idx_ed = len(self.alive_shapes)
 
+        # NOTE: because of backward insertion, we may not be able to limit the symbol size as there will be some 
+        # trivially equivalent symbols which harms the readability. (e.g., relations like `a = b` is not known).
         self.abstract_graph.add_node(
             succ_nid, op=node, nin=len(ishape_indices), nout=len(oshapes),
             label=textwrap.fill(
@@ -509,6 +509,12 @@ class SimpleGenerator:
 
         if self.is_viz_sbs:
             self.viz()
+    
+    # TODO(JIAWEI)
+    def backward_insert_node(self, node, input_nodes: List[Union[int, Placeholder]], occupied_idx):
+        # Replace `occupied_idx`;
+        # Insert `input_nodes`;
+        pass
 
     def try_insert_node_type_at(self, node_t, ishape_indices: List[int]) -> bool:
         if self.verbose:
@@ -577,7 +583,10 @@ class SimpleGenerator:
 
         # S1 - candidates of placeholders per dim
         placeholder_indices = self.pick_shape_var_idx(
-            type(op), op.out_dims, op.out_dtypes, candidate_shapes=[s.out_shape for s in self.placeholders])
+            type(op), op.out_dims, op.out_dtypes, candidate_shapes=[self.abstract_graph.nodes[idx].op.out_shape for idx in self.placeholders])
+
+        if self.try_occupy_placeholder(op, placeholder_indices):
+            return True
 
         return False
 
@@ -736,6 +745,47 @@ class PureSymbolGen(SimpleGenerator):
         self.n_floats = tmp_n_floats
 
         self.forward_insert_node(node, ishape_indices, output_shapes)
+        return True
+
+    def try_occupy_placeholder(self, node: AbsOpBase, placeholder_indices: List[int]) -> bool:
+        to_occupy = [self.abstract_graph.nodes[self.placeholders[i]].op for i in placeholder_indices]
+
+        occupied_holder_shapes = [holder.out_shape for holder in to_occupy]
+
+        # TODO: allow reuse existing alive shapes
+        # n_inps = len(node.inp_dims)
+        # max_try = 2
+        # n_reuse = n_inps - 1
+        # while n_reuse > 0 and max_try > 0:
+        #     # TODO...
+        #     max_try -= 1
+        #     n_reuse -= 1
+
+        # Reusing outputs failed. as a fallback, promote all free vars to placeholders.
+        new_inp_placeholders = [self.create_placeholder(
+            dim) if dim != -1 else random.randint(0, 4) for dim in node.inp_dims]
+
+        input_shapes = [p.out_shape for p in new_inp_placeholders]
+        constraints = node.requires(input_shapes)
+        output_shapes = node.shape_fn(copy.deepcopy(input_shapes))
+
+        for i, shape in enumerate(output_shapes):
+            constraints.extend(shape.eq(occupied_holder_shapes[i]))
+            constraints.extend(shape.gt_zero())
+        
+        self.cur_node = node
+        # TODO: not considering extra constraints for now.
+        # TODO: consider nfloats.
+        check_res = self.check_sat(*constraints)
+
+        if check_res != z3.sat:
+            return False
+        
+        for c in constraints:
+            self.solver.add(c)
+
+        self.backward_insert_node(node, new_inp_placeholders, to_occupy)
+
         return True
 
     def on_timeout(self, node: AbsOpBase, ishape_indices: List[int]):
