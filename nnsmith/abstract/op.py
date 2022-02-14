@@ -536,17 +536,25 @@ class BcastBinaryOp1(BcastBinaryOp):  # +-*/ max min
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
     _bcast_out_dtypes = None
 
+    def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
+        return [out_ranks[0]]
 
 class BcastBinaryOp2(BcastBinaryOp):  # > < =
     in_dtypes = [(i, i) for i in DTYPE_ALL]
     out_dtypes = [(DType.bool,)]
     _bcast_out_dtypes = [DType.bool]
 
+    def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
+        return [out_ranks[0]]
+
 
 class BcastBinaryOp3(BcastBinaryOp):  # logical and or xor
     in_dtypes = [(DType.bool, DType.bool)]
     out_dtypes = [(DType.bool,)]
     _bcast_out_dtypes = [DType.bool]
+
+    def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
+        return [out_ranks[0]]
 
 
 class Where(TernaryOpBase):
@@ -1659,6 +1667,10 @@ class Concat(AbsOpBase):
     def torch(self):
         axis = self.extra_attrs['axis']
         return lambda *args: torch.cat(args, axis)
+
+    # TODO: fix with random compose    
+    # def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
+    #     return super().deduct_inp_ranks(out_ranks)
 
 
 # NOTE(JK) This is ugly. I think the root cause is we are using a class to represent a node type that we want to insert.
