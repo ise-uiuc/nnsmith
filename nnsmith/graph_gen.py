@@ -349,7 +349,8 @@ class SimpleGenerator:
         # <op idx>
         self.placeholders = []
         init_placeholder = self.create_placeholder(len(min_dims))
-        self.forward_insert_node(init_placeholder, [], oshapes=[init_placeholder.out_shape])
+        self.forward_insert_node(init_placeholder, [], oshapes=[
+                                 init_placeholder.out_shape])
 
         # <op idx, shape variable, output operand idx>
         self.alive_shapes: ALIVE_SHAPE_TYPE = []
@@ -366,9 +367,10 @@ class SimpleGenerator:
         self.last_soln = None
         self.wts = None
 
-    def create_placeholder(self, dim, dtype = None):
+    def create_placeholder(self, dim, dtype=None):
         shapevar = ShapeVar(
-            shape=[self.new_sym('i%s_s%s' % (self.n_inps, k)) for k in range(len(dim))], 
+            shape=[self.new_sym('i%s_s%s' % (self.n_inps, k))
+                   for k in range(len(dim))],
             dtype=dtype if dtype is not None else random.choice(DTYPE_ALL))
         return Placeholder(shapevar)
 
@@ -536,7 +538,7 @@ class SimpleGenerator:
 
         return False
 
-    def try_forward_insert(self, op, dim_spec_list):
+    def try_forward_insert(self, op: AbsOpBase):
         n_inp = len(op.inp_dims)
         dim_spec_list = []
 
@@ -555,17 +557,19 @@ class SimpleGenerator:
             dim_spec_list = op.inp_dims
 
         ishape_indices = self.pick_shape_var_idx(
-                type(op), dim_spec_list, op.in_dtypes)
+            type(op), dim_spec_list, op.in_dtypes, candidate_shapes=[s[1] for s in self.alive_shapes])
 
         if self.try_insert_node(op, ishape_indices):
             return True
 
-    def try_backward_insert(self, op):
+    def try_backward_insert(self, op: AbsOpBase):
         # we know that: Y = op(X)
-        # select Y: Y must be a placeholder; (this also means the graph must start w/ a placeholder)
-        # create X: X can be
+        # S1 - select Y: Y must be a placeholder; (this also means the graph must start w/ a placeholder)
+        # S2 - create X: X can be
         #                   - a new placeholder (fallback)
         #                   - an existing alive shape
+
+        # S1
         pass
 
     def try_insert_node_type(self, node_t, max_shape_var_pick_time=3) -> bool:
@@ -597,28 +601,28 @@ class SimpleGenerator:
 
         return False
 
-    def filter_alive_shapes(self, ndim, dtype):
-        cans = range(len(self.alive_shapes))
+    def filter_shapes(self, ndim, dtype, candidate_shapes: List[ShapeVar]):
+        cans = range(len(candidate_shapes))
 
         cans = list(filter(  # filter with ndim
-            lambda sid: self.alive_shapes[sid][1].ndims == ndim or ndim == -1, cans))
+            lambda sid: candidate_shapes[sid].ndims == ndim or ndim == -1, cans))
         if len(cans) == 0:
             raise RequiredDimNotFound(
                 'Cannot find a shape variable with #dimensions %s.' % ndim)
 
         if dtype is not None:
             cans = list(filter(  # filter with dtype
-                lambda sid: self.alive_shapes[sid][1].dtype == dtype, cans))
+                lambda sid: candidate_shapes[sid].dtype == dtype, cans))
             if len(cans) == 0:
                 raise RequiredDimNotFound(
                     'Cannot find a shape variable with #dimensions %s and dtype %s.' % (ndim, dtype))
 
         return cans
 
-    def pick_alive_shape(self, node_t, candidates):
+    def pick_shape(self, node_t, candidates):
         return random.choice(candidates)
 
-    def pick_shape_var_idx(self, node_t, ndim_list: List[int], dtype_combs: List[DTypeComb]) -> List[int]:
+    def pick_shape_var_idx(self, node_t, ndim_list: List[int], dtype_combs: List[DTypeComb], candidate_shapes: List[ShapeVar]) -> List[int]:
         """Randomly pick indices to shape variables from the output pool.
 
         Args:
@@ -634,8 +638,8 @@ class SimpleGenerator:
 
         all_can_dtypes = []
         for i, ndim in enumerate(ndim_list):
-            all_can_dtypes.extend([self.alive_shapes[i][1].dtype for i in self.filter_alive_shapes(
-                ndim=ndim, dtype=None)])
+            all_can_dtypes.extend([candidate_shapes[i].dtype for i in self.filter_shapes(
+                ndim=ndim, dtype=None, candidate_shapes=candidate_shapes)])
         # only use dtypes currently available after ndim filtering
         dtype_combs = [comb for comb in dtype_combs if all(
             i in all_can_dtypes for i in comb)]
@@ -644,10 +648,10 @@ class SimpleGenerator:
                 node_t, ndim_list, dtype_combs))
         dtype_comb = random.choice(dtype_combs)
         for i, ndim in enumerate(ndim_list):
-            candidates = self.filter_alive_shapes(
-                ndim=ndim, dtype=dtype_comb[i])
+            candidates = self.filter_shapes(
+                ndim=ndim, dtype=dtype_comb[i], candidate_shapes=candidate_shapes)
             shape_var_candidates.append(
-                self.pick_alive_shape(node_t, candidates))
+                self.pick_shape(node_t, candidates))
 
         return shape_var_candidates
 
