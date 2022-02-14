@@ -1637,7 +1637,8 @@ class Concat(AbsOpBase):
         axis = self._get_axis(ndims)
         assert ndims > axis
 
-        assert all(s.ndims == ndims for s in input_shapes)
+        for s in input_shapes:
+            SanityCheck.eq(s.ndims, ndims)
         assert len(input_shapes) == self.arity
         cons = []
         for d in range(ndims):

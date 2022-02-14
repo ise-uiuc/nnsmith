@@ -129,7 +129,7 @@ class SymbolNet(nn.Module):
         if self.verbose:
             print('input_info=', self.input_info)
         self.input_spec = {
-            f'i{ii.op.idx}': ii.op.shape_var for ii in self.input_info}
+            f'i{ii.op.idx}': ii.op.shape_var.shape for ii in self.input_info}
         self.plausible_input_shape = {
             f'i{ii.op.idx}': ii.op.shape_var for ii in self.input_info}
         self.first_run = True
@@ -182,7 +182,7 @@ class SymbolNet(nn.Module):
                            f'torch dtype ({out.dtype}) != symbolic dtype ({self.alive_shapes[shape_idx][1].dtype.value})')
 
     def get_random_inps(self) -> List[torch.Tensor]:
-        return [torch.rand(ii.op.shape) for ii in self.input_info]
+        return [torch.rand(ii.op.shape_var.shape) for ii in self.input_info]
 
     def rand_input_gen(self, max_iter=10, use_cuda=False) -> Optional[List[torch.Tensor]]:
         last_check_intermediate_numeric = self.check_intermediate_numeric
@@ -193,7 +193,7 @@ class SymbolNet(nn.Module):
         n_step = max_iter
         interval = 1 / n_step
         for v in np.linspace(-1, 1, n_step):
-            inputs = [v + torch.rand(ii.op.shape)
+            inputs = [v + torch.rand(ii.op.shape_var.shape)
                       * interval for ii in self.input_info]
 
             if use_cuda:
@@ -211,7 +211,7 @@ class SymbolNet(nn.Module):
 
     def grad_input_gen(self, max_iter=10, init_tensors=None, use_cuda=False) -> Optional[List[torch.Tensor]]:
         if init_tensors is None:
-            inputs = [torch.nn.parameter.Parameter(torch.rand(ii.op.shape))
+            inputs = [torch.nn.parameter.Parameter(torch.rand(ii.op.shape_var.shape))
                       for ii in self.input_info]
         else:
             inputs = [torch.nn.parameter.Parameter(
