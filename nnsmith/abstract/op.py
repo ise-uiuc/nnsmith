@@ -1722,10 +1722,12 @@ def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
 
     def _glob_leaf_op_classes_rec(cls):
         nonlocal ret
+        if cls is Input or cls is Constant:
+            return
         for c in cls.__subclasses__():
             if c.__subclasses__():
                 _glob_leaf_op_classes_rec(c)
-            elif c is not Input or c is not Constant:
+            else:
                 ret.append(c)
     _glob_leaf_op_classes_rec(AbsOpBase)
     return ret
@@ -1748,7 +1750,7 @@ def config_skip_op(skip_config):
             # # buggy, see https://github.com/NVIDIA/TensorRT/issues/1781
             # 'Less', 'Greater', 'Equal',
             # buggy
-            'Constant*',
+            'LegacyConstant*',
         ],
         'tvm': [],
         'ort': [],

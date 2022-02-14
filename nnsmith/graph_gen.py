@@ -338,6 +338,7 @@ class SimpleGenerator:
 
         self.op_candidates = [
             op for op in ALL_OP_TYPES if op not in skip and not op._skip]
+        print(self.op_candidates)
         self.solver = z3.Solver()
         # 4 bytes per float (assume we use float32)
         self.limit_float = 1024**2 * megabyte_lim / 4
@@ -559,9 +560,9 @@ class SimpleGenerator:
         op_nx_idx = self.forward_insert_node(
             node,
             ishape_indices,
-            [self.alive_shapes[self.abstract_graph[nx_nid]['shape_indices'][0]][1]
+            [self.alive_shapes[self.abstract_graph.nodes[nx_nid]['shape_indices'][0]][1]
                 for nx_nid in occ_holder_idx_nx],
-            force_shape_indices=[self.abstract_graph[nx_nid]['shape_indices'][0] for nx_nid in occ_holder_idx_nx])
+            force_shape_indices=[self.abstract_graph.nodes[nx_nid]['shape_indices'][0] for nx_nid in occ_holder_idx_nx])
 
         # Insert edges and remove placeholders
         for i, nx_idx in enumerate(occ_holder_idx_nx):
@@ -836,6 +837,7 @@ class PureSymbolGen(SimpleGenerator):
 
         # S2.2: reusing outputs failed. as a fallback, promote all free vars to placeholders.
         new_inp_placeholders = []
+        print(type(node), node.inp_dims)
         for dim in node.inp_dims:
             new_inp_placeholders.append(self.create_placeholder(
                 dim if dim != -1 else random.randint(0, 4)))
