@@ -603,9 +603,8 @@ class SimpleGenerator:
 
             # remove placeholders
             self.abstract_graph.remove_node(nx_idx)
-            for holder in occupied_idx:
-                self.reusable_placeholder_nx_indices.append(holder)
-                self.placeholders.remove(holder)
+            self.reusable_placeholder_nx_indices.append(nx_idx)
+            self.placeholders.remove(nx_idx)
 
         if self.is_viz_sbs:
             self.viz()
