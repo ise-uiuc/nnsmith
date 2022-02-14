@@ -870,24 +870,52 @@ class Bin:
         return lb, ub
 
 
+PARAM_CONFIG1 = {
+    'NCHWConv2d': {
+        'kernel_h_size': [Bin(i, i + 1, scale='log', base=2) for i in range(8)],
+        'kernel_w_size': [Bin(i, i + 1, scale='log', base=2) for i in range(8)],
+        'stride': [Bin(i, i + 1, scale='log', base=2) for i in range(8)],
+        'padding': [Bin(i, i + 1, scale='log', base=2) for i in range(8)] + [Bin(0, 1)],
+        'in_channels': [Bin(i, i + 1, scale='log', base=2) for i in range(8)] +
+        [Bin(8, None, scale='log', base=2)],
+        'out_channels': [],  # skip
+    },
+}
+PARAM_CONFIG2 = {
+    'NCHWConv2d': {
+        'kernel_h_size': [Bin(1, 256, scale='linear')],
+        'kernel_w_size': [Bin(1, 256, scale='linear')],
+        'stride': [Bin(1, 256, scale='linear')],
+        'padding': [Bin(1, 256, scale='linear')] + [Bin(0, 1)],
+        'in_channels': [Bin(1, 256, scale='linear')] +
+        [Bin(256, None, scale='linear')],
+        'out_channels': [],  # skip
+    },
+}
+
+
 class GuidedGen(PureSymbolGen):
     def __init__(self, summaries=None, scale='log', base=2, default_bins=8, **kwargs):
         super(GuidedGen, self).__init__(**kwargs)
 
         self.base = 2
-        self.param_config = {
-            'NCHWConv2d': {
-                'kernel_h_size': [Bin(i, i + 1, scale=scale, base=base) for i in range(8)],
-                'kernel_w_size': [Bin(i, i + 1, scale=scale, base=base) for i in range(8)],
-                'stride': [Bin(i, i + 1, scale=scale, base=base) for i in range(8)],
-                'padding': [Bin(i, i + 1, scale=scale, base=base) for i in range(8)] + [Bin(0, 1)],
-                'in_channels': [Bin(i, i + 1, scale=scale, base=base) for i in range(8)] +
-                [Bin(8, None, scale=scale, base=base)],
-                'out_channels': [],  # skip
-            },
-        }
-        self.default_config = defaultdict(
-            lambda: [Bin(i, i + 1, scale=scale, base=base) for i in range(default_bins)])
+        self.param_config = PARAM_CONFIG1
+        if scale == 'log':
+            self.default_config = defaultdict(
+                lambda: [Bin(i, i + 1, scale=scale, base=base) for i in range(default_bins)])
+        else:
+            assert scale == 'linear', scale
+            self.default_config = defaultdict(
+                lambda: [Bin(0, 256, scale=scale)])
+        self.scale = scale
+        # self.inp
+
+    def insert_input_node(self, min_dims, dtype=DType.float32) -> ShapeVar:
+        ish = super().insert_input_node(min_dims, dtype, constrain_min=False)
+        for i in ish.shape:
+            lb, ub = self.default_config[0][0].sample_range()
+            self.solver.add(*self.range_constrain(i, lb, ub))
+        return ish
 
     def range_constrain(self, param, lb, ub):
         ret = []
