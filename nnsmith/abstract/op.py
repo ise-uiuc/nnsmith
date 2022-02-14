@@ -536,8 +536,9 @@ class BcastBinaryOp1(BcastBinaryOp):  # +-*/ max min
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
     _bcast_out_dtypes = None
 
+    # FIXME: should be more flexible but need some constraints.
     def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
-        return [out_ranks[0]]
+        return [out_ranks[0], out_ranks[0]]
 
 class BcastBinaryOp2(BcastBinaryOp):  # > < =
     in_dtypes = [(i, i) for i in DTYPE_ALL]
@@ -545,7 +546,7 @@ class BcastBinaryOp2(BcastBinaryOp):  # > < =
     _bcast_out_dtypes = [DType.bool]
 
     def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
-        return [out_ranks[0]]
+        return [out_ranks[0], out_ranks[0]]
 
 
 class BcastBinaryOp3(BcastBinaryOp):  # logical and or xor
@@ -554,7 +555,7 @@ class BcastBinaryOp3(BcastBinaryOp):  # logical and or xor
     _bcast_out_dtypes = [DType.bool]
 
     def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
-        return [out_ranks[0]]
+        return [out_ranks[0], out_ranks[0]]
 
 
 class Where(TernaryOpBase):
