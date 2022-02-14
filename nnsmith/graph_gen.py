@@ -913,7 +913,8 @@ class GuidedGen(PureSymbolGen):
     def insert_input_node(self, min_dims, dtype=DType.float32) -> ShapeVar:
         ish = super().insert_input_node(min_dims, dtype, constrain_min=False)
         for i in ish.shape:
-            lb, ub = self.default_config[0][0].sample_range()
+            bins = self.default_config[0]
+            lb, ub = bins[random.randint(0, len(bins) - 1)].sample_range()
             self.solver.add(*self.range_constrain(i, lb, ub))
         return ish
 
