@@ -346,12 +346,6 @@ class SimpleGenerator:
         self.abstract_graph = nx.MultiDiGraph()
         self.picklable_graph = nx.MultiDiGraph()
 
-        # <op idx>
-        self.placeholders: List[int] = []
-        init_placeholder = self.create_placeholder(len(min_dims))
-        self.forward_insert_node(init_placeholder, [], oshapes=[
-                                 init_placeholder.out_shape])
-
         # <op idx, shape variable, output operand idx>
         self.alive_shapes: ALIVE_SHAPE_TYPE = []
         # dim size -> list[shape idx -> output_tensor_pool]
@@ -368,10 +362,16 @@ class SimpleGenerator:
         self.last_soln = None
         self.wts = None
 
+        # <op idx>
+        self.placeholders: List[int] = []
+        init_placeholder = self.create_placeholder(len(min_dims))
+        self.forward_insert_node(init_placeholder, [], oshapes=[
+                                 init_placeholder.out_shape])
+
     def create_placeholder(self, dim, dtype=None):
         shapevar = ShapeVar(
             shape=[self.new_sym('var%s_%s' % (
-                self.monotonic_placeholder_id, k)) for k in range(len(dim))],
+                self.monotonic_placeholder_id, k)) for k in range(dim)],
             dtype=dtype if dtype is not None else random.choice(DTYPE_ALL))
         self.monotonic_placeholder_id += 1
         return Placeholder(shapevar)
@@ -531,7 +531,7 @@ class SimpleGenerator:
                 shape_idx = len(self.alive_shapes)
                 self.alive_shapes.append((nid, input_node.out_shape, 0))
                 self.dim2shape_idx.setdefault(
-                    len(input_node.out_shape.ndims), []
+                    input_node.out_shape.ndims, []
                 ).append(shape_idx)
                 self.abstract_graph.add_node(
                     nid,
@@ -566,15 +566,17 @@ class SimpleGenerator:
                     self.abstract_graph.add_edge(
                         op_nx_idx,
                         dst,
-                        shape_idx=succ_node.shape_idx, # reuse old alive shape
+                        shape_idx=succ_node.shape_idx,  # reuse old alive shape
                         operand_idx=(out_operand_idx, in_operand_idx),
                         label=f'{out_operand_idx}-{in_operand_idx}: <{svar.dtype}>{svar.shape}' if not self.viz_verbose else ''
                     )
                     self.alive_shapes[succ_node.shape_idx][0] = op_nx_idx
                     self.abstract_graph.remove_edge(edge_idx)
-                
+
             # remove placeholders
             self.abstract_graph.remove_node(nx_idx)
+            for holder in occupied_idx:
+                self.placeholders.remove(holder)
 
         if self.is_viz_sbs:
             self.viz()
@@ -639,9 +641,9 @@ class SimpleGenerator:
 
     def try_backward_insert(self, op: AbsOpBase):
         # we know that: Y = op(X)
-        # S1 - select Y: Y must be a placeholder; (this also means the graph must start w/ a placeholder)m
+        # S1 - select Y: Y must be a placeholder; (this also means the graph must start w/ a placeholder)
         placeholder_indices = self.pick_shape_var_idx(
-            type(op), op.out_dims, op.out_dtypes, candidate_shapes=[self.abstract_graph.nodes[idx].op.out_shape for idx in self.placeholders])
+            type(op), op.out_dims, op.out_dtypes, candidate_shapes=[self.abstract_graph.nodes[idx]['op'].out_shape for idx in self.placeholders])
 
         if self.try_occupy_placeholder(op, placeholder_indices):
             return True
@@ -810,8 +812,8 @@ class PureSymbolGen(SimpleGenerator):
         #                   - a new placeholder (fallback)
         #                   - an existing alive shape
 
-        to_occupy = [self.abstract_graph.nodes[self.placeholders[i]
-                                               ].op for i in occ_holder_indices]
+        to_occupy = [self.abstract_graph.nodes[self.placeholders[i]]['op']
+                     for i in occ_holder_indices]
 
         occupied_holder_shapes = [holder.out_shape for holder in to_occupy]
 

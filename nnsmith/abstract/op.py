@@ -640,7 +640,7 @@ class Placeholder:
         self.out_dims = [out_shape.ndims]
 
     def __repr__(self):
-        return f'Placeholder({self.out_shape}, {self.dtype})'
+        return f'Placeholder({self.out_shape})'
     
     def to_const(self):
         const_node = Constant(self.out_shape.ndim)
