@@ -361,6 +361,8 @@ class SimpleGenerator:
         self.last_soln = None
         self.wts = None
 
+        self.placeholders = []
+
     def new_sym(self, name):
         if self.use_bitvec:
             return z3.BitVec(name, 8)
@@ -531,30 +533,11 @@ class SimpleGenerator:
 
         return False
 
-    def try_insert_node_type(self, node_t, max_shape_var_pick_time=3) -> bool:
-        if self.verbose:
-            print(f'Inserting node #{len(self.abstract_graph.nodes)}: '
-                  f'trying to insert node type {node_t.__name__}')
-        if issubclass(node_t, Input):
-            try:
-                self.insert_input_node(self.min_dims)
-            # TODO: check the exception type (ideally only z3 check_failure), don't drop internal errors
-            except:
-                return False
-            return True
-        op_param_n = signature(node_t).parameters
-        op_id = len(self.abstract_graph.nodes)
-        op_params = [self.new_sym('op%s_%s' % (op_id, k))
-                     for k in range(len(op_param_n))]
-
-        op: AbsOpBase = node_t(*op_params)
-
+    def try_forward_insert(self, op, dim_spec_list):
         n_inp = len(op.inp_dims)
-        same_input_dims = op.same_inp_dims
-
         dim_spec_list = []
 
-        if same_input_dims:  # find `n_inp` under the same input shapes.
+        if op.same_inp_dims:  # find `n_inp` under the same input shapes.
             final_dim = -1
             for dim in op.inp_dims:
                 if dim != -1:
@@ -568,12 +551,33 @@ class SimpleGenerator:
         else:  # inputs have different dimension sizes.
             dim_spec_list = op.inp_dims
 
+        ishape_indices = self.pick_shape_var_idx(
+                type(op), dim_spec_list, op.in_dtypes)
+
+        if self.try_insert_node(op, ishape_indices):
+            return True
+
+    def try_backward_insert(self, op):
+        pass
+
+    def try_insert_node_type(self, node_t, max_shape_var_pick_time=3) -> bool:
+        if self.verbose:
+            print(f'Inserting node #{len(self.abstract_graph.nodes)}: '
+                  f'trying to insert node type {node_t.__name__}')
+
+        op_param_n = signature(node_t).parameters
+        op_id = len(self.abstract_graph.nodes)
+        op_params = [self.new_sym('op%s_%s' % (op_id, k))
+                     for k in range(len(op_param_n))]
+
+        op: AbsOpBase = node_t(*op_params)
+
         try:
             for _ in range(max_shape_var_pick_time):
-                ishape_indices = self.pick_shape_var_idx(
-                    node_t, dim_spec_list, op.in_dtypes)
-                if self.try_insert_node(op, ishape_indices):
-                    return True
+                if random.randint(0, 1):
+                    return self.try_forward_insert(op)
+                else:
+                    return self.try_backward_insert(op)
         except RequiredDimNotFound:
             if self.verbose:
                 traceback.print_exc()

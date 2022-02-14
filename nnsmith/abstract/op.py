@@ -8,6 +8,7 @@ from inspect import signature
 import random
 import itertools
 import warnings
+import sys
 
 # Import z3 ahead of torch (See https://github.com/Z3Prover/z3/issues/5656)
 import z3
@@ -575,6 +576,23 @@ class StopFoldConst(torch.nn.Module):
         return self.param.to(self.dtype)
 
 
+class Input(AbsOpBase):
+    in_dtypes = [()]
+
+    def __init__(self, dim: int):
+        super().__init__()
+        self.inp_dims = []
+        self.out_dims = [dim]
+
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        SanityCheck.eq(len(input_shapes), 0)
+        return [self.shape_var]
+
+    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+        SanityCheck.eq(len(input_shapes), 0)
+        return []
+
+
 class Constant(AbsOpBase):
     in_dtypes = [()]
 
@@ -599,8 +617,24 @@ class Constant(AbsOpBase):
         data = torch.randn(self.shape_var.shape).to(self.shape_var.dtype.value)
         return StopFoldConst(data)
 
+class Placeholder:
+    def __init__(self, out_shape: ShapeVar):
+        self.out_shape = out_shape
 
-class Constant0D(Constant):
+    def __repr__(self):
+        return f'Placeholder({self.out_shape}, {self.dtype})'
+    
+    def to_const(self):
+        const_node = Constant(self.out_shape.nelement())
+        const_node.shape_var = self.out_shape
+        return const_node
+    
+    def to_input(self):
+        input_node = Input(self.out_shape.nelement())
+        input_node.shape_var = self.out_shape
+        return input_node
+
+class LegacyConstant0D(Constant):
     def __init__(self):
         super().__init__(0)
         # TODO more dtypes
@@ -610,7 +644,7 @@ class Constant0D(Constant):
         return ShapeVar([], dtype=self.extra_attrs['dtype'])
 
 
-class Constant1D(Constant):
+class LegacyConstant1D(Constant):
     def __init__(self, dim0: Union[int, z3.ExprRef]):
         super().__init__(1)
         self.dim0 = dim0
@@ -620,7 +654,7 @@ class Constant1D(Constant):
         return ShapeVar([self.dim0], dtype=self.extra_attrs['dtype'])
 
 
-class Constant2D(Constant):
+class LegacyConstant2D(Constant):
     def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef]):
         super().__init__(2)
         self.dim0 = dim0
@@ -632,7 +666,7 @@ class Constant2D(Constant):
             [self.dim0, self.dim1], dtype=self.extra_attrs['dtype'])
 
 
-class Constant3D(Constant):
+class LegacyConstant3D(Constant):
     def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef]):
         super().__init__(3)
         self.dim0 = dim0
@@ -645,7 +679,7 @@ class Constant3D(Constant):
             [self.dim0, self.dim1, self.dim2], dtype=self.extra_attrs['dtype'])
 
 
-class Constant4D(Constant):
+class LegacyConstant4D(Constant):
     def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef], dim3: Union[int, z3.ExprRef]):
         super().__init__(4)
         self.dim0 = dim0
@@ -657,31 +691,6 @@ class Constant4D(Constant):
     def shape_var(self):
         return ShapeVar(
             [self.dim0, self.dim1, self.dim2, self.dim3], dtype=self.extra_attrs['dtype'])
-
-
-class Input(ElementWiseUnaryOp):
-    in_dtypes = [()]
-
-    def __init__(self, idx, dtype, dim0, dim1, dim2, dim3):
-        super().__init__()
-        self.inp_dims = []
-        self.out_dims = [4]
-        self.idx = idx
-        self.dtype = dtype
-        self.dim0 = dim0
-        self.dim1 = dim1
-        self.dim2 = dim2
-        self.dim3 = dim3
-
-    @ property
-    def shape(self):
-        return [self.dim0, self.dim1, self.dim2, self.dim3]
-
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        return [ShapeVar(self.shape, self.dtype)]
-
-    def torch(self):
-        raise NotImplementedError("This should never be called")
 
 
 # FIXME: Div will cause fuzzing crash.
@@ -1657,7 +1666,7 @@ def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
         for c in cls.__subclasses__():
             if c.__subclasses__():
                 _glob_leaf_op_classes_rec(c)
-            elif c is not Input:
+            elif c is not Input or c is not Constant:
                 ret.append(c)
     _glob_leaf_op_classes_rec(AbsOpBase)
     return ret
