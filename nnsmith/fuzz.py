@@ -202,7 +202,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                 title="Time Left ~ Total Time"),
             Panel.fit(f'{self.reporter.n_bug}/{len(self.profile)}'
                       f'\n{self.stage}',
-                      title="Bug/Iter", style="magenta"),
+                      title="Bug/Iter", style="magenta", width=16),
             Panel.fit(f'[green]Fast: {self.fastest_model_gen_t:.3f}s[/green]|'
                       f'[bold]Cur: {self.cur_model_gen_t:.3f}s[/bold]\n'
                       f'[red]Slow: {self.slowest_model_gen_t:.3f}s[/red]|'
@@ -261,12 +261,14 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                                                                                  summaries=self.summaries,
                                                                                  seed=seed)
                             self.stage = 'load model'
+                            progress.refresh()
                             load_t_s = time.time()
                             onnx_model = DiffTestBackend.get_onnx_proto(
                                 _TMP_ONNX_FILE_)
                             load_model_time = time.time() - load_t_s
                             check_t_s = time.time()
                             self.stage = 'check model'
+                            progress.refresh()
                             onnx.checker.check_model(
                                 onnx_model, full_check=True)
                             check_model_time = time.time() - check_t_s
@@ -301,6 +303,9 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         else:
                             torch_model = None
 
+                        self.stage = 'run backend'
+                        progress.refresh()
+
                         difftest_pool = {}
                         with util.stdout_redirected(f"{_TMP_ONNX_FILE_}.stdout", sys.__stdout__), \
                                 util.stdout_redirected(f"{_TMP_ONNX_FILE_}.stderr", sys.__stderr__):
@@ -311,6 +316,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                                     onnx_model, eval_inputs, torch_model=torch_model)
                                 info['model_eval_t_' + bname] = time.time() - st
                         self.stage = f'diff testing'
+                        progress.refresh()
 
                         keys = list(difftest_pool.keys())
                         for idx in range(1, len(keys)):
