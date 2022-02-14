@@ -551,9 +551,9 @@ class SimpleGenerator:
         op_nx_idx = self.forward_insert_node(
             node,
             ishape_indices,
-            [self.alive_shapes[nx_node.shape_indices[0]][1]
+            [self.alive_shapes[nx_node['shape_indices'][0]][1]
                 for nx_node in occ_holder_idx_nx],
-            force_shape_indices=[nx_node.shape_indices[0] for nx_node in occ_holder_idx_nx])
+            force_shape_indices=[nx_node['shape_indices'][0] for nx_node in occ_holder_idx_nx])
 
         # Insert edges and remove placeholders
         for i, nx_idx in enumerate(occ_holder_idx_nx):
@@ -721,8 +721,8 @@ class SimpleGenerator:
             all_can_dtypes.extend([candidate_shapes[i].dtype for i in self.filter_shapes(
                 ndim=ndim, dtype=None, candidate_shapes=candidate_shapes)])
         # only use dtypes currently available after ndim filtering
-        dtype_combs = [comb for comb in dtype_combs if all(
-            i in all_can_dtypes for i in comb)]
+        print(node_t, dtype_combs)
+        dtype_combs = [comb for comb in dtype_combs if all(i in all_can_dtypes for i in comb)]
         if len(dtype_combs) == 0:
             raise RequiredDimNotFound('Op %s: Cannot find a shape variable with dim_spec %s and dtype combinations %s.' % (
                 node_t, ndim_list, dtype_combs))
@@ -828,8 +828,10 @@ class PureSymbolGen(SimpleGenerator):
         #     n_reuse -= 1
 
         # S2.2: reusing outputs failed. as a fallback, promote all free vars to placeholders.
-        new_inp_placeholders = [self.create_placeholder(
-            dim) if dim != -1 else random.randint(0, 4) for dim in node.inp_dims]
+        new_inp_placeholders = []
+        for dim in node.inp_dims:
+            new_inp_placeholders.append(self.create_placeholder(
+                dim if dim != -1 else random.randint(0, 4)))
 
         input_shapes = [p.out_shape for p in new_inp_placeholders]
         constraints = node.requires(input_shapes)

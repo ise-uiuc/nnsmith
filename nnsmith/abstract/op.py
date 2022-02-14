@@ -440,18 +440,24 @@ def concretize(op: AbsOpBase, model: z3.ModelRef) -> AbsOpBase:
 
 
 class UnaryOpBase(AbsOpBase):
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
     def __init__(self):
         super().__init__()
         self.out_dims = [-1]
 
 
 class BinaryOpBase(AbsOpBase):
+    in_dtypes = [(i,i) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
     def __init__(self):
         super().__init__()
         self.out_dims = [-1]
 
 
 class TernaryOpBase(AbsOpBase):
+    in_dtypes = [(i,i,i) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
     def __init__(self):
         super().__init__()
         self.out_dims = [-1]
@@ -516,13 +522,13 @@ class BcastBinaryOp1(BcastBinaryOp):  # +-*/ max min
 
 class BcastBinaryOp2(BcastBinaryOp):  # > < =
     in_dtypes = [(i, i) for i in DTYPE_ALL]
-    out_dtypes = [(DType.bool)]
+    out_dtypes = [(DType.bool,)]
     _bcast_out_dtypes = [DType.bool]
 
 
 class BcastBinaryOp3(BcastBinaryOp):  # logical and or xor
     in_dtypes = [(DType.bool, DType.bool)]
-    out_dtypes = [(DType.bool)]
+    out_dtypes = [(DType.bool,)]
     _bcast_out_dtypes = [DType.bool]
 
 
