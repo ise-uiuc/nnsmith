@@ -902,11 +902,12 @@ class GuidedGen(PureSymbolGen):
         self.param_config = PARAM_CONFIG1
         if scale == 'log':
             self.default_config = defaultdict(
-                lambda: [Bin(i, i + 1, scale=scale, base=base) for i in range(default_bins)])
+                lambda: [Bin(i, i + 1, scale=scale, base=base) for i in range(default_bins)] +
+                [Bin(default_bins, None, scale=scale, base=base)])
         else:
             assert scale == 'linear', scale
             self.default_config = defaultdict(
-                lambda: [Bin(0, 256, scale=scale)])
+                lambda: [Bin(0, 256, scale='linear')] + [Bin(256, None, scale='linear')])
         self.scale = scale
         # self.inp
 
