@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from copy import deepcopy
 from enum import Enum
 import fnmatch
 from functools import reduce
@@ -8,7 +9,6 @@ from inspect import signature
 import random
 import itertools
 import warnings
-import sys
 
 # Import z3 ahead of torch (See https://github.com/Z3Prover/z3/issues/5656)
 import z3
@@ -419,6 +419,17 @@ class AbsOpBase(ABC):
 
 
 def concretize(op: AbsOpBase, model: z3.ModelRef) -> AbsOpBase:
+    if isinstance(op, Constant) or isinstance(op, Input):
+        ret_op = deepcopy(op)
+        values = []
+            
+        for idx, s in enumerate(op.shapevar.shape):
+            if isinstance(s, z3.ExprRef):
+                ret_op.shapevar.shape[idx] = model.eval(s).as_long()
+        
+        return ret_op
+
+    # Non-inp / const types.
     construct_param_dict = signature(op.__init__).parameters
     values = []
     symbolic_idx = []
@@ -625,7 +636,6 @@ class Constant(AbsOpBase):
         super().__init__()
         self.inp_dims = []
         self.out_dims = [dim]
-        self.extra_attrs = {'dtype': random.choice(DTYPE_ALL)}
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         SanityCheck.eq(len(input_shapes), 0)

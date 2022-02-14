@@ -1,6 +1,7 @@
 from collections import Counter, defaultdict
 import math
 import textwrap
+from sklearn.utils import shuffle
 import z3  # Always import z3 first to avoid incompatibility issue.
 # See https://github.com/Z3Prover/z3/issues/5656
 import networkx as nx
@@ -428,7 +429,14 @@ class SimpleGenerator:
         if len(self.abstract_graph.nodes) != max_node_size:
             print(
                 f'[WARNING]: graph size: {len(self.abstract_graph.nodes)} != expected size: {max_node_size}')
-        # self.fix_graph_dependency()
+        # init graph placeholders
+        shuffled_placeholder = shuffle(self.placeholders)
+        self.abstract_graph[shuffled_placeholder[0]]['op'] = self.abstract_graph[shuffled_placeholder[0]]['op'].to_input()
+        for holder_idx in shuffled_placeholder[1:]:
+            if random.randint(0, 1):
+                self.abstract_graph[holder_idx]['op'] = self.abstract_graph[holder_idx]['op'].to_const()
+            else:
+                self.abstract_graph[holder_idx]['op'] = self.abstract_graph[holder_idx]['op'].to_input()
 
     def shape_idx_to_op_idx(self, shape_idx: int) -> int:
         return self.alive_shapes[shape_idx][0]
@@ -551,9 +559,9 @@ class SimpleGenerator:
         op_nx_idx = self.forward_insert_node(
             node,
             ishape_indices,
-            [self.alive_shapes[nx_node['shape_indices'][0]][1]
-                for nx_node in occ_holder_idx_nx],
-            force_shape_indices=[nx_node['shape_indices'][0] for nx_node in occ_holder_idx_nx])
+            [self.alive_shapes[self.abstract_graph[nx_nid]['shape_indices'][0]][1]
+                for nx_nid in occ_holder_idx_nx],
+            force_shape_indices=[self.abstract_graph[nx_nid]['shape_indices'][0] for nx_nid in occ_holder_idx_nx])
 
         # Insert edges and remove placeholders
         for i, nx_idx in enumerate(occ_holder_idx_nx):
