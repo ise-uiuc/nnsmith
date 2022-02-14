@@ -347,7 +347,7 @@ class SimpleGenerator:
         self.picklable_graph = nx.MultiDiGraph()
 
         # <op idx>
-        self.placeholders = []
+        self.placeholders: List[Placeholder] = []
         init_placeholder = self.create_placeholder(len(min_dims))
         self.forward_insert_node(init_placeholder, [], oshapes=[
                                  init_placeholder.out_shape])
@@ -386,6 +386,10 @@ class SimpleGenerator:
 
     @ abstractmethod
     def try_insert_node(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
+        raise NotImplementedError
+
+    @ abstractmethod
+    def try_occupy_placeholder(self, node: AbsOpBase, placeholder_indices: List[int]) -> bool:
         raise NotImplementedError
 
     @ abstractmethod
@@ -562,6 +566,8 @@ class SimpleGenerator:
         if self.try_insert_node(op, ishape_indices):
             return True
 
+        return False
+
     def try_backward_insert(self, op: AbsOpBase):
         # we know that: Y = op(X)
         # S1 - select Y: Y must be a placeholder; (this also means the graph must start w/ a placeholder)
@@ -569,8 +575,11 @@ class SimpleGenerator:
         #                   - a new placeholder (fallback)
         #                   - an existing alive shape
 
-        # S1
-        pass
+        # S1 - candidates of placeholders per dim
+        placeholder_indices = self.pick_shape_var_idx(
+            type(op), op.out_dims, op.out_dtypes, candidate_shapes=[s.out_shape for s in self.placeholders])
+
+        return False
 
     def try_insert_node_type(self, node_t, max_shape_var_pick_time=3) -> bool:
         if self.verbose:
@@ -587,9 +596,11 @@ class SimpleGenerator:
         try:
             for _ in range(max_shape_var_pick_time):
                 if random.randint(0, 1):
-                    return self.try_forward_insert(op)
+                    if self.try_forward_insert(op):
+                        return True
                 else:
-                    return self.try_backward_insert(op)
+                    if self.try_backward_insert(op):
+                        return True
         except RequiredDimNotFound:
             if self.verbose:
                 traceback.print_exc()
