@@ -346,6 +346,11 @@ class SimpleGenerator:
         self.abstract_graph = nx.MultiDiGraph()
         self.picklable_graph = nx.MultiDiGraph()
 
+        # <op idx>
+        self.placeholders = []
+        init_placeholder = self.create_placeholder(len(min_dims))
+        self.forward_insert_node(init_placeholder, [], oshapes=[init_placeholder.out_shape])
+
         # <op idx, shape variable, output operand idx>
         self.alive_shapes: ALIVE_SHAPE_TYPE = []
         # dim size -> list[shape idx -> output_tensor_pool]
@@ -361,7 +366,11 @@ class SimpleGenerator:
         self.last_soln = None
         self.wts = None
 
-        self.placeholders = []
+    def create_placeholder(self, dim, dtype = None):
+        shapevar = ShapeVar(
+            shape=[self.new_sym('i%s_s%s' % (self.n_inps, k)) for k in range(len(dim))], 
+            dtype=dtype if dtype is not None else random.choice(DTYPE_ALL))
+        return Placeholder(shapevar)
 
     def new_sym(self, name):
         if self.use_bitvec:
@@ -387,15 +396,6 @@ class SimpleGenerator:
             bool: add more checks to determine whether to exit the generation.
         """
         return False
-
-    # def concretize_input_shape(self, model):
-    #     shape = []
-    #     for s in self.input_shape.shape:
-    #         if isinstance(s, z3.ExprRef):
-    #             shape.append(model.eval(s, model_completion=True).as_long())
-    #         else:
-    #             shape.append(s)
-    #     return shape
 
     def abstract_gen(self, max_node_size=10, max_gen_millisec=2000):
         z3.set_param(
@@ -465,13 +465,16 @@ class SimpleGenerator:
             self.compute_wts()
         return random.choices(self.op_candidates, k=1, weights=self.wts)[0]
 
-    def insert_node(self, node: AbsOpBase, ishape_indices: List[int], oshapes: List[ShapeVar] = None):
+    def forward_insert_node(self, node: AbsOpBase, ishape_indices: List[int], oshapes: List[ShapeVar] = None):
         if oshapes is None:
             input_shapes = [self.alive_shapes[idx][1]
                             for idx in ishape_indices]
             oshapes = node.shape_fn(copy.deepcopy(input_shapes))
 
-        new_node_idx = len(self.abstract_graph.nodes)
+        succ_nid = len(self.abstract_graph.nodes)
+        if isinstance(node, Placeholder):
+            self.placeholders.append(succ_nid)
+
         shape_idx_st = len(self.alive_shapes)
         shape_indices = []
         for i, shape_var in enumerate(oshapes):
@@ -482,20 +485,20 @@ class SimpleGenerator:
                     shape_var.shape, node.out_dims[i], node.__class__.__name__))
             shape_idx = len(self.alive_shapes)
             shape_indices.append(shape_idx)
-            self.alive_shapes.append((new_node_idx, shape_var, i))
+            self.alive_shapes.append((succ_nid, shape_var, i))
             self.dim2shape_idx.setdefault(
                 len(shape_var.shape), []).append(shape_idx)
         shape_idx_ed = len(self.alive_shapes)
 
         self.abstract_graph.add_node(
-            new_node_idx, op=node, nin=len(ishape_indices), nout=len(oshapes),
+            succ_nid, op=node, nin=len(ishape_indices), nout=len(oshapes),
             label=textwrap.fill(
-                (f'#{new_node_idx}, [{shape_idx_st},{shape_idx_ed}), ' if not self.viz_verbose else '') +
+                (f'#{succ_nid}, [{shape_idx_st},{shape_idx_ed}), ' if not self.viz_verbose else '') +
                 f'{node}', width=30), shape_indices=shape_indices, ishape_indices=ishape_indices)
 
         for in_operand_idx, idx in enumerate(ishape_indices):
-            old_node_idx, svar, out_operand_idx = self.alive_shapes[idx]
-            self.abstract_graph.add_edge(old_node_idx, new_node_idx, shape_idx=idx, operand_idx=(
+            pred_nid, svar, out_operand_idx = self.alive_shapes[idx]
+            self.abstract_graph.add_edge(pred_nid, succ_nid, shape_idx=idx, operand_idx=(
                 out_operand_idx, in_operand_idx), label=f'{out_operand_idx}-{in_operand_idx}: {svar}' if not self.viz_verbose else '')
 
         if self.is_viz_sbs:
@@ -558,6 +561,11 @@ class SimpleGenerator:
             return True
 
     def try_backward_insert(self, op):
+        # we know that: Y = op(X)
+        # select Y: Y must be a placeholder; (this also means the graph must start w/ a placeholder)
+        # create X: X can be
+        #                   - a new placeholder (fallback)
+        #                   - an existing alive shape
         pass
 
     def try_insert_node_type(self, node_t, max_shape_var_pick_time=3) -> bool:
@@ -658,7 +666,7 @@ class PureSymbolGen(SimpleGenerator):
             shape=[self.new_sym('i%s_s%s' % (self.n_inps, k)) for k in range(len(min_dims))], dtype=dtype)
         input_node = Input(self.n_inps, dtype, *input_tensor_shape.shape)
 
-        self.insert_node(input_node, [], oshapes=[input_tensor_shape])
+        self.forward_insert_node(input_node, [], oshapes=[input_tensor_shape])
         for c in input_tensor_shape.gt_zero():
             self.solver.add(c)
 
@@ -712,7 +720,7 @@ class PureSymbolGen(SimpleGenerator):
             self.solver.add(c)
         self.n_floats = tmp_n_floats
 
-        self.insert_node(node, ishape_indices, output_shapes)
+        self.forward_insert_node(node, ishape_indices, output_shapes)
         return True
 
     def on_timeout(self, node: AbsOpBase, ishape_indices: List[int]):
