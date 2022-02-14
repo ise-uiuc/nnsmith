@@ -721,7 +721,6 @@ class SimpleGenerator:
             all_can_dtypes.extend([candidate_shapes[i].dtype for i in self.filter_shapes(
                 ndim=ndim, dtype=None, candidate_shapes=candidate_shapes)])
         # only use dtypes currently available after ndim filtering
-        print(node_t, dtype_combs)
         dtype_combs = [comb for comb in dtype_combs if all(i in all_can_dtypes for i in comb)]
         if len(dtype_combs) == 0:
             raise RequiredDimNotFound('Op %s: Cannot find a shape variable with dim_spec %s and dtype combinations %s.' % (
