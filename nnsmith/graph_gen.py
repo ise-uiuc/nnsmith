@@ -9,6 +9,7 @@ from summary import ParamShapeSummary
 import torch
 from torch import nn
 import numpy as np
+import uuid
 
 import pickle
 import cloudpickle
@@ -35,6 +36,8 @@ ALIVE_SHAPE_TYPE = List[Tuple[int, ShapeVar, int]]
 InputInfo = NamedTuple(
     'InputInfo', [('op', Input), ('oid', int), ('node_id', int), ('input_name', str)])
 
+def logical2physical_gidx(graph, id):
+    return list(graph.nodes).index(id)
 
 class SymbolNet(nn.Module):
     def __init__(self, graph: nx.MultiDiGraph, model: z3.ModelRef, verbose=False, alive_shapes: ALIVE_SHAPE_TYPE = None,
@@ -62,54 +65,55 @@ class SymbolNet(nn.Module):
 
         tmp_op_output_map = {}  # node id -> output idx in tensors;
         shape_vars = {}
-        for node_id in nx.topological_sort(graph):
-            n_inp = graph.nodes[node_id]['nin']
-            n_out = graph.nodes[node_id]['nout']
+        for logical_node_id in nx.topological_sort(graph):
+            physical_node_id = logical2physical_gidx(graph, logical_node_id)
+            n_inp = graph.nodes[physical_node_id]['nin']
+            n_out = graph.nodes[physical_node_id]['nout']
 
-            tmp_op_output_map[node_id] = len(self.tensors)
+            tmp_op_output_map[physical_node_id] = len(self.tensors)
             for _ in range(n_out):
                 self.tensors.append(None)
                 self.ref_cnt.append(0)
 
             input_idx = [None] * n_inp
             output_idx = [None] * n_out
-            op = concretize(graph.nodes[node_id]['op'], model)
-            self.concrete_graph.nodes[node_id]['op'] = op
+            op = concretize(graph.nodes[physical_node_id]['op'], model)
+            self.concrete_graph.nodes[physical_node_id]['op'] = op
 
             # Glob inputs
-            for from_node, _, (out_idx, in_idx) in graph.in_edges(node_id, data='operand_idx'):
+            for from_node, _, (out_idx, in_idx) in graph.in_edges(physical_node_id, data='operand_idx'):
                 required = tmp_op_output_map[from_node] + out_idx
                 input_idx[in_idx] = required
                 self.ref_cnt[required] += 1
 
             # Glob outputs
-            out_edges = graph.out_edges(node_id, data='operand_idx')
+            out_edges = graph.out_edges(physical_node_id, data='operand_idx')
             if len(out_edges) == 0:  # leaf node
                 # create fake output indices
                 output_idx = list(range(
-                    tmp_op_output_map[node_id], tmp_op_output_map[node_id] + n_out))
+                    tmp_op_output_map[physical_node_id], tmp_op_output_map[physical_node_id] + n_out))
                 for out_idx in output_idx:
                     self.ref_cnt[out_idx] += 1
                     self.n_output += 1
             else:
                 for _, _, (out_idx, in_idx) in out_edges:
-                    output_idx[out_idx] = tmp_op_output_map[node_id] + out_idx
+                    output_idx[out_idx] = tmp_op_output_map[physical_node_id] + out_idx
 
             if not isinstance(op, Input):
                 cur_op = op.torch()
                 if isinstance(cur_op, nn.Module):
                     self.mlist.append(cur_op)
                 self.instructions.append(
-                    (cur_op, input_idx, output_idx, op, node_id))
+                    (cur_op, input_idx, output_idx, op, physical_node_id))
             else:  # Should be input node
                 SanityCheck.true(type(op) is Input, 'type(op) should be Input')
                 SanityCheck.eq(len(output_idx), 1)
                 self.input_info.append(
-                    InputInfo(op=op, oid=output_idx[0], node_id=node_id, input_name=f'i{op.idx}'))
+                    InputInfo(op=op, oid=output_idx[0], node_id=physical_node_id, input_name=f'i{op.idx}'))
 
             # concretize shapevars
-            ishape_indices = self.graph.nodes[node_id]['ishape_indices']
-            shape_indices = self.graph.nodes[node_id]['shape_indices']
+            ishape_indices = self.graph.nodes[physical_node_id]['ishape_indices']
+            shape_indices = self.graph.nodes[physical_node_id]['shape_indices']
             for shape_idx in shape_indices:
                 shape = self.alive_shapes[shape_idx][1].shape
                 dtype = self.alive_shapes[shape_idx][1].dtype
@@ -117,9 +121,9 @@ class SymbolNet(nn.Module):
                     i, z3.ExprRef) else i for i in shape]
                 assert shape_idx not in shape_vars
                 shape_vars[shape_idx] = ShapeVar(shape, dtype)
-            self.concrete_graph.nodes[node_id]['in_svs'] = [
+            self.concrete_graph.nodes[physical_node_id]['in_svs'] = [
                 shape_vars[i] for i in ishape_indices]
-            self.concrete_graph.nodes[node_id]['out_svs'] = [
+            self.concrete_graph.nodes[physical_node_id]['out_svs'] = [
                 shape_vars[i] for i in shape_indices]
 
         if self.verbose:
@@ -170,6 +174,7 @@ class SymbolNet(nn.Module):
         if self.alive_shapes is None:
             return
         msg_head = f'In dtype checking for {op} (#{node_id}): '
+        node_id = logical2physical_gidx(self.graph, node_id)
         shape_indices = self.graph.nodes[node_id]['shape_indices']
         SanityCheck.eq(len(outputs), len(shape_indices), msg_head +
                        f'{len(outputs)} != {len(shape_indices)}')
@@ -338,7 +343,6 @@ class SimpleGenerator:
 
         self.op_candidates = [
             op for op in ALL_OP_TYPES if op not in skip and not op._skip]
-        print(self.op_candidates)
         self.solver = z3.Solver()
         # 4 bytes per float (assume we use float32)
         self.limit_float = 1024**2 * megabyte_lim / 4
@@ -361,6 +365,8 @@ class SimpleGenerator:
         self.n_floats = 0
         self.n_inps = 0
         self.monotonic_placeholder_id = 0
+        self.monotonic_nx_node_idx = 0
+        self.reusable_placeholder_nx_indices = []
         self.last_soln = None
         self.wts = None
 
@@ -431,13 +437,13 @@ class SimpleGenerator:
             print(
                 f'[WARNING]: graph size: {len(self.abstract_graph.nodes)} != expected size: {max_node_size}')
         # init graph placeholders
-        shuffled_placeholder = shuffle(self.placeholders)
-        self.abstract_graph[shuffled_placeholder[0]]['op'] = self.abstract_graph[shuffled_placeholder[0]]['op'].to_input()
+        shuffled_placeholder = shuffle([logical2physical_gidx(self.abstract_graph, i) for i in self.placeholders])
+        self.abstract_graph.nodes[shuffled_placeholder[0]]['op'] = self.abstract_graph.nodes[shuffled_placeholder[0]]['op'].to_input()
         for holder_idx in shuffled_placeholder[1:]:
             if random.randint(0, 1):
-                self.abstract_graph[holder_idx]['op'] = self.abstract_graph[holder_idx]['op'].to_const()
+                self.abstract_graph.nodes[holder_idx]['op'] = self.abstract_graph.nodes[holder_idx]['op'].to_const()
             else:
-                self.abstract_graph[holder_idx]['op'] = self.abstract_graph[holder_idx]['op'].to_input()
+                self.abstract_graph.nodes[holder_idx]['op'] = self.abstract_graph.nodes[holder_idx]['op'].to_input()
 
     def shape_idx_to_op_idx(self, shape_idx: int) -> int:
         return self.alive_shapes[shape_idx][0]
@@ -484,18 +490,18 @@ class SimpleGenerator:
                             for idx in ishape_indices]
             oshapes = node.shape_fn(copy.deepcopy(input_shapes))
 
-        succ_nid = len(self.abstract_graph.nodes)
+        succ_nid = self.get_new_node_id()
         if isinstance(node, Placeholder):
             self.placeholders.append(succ_nid)
 
         shape_indices = []
         if force_shape_indices is None:
             for i, shape_var in enumerate(oshapes):
-                if node.out_dims[i] == -1:
-                    node.out_dims[i] = len(shape_var.shape)
+                if node.out_ranks[i] == -1:
+                    node.out_ranks[i] = len(shape_var.shape)
                 else:
-                    SanityCheck.eq(node.out_dims[i], len(shape_var.shape), "{}'s dimension size is not {} in {}".format(
-                        shape_var.shape, node.out_dims[i], node.__class__.__name__))
+                    SanityCheck.eq(node.out_ranks[i], len(shape_var.shape), "{}'s dimension size is not {} in {}".format(
+                        shape_var.shape, node.out_ranks[i], node.__class__.__name__))
                 shape_idx = len(self.alive_shapes)
                 shape_indices.append(shape_idx)
                 self.alive_shapes.append((succ_nid, shape_var, i))
@@ -517,7 +523,7 @@ class SimpleGenerator:
 
         for in_operand_idx, idx in enumerate(ishape_indices):
             pred_nid, svar, out_operand_idx = self.alive_shapes[idx]
-            self.abstract_graph.add_edge(pred_nid, succ_nid, shape_idx=idx, operand_idx=(
+            self.abstract_graph.add_edge(pred_nid, succ_nid, key=str(uuid.uuid1()), shape_idx=idx, operand_idx=(
                 out_operand_idx, in_operand_idx), label=f'{out_operand_idx}-{in_operand_idx}: <{svar.dtype}>{svar.shape}' if not self.viz_verbose else '')
 
         if self.is_viz_sbs:
@@ -525,18 +531,25 @@ class SimpleGenerator:
 
         return succ_nid
 
+    def get_new_node_id(self):
+        if self.reusable_placeholder_nx_indices:
+            return self.reusable_placeholder_nx_indices.pop()
+        ret = self.monotonic_nx_node_idx
+        self.monotonic_nx_node_idx += 1
+        return ret
+
+    def id2nxnode(self, id):
+        return self.abstract_graph.nodes[logical2physical_gidx(self.abstract_graph, id)]
+
     def backward_insert_node(self, node, input_nodes: List[Union[int, Placeholder]], occupied_idx):
         # self.placeholder idx -> nx graph node idx
         occ_holder_idx_nx = [self.placeholders[i] for i in occupied_idx]
-
-        def get_new_node_id():
-            return len(self.abstract_graph.nodes)
 
         ishape_indices = []
         for input_node in input_nodes:
             # Insert Placeholder in `input_nodes`
             if isinstance(input_node, Placeholder):
-                nid = get_new_node_id()
+                nid = self.get_new_node_id()
                 shape_idx = len(self.alive_shapes)
                 self.alive_shapes.append((nid, input_node.out_shape, 0))
                 self.dim2shape_idx.setdefault(
@@ -560,31 +573,33 @@ class SimpleGenerator:
         op_nx_idx = self.forward_insert_node(
             node,
             ishape_indices,
-            [self.alive_shapes[self.abstract_graph.nodes[nx_nid]['shape_indices'][0]][1]
+            [self.alive_shapes[self.id2nxnode(nx_nid)['shape_indices'][0]][1]
                 for nx_nid in occ_holder_idx_nx],
-            force_shape_indices=[self.abstract_graph.nodes[nx_nid]['shape_indices'][0] for nx_nid in occ_holder_idx_nx])
+            force_shape_indices=[self.id2nxnode(nx_nid)['shape_indices'][0] for nx_nid in occ_holder_idx_nx])
 
         # Insert edges and remove placeholders
         for i, nx_idx in enumerate(occ_holder_idx_nx):
-            for (src, dst) in self.abstract_graph.edges(nx_idx):
+            for (src, dst, key) in list(self.abstract_graph.edges(nx_idx, keys=True)):
                 # multi-graph
-                for edge_idx, succ_node in self.abstract_graph.get_edge_data(src, dst).items():
-                    _, svar, out_operand_idx = self.alive_shapes[succ_node.shape_idx]
-                    out_operand_idx = i
-                    in_operand_idx = succ_node.operand_idx[1]
-                    self.abstract_graph.add_edge(
-                        op_nx_idx,
-                        dst,
-                        shape_idx=succ_node.shape_idx,  # reuse old alive shape
-                        operand_idx=(out_operand_idx, in_operand_idx),
-                        label=f'{out_operand_idx}-{in_operand_idx}: <{svar.dtype}>{svar.shape}' if not self.viz_verbose else ''
-                    )
-                    self.alive_shapes[succ_node.shape_idx][0] = op_nx_idx
-                    self.abstract_graph.remove_edge(edge_idx)
+                edge_info = self.abstract_graph.get_edge_data(src, dst, key=key)
+                _, svar, out_operand_idx = self.alive_shapes[edge_info['shape_idx']]
+                out_operand_idx = i
+                in_operand_idx = edge_info['operand_idx'][1]
+                self.abstract_graph.add_edge(
+                    op_nx_idx,
+                    dst,
+                    key=str(uuid.uuid1()),
+                    shape_idx=edge_info['shape_idx'],  # reuse old alive shape
+                    operand_idx=(out_operand_idx, in_operand_idx),
+                    label=f'{out_operand_idx}-{in_operand_idx}: <{svar.dtype}>{svar.shape}' if not self.viz_verbose else ''
+                )
+                self.alive_shapes[edge_info['shape_idx']] = (op_nx_idx, *self.alive_shapes[edge_info['shape_idx']][1:])
+                self.abstract_graph.remove_edge(src, dst, key=key)
 
             # remove placeholders
             self.abstract_graph.remove_node(nx_idx)
             for holder in occupied_idx:
+                self.reusable_placeholder_nx_indices.append(holder)
                 self.placeholders.remove(holder)
 
         if self.is_viz_sbs:
@@ -623,12 +638,12 @@ class SimpleGenerator:
         return False
 
     def try_forward_insert(self, op: AbsOpBase):
-        n_inp = len(op.inp_dims)
+        n_inp = len(op.inp_ranks)
         dim_spec_list = []
 
         if op.same_inp_dims:  # find `n_inp` under the same input shapes.
             final_dim = -1
-            for dim in op.inp_dims:
+            for dim in op.inp_ranks:
                 if dim != -1:
                     if final_dim == -1:
                         final_dim = dim
@@ -638,7 +653,7 @@ class SimpleGenerator:
                 final_dim = random.choice(list(self.dim2shape_idx.keys()))
             dim_spec_list = [final_dim] * n_inp
         else:  # inputs have different dimension sizes.
-            dim_spec_list = op.inp_dims
+            dim_spec_list = op.inp_ranks
 
         ishape_indices = self.pick_shape_var_idx(
             type(op), dim_spec_list, op.in_dtypes, candidate_shapes=[s[1] for s in self.alive_shapes])
@@ -652,7 +667,7 @@ class SimpleGenerator:
         # we know that: Y = op(X)
         # S1 - select Y: Y must be a placeholder; (this also means the graph must start w/ a placeholder)
         placeholder_indices = self.pick_shape_var_idx(
-            type(op), op.out_dims, op.out_dtypes, candidate_shapes=[self.abstract_graph.nodes[idx]['op'].out_shape for idx in self.placeholders])
+            type(op), op.out_ranks, op.out_dtypes, candidate_shapes=[self.id2nxnode(idx)['op'].out_shape for idx in self.placeholders])
 
         if self.try_occupy_placeholder(op, placeholder_indices):
             return True
@@ -820,14 +835,14 @@ class PureSymbolGen(SimpleGenerator):
         #                   - a new placeholder (fallback)
         #                   - an existing alive shape
 
-        to_occupy = [self.abstract_graph.nodes[self.placeholders[i]]['op']
+        to_occupy = [self.id2nxnode(self.placeholders[i])['op']
                      for i in occ_holder_indices]
 
         occupied_holder_shapes = [holder.out_shape for holder in to_occupy]
 
         # S2.2: try to reuse some existing outputs;
         # TODO: allow reuse existing alive shapes
-        # n_inps = len(node.inp_dims)
+        # n_inps = len(node.inp_ranks)
         # max_try = 2
         # n_reuse = n_inps - 1
         # while n_reuse > 0 and max_try > 0:
@@ -837,8 +852,8 @@ class PureSymbolGen(SimpleGenerator):
 
         # S2.2: reusing outputs failed. as a fallback, promote all free vars to placeholders.
         new_inp_placeholders = []
-        print(type(node), node.inp_dims)
-        for dim in node.inp_dims:
+        print(type(node))
+        for dim in node.deduct_inp_ranks([s.ndims for s in occupied_holder_shapes]):
             new_inp_placeholders.append(self.create_placeholder(
                 dim if dim != -1 else random.randint(0, 4)))
 
@@ -914,9 +929,9 @@ class GenerationTable:
                     continue
 
                 inp_dims = tar_t(
-                    *[None for _ in signature(tar_t).parameters]).inp_dims
+                    *[None for _ in signature(tar_t).parameters]).inp_ranks
                 out_dims = src_t(
-                    *[None for _ in signature(src_t).parameters]).out_dims
+                    *[None for _ in signature(src_t).parameters]).out_ranks
 
                 if -1 in inp_dims or -1 in out_dims or set(inp_dims).intersection(out_dims):
                     continue
@@ -993,7 +1008,7 @@ class CoverageTableGen(PureSymbolGen):
         # node -> ishape_indices :: on_unsolvable
         for idx in ishape_indices:
             self.state['unsolvable'].append(
-                (type(node).__name__, type(self.abstract_graph.nodes[self.alive_shapes[idx][0]]['op']).__name__))
+                (type(node).__name__, type(self.id2nxnode(self.alive_shapes[idx][0])['op']).__name__))
 
 
 class Bin:

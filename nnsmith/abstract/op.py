@@ -238,15 +238,15 @@ class ShapeVar:
 
 def check_shape_fn(func):
     def wrapper_check_shape_fn(self, input_shapes):
-        SanityCheck.true(self.out_dims, "Empty output dimensions in {}".format(
+        SanityCheck.true(self.out_ranks, "Empty output dimensions in {}".format(
             self.__class__.__name__))
-        SanityCheck.eq(len(input_shapes), len(self.inp_dims), "{} requires {} inputs, but got {}".format(
+        SanityCheck.eq(len(input_shapes), len(self.inp_ranks), "{} requires {} inputs, but got {}".format(
             self.__class__.__name__,
-            len(self.inp_dims), len(input_shapes)))
+            len(self.inp_ranks), len(input_shapes)))
         res = func(self, input_shapes)
-        SanityCheck.eq(len(res), len(self.out_dims), "{} requires {} outputs, but got {}".format(
+        SanityCheck.eq(len(res), len(self.out_ranks), "{} requires {} outputs, but got {}".format(
             self.__class__.__name__,
-            len(self.out_dims), len(res)))
+            len(self.out_ranks), len(res)))
         return res
     return wrapper_check_shape_fn
 
@@ -255,9 +255,9 @@ def check_require_fn(func):
     def wrapper_check_require_fn(self, input_shapes):
         SanityCheck.true(
             _INFERRED, "Please call auto_infer_in_dtypes before using this function")
-        SanityCheck.eq(len(input_shapes), len(self.inp_dims), "{} requires {} inputs, but got {}".format(
+        SanityCheck.eq(len(input_shapes), len(self.inp_ranks), "{} requires {} inputs, but got {}".format(
             self.__class__.__name__,
-            len(self.inp_dims), len(input_shapes)))
+            len(self.inp_ranks), len(input_shapes)))
         return func(self, input_shapes)
     return wrapper_check_require_fn
 
@@ -378,10 +378,10 @@ class AbsOpBase(ABC):
         # `[3, 3]` this means this op requires 2 inputs. Where the 1st one has 2 dimensions, and the 2nd one has 3 dimensions.
         # `-1` means arbitrary dimantions; NOTE: but should be concretized during execution.
         # All symbols of correponding operator must be the constructor's parameters.
-        self.inp_dims = []
-        # NOTE: the concrete values of out_dims are not useful. Just make sure the length is correct.
+        self.inp_ranks = []
+        # NOTE: the concrete values of out_ranks are not useful. Just make sure the length is correct.
         # NOTE: the output shape of input dimensions should be concretized during the execution.
-        self.out_dims = []
+        self.out_ranks = []
         # Require the input dimension sizes to be equivalent.
         self.same_inp_dims = False
         # NOTE: the input of operator constructors are all Union[int, z3.ExprRef].
@@ -406,6 +406,9 @@ class AbsOpBase(ABC):
     @abstractmethod
     def torch(self) -> Callable[..., torch.Tensor]:
         raise NotImplementedError
+
+    def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
+        return self.inp_ranks
 
     @check_require_fn  # Public API.
     def requires(self, input_shapes):
@@ -442,8 +445,8 @@ def concretize(op: AbsOpBase, model: z3.ModelRef) -> AbsOpBase:
         values[idx] = model.eval(values[idx]).as_long()
 
     concrete_op = op.__class__(*values)
-    concrete_op.inp_dims = op.inp_dims
-    concrete_op.out_dims = op.out_dims
+    concrete_op.inp_ranks = op.inp_ranks
+    concrete_op.out_ranks = op.out_ranks
     concrete_op.same_inp_dims = op.same_inp_dims
     concrete_op.extra_attrs = op.extra_attrs
 
@@ -455,7 +458,7 @@ class UnaryOpBase(AbsOpBase):
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
     def __init__(self):
         super().__init__()
-        self.out_dims = [-1]
+        self.out_ranks = [-1]
 
 
 class BinaryOpBase(AbsOpBase):
@@ -463,7 +466,7 @@ class BinaryOpBase(AbsOpBase):
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
     def __init__(self):
         super().__init__()
-        self.out_dims = [-1]
+        self.out_ranks = [-1]
 
 
 class TernaryOpBase(AbsOpBase):
@@ -471,24 +474,27 @@ class TernaryOpBase(AbsOpBase):
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
     def __init__(self):
         super().__init__()
-        self.out_dims = [-1]
+        self.out_ranks = [-1]
 
 
 class ElementWiseUnaryOp(UnaryOpBase):
     def __init__(self):
         super().__init__()
-        self.inp_dims = [-1]
-        self.out_dims = [-1]
+        self.inp_ranks = [-1]
+        self.out_ranks = [-1]
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         SanityCheck.eq(len(input_shapes), 1)
         return [input_shapes[0]]
+    
+    def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
+        return [out_ranks[0]]
 
 
 # class ElementWiseBinaryOp(BinaryOpBase):
 #     def __init__(self):
 #         super().__init__()
-#         self.inp_dims = [-1, -1]
+#         self.inp_ranks = [-1, -1]
 #         self.same_inp_dims = True
 
 #     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
@@ -512,7 +518,7 @@ class BcastBinaryOp(BinaryOpBase):
 
     def __init__(self):
         super().__init__()
-        self.inp_dims = [-1, -1]
+        self.inp_ranks = [-1, -1]
         self.same_inp_dims = False
         self.bcastable = True
 
@@ -550,7 +556,7 @@ class Where(TernaryOpBase):
 
     def __init__(self):
         super().__init__()
-        self.inp_dims = [-1, -1, -1]
+        self.inp_ranks = [-1, -1, -1]
         self.same_inp_dims = False
         self.same_inp_dtypes = True
         self.bcastable = True
@@ -567,6 +573,9 @@ class Where(TernaryOpBase):
 
     def torch(self):
         return torch.where
+    
+    def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
+        return [out_ranks[0], out_ranks[0], out_ranks[0]]
 
 
 # bcast binary ops from https://github.com/onnx/onnx/blob/master/docs/Broadcasting.md
@@ -613,8 +622,8 @@ class Input(AbsOpBase):
 
     def __init__(self, dim: int):
         super().__init__()
-        self.inp_dims = []
-        self.out_dims = [dim]
+        self.inp_ranks = []
+        self.out_ranks = [dim]
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         SanityCheck.eq(len(input_shapes), 0)
@@ -634,8 +643,8 @@ class Constant(AbsOpBase):
 
     def __init__(self, dim: int):
         super().__init__()
-        self.inp_dims = []
-        self.out_dims = [dim]
+        self.inp_ranks = []
+        self.out_ranks = [dim]
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         SanityCheck.eq(len(input_shapes), 0)
@@ -652,19 +661,19 @@ class Constant(AbsOpBase):
 class Placeholder:
     def __init__(self, out_shape: ShapeVar):
         self.out_shape = out_shape
-        self.inp_dims = []
-        self.out_dims = [out_shape.ndims]
+        self.inp_ranks = []
+        self.out_ranks = [out_shape.ndims]
 
     def __repr__(self):
         return f'Placeholder({self.out_shape})'
     
     def to_const(self):
-        const_node = Constant(self.out_shape.ndim)
+        const_node = Constant(self.out_shape.ndims)
         const_node.shape_var = self.out_shape
         return const_node
     
     def to_input(self):
-        input_node = Input(self.out_shape.ndim)
+        input_node = Input(self.out_shape.ndims)
         input_node.shape_var = self.out_shape
         return input_node
 
@@ -973,7 +982,7 @@ class Expand(UnaryOpBase, ABC):
         """See https://pytorch.org/docs/stable/generated/torch.Tensor.expand.html
         """
         super().__init__()
-        self.inp_dims = [-1]
+        self.inp_ranks = [-1]
         SanityCheck.ge(expand_last_dim, 1)
         self.expand_last_dim = expand_last_dim
         self.expand_n = expand_n
@@ -1016,6 +1025,8 @@ class Expand(UnaryOpBase, ABC):
     def torch(self):
         return lambda x: x.expand(*self.shape_fn([ShapeVar.from_torch(x)])[0].shape)
 
+    def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
+        return [out_ranks[0]]
 
 class ExpandLast1(Expand):
     def __init__(self, expand_n: Union[int, z3.ExprRef]):
@@ -1059,8 +1070,8 @@ class NCHWConv2d(UnaryOpBase):
         self.stride = stride
         self.padding = padding
 
-        self.inp_dims = [4]  # NCHW
-        self.out_dims = [4]  # NCHW
+        self.inp_ranks = [4]  # NCHW
+        self.out_ranks = [4]  # NCHW
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         # not symbolic
@@ -1125,6 +1136,9 @@ class NCHWConv2d(UnaryOpBase):
                      self.kernel_w_size], dtype=input_shapes[0].dtype)
         outs = super().n_floats(input_shapes)
         return nnsmith_add(nnsmith_add(w.nelement(), padded_data.nelement()), outs)
+    
+    def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
+        return [4]
 
 
 class Reshape(UnaryOpBase, ABC):
@@ -1133,7 +1147,7 @@ class Reshape(UnaryOpBase, ABC):
 
     def __init__(self):
         super().__init__()
-        self.inp_dims = [-1]
+        self.inp_ranks = [-1]
         self.target_shape: List[Union[int, z3.ExprRef]]
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
@@ -1201,7 +1215,7 @@ class Reshape1D(Reshape):
         super().__init__()
         self.dim0 = dim0
         self.target_shape = [dim0]
-        self.out_dims = [1]
+        self.out_ranks = [1]
 
 
 class Reshape2D(Reshape):
@@ -1210,7 +1224,7 @@ class Reshape2D(Reshape):
         self.dim0 = dim0
         self.dim1 = dim1
         self.target_shape = [dim0, dim1]
-        self.out_dims = [2]
+        self.out_ranks = [2]
 
 
 class Reshape3D(Reshape):
@@ -1220,7 +1234,7 @@ class Reshape3D(Reshape):
         self.dim1 = dim1
         self.dim2 = dim2
         self.target_shape = [dim0, dim1, dim2]
-        self.out_dims = [3]
+        self.out_ranks = [3]
 
 
 class Reshape4D(Reshape):
@@ -1232,7 +1246,7 @@ class Reshape4D(Reshape):
         self.dim2 = dim2
         self.dim3 = dim3
         self.target_shape = [dim0, dim1, dim2, dim3]
-        self.out_dims = [4]
+        self.out_ranks = [4]
 
 # FIXME: Constraint too complex.
 
@@ -1247,7 +1261,7 @@ class Reshape5D(Reshape):
         self.dim3 = dim3
         self.dim4 = dim4
         self.target_shape = [dim0, dim1, dim2, dim3, dim4]
-        self.out_dims = [5]
+        self.out_ranks = [5]
 
 
 class Transpose(UnaryOpBase, ABC):
@@ -1255,11 +1269,11 @@ class Transpose(UnaryOpBase, ABC):
         """See https://pytorch.org/docs/stable/generated/torch.transpose.html
         """
         super().__init__()
-        self.inp_dims = [-1]
+        self.inp_ranks = [-1]
 
     def _init_swap_dims(self, input_shape: List[Union[int, z3.ExprRef]]):
         ConstraintCheck.ge(len(input_shape), 2)
-        self.inp_dims = [len(input_shape)]
+        self.inp_ranks = [len(input_shape)]
         if 'dim0' not in self.extra_attrs or 'dim1' not in self.extra_attrs:
             max_dim = len(input_shape) - 1
             self.extra_attrs['dim0'] = random.randint(0, max_dim)
@@ -1284,6 +1298,9 @@ class Transpose(UnaryOpBase, ABC):
             dim0, dim1 = self._init_swap_dims(list(x.shape))
             return x.transpose(dim0, dim1)
         return f
+    
+    def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
+        return out_ranks
 
 
 # Sum, Min, Max, Mean, ArgMin, ArgMax, Squeeze, Size
@@ -1331,29 +1348,29 @@ class SqueezeBase(ReduceBase, ABC):
 class Squeeze2D(SqueezeBase):
     def __init__(self):
         super().__init__(2)
-        self.out_dims = [1]
-        self.inp_dims = [2]
+        self.out_ranks = [1]
+        self.inp_ranks = [2]
 
 
 class Squeeze3D(SqueezeBase):
     def __init__(self):
         super().__init__(3)
-        self.out_dims = [2]
-        self.inp_dims = [3]
+        self.out_ranks = [2]
+        self.inp_ranks = [3]
 
 
 class Squeeze4D(SqueezeBase):
     def __init__(self):
         super().__init__(4)
-        self.out_dims = [3]
-        self.inp_dims = [4]
+        self.out_ranks = [3]
+        self.inp_ranks = [4]
 
 
 class Squeeze5D(SqueezeBase):
     def __init__(self):
         super().__init__(5)
-        self.out_dims = [4]
-        self.inp_dims = [5]
+        self.out_ranks = [4]
+        self.inp_ranks = [5]
 
 
 class ReduceSum(ReduceBase, ABC):
@@ -1368,29 +1385,29 @@ class ReduceSum(ReduceBase, ABC):
 class ReduceSum2D(ReduceSum):
     def __init__(self):
         super().__init__(2)
-        self.out_dims = [1]
-        self.inp_dims = [2]
+        self.out_ranks = [1]
+        self.inp_ranks = [2]
 
 
 class ReduceSum3D(ReduceSum):
     def __init__(self):
         super().__init__(3)
-        self.out_dims = [2]
-        self.inp_dims = [3]
+        self.out_ranks = [2]
+        self.inp_ranks = [3]
 
 
 class ReduceSum4D(ReduceSum):
     def __init__(self):
         super().__init__(4)
-        self.out_dims = [3]
-        self.inp_dims = [4]
+        self.out_ranks = [3]
+        self.inp_ranks = [4]
 
 
 class ReduceSum5D(ReduceSum):
     def __init__(self):
         super().__init__(5)
-        self.out_dims = [4]
-        self.inp_dims = [5]
+        self.out_ranks = [4]
+        self.inp_ranks = [5]
 
 
 class ReduceMin(ReduceBase, ABC):
@@ -1404,29 +1421,29 @@ class ReduceMin(ReduceBase, ABC):
 class ReduceMin2D(ReduceMin):
     def __init__(self):
         super().__init__(2)
-        self.out_dims = [1]
-        self.inp_dims = [2]
+        self.out_ranks = [1]
+        self.inp_ranks = [2]
 
 
 class ReduceMin3D(ReduceMin):
     def __init__(self):
         super().__init__(3)
-        self.out_dims = [2]
-        self.inp_dims = [3]
+        self.out_ranks = [2]
+        self.inp_ranks = [3]
 
 
 class ReduceMin4D(ReduceMin):
     def __init__(self):
         super().__init__(4)
-        self.out_dims = [3]
-        self.inp_dims = [4]
+        self.out_ranks = [3]
+        self.inp_ranks = [4]
 
 
 class ReduceMin5D(ReduceMin):
     def __init__(self):
         super().__init__(5)
-        self.out_dims = [4]
-        self.inp_dims = [5]
+        self.out_ranks = [4]
+        self.inp_ranks = [5]
 
 
 class ReduceMax(ReduceBase, ABC):
@@ -1440,29 +1457,29 @@ class ReduceMax(ReduceBase, ABC):
 class ReduceMax2D(ReduceMax):
     def __init__(self):
         super().__init__(2)
-        self.out_dims = [1]
-        self.inp_dims = [2]
+        self.out_ranks = [1]
+        self.inp_ranks = [2]
 
 
 class ReduceMax3D(ReduceMax):
     def __init__(self):
         super().__init__(3)
-        self.out_dims = [2]
-        self.inp_dims = [3]
+        self.out_ranks = [2]
+        self.inp_ranks = [3]
 
 
 class ReduceMax4D(ReduceMax):
     def __init__(self):
         super().__init__(4)
-        self.out_dims = [3]
-        self.inp_dims = [4]
+        self.out_ranks = [3]
+        self.inp_ranks = [4]
 
 
 class ReduceMax5D(ReduceMax):
     def __init__(self):
         super().__init__(5)
-        self.out_dims = [4]
-        self.inp_dims = [5]
+        self.out_ranks = [4]
+        self.inp_ranks = [5]
 
 
 class ReduceMean(ReduceBase, ABC):
@@ -1476,36 +1493,36 @@ class ReduceMean(ReduceBase, ABC):
 class ReduceMean1D(ReduceMean):
     def __init__(self):
         super().__init__(1)
-        self.out_dims = [0]
-        self.inp_dims = [1]
+        self.out_ranks = [0]
+        self.inp_ranks = [1]
 
 
 class ReduceMean2D(ReduceMean):
     def __init__(self):
         super().__init__(2)
-        self.out_dims = [1]
-        self.inp_dims = [2]
+        self.out_ranks = [1]
+        self.inp_ranks = [2]
 
 
 class ReduceMean3D(ReduceMean):
     def __init__(self):
         super().__init__(3)
-        self.out_dims = [2]
-        self.inp_dims = [3]
+        self.out_ranks = [2]
+        self.inp_ranks = [3]
 
 
 class ReduceMean4D(ReduceMean):
     def __init__(self):
         super().__init__(4)
-        self.out_dims = [3]
-        self.inp_dims = [4]
+        self.out_ranks = [3]
+        self.inp_ranks = [4]
 
 
 class ReduceMean5D(ReduceMean):
     def __init__(self):
         super().__init__(5)
-        self.out_dims = [4]
-        self.inp_dims = [5]
+        self.out_ranks = [4]
+        self.inp_ranks = [5]
 
 
 class ArgMin(ReduceBase, ABC):
@@ -1522,29 +1539,29 @@ class ArgMin(ReduceBase, ABC):
 class ArgMin2D(ArgMin):
     def __init__(self):
         super().__init__(2)
-        self.out_dims = [1]
-        self.inp_dims = [2]
+        self.out_ranks = [1]
+        self.inp_ranks = [2]
 
 
 class ArgMin3D(ArgMin):
     def __init__(self):
         super().__init__(3)
-        self.out_dims = [2]
-        self.inp_dims = [3]
+        self.out_ranks = [2]
+        self.inp_ranks = [3]
 
 
 class ArgMin4D(ArgMin):
     def __init__(self):
         super().__init__(4)
-        self.out_dims = [3]
-        self.inp_dims = [4]
+        self.out_ranks = [3]
+        self.inp_ranks = [4]
 
 
 class ArgMin5D(ArgMin):
     def __init__(self):
         super().__init__(5)
-        self.out_dims = [4]
-        self.inp_dims = [5]
+        self.out_ranks = [4]
+        self.inp_ranks = [5]
 
 
 class ArgMax(ReduceBase, ABC):
@@ -1560,29 +1577,29 @@ class ArgMax(ReduceBase, ABC):
 class ArgMax2D(ArgMax):
     def __init__(self):
         super().__init__(2)
-        self.out_dims = [1]
-        self.inp_dims = [2]
+        self.out_ranks = [1]
+        self.inp_ranks = [2]
 
 
 class ArgMax3D(ArgMax):
     def __init__(self):
         super().__init__(3)
-        self.out_dims = [2]
-        self.inp_dims = [3]
+        self.out_ranks = [2]
+        self.inp_ranks = [3]
 
 
 class ArgMax4D(ArgMax):
     def __init__(self):
         super().__init__(4)
-        self.out_dims = [3]
-        self.inp_dims = [4]
+        self.out_ranks = [3]
+        self.inp_ranks = [4]
 
 
 class ArgMax5D(ArgMax):
     def __init__(self):
         super().__init__(5)
-        self.out_dims = [4]
-        self.inp_dims = [5]
+        self.out_ranks = [4]
+        self.inp_ranks = [5]
 
 
 def partialclass(cls, name, *args, **kwds) -> Type[AbsOpBase]:
@@ -1603,8 +1620,8 @@ class Concat(AbsOpBase):
         super().__init__()
         assert arity <= self.MAX_ARITY
         self.arity = arity
-        self.inp_dims = [-1] * arity
-        self.out_dims = [-1]
+        self.inp_ranks = [-1] * arity
+        self.out_ranks = [-1]
         self.same_inp_dims = True
 
     def _get_axis(self, ndim):
@@ -1652,14 +1669,14 @@ Concat4 = partialclass(Concat, 'Concat4', 4)
 Concat5 = partialclass(Concat, 'Concat5', 5)
 
 
-class Cast(UnaryOpBase):
+class Cast(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_ALL]
     out_dtypes = [(i,) for i in DTYPE_ALL]
 
     def __init__(self):
         super().__init__()
-        self.inp_dims = [-1]
-        self.out_dims = [-1]
+        self.inp_ranks = [-1]
+        self.out_ranks = [-1]
         self.extra_attrs = {'to': random.choice(DTYPE_ALL)}
 
     def __str__(self) -> str:
@@ -1683,8 +1700,8 @@ class Gemm(TernaryOpBase):
 
     def __init__(self):
         super().__init__()
-        self.inp_dims = [-1, 2, 2]
-        self.out_dims = [2]
+        self.inp_ranks = [-1, 2, 2]
+        self.out_ranks = [2]
 
     def _set_or_get_extra_attrs(self, dtype=None):
         if 'alpha' not in self.extra_attrs:
@@ -1787,7 +1804,7 @@ def config_skip_op(skip_config):
 
 def _check_comb(comb: DTypeComb, op: AbsOpBase):
     inps = []
-    for dtype, ndims in zip(comb, op.inp_dims):
+    for dtype, ndims in zip(comb, op.inp_ranks):
         if ndims == -1:
             ndims = 2
         # TODO use symbolic solver
@@ -1825,7 +1842,7 @@ def auto_infer_in_dtypes(verbose=False):
         valid_combs = None
         op = create_op(op_t)
         in_dtype_combs: List[DTypeComb] = \
-            itertools.product(DTYPE_ALL, repeat=len(op.inp_dims))
+            itertools.product(DTYPE_ALL, repeat=len(op.inp_ranks))
         valid_combs = [
             comb for comb in in_dtype_combs if _check_comb(comb, op)]
         if len(valid_combs) == 0:
