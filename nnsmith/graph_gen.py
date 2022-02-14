@@ -576,12 +576,7 @@ class SimpleGenerator:
 
     def try_backward_insert(self, op: AbsOpBase):
         # we know that: Y = op(X)
-        # S1 - select Y: Y must be a placeholder; (this also means the graph must start w/ a placeholder)
-        # S2 - create X: X can be
-        #                   - a new placeholder (fallback)
-        #                   - an existing alive shape
-
-        # S1 - candidates of placeholders per dim
+        # S1 - select Y: Y must be a placeholder; (this also means the graph must start w/ a placeholder)m
         placeholder_indices = self.pick_shape_var_idx(
             type(op), op.out_dims, op.out_dtypes, candidate_shapes=[self.abstract_graph.nodes[idx].op.out_shape for idx in self.placeholders])
 
@@ -748,10 +743,15 @@ class PureSymbolGen(SimpleGenerator):
         return True
 
     def try_occupy_placeholder(self, node: AbsOpBase, placeholder_indices: List[int]) -> bool:
+        # S2 - create X: X can be
+        #                   - a new placeholder (fallback)
+        #                   - an existing alive shape
+
         to_occupy = [self.abstract_graph.nodes[self.placeholders[i]].op for i in placeholder_indices]
 
         occupied_holder_shapes = [holder.out_shape for holder in to_occupy]
 
+        # S2.2: try to reuse some existing outputs;
         # TODO: allow reuse existing alive shapes
         # n_inps = len(node.inp_dims)
         # max_try = 2
@@ -761,7 +761,7 @@ class PureSymbolGen(SimpleGenerator):
         #     max_try -= 1
         #     n_reuse -= 1
 
-        # Reusing outputs failed. as a fallback, promote all free vars to placeholders.
+        # S2.2: reusing outputs failed. as a fallback, promote all free vars to placeholders.
         new_inp_placeholders = [self.create_placeholder(
             dim) if dim != -1 else random.randint(0, 4) for dim in node.inp_dims]
 
