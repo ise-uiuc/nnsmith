@@ -625,12 +625,12 @@ class Placeholder:
         return f'Placeholder({self.out_shape}, {self.dtype})'
     
     def to_const(self):
-        const_node = Constant(self.out_shape.nelement())
+        const_node = Constant(self.out_shape.ndim)
         const_node.shape_var = self.out_shape
         return const_node
     
     def to_input(self):
-        input_node = Input(self.out_shape.nelement())
+        input_node = Input(self.out_shape.ndim)
         input_node.shape_var = self.out_shape
         return input_node
 
