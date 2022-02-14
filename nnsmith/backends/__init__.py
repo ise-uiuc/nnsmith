@@ -10,15 +10,23 @@ ShapeType = namedtuple('ShapeType', ['shape', 'dtype'])
 
 
 class DiffTestBackend(ABC):
+    def __init__(self, cache=False) -> None:
+        super().__init__()
+        self.cache = cache
     # provide an option to lazily load models: call to predict will call this method, which caches the model. True means a hit
     # see e.g. load_model in xla_graph.py
+
     def cache_hit_or_install(self, model: Union[onnx.ModelProto, str]) -> bool:
+        if not self.cache:
+            return False
         if hasattr(self, 'last_loaded_model') and self.last_loaded_model == model:
             return True  # hit
         self.last_loaded_model = model
         return False
 
     def cache_hit(self, model: Union[onnx.ModelProto, str]) -> bool:
+        if not self.cache:
+            return False
         if hasattr(self, 'last_loaded_model') and self.last_loaded_model == model:
             return True  # hit
         return False

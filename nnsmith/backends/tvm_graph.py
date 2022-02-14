@@ -18,7 +18,8 @@ def list_eq(a, b):
 
 
 class TVMExecutor(DiffTestBackend):
-    def __init__(self, opt_level=4, target="llvm", executor="graph"):
+    def __init__(self, opt_level=4, target="llvm", executor="graph", **kwargs):
+        super().__init__(**kwargs)
         self.opt_level = opt_level
         self.target = tvm.target.Target(target)
         self.executor = executor
@@ -103,6 +104,10 @@ class TVMExecutor(DiffTestBackend):
         #     m.run()
         #     # get outputs
         #     output = m.get_output(0, tvm.nd.empty(out_shape)).asnumpy()
+        if not self.cache:
+            del self.sess
+            del self.mod
+            del self.params
         output_shape = list(map(lambda x: x.shape, output))
         if check_naming:
             assert list_eq(out_shape, output_shape),\
