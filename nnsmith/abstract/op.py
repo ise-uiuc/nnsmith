@@ -361,6 +361,7 @@ class AbsOpBase(ABC):
     # For example, [(DType.float32, DType.float32), (DType.float64, DType.float64), (DType.int32, DType.int32)] means that
     # this op can accept one of float32xfloat32, float64xfloat64, and int32xint32 as input dtypes.
     in_dtypes: List[DTypeComb] = None  # Overwrite me!
+    out_dtypes: List[DTypeComb] = None
     # whether to disable the op during graph generation
     _skip = False
 
@@ -500,22 +501,26 @@ class BcastBinaryOp(BinaryOpBase):
 
 class BcastBinaryOp1(BcastBinaryOp):  # +-*/ max min
     in_dtypes = [(i, i) for i in DTYPE_NON_BOOLS]
+    out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
     _bcast_out_dtypes = None
 
 
 class BcastBinaryOp2(BcastBinaryOp):  # > < =
     in_dtypes = [(i, i) for i in DTYPE_ALL]
+    out_dtypes = [(DType.bool)]
     _bcast_out_dtypes = [DType.bool]
 
 
 class BcastBinaryOp3(BcastBinaryOp):  # logical and or xor
     in_dtypes = [(DType.bool, DType.bool)]
+    out_dtypes = [(DType.bool)]
     _bcast_out_dtypes = [DType.bool]
 
 
 class Where(TernaryOpBase):
     bcastable = True
     in_dtypes = [(DType.bool, i, i) for i in DTYPE_NON_BOOLS]
+    out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
 
     def __init__(self):
         super().__init__()
@@ -578,6 +583,7 @@ class StopFoldConst(torch.nn.Module):
 
 class Input(AbsOpBase):
     in_dtypes = [()]
+    out_dtypes = [(i,) for i in DTYPE_ALL]
 
     def __init__(self, dim: int):
         super().__init__()
@@ -595,6 +601,7 @@ class Input(AbsOpBase):
 
 class Constant(AbsOpBase):
     in_dtypes = [()]
+    out_dtypes = [(i,) for i in DTYPE_ALL]
 
     def __str__(self) -> str:
         return super().__str__() + ' ' + str(self.extra_attrs)
@@ -703,6 +710,7 @@ Div = type('Div', (BcastBinaryOp1,), {
 
 class Pow(BcastBinaryOp):
     in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def torch(self):
         return torch.pow
@@ -730,6 +738,7 @@ class ReLU(ElementWiseUnaryOp):
     # FIXME(JK): ints are somehow not supported in onnxruntime, which we use to gen inputs.
     # Make it include ints once we use other backends other than onnxruntime.
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -740,6 +749,7 @@ class ReLU(ElementWiseUnaryOp):
 
 class GELU(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -769,6 +779,7 @@ class PReLU(ElementWiseUnaryOp):
 
 class Sigmoid(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -779,6 +790,7 @@ class Sigmoid(ElementWiseUnaryOp):
 
 class Sin(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -789,6 +801,7 @@ class Sin(ElementWiseUnaryOp):
 
 class Cos(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -799,6 +812,7 @@ class Cos(ElementWiseUnaryOp):
 
 class Asin(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -812,6 +826,7 @@ class Asin(ElementWiseUnaryOp):
 
 class Acos(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -825,6 +840,7 @@ class Acos(ElementWiseUnaryOp):
 
 class Tan(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -835,6 +851,7 @@ class Tan(ElementWiseUnaryOp):
 
 class Atan(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -853,6 +870,7 @@ class Abs(ElementWiseUnaryOp):
 
 class Ceil(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -873,6 +891,7 @@ class Clip(ElementWiseUnaryOp):
 
 class Round(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -883,6 +902,7 @@ class Round(ElementWiseUnaryOp):
 
 class Sqrt(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -897,6 +917,7 @@ class Sqrt(ElementWiseUnaryOp):
 
 class Log2(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         super().__init__()
@@ -918,6 +939,7 @@ class Neg(ElementWiseUnaryOp):
 
 class Expand(UnaryOpBase, ABC):
     in_dtypes = [(i,) for i in DTYPE_ALL]
+    out_dtypes = [(i,) for i in DTYPE_ALL]
     # expand_dim cannot be symbolic. So just expand it.
 
     def __init__(self, expand_last_dim: int, expand_n: Union[int, z3.ExprRef]):
@@ -991,6 +1013,7 @@ class ExpandLast4(Expand):
 class NCHWConv2d(UnaryOpBase):
     # FIXME: torch exporter does not support float64, may miss bugs
     in_dtypes = [(DType.float32,)]
+    out_dtypes = [(DType.float32,)]
 
     def __init__(self,
                  in_channels: Union[int, z3.ExprRef],
@@ -1079,6 +1102,7 @@ class NCHWConv2d(UnaryOpBase):
 
 class Reshape(UnaryOpBase, ABC):
     in_dtypes = [(i,) for i in DTYPE_ALL]
+    out_dtypes = [(i,) for i in DTYPE_ALL]
 
     def __init__(self):
         super().__init__()
@@ -1308,6 +1332,7 @@ class Squeeze5D(SqueezeBase):
 class ReduceSum(ReduceBase, ABC):
     # pytorch exporter doesn't support int32
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS if i != DType.int32]
+    out_dtypes = [(i,) for i in DTYPE_NON_BOOLS if i != DType.int32]
 
     def torch(self):
         return lambda x: x.sum(self.extra_attrs['reduce_dim'])
@@ -1343,6 +1368,7 @@ class ReduceSum5D(ReduceSum):
 
 class ReduceMin(ReduceBase, ABC):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+    out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
 
     def torch(self):
         return lambda x: x.min(self.extra_attrs['reduce_dim']).values
@@ -1378,6 +1404,7 @@ class ReduceMin5D(ReduceMin):
 
 class ReduceMax(ReduceBase, ABC):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+    out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
 
     def torch(self):
         return lambda x: x.max(self.extra_attrs['reduce_dim']).values
@@ -1413,6 +1440,7 @@ class ReduceMax5D(ReduceMax):
 
 class ReduceMean(ReduceBase, ABC):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def torch(self):
         return lambda x: x.mean(self.extra_attrs['reduce_dim'])
@@ -1457,6 +1485,7 @@ class ArgMin(ReduceBase, ABC):
     # FIXME(JK): ints are somehow not supported in onnxruntime, which we use to gen inputs.
     # Make it include ints once we use other backends other than onnxruntime.
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(DType.int64,)]
     _reduce_out_dtype = DType.int64
 
     def torch(self):
@@ -1495,11 +1524,11 @@ class ArgMax(ReduceBase, ABC):
     # FIXME(JK): ints are somehow not supported in onnxruntime, which we use to gen inputs.
     # Make it include ints once we use other backends other than onnxruntime.
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(DType.int64,)]
     _reduce_out_dtype = DType.int64
 
     def torch(self):
         return lambda x: x.argmax(self.extra_attrs['reduce_dim'])
-
 
 class ArgMax2D(ArgMax):
     def __init__(self):
@@ -1538,6 +1567,7 @@ class Concat(AbsOpBase):
     MAX_ARITY = 5
     in_dtypes = [tuple(i for _ in range(5))
                  for i in DTYPE_ALL]  # suport max concat 5 tensors
+    out_dtypes = [(i,) for i in DTYPE_ALL]
 
     def __str__(self) -> str:
         return 'Concat ' + str(self.extra_attrs)
@@ -1597,6 +1627,7 @@ Concat5 = partialclass(Concat, 'Concat5', 5)
 
 class Cast(UnaryOpBase):
     in_dtypes = [(i,) for i in DTYPE_ALL]
+    out_dtypes = [(i,) for i in DTYPE_ALL]
 
     def __init__(self):
         super().__init__()
@@ -1621,6 +1652,7 @@ class Cast(UnaryOpBase):
 class Gemm(TernaryOpBase):
     # https://pytorch.org/docs/stable/generated/torch.addmm.html?highlight=addmm#torch.addmm
     in_dtypes = [(i, i, i) for i in DTYPE_NON_BOOLS]
+    out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
 
     def __init__(self):
         super().__init__()
