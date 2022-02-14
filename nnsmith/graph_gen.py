@@ -36,6 +36,7 @@ ALIVE_SHAPE_TYPE = List[Tuple[int, ShapeVar, int]]
 InputInfo = NamedTuple(
     'InputInfo', [('op', Input), ('oid', int), ('node_id', int), ('input_name', str)])
 
+
 class SymbolNet(nn.Module):
     def __init__(self, graph: nx.MultiDiGraph, model: z3.ModelRef, verbose=False, alive_shapes: ALIVE_SHAPE_TYPE = None,
                  record_intermediate=False, use_gradient=False):
@@ -128,9 +129,9 @@ class SymbolNet(nn.Module):
         if self.verbose:
             print('input_info=', self.input_info)
         self.input_spec = {
-            f'i{ii.op.idx}': ii.op.shape for ii in self.input_info}
-        self.plausible_input_shape = {f'i{ii.op.idx}': ShapeVar(
-            ii.op.shape, dtype=ii.op.dtype) for ii in self.input_info}
+            f'i{ii.op.idx}': ii.op.shape_var for ii in self.input_info}
+        self.plausible_input_shape = {
+            f'i{ii.op.idx}': ii.op.shape_var for ii in self.input_info}
         self.first_run = True
         self.hacked = {}  # make forward deterministic
 
@@ -436,12 +437,15 @@ class SimpleGenerator:
                 f'[WARNING]: graph size: {len(self.abstract_graph.nodes)} != expected size: {max_node_size}')
         # init graph placeholders
         shuffled_placeholder = self.placeholders
-        self.abstract_graph.nodes[shuffled_placeholder[0]]['op'] = self.abstract_graph.nodes[shuffled_placeholder[0]]['op'].to_input()
+        self.abstract_graph.nodes[shuffled_placeholder[0]
+                                  ]['op'] = self.abstract_graph.nodes[shuffled_placeholder[0]]['op'].to_input()
         for holder_idx in shuffled_placeholder[1:]:
             if random.randint(0, 1):
-                self.abstract_graph.nodes[holder_idx]['op'] = self.abstract_graph.nodes[holder_idx]['op'].to_const()
+                self.abstract_graph.nodes[holder_idx]['op'] = self.abstract_graph.nodes[holder_idx]['op'].to_const(
+                )
             else:
-                self.abstract_graph.nodes[holder_idx]['op'] = self.abstract_graph.nodes[holder_idx]['op'].to_input()
+                self.abstract_graph.nodes[holder_idx]['op'] = self.abstract_graph.nodes[holder_idx]['op'].to_input(
+                )
 
     def shape_idx_to_op_idx(self, shape_idx: int) -> int:
         return self.alive_shapes[shape_idx][0]
@@ -553,7 +557,6 @@ class SimpleGenerator:
                 self.dim2shape_idx.setdefault(
                     input_node.out_shape.ndims, []
                 ).append(shape_idx)
-                print('add ', nid, input_node)
                 self.abstract_graph.add_node(
                     nid,
                     op=input_node,
@@ -581,7 +584,8 @@ class SimpleGenerator:
         for i, nx_idx in enumerate(occ_holder_idx_nx):
             for (src, dst, key) in list(self.abstract_graph.edges(nx_idx, keys=True)):
                 # multi-graph
-                edge_info = self.abstract_graph.get_edge_data(src, dst, key=key)
+                edge_info = self.abstract_graph.get_edge_data(
+                    src, dst, key=key)
                 _, svar, out_operand_idx = self.alive_shapes[edge_info['shape_idx']]
                 out_operand_idx = i
                 in_operand_idx = edge_info['operand_idx'][1]
@@ -593,7 +597,8 @@ class SimpleGenerator:
                     operand_idx=(out_operand_idx, in_operand_idx),
                     label=f'{out_operand_idx}-{in_operand_idx}: <{svar.dtype}>{svar.shape}' if not self.viz_verbose else ''
                 )
-                self.alive_shapes[edge_info['shape_idx']] = (op_nx_idx, *self.alive_shapes[edge_info['shape_idx']][1:])
+                self.alive_shapes[edge_info['shape_idx']] = (
+                    op_nx_idx, *self.alive_shapes[edge_info['shape_idx']][1:])
                 self.abstract_graph.remove_edge(src, dst, key=key)
 
             # remove placeholders
@@ -745,7 +750,8 @@ class SimpleGenerator:
             all_can_dtypes.extend([candidate_shapes[i].dtype for i in self.filter_shapes(
                 ndim=ndim, dtype=None, candidate_shapes=candidate_shapes)])
         # only use dtypes currently available after ndim filtering
-        dtype_combs = [comb for comb in dtype_combs if all(i in all_can_dtypes for i in comb)]
+        dtype_combs = [comb for comb in dtype_combs if all(
+            i in all_can_dtypes for i in comb)]
         if len(dtype_combs) == 0:
             raise RequiredDimNotFound('Op %s: Cannot find a shape variable with dim_spec %s and dtype combinations %s.' % (
                 node_t, ndim_list, dtype_combs))
@@ -852,7 +858,6 @@ class PureSymbolGen(SimpleGenerator):
 
         # S2.2: reusing outputs failed. as a fallback, promote all free vars to placeholders.
         new_inp_placeholders = []
-        print(type(node))
         for dim in node.deduct_inp_ranks([s.ndims for s in occupied_holder_shapes]):
             new_inp_placeholders.append(self.create_placeholder(
                 dim if dim != -1 else random.randint(0, 4)))
