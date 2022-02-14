@@ -426,9 +426,9 @@ def concretize(op: AbsOpBase, model: z3.ModelRef) -> AbsOpBase:
         ret_op = deepcopy(op)
         values = []
             
-        for idx, s in enumerate(op.shapevar.shape):
+        for idx, s in enumerate(op.shape_var.shape):
             if isinstance(s, z3.ExprRef):
-                ret_op.shapevar.shape[idx] = model.eval(s).as_long()
+                ret_op.shape_var.shape[idx] = model.eval(s).as_long()
         
         return ret_op
 
@@ -632,7 +632,9 @@ class Input(AbsOpBase):
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
         SanityCheck.eq(len(input_shapes), 0)
         return []
-
+    
+    def torch(self) -> Callable[..., torch.Tensor]:
+        raise NotImplementedError()
 
 class Constant(AbsOpBase):
     in_dtypes = [()]

@@ -36,9 +36,6 @@ ALIVE_SHAPE_TYPE = List[Tuple[int, ShapeVar, int]]
 InputInfo = NamedTuple(
     'InputInfo', [('op', Input), ('oid', int), ('node_id', int), ('input_name', str)])
 
-def logical2physical_gidx(graph, id):
-    return list(graph.nodes).index(id)
-
 class SymbolNet(nn.Module):
     def __init__(self, graph: nx.MultiDiGraph, model: z3.ModelRef, verbose=False, alive_shapes: ALIVE_SHAPE_TYPE = None,
                  record_intermediate=False, use_gradient=False):
@@ -48,6 +45,7 @@ class SymbolNet(nn.Module):
         self.ref_cnt = []  # ref cnt -> tensors; erased on 0;
         self.instructions = []  # <Func, <input idx>, <output idx>>
         self.n_output = 0
+        self.inp_id_cnt = 0
 
         # keep track of layers and weights so that the tracing can work properly
         self.mlist = nn.ModuleList()
@@ -65,55 +63,56 @@ class SymbolNet(nn.Module):
 
         tmp_op_output_map = {}  # node id -> output idx in tensors;
         shape_vars = {}
-        for logical_node_id in nx.topological_sort(graph):
-            physical_node_id = logical2physical_gidx(graph, logical_node_id)
-            n_inp = graph.nodes[physical_node_id]['nin']
-            n_out = graph.nodes[physical_node_id]['nout']
+        for node_id in nx.topological_sort(graph):
+            n_inp = graph.nodes[node_id]['nin']
+            n_out = graph.nodes[node_id]['nout']
 
-            tmp_op_output_map[physical_node_id] = len(self.tensors)
+            tmp_op_output_map[node_id] = len(self.tensors)
             for _ in range(n_out):
                 self.tensors.append(None)
                 self.ref_cnt.append(0)
 
             input_idx = [None] * n_inp
             output_idx = [None] * n_out
-            op = concretize(graph.nodes[physical_node_id]['op'], model)
-            self.concrete_graph.nodes[physical_node_id]['op'] = op
+            op = concretize(graph.nodes[node_id]['op'], model)
+            self.concrete_graph.nodes[node_id]['op'] = op
 
             # Glob inputs
-            for from_node, _, (out_idx, in_idx) in graph.in_edges(physical_node_id, data='operand_idx'):
+            for from_node, _, (out_idx, in_idx) in graph.in_edges(node_id, data='operand_idx'):
                 required = tmp_op_output_map[from_node] + out_idx
                 input_idx[in_idx] = required
                 self.ref_cnt[required] += 1
 
             # Glob outputs
-            out_edges = graph.out_edges(physical_node_id, data='operand_idx')
+            out_edges = graph.out_edges(node_id, data='operand_idx')
             if len(out_edges) == 0:  # leaf node
                 # create fake output indices
                 output_idx = list(range(
-                    tmp_op_output_map[physical_node_id], tmp_op_output_map[physical_node_id] + n_out))
+                    tmp_op_output_map[node_id], tmp_op_output_map[node_id] + n_out))
                 for out_idx in output_idx:
                     self.ref_cnt[out_idx] += 1
                     self.n_output += 1
             else:
                 for _, _, (out_idx, in_idx) in out_edges:
-                    output_idx[out_idx] = tmp_op_output_map[physical_node_id] + out_idx
+                    output_idx[out_idx] = tmp_op_output_map[node_id] + out_idx
 
             if not isinstance(op, Input):
                 cur_op = op.torch()
                 if isinstance(cur_op, nn.Module):
                     self.mlist.append(cur_op)
                 self.instructions.append(
-                    (cur_op, input_idx, output_idx, op, physical_node_id))
+                    (cur_op, input_idx, output_idx, op, node_id))
             else:  # Should be input node
                 SanityCheck.true(type(op) is Input, 'type(op) should be Input')
                 SanityCheck.eq(len(output_idx), 1)
+                op.idx = self.inp_id_cnt
+                self.inp_id_cnt += 1
                 self.input_info.append(
-                    InputInfo(op=op, oid=output_idx[0], node_id=physical_node_id, input_name=f'i{op.idx}'))
+                    InputInfo(op=op, oid=output_idx[0], node_id=node_id, input_name=f'i{op.idx}'))
 
             # concretize shapevars
-            ishape_indices = self.graph.nodes[physical_node_id]['ishape_indices']
-            shape_indices = self.graph.nodes[physical_node_id]['shape_indices']
+            ishape_indices = self.graph.nodes[node_id]['ishape_indices']
+            shape_indices = self.graph.nodes[node_id]['shape_indices']
             for shape_idx in shape_indices:
                 shape = self.alive_shapes[shape_idx][1].shape
                 dtype = self.alive_shapes[shape_idx][1].dtype
@@ -121,9 +120,9 @@ class SymbolNet(nn.Module):
                     i, z3.ExprRef) else i for i in shape]
                 assert shape_idx not in shape_vars
                 shape_vars[shape_idx] = ShapeVar(shape, dtype)
-            self.concrete_graph.nodes[physical_node_id]['in_svs'] = [
+            self.concrete_graph.nodes[node_id]['in_svs'] = [
                 shape_vars[i] for i in ishape_indices]
-            self.concrete_graph.nodes[physical_node_id]['out_svs'] = [
+            self.concrete_graph.nodes[node_id]['out_svs'] = [
                 shape_vars[i] for i in shape_indices]
 
         if self.verbose:
@@ -174,7 +173,6 @@ class SymbolNet(nn.Module):
         if self.alive_shapes is None:
             return
         msg_head = f'In dtype checking for {op} (#{node_id}): '
-        node_id = logical2physical_gidx(self.graph, node_id)
         shape_indices = self.graph.nodes[node_id]['shape_indices']
         SanityCheck.eq(len(outputs), len(shape_indices), msg_head +
                        f'{len(outputs)} != {len(shape_indices)}')
@@ -437,7 +435,7 @@ class SimpleGenerator:
             print(
                 f'[WARNING]: graph size: {len(self.abstract_graph.nodes)} != expected size: {max_node_size}')
         # init graph placeholders
-        shuffled_placeholder = shuffle([logical2physical_gidx(self.abstract_graph, i) for i in self.placeholders])
+        shuffled_placeholder = self.placeholders
         self.abstract_graph.nodes[shuffled_placeholder[0]]['op'] = self.abstract_graph.nodes[shuffled_placeholder[0]]['op'].to_input()
         for holder_idx in shuffled_placeholder[1:]:
             if random.randint(0, 1):
@@ -539,7 +537,7 @@ class SimpleGenerator:
         return ret
 
     def id2nxnode(self, id):
-        return self.abstract_graph.nodes[logical2physical_gidx(self.abstract_graph, id)]
+        return self.abstract_graph.nodes[id]
 
     def backward_insert_node(self, node, input_nodes: List[Union[int, Placeholder]], occupied_idx):
         # self.placeholder idx -> nx graph node idx
@@ -555,6 +553,7 @@ class SimpleGenerator:
                 self.dim2shape_idx.setdefault(
                     input_node.out_shape.ndims, []
                 ).append(shape_idx)
+                print('add ', nid, input_node)
                 self.abstract_graph.add_node(
                     nid,
                     op=input_node,
@@ -566,6 +565,7 @@ class SimpleGenerator:
                         f'#{nid} ~ {input_node}' if not self.viz_verbose else '', width=30),
                 )
                 ishape_indices.append(shape_idx)
+                self.placeholders.append(nid)
             else:
                 ishape_indices.append(input_node)
 
