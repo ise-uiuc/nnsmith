@@ -25,11 +25,17 @@ class ParamShapeSummary(SummaryBase):
     def __init__(self) -> None:
         super().__init__()
         self.data = {}
-        for op_t in Op.ALL_OP_TYPES:
+        for op_t in Op.ALL_OP_TYPES + [Op.Input]:
             op_name = op_t.__name__
             self.data[op_name] = {}
             for i in range(len(op_t.in_dtypes[0])):  # arity
                 self.data[op_name][f'in_shapes_{i}'] = Counter()
+            nouts = len(op_t(
+                *[None for _ in signature(op_t).parameters]).out_dims)
+            for i in range(nouts):  # num_outputs
+                self.data[op_name][f'out_shapes_{i}'] = Counter()
+            if issubclass(op_t, Op.Input):
+                continue
             construct_param_dict = signature(op_t).parameters
             for key in construct_param_dict:
                 self.data[op_name]['param_' + key] = Counter()
@@ -37,15 +43,18 @@ class ParamShapeSummary(SummaryBase):
     def update(self, graph: nx.MultiDiGraph):
         for node_id in range(len(graph.nodes)):
             op = graph.nodes[node_id]['op']  # type: Op.AbsOpBase
-            if isinstance(op, Op.Input):
-                continue
             op_name = op.__class__.__name__
             in_svs = graph.nodes[node_id]['in_svs']
-            # out_svs = graph.nodes[node_id]['out_svs']
+            out_svs = graph.nodes[node_id]['out_svs']
             for i, sv in enumerate(in_svs):
                 self.data[op_name][f'in_shapes_{i}'].update(
                     {tuple(sv.shape): 1})
+            for i, sv in enumerate(out_svs):
+                self.data[op_name][f'out_shapes_{i}'].update(
+                    {tuple(sv.shape): 1})
 
+            if isinstance(op, Op.Input):
+                continue
             construct_param_dict = signature(op.__init__).parameters
             for key in construct_param_dict:
                 self.data[op_name]['param_' +
