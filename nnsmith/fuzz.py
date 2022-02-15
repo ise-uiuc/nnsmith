@@ -153,7 +153,7 @@ class CustomProgress(Progress):
 
 class FuzzingLoop:  # TODO: Support multiple backends.
     def __init__(self, backends: Dict[str, DiffTestBackend], mode='table', root=None, time_budget=60 * 60 * 4, max_nodes=32, inp_gen='random',
-                 summaries: List[SummaryBase] = None, fork_bkn=False, _PER_MODEL_TIMEOUT_=1000):
+                 summaries: List[SummaryBase] = None, fork_bkn=False, _PER_MODEL_TIMEOUT_=1000, use_bitvec=False):
         self.root = root
         self.reporter = Reporter(
             report_folder=root, name_hint=list(backends.keys())[0])
@@ -186,6 +186,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         self.profile = pd.DataFrame(
             columns=['model_gen_t', 'model_eval_t', 'bugs', 'edge_cov'])
         self.summaries = summaries or []
+        self.use_bitvec = use_bitvec
 
         rich.print(
             f'[bold yellow]To exit the program: `kill {os.getpid()}`[/bold yellow]')
@@ -259,7 +260,8 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                                                                                  inp_gen=self.inp_gen,
                                                                                  save_torch=use_torch,
                                                                                  summaries=self.summaries,
-                                                                                 seed=seed)
+                                                                                 seed=seed,
+                                                                                 use_bitvec=self.use_bitvec)
                             self.stage = 'load model'
                             progress.refresh()
                             load_t_s = time.time()
@@ -403,6 +405,7 @@ if __name__ == '__main__':
     parser.add_argument('--inp_gen', type=str, default='random')
     parser.add_argument('--gen_timeout', type=int,
                         default=1000, help='in milliseconds')
+    parser.add_argument('--use_bitvec', action='store_true')
     args = parser.parse_args()
 
     backends = None
@@ -441,6 +444,7 @@ if __name__ == '__main__':
         time_budget=args.time_budget,
         inp_gen=args.inp_gen,
         summaries=[ParamShapeSummary(), GraphSummary(), GraphSummary(level=1)],
-        _PER_MODEL_TIMEOUT_=args.gen_timeout
+        _PER_MODEL_TIMEOUT_=args.gen_timeout,
+        use_bitvec=args.use_bitvec,
     )
     fuzzing_loop.fuzz()
