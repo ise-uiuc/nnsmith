@@ -342,8 +342,8 @@ class SimpleGenerator:
         else:
             self.solver = z3.Solver()
 
-        # 4 bytes per float (assume we use float32)
-        self.limit_float = 1024**2 * megabyte_lim / 4
+        # 4 bytes per float (assume we use float64)
+        self.limit_float = 1024**2 * megabyte_lim / 8
 
         # Node -> op: AbsOpBase
         # Edge -> shape_idx:-> self.alive_shapes
@@ -432,7 +432,8 @@ class SimpleGenerator:
         return self.alive_shapes[shape_idx][0]
 
     def check_arith_ref(self, var):
-        SanityCheck.true(isinstance(var, (z3.BitVecRef, z3.BoolRef)), f"{type(var)}not supported.")
+        SanityCheck.true(isinstance(
+            var, (z3.BitVecRef, z3.BoolRef)), f"{type(var)}not supported.")
         for child in var.children():
             self.check_arith_ref(child)
 
@@ -674,7 +675,8 @@ class PureSymbolGen(SimpleGenerator):
             # The batch size should not have a big min size (avoid unnecessary computation);
             # FIXME: input constraints will make SMT solving costly.
             for i in range(len(input_tensor_shape.shape)):
-                self.solver.add(input_tensor_shape.shape[i] >= min_dims[i])
+                self.solver.add(nnsmith_ge(
+                    input_tensor_shape.shape[i], min_dims[i]))
         check_res = self.check_sat()
         # FIXME sometimes the constraints are too complicated to return stable result.
         SanityCheck.eq(check_res, z3.sat,
