@@ -1077,6 +1077,7 @@ if __name__ == '__main__':
             sat_inputs = net.rand_input_gen()
             infer_succ = sat_inputs is not None
     elif args.input_gen == 'grad':
+        infer_succ = None  # TODO: are we able to know this?
         try:
             sat_inputs = net.grad_input_gen()
         except RuntimeError as e:

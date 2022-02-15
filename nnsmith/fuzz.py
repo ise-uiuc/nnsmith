@@ -248,14 +248,16 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         try:
                             seed = random.getrandbits(32)
                             self.cur_seed = seed
-                            self.cur_node_size = random.randint(
-                                1, self.max_nodes)
+                            # TODO: for backward compatibility. Use the lines after in the future
+                            self.cur_node_size = 10
+                            # self.cur_node_size = random.randint(
+                            #     1, self.max_nodes)
                             self.stage = 'gen model'
                             progress.refresh()
                             sat_inputs, state, edge_set, seed = forked_execution(self.mode,
                                                                                  _TMP_ONNX_FILE_,
                                                                                  table=self.table,
-                                                                                 max_node_size=self.cur_node_size,
+                                                                                 max_nodes=self.cur_node_size,
                                                                                  max_gen_millisec=self._PER_MODEL_TIMEOUT_,
                                                                                  inp_gen=self.inp_gen,
                                                                                  save_torch=use_torch,
@@ -277,6 +279,8 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                             break
                         except Exception as e:
                             traceback.print_exc()
+                            print('Seed:', seed, 'cur_node_size:',
+                                  self.cur_node_size)
                             print('retrying...')
 
                     # Generation time logging.

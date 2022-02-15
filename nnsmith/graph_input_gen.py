@@ -100,7 +100,7 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
 # @safe_wrapper
 def forked_execution(
         gen_method, output_path, seed=None, max_nodes=10, max_gen_millisec=2000, table=None, save_torch=False, inp_gen='random',
-        use_bitvec=False, **kwargs):
+        use_bitvec=False, summaries=None):
     if seed is None:
         seed = random.getrandbits(32)
 
@@ -114,7 +114,7 @@ def forked_execution(
         ipc_dict = manager.dict()
         ipc_dict['state'] = manager.dict()
         ipc_dict['state']['unsolvable'] = manager.list()
-        ipc_dict['state']['summaries'] = kwargs['summaries']
+        ipc_dict['state']['summaries'] = summaries
         ipc_dict['edges'] = set()
         ipc_dict['table'] = table
         nnsmith_fork = os.environ.get(
