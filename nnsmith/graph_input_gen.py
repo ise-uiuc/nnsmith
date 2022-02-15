@@ -63,9 +63,9 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
     elif gen_method == 'guided':
         from nnsmith.graph_gen import GuidedGen
         gen = GuidedGen(
-            seed=seed, summaries=ipc_dict['state']['summaries'])
+            seed=seed, summaries=ipc_dict['state']['summaries'], use_bitvec=use_bitvec)
         gen.abstract_gen(max_node_size=max_nodes,
-                         max_gen_millisec=max_gen_millisec, use_bitvec=use_bitvec)
+                         max_gen_millisec=max_gen_millisec)
         solution = gen.get_symbol_solutions()
     else:
         SanityCheck.true(False, f'Unknown gen_method: {gen_method}')
