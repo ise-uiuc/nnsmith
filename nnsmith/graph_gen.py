@@ -326,7 +326,7 @@ class SymbolNet(nn.Module):
 
 class SimpleGenerator:
 
-    def __init__(self, min_dims=[1, 3, 48, 48], skip=[Input], viz_sbs=False, megabyte_lim=3 * 1024, seed=None, verbose=False, use_bitvec=False,
+    def __init__(self, min_dims=[1, 3, 48, 48], skip=[Input], viz_sbs=False, megabyte_lim=6 * 1024, seed=None, verbose=False, use_bitvec=False,
                  viz_verbose=False):
         if seed is not None:
             np.random.seed(seed)
@@ -343,7 +343,7 @@ class SimpleGenerator:
             self.solver = z3.Solver()
 
         # 4 bytes per float (assume we use float64)
-        self.limit_float = 1024**2 * megabyte_lim / 8
+        self.limit_float = 1024**2 * megabyte_lim / 4
 
         # Node -> op: AbsOpBase
         # Edge -> shape_idx:-> self.alive_shapes
