@@ -367,7 +367,9 @@ class SimpleGenerator:
 
     def new_sym(self, name):
         if self.use_bitvec:
-            return z3.BitVec(name, 8)
+            bv_size = 8
+            zero_size = ARITH_MAX_WIDTH - bv_size
+            return z3.ZeroExt(zero_size, z3.BitVec(name, bv_size))
         else:
             return z3.Int(name)
 
