@@ -21,44 +21,51 @@ class SummaryBase:
         return {}
 
 
+def _record(d, key, itr):
+    if key not in d:
+        d[key] = []
+    d[key].append(itr)
+
+
 class ParamShapeSummary(SummaryBase):
     def __init__(self) -> None:
         super().__init__()
+        # op_name -> {param_name: {value1: itr1, value2: itr2, ...], in_shapes_0: {shape1: itr1, shape2: itr2, ...}, ...}, where itrx is the iteration number of this record
         self.data = {}
         for op_t in Op.ALL_OP_TYPES + [Op.Input]:
             op_name = op_t.__name__
             self.data[op_name] = {}
             for i in range(len(op_t.in_dtypes[0])):  # arity
-                self.data[op_name][f'in_shapes_{i}'] = Counter()
+                self.data[op_name][f'in_shapes_{i}'] = {}
             nouts = len(op_t(
                 *[None for _ in signature(op_t).parameters]).out_dims)
             for i in range(nouts):  # num_outputs
-                self.data[op_name][f'out_shapes_{i}'] = Counter()
+                self.data[op_name][f'out_shapes_{i}'] = {}
             if issubclass(op_t, Op.Input):
                 continue
             construct_param_dict = signature(op_t).parameters
             for key in construct_param_dict:
-                self.data[op_name]['param_' + key] = Counter()
+                self.data[op_name]['param_' + key] = {}
 
-    def update(self, graph: nx.MultiDiGraph):
+    def update(self, graph: nx.MultiDiGraph, itr):
         for node_id in range(len(graph.nodes)):
             op = graph.nodes[node_id]['op']  # type: Op.AbsOpBase
             op_name = op.__class__.__name__
             in_svs = graph.nodes[node_id]['in_svs']
             out_svs = graph.nodes[node_id]['out_svs']
             for i, sv in enumerate(in_svs):
-                self.data[op_name][f'in_shapes_{i}'].update(
-                    {tuple(sv.shape): 1})
+                _record(
+                    self.data[op_name][f'in_shapes_{i}'], tuple(sv.shape), itr)
             for i, sv in enumerate(out_svs):
-                self.data[op_name][f'out_shapes_{i}'].update(
-                    {tuple(sv.shape): 1})
+                _record(
+                    self.data[op_name][f'out_shapes_{i}'], tuple(sv.shape), itr)
 
             if isinstance(op, Op.Input):
                 continue
             construct_param_dict = signature(op.__init__).parameters
             for key in construct_param_dict:
-                self.data[op_name]['param_' +
-                                   key].update({getattr(op, key): 1})
+                _record(self.data[op_name]['param_' + key],
+                        getattr(op, key), itr)
 
     def dump(self, output_path):
         pickle.dump(self.data, open(output_path, 'wb'))
@@ -72,17 +79,16 @@ class GraphSummary(SummaryBase):
         self.level = level
         self.node_name = self.merge_nodes(level)
 
-        self.edge_cnt = Counter()
-        self.node_cnt = Counter()
-        self.input_comb_cnt = {}
+        self.edge_cnt = {}  # edge -> [itr1, itr2, ...]
+        self.node_cnt = {}  # node -> [itr1, itr2, ...]
+        self.input_comb_cnt = {}  # node -> input_comb -> [itr1, itr2, ...]
         _ALL_OP_TYPES = Op.ALL_OP_TYPES + [Op.Input]
         for op_t in _ALL_OP_TYPES:
             op_name = self.node_name[op_t.__name__]
-            self.node_cnt.update({op_name: 0})
+            self.node_cnt[op_name] = []
             for op1_t in _ALL_OP_TYPES:
-                self.edge_cnt.update(
-                    {(self.node_name[op1_t.__name__], op_name): 0})
-            self.input_comb_cnt[op_name] = Counter()
+                self.edge_cnt[(self.node_name[op1_t.__name__], op_name)] = []
+            self.input_comb_cnt[op_name] = {}
 
         self.tot_nodes = len(set(self.node_name.values()))
         self.tot_edges = len(self.edge_cnt)
@@ -102,8 +108,8 @@ class GraphSummary(SummaryBase):
     def report(self):
         return {
             'input_comb_cnt': sum(len(v) for k, v in self.input_comb_cnt.items()),
-            'edge_cnt': len([_ for _, count in self.edge_cnt.items() if count > 0]),
-            'node_cnt': len([_ for _, count in self.node_cnt.items() if count > 0]),
+            'edge_cnt': len([_ for _, iters in self.edge_cnt.items() if len(iters) > 0]),
+            'node_cnt': len([_ for _, iters in self.node_cnt.items() if len(iters) > 0]),
             # 'tot_input_comb_cnt': self.tot_ic,
             # 'tot_edge_cnt': len(self.edge_cnt),
             # 'tot_node_cnt': len(self.node_cnt)
@@ -132,16 +138,16 @@ class GraphSummary(SummaryBase):
     def __repr__(self) -> str:
         return super().__repr__() + f'_lv{self.level}'
 
-    def update(self, graph: nx.MultiDiGraph):
+    def update(self, graph: nx.MultiDiGraph, itr):
         for node_id in range(len(graph.nodes)):
             op = graph.nodes[node_id]['op']  # type: Op.AbsOpBase
             op_name = self.node_name[op.__class__.__name__]
-            self.node_cnt.update({op_name: 1})
+            _record(self.node_cnt, op_name, itr)
             src_op_names = [self.node_name[graph.nodes[u]['op'].__class__.__name__]
                             for u, _ in graph.in_edges(node_id, data=False)]
-            self.input_comb_cnt[op_name].update({tuple(src_op_names): 1})
+            _record(self.input_comb_cnt[op_name], tuple(src_op_names), itr)
             for name in src_op_names:
-                self.edge_cnt.update({(name, op_name): 1})
+                _record(self.edge_cnt, (name, op_name), itr)
 
     def dump(self, output_path):
         pickle.dump({

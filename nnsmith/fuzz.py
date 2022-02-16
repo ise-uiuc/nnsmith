@@ -364,7 +364,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     graph = pickle.load(
                         open(_TMP_ONNX_FILE_ + '-graph.pkl', 'rb'))
                     for i in self.summaries:
-                        i.update(graph)
+                        i.update(graph, len(self.profile))
                     summaries_t = time.time() - summaries_st
                     cur_time = time.time()
                     progress.update(
