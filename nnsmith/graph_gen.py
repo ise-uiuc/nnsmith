@@ -343,7 +343,7 @@ class SimpleGenerator:
             self.solver = z3.Solver()
 
         # 4 bytes per float (assume we use float64)
-        self.limit_float = 1024**2 * megabyte_lim / 4
+        self.limit_float = 1024**2 * megabyte_lim / 8
 
         # Node -> op: AbsOpBase
         # Edge -> shape_idx:-> self.alive_shapes
