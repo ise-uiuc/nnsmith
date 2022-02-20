@@ -890,10 +890,9 @@ PARAM_CONFIG1 = {
         'kernel_w_size': [Bin(i, i + 1, scale='log', base=2) for i in range(8)],
         'stride': [Bin(i, i + 1, scale='log', base=2) for i in range(8)],
         'padding': [Bin(i, i + 1, scale='log', base=2) for i in range(8)] + [Bin(0, 1)],
-        # 'in_channels': [Bin(i, i + 1, scale='log', base=2) for i in range(8)] +
-        # [Bin(8, None, scale='log', base=2)],
-        'in_channels': [],
-        'out_channels': [],  # skip
+        'out_channels': [Bin(i, i + 1, scale='log', base=2) for i in range(8)] +
+        [Bin(8, None, scale='log', base=2)],
+        'in_channels': [],  # skip
     },
 }
 PARAM_CONFIG2 = {
@@ -902,9 +901,9 @@ PARAM_CONFIG2 = {
         'kernel_w_size': [Bin(1, 256, scale='linear')],
         'stride': [Bin(1, 256, scale='linear')],
         'padding': [Bin(1, 256, scale='linear')] + [Bin(0, 1)],
-        'in_channels': [Bin(1, 256, scale='linear')] +
+        'out_channels': [Bin(1, 256, scale='linear')] +
         [Bin(256, None, scale='linear')],
-        'out_channels': [],  # skip
+        'in_channels': [],  # skip
     },
 }
 
