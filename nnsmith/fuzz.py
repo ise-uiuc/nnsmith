@@ -76,6 +76,7 @@ class Reporter:  # From Tzer.
                 f.write(repo.git.status())
                 f.write(
                     '\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n')
+                f.write(repo.git.diff())
 
             f.write(f'START TIME: {datetime.datetime.now()}')
             _log_repo(f, 'Fuzzer', fuzz_repo)
