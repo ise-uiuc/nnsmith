@@ -927,10 +927,15 @@ class GuidedGen(PureSymbolGen):
 
     def insert_input_node(self, min_dims, dtype=DType.float32) -> ShapeVar:
         ish = super().insert_input_node(min_dims, dtype, constrain_min=False)
+        constraints = []
         for i in ish.shape:
             bins = self.default_config[0]
             lb, ub = bins[random.randint(0, len(bins) - 1)].sample_range()
-            self.solver.add(*self.range_constrain(i, lb, ub))
+            constraints.extend(self.range_constrain(i, lb, ub))
+        # throw exception for now since this is unlikely to happen
+        assert self.check_sat(
+            *constraints, nnsmith_le(self.n_floats, self.limit_float)) == z3.sat, 'Input constraints too tight'
+        self.solver.add(*constraints)
         return ish
 
     def range_constrain(self, param, lb, ub):
