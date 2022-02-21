@@ -675,6 +675,21 @@ class Constant4D(Constant):
             [self.dim0, self.dim1, self.dim2, self.dim3], dtype=self.extra_attrs['dtype'])
 
 
+class Constant5D(Constant):
+    def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef], dim3: Union[int, z3.ExprRef], dim4: Union[int, z3.ExprRef]):
+        super().__init__(5)
+        self.dim0 = dim0
+        self.dim1 = dim1
+        self.dim2 = dim2
+        self.dim3 = dim3
+        self.dim4 = dim4
+
+    @property
+    def shape_var(self):
+        return ShapeVar(
+            [self.dim0, self.dim1, self.dim2, self.dim3, self.dim4], dtype=self.extra_attrs['dtype'])
+
+
 class Input(ElementWiseUnaryOp):
     in_dtypes = [()]
 
@@ -784,7 +799,11 @@ class Sigmoid(ElementWiseUnaryOp):
         return torch.sigmoid
 
 
-class Sin(ElementWiseUnaryOp):
+class TrigonometricOp(ElementWiseUnaryOp):
+    pass
+
+
+class Sin(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
@@ -794,7 +813,7 @@ class Sin(ElementWiseUnaryOp):
         return torch.sin
 
 
-class Cos(ElementWiseUnaryOp):
+class Cos(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
@@ -804,7 +823,7 @@ class Cos(ElementWiseUnaryOp):
         return torch.cos
 
 
-class Asin(ElementWiseUnaryOp):
+class Asin(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
@@ -817,7 +836,7 @@ class Asin(ElementWiseUnaryOp):
         return torch.where(x.abs() > 1, x.abs() - 1, torch.zeros_like(x))
 
 
-class Acos(ElementWiseUnaryOp):
+class Acos(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
@@ -830,7 +849,7 @@ class Acos(ElementWiseUnaryOp):
         return torch.where(x.abs() > 1, x.abs(), torch.zeros_like(x))
 
 
-class Tan(ElementWiseUnaryOp):
+class Tan(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
@@ -840,7 +859,7 @@ class Tan(ElementWiseUnaryOp):
         return torch.tan
 
 
-class Atan(ElementWiseUnaryOp):
+class Atan(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
@@ -1681,6 +1700,9 @@ def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
 
 ALL_OP_TYPES = _glob_leaf_op_classes()
 ALL_OP_STR2TYPE = {c.__name__: c for c in ALL_OP_TYPES}
+EXPANDED_OP = [Concat, Constant, Expand, Reshape, ArgMax,
+               ArgMin, ReduceMax, ReduceMin, ReduceMean, SqueezeBase,
+               ReduceSum, TrigonometricOp]
 
 
 def config_skip_op(skip_config):

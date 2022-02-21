@@ -460,7 +460,7 @@ class SimpleGenerator:
 
     def compute_wts(self):
         self.wts = [1] * len(self.op_candidates)
-        normalize_op_t = [Constant, Cast]
+        normalize_op_t = EXPANDED_OP
         op_t_idx = {}
         for i in range(len(self.op_candidates)):
             for op_t in normalize_op_t:
@@ -873,6 +873,8 @@ class Bin:
         return self.to_linear(x)
 
     def sample_range(self):
+        if self.lb == None and self.ub == None:
+            return None, None
         if self.ub == None:  # one-sided
             return self.to_linear(self.lb), None
         lb = self.sample()
@@ -894,7 +896,16 @@ PARAM_CONFIG1 = {
         [Bin(8, None, scale='log', base=2)],
         'in_channels': [],  # skip
     },
+    # last bin is eseentially no constraint, to ensure -1 can be included
+    # defaultdict(lambda: [Bin(i, i + 1, scale='log', base=2) for i in range(8)] + [Bin(None, None)]),
+    'Reshape': defaultdict(lambda: [])
 }
+PARAM_CONFIG1['Reshape1D'] = PARAM_CONFIG1['Reshape']
+PARAM_CONFIG1['Reshape2D'] = PARAM_CONFIG1['Reshape']
+PARAM_CONFIG1['Reshape3D'] = PARAM_CONFIG1['Reshape']
+PARAM_CONFIG1['Reshape4D'] = PARAM_CONFIG1['Reshape']
+PARAM_CONFIG1['Reshape5D'] = PARAM_CONFIG1['Reshape']
+PARAM_CONFIG1['Reshape6D'] = PARAM_CONFIG1['Reshape']
 PARAM_CONFIG2 = {
     'NCHWConv2d': {
         'kernel_h_size': [Bin(1, 256, scale='linear')],
@@ -909,9 +920,10 @@ PARAM_CONFIG2 = {
 
 
 class GuidedGen(PureSymbolGen):
-    def __init__(self, summaries=None, scale='log', base=2, default_bins=8, **kwargs):
+    def __init__(self, summaries=None, scale='log', base=2, default_bins=8, constrain_prob=1, **kwargs):
         super(GuidedGen, self).__init__(**kwargs)
 
+        self.constrain_prob = constrain_prob
         self.base = 2
         self.param_config = PARAM_CONFIG1
         if scale == 'log':
@@ -947,6 +959,8 @@ class GuidedGen(PureSymbolGen):
         return ret
 
     def extra_constraints(self, node: AbsOpBase, ishape_indices: List[int]):
+        if random.uniform(0, 1) < self.constrain_prob:
+            return []
         ret = []
         construct_param_dict = signature(node.__init__).parameters
         config = self.param_config.get(

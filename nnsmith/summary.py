@@ -125,10 +125,8 @@ class GraphSummary(SummaryBase):
         if level == 0:
             pass
         elif level == 1:
-            # merge concat
-            sink = [Op.Concat, Op.Constant, Op.Expand, Op.Reshape, Op.ArgMax,
-                    Op.ArgMin, Op.ReduceMax, Op.ReduceMin, Op.ReduceMean, Op.SqueezeBase,
-                    Op.ReduceSum]
+            # merge similar nodes
+            sink = Op.EXPANDED_OP
             for s in sink:
                 for op_t in _ALL_OP_TYPES:
                     if issubclass(op_t, s):
