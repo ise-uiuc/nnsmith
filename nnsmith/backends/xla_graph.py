@@ -15,6 +15,7 @@ class XLAExecutor(DiffTestBackend):
         Args:
             device (str, optional): 'CPU' or 'CUDA'. Defaults to 'CPU'.
         """
+        super().__init__()
         self.device = device
 
     def load_model(self, model):

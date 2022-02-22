@@ -76,6 +76,7 @@ class Reporter:  # From Tzer.
                 f.write(repo.git.status())
                 f.write(
                     '\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n')
+                f.write(repo.git.diff())
 
             f.write(f'START TIME: {datetime.datetime.now()}')
             _log_repo(f, 'Fuzzer', fuzz_repo)
@@ -140,9 +141,9 @@ class Reporter:  # From Tzer.
 
 
 class CustomProgress(Progress):
-    def __init__(self, fuzz_status, columns: List[Union[str, ProgressColumn]]):
+    def __init__(self, fuzz_status, columns: List[Union[str, ProgressColumn]], disable=False):
         self.fuzz_status = fuzz_status
-        super().__init__(*columns)
+        super().__init__(*columns, disable=disable)
 
     def get_renderables(self) -> Iterable[RenderableType]:
         """Get a number of renderables for the progress display."""
@@ -153,7 +154,7 @@ class CustomProgress(Progress):
 
 class FuzzingLoop:  # TODO: Support multiple backends.
     def __init__(self, backends: Dict[str, DiffTestBackend], mode='table', root=None, time_budget=60 * 60 * 4, max_nodes=32, inp_gen='random',
-                 summaries: List[SummaryBase] = None, fork_bkn=False, _PER_MODEL_TIMEOUT_=1000):
+                 summaries: List[SummaryBase] = None, fork_bkn=False, _PER_MODEL_TIMEOUT_=1000, use_bitvec=False, no_progress=False, merge_op_v=None):
         self.root = root
         self.reporter = Reporter(
             report_folder=root, name_hint=list(backends.keys())[0])
@@ -186,6 +187,9 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         self.profile = pd.DataFrame(
             columns=['model_gen_t', 'model_eval_t', 'bugs', 'edge_cov'])
         self.summaries = summaries or []
+        self.use_bitvec = use_bitvec
+        self.no_progress = no_progress
+        self.merge_op_v = merge_op_v
 
         rich.print(
             f'[bold yellow]To exit the program: `kill {os.getpid()}`[/bold yellow]')
@@ -231,6 +235,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     BarColumn(),
                     '[progress.percentage]{task.completed:>3.0f}/{task.total}',
                     '[progress.percentage]{task.percentage:>3.0f}%'],
+                disable=self.no_progress
             ) as progress:
                 task_fuzz = progress.add_task(
                     '[green]Fuzzing time.', total=self.time_budget)
@@ -247,19 +252,23 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         try:
                             seed = random.getrandbits(32)
                             self.cur_seed = seed
-                            self.cur_node_size = random.randint(
-                                1, self.max_nodes)
+                            # TODO: for backward compatibility. Use the lines after in the future
+                            self.cur_node_size = 10
+                            # self.cur_node_size = random.randint(
+                            #     1, self.max_nodes)
                             self.stage = 'gen model'
                             progress.refresh()
                             sat_inputs, state, edge_set, seed = forked_execution(self.mode,
                                                                                  _TMP_ONNX_FILE_,
                                                                                  table=self.table,
-                                                                                 max_node_size=self.cur_node_size,
+                                                                                 max_nodes=self.cur_node_size,
                                                                                  max_gen_millisec=self._PER_MODEL_TIMEOUT_,
                                                                                  inp_gen=self.inp_gen,
                                                                                  save_torch=use_torch,
                                                                                  summaries=self.summaries,
-                                                                                 seed=seed)
+                                                                                 seed=seed,
+                                                                                 use_bitvec=self.use_bitvec,
+                                                                                 merge_op_v=self.merge_op_v)
                             self.stage = 'load model'
                             progress.refresh()
                             load_t_s = time.time()
@@ -275,6 +284,8 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                             break
                         except Exception as e:
                             traceback.print_exc()
+                            print('Seed:', seed, 'cur_node_size:',
+                                  self.cur_node_size)
                             print('retrying...')
 
                     # Generation time logging.
@@ -358,7 +369,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     graph = pickle.load(
                         open(_TMP_ONNX_FILE_ + '-graph.pkl', 'rb'))
                     for i in self.summaries:
-                        i.update(graph)
+                        i.update(graph, len(self.profile))
                     summaries_t = time.time() - summaries_st
                     cur_time = time.time()
                     progress.update(
@@ -403,6 +414,10 @@ if __name__ == '__main__':
     parser.add_argument('--inp_gen', type=str, default='random')
     parser.add_argument('--gen_timeout', type=int,
                         default=1000, help='in milliseconds')
+    parser.add_argument('--use_bitvec', action='store_true')
+    parser.add_argument('--no_progress', action='store_true')
+    parser.add_argument('--merge_op_v', default=None,
+                        help='merge op version. Use to pick among EXPANDED_OP_VX')
     args = parser.parse_args()
 
     backends = None
@@ -441,6 +456,9 @@ if __name__ == '__main__':
         time_budget=args.time_budget,
         inp_gen=args.inp_gen,
         summaries=[ParamShapeSummary(), GraphSummary(), GraphSummary(level=1)],
-        _PER_MODEL_TIMEOUT_=args.gen_timeout
+        _PER_MODEL_TIMEOUT_=args.gen_timeout,
+        use_bitvec=args.use_bitvec,
+        no_progress=args.no_progress,
+        merge_op_v=args.merge_op_v
     )
     fuzzing_loop.fuzz()

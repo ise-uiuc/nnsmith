@@ -44,9 +44,7 @@ class BackendCreator:
     def __call__(self, *args, **kwargs):
         name = self.name
         if name == 'ort':
-            print('importing ort....')
             from nnsmith.backends.ort_graph import ORTExecutor
-            print('imported')
             return ORTExecutor()
         elif name == 'tvm-debug':
             from nnsmith.backends.tvm_graph import TVMExecutor

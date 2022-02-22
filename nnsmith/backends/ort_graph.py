@@ -21,6 +21,7 @@ class ORTExecutor(DiffTestBackend):
     def __init__(self, opt_level=3, providers=None):
         """opt_level ranges from 0 to 3, stands for ORT_DISABLE_ALL, ORT_ENABLE_BASIC, ORT_ENABLE_EXTENDED and ORT_ENABLE_ALL. 
         See https://onnxruntime.ai/docs/performance/graph-optimizations.html for detail"""
+        super().__init__()
         self._opt_level = OPT_LEVELS[opt_level]
         self.providers = providers or PROVIDERS
 
