@@ -327,7 +327,7 @@ class SymbolNet(nn.Module):
 class SimpleGenerator:
 
     def __init__(self, min_dims=[1, 3, 48, 48], skip=[Input], viz_sbs=False, megabyte_lim=6 * 1024, seed=None, verbose=False, use_bitvec=False,
-                 viz_verbose=False):
+                 viz_verbose=False, merge_op_v=None):
         if seed is not None:
             np.random.seed(seed)
             random.seed(seed)
@@ -364,6 +364,7 @@ class SimpleGenerator:
         self.n_inps = 0
         self.last_soln = None
         self.wts = None
+        self.merge_op_v = merge_op_v or 'v0'  # v0 as default version
 
     def new_sym(self, name):
         if self.use_bitvec:
@@ -460,7 +461,8 @@ class SimpleGenerator:
 
     def compute_wts(self):
         self.wts = [1] * len(self.op_candidates)
-        normalize_op_t = EXPANDED_OP
+        normalize_op_t = {'latest': EXPANDED_OP, 'v1': EXPANDED_OP_V1,
+                          'v0': EXPANDED_OP_V0}[self.merge_op_v]
         op_t_idx = {}
         for i in range(len(self.op_candidates)):
             for op_t in normalize_op_t:
@@ -998,6 +1000,7 @@ def parse_args():
     parser.add_argument('--use_bitvec', action='store_true')
     parser.add_argument('--viz_graph', action='store_true')
     parser.add_argument('--mode', default='random')
+    parser.add_argument('--merge_op_v', default=None)
     return parser.parse_args()
 
 
@@ -1010,7 +1013,7 @@ def random_model_gen(
         timeout=50000,
         verbose=False,
         mode='random',
-        **kwargs):
+        merge_op_v=None,):
     if verbose:
         strt_time = time.time()
 
@@ -1019,7 +1022,7 @@ def random_model_gen(
         'guided': GuidedGen,
     }[mode]
     gen = GenCls(min_dims=min_dims,
-                 viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec, **kwargs)
+                 viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec, merge_op_v=merge_op_v)
     gen.abstract_gen(max_node_size=max_nodes,
                      max_gen_millisec=timeout)
     if verbose:
@@ -1044,12 +1047,13 @@ def table_model_gen(
         seed=None,
         use_bitvec=False,
         timeout=50000,
-        verbose=False):
+        verbose=False,
+        merge_op_v=None):
     if verbose:
         strt_time = time.time()
 
     gen = CoverageTableGen(table=table, state=state, min_dims=min_dims,
-                           viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec)
+                           viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec, merge_op_v=merge_op_v)
 
     gen.abstract_gen(max_node_size=max_nodes,
                      max_gen_millisec=timeout)

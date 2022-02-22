@@ -154,7 +154,7 @@ class CustomProgress(Progress):
 
 class FuzzingLoop:  # TODO: Support multiple backends.
     def __init__(self, backends: Dict[str, DiffTestBackend], mode='table', root=None, time_budget=60 * 60 * 4, max_nodes=32, inp_gen='random',
-                 summaries: List[SummaryBase] = None, fork_bkn=False, _PER_MODEL_TIMEOUT_=1000, use_bitvec=False, no_progress=False):
+                 summaries: List[SummaryBase] = None, fork_bkn=False, _PER_MODEL_TIMEOUT_=1000, use_bitvec=False, no_progress=False, merge_op_v=None):
         self.root = root
         self.reporter = Reporter(
             report_folder=root, name_hint=list(backends.keys())[0])
@@ -189,6 +189,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         self.summaries = summaries or []
         self.use_bitvec = use_bitvec
         self.no_progress = no_progress
+        self.merge_op_v = merge_op_v
 
         rich.print(
             f'[bold yellow]To exit the program: `kill {os.getpid()}`[/bold yellow]')
@@ -266,7 +267,8 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                                                                                  save_torch=use_torch,
                                                                                  summaries=self.summaries,
                                                                                  seed=seed,
-                                                                                 use_bitvec=self.use_bitvec)
+                                                                                 use_bitvec=self.use_bitvec,
+                                                                                 merge_op_v=self.merge_op_v)
                             self.stage = 'load model'
                             progress.refresh()
                             load_t_s = time.time()
@@ -414,6 +416,8 @@ if __name__ == '__main__':
                         default=1000, help='in milliseconds')
     parser.add_argument('--use_bitvec', action='store_true')
     parser.add_argument('--no_progress', action='store_true')
+    parser.add_argument('--merge_op_v', default=None,
+                        help='merge op version. Use to pick among EXPANDED_OP_VX')
     args = parser.parse_args()
 
     backends = None
@@ -454,6 +458,7 @@ if __name__ == '__main__':
         summaries=[ParamShapeSummary(), GraphSummary(), GraphSummary(level=1)],
         _PER_MODEL_TIMEOUT_=args.gen_timeout,
         use_bitvec=args.use_bitvec,
-        no_progress=args.no_progress
+        no_progress=args.no_progress,
+        merge_op_v=args.merge_op_v
     )
     fuzzing_loop.fuzz()
