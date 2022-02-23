@@ -129,6 +129,8 @@ class Reporter:  # From Tzer.
                 os.path.join(self.report_folder, f'profile.pkl.bak')))
         profile.to_pickle(os.path.join(self.report_folder,
                           f'profile.pkl'), protocol=4)
+        fuzz.gen_profile.to_pickle(os.path.join(self.report_folder,
+                                                f'gen_profile.pkl'), protocol=4)
         for i in fuzz.summaries:
             i.dump(os.path.join(self.report_folder, f'{i}.pkl'))
 
@@ -171,9 +173,9 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         self.time_budget = time_budget
         self.max_nodes = max_nodes
 
-        self.cur_model_gen_t = float('nan')
-        self.slowest_model_gen_t = -float("inf")
-        self.fastest_model_gen_t = float("inf")
+        self.cur_gen_t = float('nan')
+        self.slowest_gen_t = -float("inf")
+        self.fastest_gen_t = float("inf")
 
         self.cur_model_eval_t = float('nan')
         self.slowest_model_eval_t = -float("inf")
@@ -188,7 +190,10 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         self._PER_MODEL_TIMEOUT_ = _PER_MODEL_TIMEOUT_  # milliseconds
 
         self.profile = pd.DataFrame(
-            columns=['model_gen_t', 'input_gen_t', 'model_eval_t', 'bugs', 'edge_cov'])
+            columns=['gen_t', 'model_eval_t', 'bugs', 'edge_cov'])
+        # record the generation time of each model and its input, including the failed ones
+        self.gen_profile = pd.DataFrame(
+            columns=['model_gen_t', 'input_gen_t', 'gen_succ'])
         self.summaries = summaries or []
         self.use_bitvec = use_bitvec
         self.no_progress = no_progress
@@ -212,23 +217,29 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                       f'\n{self.stage}',
                       title="Bug/Iter", style="magenta", width=16),
             Panel.fit(f'[green]Fast: {self.fastest_model_eval_t:.3f}s[/green]|'
-                      f'[bold]Cur: {self.cur_model_eval_t:.3f}s[/bold]\n'
+                      f'[bold]Last: {self.cur_model_eval_t:.3f}s[/bold]\n'
                       f'[red]Slow: {self.slowest_model_eval_t:.3f}s[/red]|'
                       f'[red]Avg: {self.profile["model_eval_t"].mean():.3f}s',
                       title="Model Evaluation Time"),
         ]),
             Columns([
-                Panel.fit(f'[green]Fast: {self.profile["model_gen_t"].min():.3f}s[/green]|'
-                          f'[bold]Cur: {self.profile["model_gen_t"].iloc[-1] if len(self.profile["model_gen_t"]) else float("nan"):.3f}s[/bold]\n'
-                          f'[red]Slow: {self.profile["model_gen_t"].max():.3f}s[/red]|'
-                          f'[red]Avg: {self.profile["model_gen_t"].mean():.3f}s',
+                Panel.fit(f'[green]Fast: {self.gen_profile["model_gen_t"].min():.3f}s[/green]|'
+                          f'[bold]Last: {self.gen_profile["model_gen_t"].iloc[-1] if len(self.gen_profile["model_gen_t"]) else float("nan"):.3f}s[/bold]\n'
+                          f'[red]Slow: {self.gen_profile["model_gen_t"].max():.3f}s[/red]|'
+                          f'[red]Avg: {self.gen_profile["model_gen_t"].mean():.3f}s',
                           title="Model Generation Time"),
-                Panel.fit(f'[green]Fast: {self.profile["input_gen_t"].min():.3f}s[/green]|'
-                          f'[bold]Cur: {self.profile["input_gen_t"].iloc[-1] if len(self.profile["input_gen_t"]) else float("nan"):.3f}s[/bold]\n'
-                          f'[red]Slow: {self.profile["input_gen_t"].max():.3f}s[/red]|'
-                          f'[red]Avg: {self.profile["input_gen_t"].mean():.3f}s',
+                Panel.fit(f'[green]Fast: {self.gen_profile["input_gen_t"].min():.3f}s[/green]|'
+                          f'[bold]Last: {self.gen_profile["input_gen_t"].iloc[-1] if len(self.gen_profile["input_gen_t"]) else float("nan"):.3f}s[/bold]\n'
+                          f'[red]Slow: {self.gen_profile["input_gen_t"].max():.3f}s[/red]|'
+                          f'[red]Avg: {self.gen_profile["input_gen_t"].mean():.3f}s',
                           title="Input Generation Time"),
+                Panel.fit(f'[green]Fast: {self.profile["gen_t"].min():.3f}s[/green]|'
+                          f'[bold]Last: {self.profile["gen_t"].iloc[-1] if len(self.profile["gen_t"]) else float("nan"):.3f}s[/bold]\n'
+                          f'[red]Slow: {self.profile["gen_t"].max():.3f}s[/red]|'
+                          f'[red]Avg: {self.profile["gen_t"].mean():.3f}s',
+                          title="Gen Phase (+retry) Time"),
             ]),
+            f'[green]Generation Success rate:[/green]: {self.gen_profile["gen_succ"].mean()*100:.1f}%\t',
         ]
 
     def fuzz(self):
@@ -260,7 +271,9 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     record_coverage_t = time.time() - st
 
                     gen_t_s = time.time()
-                    while True:
+                    gen_succ = False
+                    while not gen_succ:
+                        gen_info = {'Iteration': len(self.profile)}
                         try:
                             seed = random.getrandbits(32)
                             self.cur_seed = seed
@@ -268,8 +281,11 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                             self.cur_node_size = 10
                             # self.cur_node_size = random.randint(
                             #     1, self.max_nodes)
+                            gen_info['seed'] = seed
+                            gen_info['cur_node_size'] = self.cur_node_size
                             self.stage = 'gen model'
                             progress.refresh()
+                            forked_exe_t_s = time.time()
                             sat_inputs, state, edge_set, seed, ret_profile = \
                                 forked_execution(self.mode,
                                                  _TMP_ONNX_FILE_,
@@ -283,31 +299,40 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                                                  use_bitvec=self.use_bitvec,
                                                  merge_op_v=self.merge_op_v,
                                                  limnf=self.limnf)
+                            gen_info['input_gen_t'] = ret_profile['gen_input_t']
+                            gen_info['model_gen_t'] = ret_profile['gen_model_t']
+                            gen_info['forked_exe_t'] = time.time() - \
+                                forked_exe_t_s
                             self.stage = 'load model'
                             progress.refresh()
                             load_t_s = time.time()
                             onnx_model = DiffTestBackend.get_onnx_proto(
                                 _TMP_ONNX_FILE_)
-                            load_model_time = time.time() - load_t_s
+                            gen_info['load_model_time'] = time.time() - \
+                                load_t_s
                             check_t_s = time.time()
                             self.stage = 'check model'
                             progress.refresh()
                             onnx.checker.check_model(
                                 onnx_model, full_check=True)
-                            check_model_time = time.time() - check_t_s
-                            break
+                            gen_info['check_model_time'] = time.time() - \
+                                check_t_s
+                            gen_succ = True
                         except Exception as e:
                             traceback.print_exc()
                             print('Seed:', seed, 'cur_node_size:',
                                   self.cur_node_size)
                             print('retrying...')
+                        gen_info['gen_succ'] = gen_succ
+                        self.gen_profile = self.gen_profile.append(
+                            gen_info, ignore_index=True)
 
                     # Generation time logging.
-                    self.cur_model_gen_t = time.time() - gen_t_s
-                    self.fastest_model_gen_t = min(
-                        self.fastest_model_gen_t, self.cur_model_gen_t)
-                    self.slowest_model_gen_t = max(
-                        self.slowest_model_gen_t, self.cur_model_gen_t)
+                    self.cur_gen_t = time.time() - gen_t_s
+                    self.fastest_gen_t = min(
+                        self.fastest_gen_t, self.cur_gen_t)
+                    self.slowest_gen_t = max(
+                        self.slowest_gen_t, self.cur_gen_t)
 
                     eval_inputs = None
                     if sat_inputs is not None:
@@ -391,7 +416,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     progress.update(
                         task_coverage, completed=__COV_DRIVER__.get_now())
                     info.update({
-                        'model_input_gen_t': self.cur_model_gen_t,
+                        'gen_t': self.cur_gen_t,
                         'model_eval_t': self.cur_model_eval_t,
                         'edge_cov': __COV_DRIVER__.get_now(),
                         'bugs': self.reporter.n_bug,
@@ -400,10 +425,6 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         'record_coverage_time': record_coverage_t,
                         'seed': seed,
                         'node_size': self.cur_node_size,
-                        'load_model_time': load_model_time,
-                        'check_model_time': check_model_time,
-                        'input_gen_t': ret_profile['gen_input_t'],
-                        'model_gen_t': ret_profile['gen_model_t'],
                     })
                     for s in self.summaries:
                         info.update(
