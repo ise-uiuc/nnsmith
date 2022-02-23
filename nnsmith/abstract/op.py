@@ -204,7 +204,7 @@ class ShapeVar:
             else:
                 ConstraintCheck.gt(s, 0)
         return ret
-    
+
     def eq(self, other):
         SanityCheck.eq(self.ndims, other.ndims)
         ret = []
@@ -425,11 +425,11 @@ def concretize(op: AbsOpBase, model: z3.ModelRef) -> AbsOpBase:
     if isinstance(op, Constant) or isinstance(op, Input):
         ret_op = deepcopy(op)
         values = []
-            
+
         for idx, s in enumerate(op.shape_var.shape):
             if isinstance(s, z3.ExprRef):
                 ret_op.shape_var.shape[idx] = model.eval(s).as_long()
-        
+
         return ret_op
 
     # Non-inp / const types.
@@ -456,22 +456,25 @@ def concretize(op: AbsOpBase, model: z3.ModelRef) -> AbsOpBase:
 class UnaryOpBase(AbsOpBase):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
+
     def __init__(self):
         super().__init__()
         self.out_ranks = [-1]
 
 
 class BinaryOpBase(AbsOpBase):
-    in_dtypes = [(i,i) for i in DTYPE_FLOATS]
+    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
+
     def __init__(self):
         super().__init__()
         self.out_ranks = [-1]
 
 
 class TernaryOpBase(AbsOpBase):
-    in_dtypes = [(i,i,i) for i in DTYPE_FLOATS]
+    in_dtypes = [(i, i, i) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
+
     def __init__(self):
         super().__init__()
         self.out_ranks = [-1]
@@ -486,7 +489,7 @@ class ElementWiseUnaryOp(UnaryOpBase):
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         SanityCheck.eq(len(input_shapes), 1)
         return [input_shapes[0]]
-    
+
     def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
         return [out_ranks[0]]
 
@@ -540,6 +543,7 @@ class BcastBinaryOp1(BcastBinaryOp):  # +-*/ max min
     def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
         return [out_ranks[0], out_ranks[0]]
 
+
 class BcastBinaryOp2(BcastBinaryOp):  # > < =
     in_dtypes = [(i, i) for i in DTYPE_ALL]
     out_dtypes = [(DType.bool,)]
@@ -582,7 +586,7 @@ class Where(TernaryOpBase):
 
     def torch(self):
         return torch.where
-    
+
     def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
         return [out_ranks[0], out_ranks[0], out_ranks[0]]
 
@@ -641,9 +645,10 @@ class Input(AbsOpBase):
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
         SanityCheck.eq(len(input_shapes), 0)
         return []
-    
+
     def torch(self) -> Callable[..., torch.Tensor]:
         raise NotImplementedError()
+
 
 class Constant(AbsOpBase):
     in_dtypes = [()]
@@ -669,6 +674,7 @@ class Constant(AbsOpBase):
         data = torch.randn(self.shape_var.shape).to(self.shape_var.dtype.value)
         return StopFoldConst(data)
 
+
 class Placeholder:
     def __init__(self, out_shape: ShapeVar):
         self.out_shape = out_shape
@@ -677,16 +683,17 @@ class Placeholder:
 
     def __repr__(self):
         return f'Placeholder({self.out_shape})'
-    
+
     def to_const(self):
         const_node = Constant(self.out_shape.ndims)
         const_node.shape_var = self.out_shape
         return const_node
-    
+
     def to_input(self):
         input_node = Input(self.out_shape.ndims)
         input_node.shape_var = self.out_shape
         return input_node
+
 
 class LegacyConstant0D(Constant):
     def __init__(self):
@@ -1039,6 +1046,7 @@ class Expand(UnaryOpBase, ABC):
     def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
         return [out_ranks[0]]
 
+
 class ExpandLast1(Expand):
     def __init__(self, expand_n: Union[int, z3.ExprRef]):
         super().__init__(expand_last_dim=1, expand_n=expand_n)
@@ -1147,7 +1155,7 @@ class NCHWConv2d(UnaryOpBase):
                      self.kernel_w_size], dtype=input_shapes[0].dtype)
         outs = super().n_floats(input_shapes)
         return nnsmith_add(nnsmith_add(w.nelement(), padded_data.nelement()), outs)
-    
+
     def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
         return [4]
 
@@ -1309,7 +1317,7 @@ class Transpose(UnaryOpBase, ABC):
             dim0, dim1 = self._init_swap_dims(list(x.shape))
             return x.transpose(dim0, dim1)
         return f
-    
+
     def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
         return out_ranks
 
@@ -1585,6 +1593,7 @@ class ArgMax(ReduceBase, ABC):
     def torch(self):
         return lambda x: x.argmax(self.extra_attrs['reduce_dim'])
 
+
 class ArgMax2D(ArgMax):
     def __init__(self):
         super().__init__(2)
@@ -1669,9 +1678,9 @@ class Concat(AbsOpBase):
         axis = self.extra_attrs['axis']
         return lambda *args: torch.cat(args, axis)
 
-    # TODO: fix with random compose    
-    # def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
-    #     return super().deduct_inp_ranks(out_ranks)
+    def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
+        # in concat they must have the same rank.
+        return [out_ranks[0]] * self.arity
 
 
 # NOTE(JK) This is ugly. I think the root cause is we are using a class to represent a node type that we want to insert.
