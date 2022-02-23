@@ -5,6 +5,8 @@ tmp/
 *.pdf
 *.dot
 *.pkl
+*.stderr
+*.stdout
 fuzz_report/
 
 # Byte-compiled / optimized / DLL files
