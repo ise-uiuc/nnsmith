@@ -159,7 +159,7 @@ class CustomProgress(Progress):
 class FuzzingLoop:  # TODO: Support multiple backends.
     def __init__(self, backends: Dict[str, DiffTestBackend], mode='table', root=None, time_budget=60 * 60 * 4, max_nodes=32, inp_gen='random',
                  summaries: List[SummaryBase] = None, fork_bkn=False, _PER_MODEL_TIMEOUT_=1000, use_bitvec=False, no_progress=False, merge_op_v=None,
-                 limnf=True):
+                 limnf=True, use_cuda=False):
         self.root = root
         self.reporter = Reporter(
             report_folder=root, name_hint=list(backends.keys())[0])
@@ -199,6 +199,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         self.no_progress = no_progress
         self.merge_op_v = merge_op_v
         self.limnf = limnf
+        self.use_cuda = use_cuda
 
         rich.print(
             f'[bold yellow]To exit the program: `kill {os.getpid()}`[/bold yellow]')
@@ -288,6 +289,10 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                             self.stage = 'gen model'
                             progress.refresh()
                             forked_exe_t_s = time.time()
+                            if len(self.profile) == 0:  # warmup
+                                NNSMITH_FORK_OLD = os.environ.get(
+                                    'NNSMITH_FORK', None)
+                                os.environ['NNSMITH_FORK'] = 'inprocess'
                             sat_inputs, state, edge_set, seed, ret_profile = \
                                 forked_execution(self.mode,
                                                  _TMP_ONNX_FILE_,
@@ -300,7 +305,13 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                                                  seed=seed,
                                                  use_bitvec=self.use_bitvec,
                                                  merge_op_v=self.merge_op_v,
-                                                 limnf=self.limnf)
+                                                 limnf=self.limnf,
+                                                 use_cuda=self.use_cuda)
+                            if len(self.profile) == 0:  # warmup done
+                                if NNSMITH_FORK_OLD is None:
+                                    del os.environ['NNSMITH_FORK']
+                                else:
+                                    os.environ['NNSMITH_FORK'] = NNSMITH_FORK_OLD
                             gen_info.update(ret_profile)
                             gen_info['forked_exe_time'] = time.time() - \
                                 forked_exe_t_s
@@ -462,6 +473,7 @@ if __name__ == '__main__':
     parser.set_defaults(limnf=True)
     parser.add_argument('--no_limnf', dest='limnf', action='store_false',
                         help='Disable the limit on the number of floats')
+    parser.add_argument('--use_cuda', action='store_true')
     args = parser.parse_args()
 
     backends = None
@@ -508,5 +520,6 @@ if __name__ == '__main__':
         no_progress=args.no_progress,
         merge_op_v=args.merge_op_v,
         limnf=args.limnf,
+        use_cuda=args.use_cuda,
     )
     fuzzing_loop.fuzz()

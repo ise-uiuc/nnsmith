@@ -29,6 +29,12 @@ from nnsmith.error import SanityCheck, ConstraintCheck
 
 ARITH_MAX_WIDTH: int = 64
 _INFERRED = False
+_DEV = torch.device("cpu")
+
+
+def _op_set_use_cuda(use_cuda):
+    global _DEV
+    _DEV = torch.device('cuda' if use_cuda else 'cpu')
 
 
 def align_bvs(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef], carry=False, mult=False):
@@ -592,7 +598,7 @@ class StopFoldConst(torch.nn.Module):
 
     @torch.no_grad()
     def forward(self):
-        return self.param.to(self.dtype)
+        return self.param.to(self.dtype, device=_DEV)
 
 
 class Constant(AbsOpBase):
@@ -616,7 +622,8 @@ class Constant(AbsOpBase):
         return []
 
     def torch(self) -> Callable[..., torch.Tensor]:
-        data = torch.randn(self.shape_var.shape).to(self.shape_var.dtype.value)
+        data = torch.randn(self.shape_var.shape, device=_DEV).to(
+            self.shape_var.dtype.value)
         return StopFoldConst(data)
 
 
@@ -794,7 +801,7 @@ class PReLU(ElementWiseUnaryOp):
         super().__init__()
 
     def torch(self):
-        return torch.nn.PReLU()
+        return torch.nn.PReLU(device=_DEV)
 
 
 class Sigmoid(ElementWiseUnaryOp):
@@ -1102,7 +1109,7 @@ class NCHWConv2d(UnaryOpBase):
 
     def torch(self):
         return torch.nn.Conv2d(self.in_channels, self.out_channels, kernel_size=(self.kernel_h_size, self.kernel_w_size), stride=self.stride,
-                               padding=self.padding)
+                               padding=self.padding, device=_DEV)
 
     def n_floats(self, input_shapes):
         padded_data = ShapeVar(

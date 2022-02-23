@@ -9,12 +9,12 @@ from nnsmith.abstract.op import DType, ShapeVar
 # Torch is actually not an ideal choice for graph generation,
 # as it is based on dynamic graph construction.
 # TODO: Use CUDA to accelerate the export process.
-def torch2onnx(model, filename, verbose=False):
+def torch2onnx(model, filename, verbose=False, use_cuda=False):
     """Convert PyTorch model to ONNX format.
     """
+    dev = torch.device('cuda' if use_cuda else 'cpu')
     # Get dynamic axis sizes & input names
     dynamic_axes = {}
-
     input_names = list(model.input_spec.keys())
     for name in input_names:
         dshape = [i for i, v in enumerate(model.input_spec[name]) if v == -1]
@@ -31,13 +31,15 @@ def torch2onnx(model, filename, verbose=False):
     # Dummy inputs
     dummy_inputs = []
     for _, svar in model.plausible_input_shape.items():
-        dummy_inputs.append(torch.zeros(svar.shape).to(dtype=svar.dtype.value))
+        dummy_inputs.append(torch.zeros(svar.shape).to(
+            dtype=svar.dtype.value, device=dev))
     if verbose:
         print(f"Generated model:\n{model}")
 
     with warnings.catch_warnings():
         warnings.simplefilter(
             "default" if verbose else "ignore", category=torch.jit.TracerWarning)
+        model.to(dev)
         torch.onnx.export(
             model, tuple(dummy_inputs),
             filename,

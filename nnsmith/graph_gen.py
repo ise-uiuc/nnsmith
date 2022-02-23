@@ -1015,6 +1015,8 @@ def parse_args():
     parser.set_defaults(limnf=True)
     parser.add_argument('--no_limnf', dest='limnf', action='store_false',
                         help='Disable the limit on the number of floats')
+    parser.add_argument('--use_cuda', action='store_true')
+    parser.add_argument('--no_export', action='store_true')
     return parser.parse_args()
 
 
@@ -1102,8 +1104,11 @@ if __name__ == '__main__':
     if args.verbose or args.viz_graph:
         gen.viz(args.output_path + '.png')
 
+    if args.no_export:
+        exit(0)
     net = SymbolNet(gen.abstract_graph, solution, verbose=args.verbose,
                     alive_shapes=gen.alive_shapes)
+    print('Initializing SymbolNet time: {}s'.format(time.time() - srt_time))
     # turn this on so that nan in the intermediate tensors can be detected too
     input_st = time.time()
 
@@ -1111,12 +1116,12 @@ if __name__ == '__main__':
     if args.input_gen == 'v3':
         with torch.no_grad():
             net.eval()
-            sat_inputs = net.rand_input_gen()
+            sat_inputs = net.rand_input_gen(use_cuda=args.use_cuda)
             infer_succ = sat_inputs is not None
     elif args.input_gen == 'grad':
         infer_succ = None  # TODO: are we able to know this?
         try:
-            sat_inputs = net.grad_input_gen()
+            sat_inputs = net.grad_input_gen(use_cuda=args.use_cuda)
         except RuntimeError as e:
             if 'does not have a grad_fn' in str(e):
                 # means some op are not differentiable.
@@ -1131,8 +1136,8 @@ if __name__ == '__main__':
     ed_time = time.time()
     print('Time to generate inputs: {:.3f}s'.format(ed_time - input_st))
 
-    if sat_inputs is not None:
-        torch2onnx(net, args.output_path, verbose=args.verbose)
+    torch2onnx(net, args.output_path, verbose=args.verbose,
+               use_cuda=args.use_cuda)
 
     stats = {
         'gen_succ': True,
