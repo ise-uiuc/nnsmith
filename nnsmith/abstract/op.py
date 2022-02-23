@@ -776,6 +776,8 @@ class GELU(ElementWiseUnaryOp):
 
 
 class LeakyReLU(ElementWiseUnaryOp):
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
+
     def __init__(self):
         """See https://pytorch.org/docs/stable/generated/torch.nn.LeakyReLU.html
         """
@@ -787,6 +789,8 @@ class LeakyReLU(ElementWiseUnaryOp):
 
 
 class PReLU(ElementWiseUnaryOp):
+    in_dtypes = [(DType.float32,)]
+
     def __init__(self):
         super().__init__()
 
@@ -875,6 +879,8 @@ class Atan(TrigonometricOp):
 
 
 class Abs(ElementWiseUnaryOp):
+    in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+
     def __init__(self):
         super().__init__()
 
@@ -893,6 +899,8 @@ class Ceil(ElementWiseUnaryOp):
 
 
 class Clip(ElementWiseUnaryOp):
+    in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+
     def __init__(self):
         super().__init__()
         self.min = -1
@@ -940,6 +948,8 @@ class Log2(ElementWiseUnaryOp):
 
 
 class Neg(ElementWiseUnaryOp):
+    in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+
     def __init__(self):
         super().__init__()
 
@@ -1231,6 +1241,8 @@ class Reshape5D(Reshape):
 
 
 class Transpose(UnaryOpBase, ABC):
+    in_dtypes = [(i,) for i in DTYPE_ALL]
+
     def __init__(self):
         """See https://pytorch.org/docs/stable/generated/torch.transpose.html
         """
@@ -1293,6 +1305,8 @@ class ReduceBase(UnaryOpBase, ABC):
 
 
 class SqueezeBase(ReduceBase, ABC):
+    in_dtypes = [(i,) for i in DTYPE_ALL]
+
     def _requires(self, input_shapes):
         SanityCheck.eq(len(input_shapes[0].shape), self.num_dim)
         if isinstance(input_shapes[0].shape[self.extra_attrs['reduce_dim']], z3.ExprRef):
