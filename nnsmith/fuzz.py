@@ -206,6 +206,8 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             '[grey]This is because we use z3 written in C++ w/ Python wrappers. Ctrl+C may not stop it.')
 
     def rich(self):
+        breakdown = ', '.join(
+            f'[cyan]{k}[/cyan]: {v:.1f}s' for k, v in self.gen_profile.mean().to_dict().items() if k.endswith('_t') or k.endswith('_time'))
         return [Columns([
             Panel.fit(
                 f'{datetime.timedelta(seconds=round(time.time()-self.start_time))} ~ '
@@ -239,7 +241,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                           f'[red]Avg: {self.profile["gen_t"].mean():.3f}s',
                           title="Gen Phase (+retry) Time"),
             ]),
-            f'[green]Generation Success rate:[/green]: {self.gen_profile["gen_succ"].mean()*100:.1f}%\t',
+            f'[green]Generation Success rate:[/green]: {self.gen_profile["gen_succ"].mean()*100:.1f}%\t[green]Breakdown[/green]: {breakdown}',
         ]
 
     def fuzz(self):
@@ -299,23 +301,22 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                                                  use_bitvec=self.use_bitvec,
                                                  merge_op_v=self.merge_op_v,
                                                  limnf=self.limnf)
-                            gen_info['input_gen_t'] = ret_profile['gen_input_t']
-                            gen_info['model_gen_t'] = ret_profile['gen_model_t']
-                            gen_info['forked_exe_t'] = time.time() - \
+                            gen_info.update(ret_profile)
+                            gen_info['forked_exe_time'] = time.time() - \
                                 forked_exe_t_s
                             self.stage = 'load model'
                             progress.refresh()
                             load_t_s = time.time()
                             onnx_model = DiffTestBackend.get_onnx_proto(
                                 _TMP_ONNX_FILE_)
-                            gen_info['load_model_time'] = time.time() - \
+                            gen_info['load_model_t'] = time.time() - \
                                 load_t_s
                             check_t_s = time.time()
                             self.stage = 'check model'
                             progress.refresh()
                             onnx.checker.check_model(
                                 onnx_model, full_check=True)
-                            gen_info['check_model_time'] = time.time() - \
+                            gen_info['check_model_t'] = time.time() - \
                                 check_t_s
                             gen_succ = True
                         except Exception as e:
@@ -324,6 +325,9 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                                   self.cur_node_size)
                             print('retrying...')
                         gen_info['gen_succ'] = gen_succ
+                        gen_info['time_stamp'] = time.perf_counter() - \
+                            self.start_time
+
                         self.gen_profile = self.gen_profile.append(
                             gen_info, ignore_index=True)
 

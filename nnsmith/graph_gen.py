@@ -1098,6 +1098,7 @@ if __name__ == '__main__':
         f'{len(solution)} symbols and {len(gen.solver.assertions())} constraints.')
     print(
         f'{time.time() - strt_time}s to generate a graph w/ {len(gen.abstract_graph.nodes())} nodes')
+    srt_time = time.time()
     if args.verbose or args.viz_graph:
         gen.viz(args.output_path + '.png')
 
@@ -1122,8 +1123,13 @@ if __name__ == '__main__':
                 pass
             else:
                 raise e
+    elif args.input_gen == 'none':
+        infer_succ = None
+    else:
+        raise ValueError(f'Unknown input gen {args.input_gen}')
 
     ed_time = time.time()
+    print('Time to generate inputs: {:.3f}s'.format(ed_time - input_st))
 
     if sat_inputs is not None:
         torch2onnx(net, args.output_path, verbose=args.verbose)

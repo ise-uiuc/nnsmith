@@ -42,19 +42,18 @@ def safe_wrapper(func):
 
 
 def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, output_path, use_bitvec, merge_op_v, limnf, ipc_dict):
-    random.seed(seed if seed is not None else random.getrandbits(32))
     ipc_dict['seed'] = seed
     profile = ipc_dict['profile']
 
     gen_model_st = time.time()
     if gen_method == 'random':
         gen, solution = random_model_gen(
-            max_nodes=max_nodes, timeout=max_gen_millisec, use_bitvec=use_bitvec, merge_op_v=merge_op_v, limnf=limnf)
+            max_nodes=max_nodes, timeout=max_gen_millisec, use_bitvec=use_bitvec, merge_op_v=merge_op_v, limnf=limnf, seed=seed)
     elif gen_method == 'table':
         gen, solution = table_model_gen(
             table=ipc_dict['table'],
             state=ipc_dict['state'],
-            max_nodes=max_nodes, timeout=max_gen_millisec, use_bitvec=use_bitvec, merge_op_v=merge_op_v, limnf=limnf)
+            max_nodes=max_nodes, timeout=max_gen_millisec, use_bitvec=use_bitvec, merge_op_v=merge_op_v, limnf=limnf, seed=seed)
         abs_graph = gen.abstract_graph
         unique_set = set()
         for src, dst in abs_graph.edges():
@@ -65,7 +64,7 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
     elif gen_method == 'guided':
         from nnsmith.graph_gen import GuidedGen
         gen = GuidedGen(
-            seed=seed, summaries=ipc_dict['state']['summaries'], use_bitvec=use_bitvec, merge_op_v=merge_op_v, limnf=limnf)
+            summaries=ipc_dict['state']['summaries'], use_bitvec=use_bitvec, merge_op_v=merge_op_v, limnf=limnf, seed=seed)
         gen.abstract_gen(max_node_size=max_nodes,
                          max_gen_millisec=max_gen_millisec)
         solution = gen.get_symbol_solutions()
@@ -76,7 +75,7 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
                     alive_shapes=gen.alive_shapes)
 
     gen_input_st = time.time()
-    profile['gen_model_t'] = gen_input_st - gen_model_st
+    profile['model_gen_t'] = gen_input_st - gen_model_st
     sat_inputs = None
     if inp_gen == 'random':
         with torch.no_grad():
@@ -84,6 +83,10 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
             sat_inputs = net.rand_input_gen()
     elif inp_gen == 'grad':
         sat_inputs = net.grad_input_gen()
+    elif inp_gen == 'none':
+        sat_inputs = None
+    else:
+        raise ValueError(f'Unknown inp_gen: {inp_gen}')
 
     if sat_inputs is not None:
         ret_inputs = {}
@@ -92,14 +95,18 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
         ipc_dict['sat_inputs'] = ret_inputs
     else:
         ipc_dict['sat_inputs'] = None
-    profile['gen_input_t'] = time.time() - gen_input_st
+    export_t_s = time.time()
+    profile['input_gen_t'] = export_t_s - gen_input_st
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         torch2onnx(net, output_path)
+    dump_t_s = time.time()
+    profile['export_t'] = dump_t_s - export_t_s
 
     cloudpickle.dump(net.concrete_graph, open(
         output_path + '-graph.pkl', 'wb'), protocol=4)
+    profile['dump_t'] = time.time() - dump_t_s
 
 
 # @safe_wrapper
