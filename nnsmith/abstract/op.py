@@ -84,16 +84,15 @@ def align_bvs(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.E
     elif diff > 0:
         right = z3.Concat(z3.BitVecVal(0, diff), right)
 
-    if carry:
-        SanityCheck.true(max(left_size, right_size) < ARITH_MAX_WIDTH,
-                         f"Carry is overflowing and exceeding maximum size {ARITH_MAX_WIDTH}")
+    if carry and max(left_size, right_size) < ARITH_MAX_WIDTH:
         left = z3.Concat(z3.BitVecVal(0, 1), left)
         right = z3.Concat(z3.BitVecVal(0, 1), right)
     if mult:
         max_val = right.size() + left.size()
-        SanityCheck.true(max_val <= ARITH_MAX_WIDTH,
-                         f"Multiplication is overflowing and exceeding maximum size {ARITH_MAX_WIDTH}")
-        max_val = ARITH_MAX_WIDTH - max_val
+        if max_val >= ARITH_MAX_WIDTH:
+            return (left, right)
+        else:
+            max_val = ARITH_MAX_WIDTH - max_val
         left = z3.Concat(z3.BitVecVal(0, max_val), left)
         right = z3.Concat(z3.BitVecVal(0, max_val), right)
     return (left, right)
