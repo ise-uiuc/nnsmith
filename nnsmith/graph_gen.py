@@ -183,7 +183,7 @@ class SymbolNet(nn.Module):
                            f'torch dtype ({out.dtype}) != symbolic dtype ({self.alive_shapes[shape_idx][1].dtype.value})')
 
     def get_random_inps(self) -> List[torch.Tensor]:
-        return [torch.rand(ii.op.shape_var.shape) for ii in self.input_info]
+        return [torch.rand(ii.op.shape_var.shape).type(ii.op.shape_var.dtype.value) for ii in self.input_info]
 
     def rand_input_gen(self, max_iter=10, use_cuda=False) -> Optional[List[torch.Tensor]]:
         last_check_intermediate_numeric = self.check_intermediate_numeric
@@ -194,7 +194,7 @@ class SymbolNet(nn.Module):
         n_step = max_iter
         interval = 1 / n_step
         for v in np.linspace(-1, 1, n_step):
-            inputs = [v + torch.rand(ii.op.shape_var.shape)
+            inputs = [v + torch.rand(ii.op.shape_var.shape).type(ii.op.shape_var.dtype.value)
                       * interval for ii in self.input_info]
 
             if use_cuda:
@@ -212,7 +212,7 @@ class SymbolNet(nn.Module):
 
     def grad_input_gen(self, max_iter=10, init_tensors=None, use_cuda=False) -> Optional[List[torch.Tensor]]:
         if init_tensors is None:
-            inputs = [torch.nn.parameter.Parameter(torch.rand(ii.op.shape_var.shape))
+            inputs = [torch.nn.parameter.Parameter(torch.rand(ii.op.shape_var.shape).type(ii.op.shape_var.dtype.value))
                       for ii in self.input_info]
         else:
             inputs = [torch.nn.parameter.Parameter(
@@ -447,9 +447,6 @@ class SimpleGenerator:
             else:
                 self.abstract_graph.nodes[holder_idx]['op'] = self.abstract_graph.nodes[holder_idx]['op'].to_input(
                 )
-
-    def shape_idx_to_op_idx(self, shape_idx: int) -> int:
-        return self.alive_shapes[shape_idx][0]
 
     def check_sat(self, *assumptions):
         start = time.time()
