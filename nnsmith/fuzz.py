@@ -148,7 +148,8 @@ class CustomProgress(Progress):
 
     def get_renderables(self) -> Iterable[RenderableType]:
         """Get a number of renderables for the progress display."""
-        yield self.fuzz_status()
+        for i in self.fuzz_status():
+            yield i
         table = self.make_tasks_table(self.tasks)
         yield table
 
@@ -198,7 +199,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             '[grey]This is because we use z3 written in C++ w/ Python wrappers. Ctrl+C may not stop it.')
 
     def rich(self):
-        return Columns([
+        return [Columns([
             Panel.fit(
                 f'{datetime.timedelta(seconds=round(time.time()-self.start_time))} ~ '
                 f'{datetime.timedelta(seconds=self.time_budget)}'
@@ -208,22 +209,25 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             Panel.fit(f'{self.reporter.n_bug}/{len(self.profile)}'
                       f'\n{self.stage}',
                       title="Bug/Iter", style="magenta", width=16),
-            Panel.fit(f'[green]Fast: {self.profile["model_gen_t"].min():.3f}s[/green]|'
-                      f'[bold]Cur: {self.profile["model_gen_t"].iloc[-1] if len(self.profile["model_gen_t"]) else float("nan"):.3f}s[/bold]\n'
-                      f'[red]Slow: {self.profile["model_gen_t"].max():.3f}s[/red]|'
-                      f'[red]Avg: {self.profile["model_gen_t"].mean():.3f}s\n',
-                      title="Model Generation Time"),
-            Panel.fit(f'[green]Fast: {self.profile["input_gen_t"].min():.3f}s[/green]|'
-                      f'[bold]Cur: {self.profile["input_gen_t"].iloc[-1] if len(self.profile["input_gen_t"]) else float("nan"):.3f}s[/bold]\n'
-                      f'[red]Slow: {self.profile["input_gen_t"].max():.3f}s[/red]|'
-                      f'[red]Avg: {self.profile["input_gen_t"].mean():.3f}s\n',
-                      title="Input Generation Time"),
             Panel.fit(f'[green]Fast: {self.fastest_model_eval_t:.3f}s[/green]|'
                       f'[bold]Cur: {self.cur_model_eval_t:.3f}s[/bold]\n'
                       f'[red]Slow: {self.slowest_model_eval_t:.3f}s[/red]|'
                       f'[red]Avg: {self.profile["model_eval_t"].mean():.3f}s',
                       title="Model Evaluation Time"),
-        ])
+        ]),
+            Columns([
+                Panel.fit(f'[green]Fast: {self.profile["model_gen_t"].min():.3f}s[/green]|'
+                          f'[bold]Cur: {self.profile["model_gen_t"].iloc[-1] if len(self.profile["model_gen_t"]) else float("nan"):.3f}s[/bold]\n'
+                          f'[red]Slow: {self.profile["model_gen_t"].max():.3f}s[/red]|'
+                          f'[red]Avg: {self.profile["model_gen_t"].mean():.3f}s',
+                          title="Model Generation Time"),
+                Panel.fit(f'[green]Fast: {self.profile["input_gen_t"].min():.3f}s[/green]|'
+                          f'[bold]Cur: {self.profile["input_gen_t"].iloc[-1] if len(self.profile["input_gen_t"]) else float("nan"):.3f}s[/bold]\n'
+                          f'[red]Slow: {self.profile["input_gen_t"].max():.3f}s[/red]|'
+                          f'[red]Avg: {self.profile["input_gen_t"].mean():.3f}s',
+                          title="Input Generation Time"),
+            ]),
+        ]
 
     def fuzz(self):
         _TMP_ONNX_FILE_ = f'tmp_{uuid.uuid4()}.onnx'
