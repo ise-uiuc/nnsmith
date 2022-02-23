@@ -1,9 +1,10 @@
+# See https://github.com/Z3Prover/z3/issues/5656
+import z3  # Always import z3 first to avoid incompatibility issue.
 from collections import Counter, defaultdict
 import math
 import textwrap
 from sklearn.utils import shuffle
-import z3  # Always import z3 first to avoid incompatibility issue.
-# See https://github.com/Z3Prover/z3/issues/5656
+
 import networkx as nx
 from summary import ParamShapeSummary
 import torch
@@ -672,9 +673,10 @@ class SimpleGenerator:
         # S1 - select Y: Y must be a placeholder; (this also means the graph must start w/ a placeholder)
         placeholder_indices = self.pick_shape_var_idx(
             type(op), op.out_ranks, op.out_dtypes, candidate_shapes=[self.id2nxnode(idx)['op'].out_shape for idx in self.placeholders])
-        
+
         print(type(op))
-        print([self.id2nxnode(self.placeholders[idx])['op'].out_shape for idx in placeholder_indices])
+        print([self.id2nxnode(self.placeholders[idx])[
+              'op'].out_shape for idx in placeholder_indices])
 
         if self.try_occupy_placeholder(op, placeholder_indices):
             return True
