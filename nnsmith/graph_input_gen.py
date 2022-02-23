@@ -124,7 +124,11 @@ def forked_execution(
         ipc_dict['table'] = table
         ipc_dict['profile'] = manager.dict()
         nnsmith_fork = os.environ.get(
-            'NNSMITH_FORK', 'forkserver')  # specify the fork method
+            'NNSMITH_FORK', 'fork')  # specify the fork method.
+        if nnsmith_fork == 'forkserver':
+            # TODO(JK): integrate the initializations (skip op, infer type, etc.) and rich panel into forkserver
+            warnings.warn(
+                '`--skip` option may not have any effect in forkserver mode. Subprocess call output may be covered by the panel.')
         if nnsmith_fork != 'inprocess':  # let's try to get rid of fork
             p = mp.get_context(nnsmith_fork).Process(
                 target=subprocess_call, args=(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, output_path, use_bitvec, merge_op_v, ipc_dict,))
