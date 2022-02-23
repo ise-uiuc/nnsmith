@@ -19,6 +19,7 @@ from rich.progress import Progress, BarColumn, ProgressColumn
 from rich.panel import Panel
 from rich.console import RenderableType
 from rich.columns import Columns
+from backend_executor import DummyExecutor
 
 from nnsmith.abstract.op import ALL_OP_TYPES, auto_infer_in_dtypes, config_skip_op
 from nnsmith import util
@@ -185,7 +186,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         self._PER_MODEL_TIMEOUT_ = _PER_MODEL_TIMEOUT_  # milliseconds
 
         self.profile = pd.DataFrame(
-            columns=['model_gen_t', 'model_eval_t', 'bugs', 'edge_cov'])
+            columns=['model_gen_t', 'input_gen_t', 'model_eval_t', 'bugs', 'edge_cov'])
         self.summaries = summaries or []
         self.use_bitvec = use_bitvec
         self.no_progress = no_progress
@@ -207,11 +208,16 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             Panel.fit(f'{self.reporter.n_bug}/{len(self.profile)}'
                       f'\n{self.stage}',
                       title="Bug/Iter", style="magenta", width=16),
-            Panel.fit(f'[green]Fast: {self.fastest_model_gen_t:.3f}s[/green]|'
-                      f'[bold]Cur: {self.cur_model_gen_t:.3f}s[/bold]\n'
-                      f'[red]Slow: {self.slowest_model_gen_t:.3f}s[/red]|'
-                      f'[red]Avg: {self.profile["model_gen_t"].mean():.3f}s',
+            Panel.fit(f'[green]Fast: {self.profile["model_gen_t"].min():.3f}s[/green]|'
+                      f'[bold]Cur: {self.profile["model_gen_t"].iloc[-1] if len(self.profile["model_gen_t"]) else float("nan"):.3f}s[/bold]\n'
+                      f'[red]Slow: {self.profile["model_gen_t"].max():.3f}s[/red]|'
+                      f'[red]Avg: {self.profile["model_gen_t"].mean():.3f}s\n',
                       title="Model Generation Time"),
+            Panel.fit(f'[green]Fast: {self.profile["input_gen_t"].min():.3f}s[/green]|'
+                      f'[bold]Cur: {self.profile["input_gen_t"].iloc[-1] if len(self.profile["input_gen_t"]) else float("nan"):.3f}s[/bold]\n'
+                      f'[red]Slow: {self.profile["input_gen_t"].max():.3f}s[/red]|'
+                      f'[red]Avg: {self.profile["input_gen_t"].mean():.3f}s\n',
+                      title="Input Generation Time"),
             Panel.fit(f'[green]Fast: {self.fastest_model_eval_t:.3f}s[/green]|'
                       f'[bold]Cur: {self.cur_model_eval_t:.3f}s[/bold]\n'
                       f'[red]Slow: {self.slowest_model_eval_t:.3f}s[/red]|'
@@ -258,17 +264,18 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                             #     1, self.max_nodes)
                             self.stage = 'gen model'
                             progress.refresh()
-                            sat_inputs, state, edge_set, seed = forked_execution(self.mode,
-                                                                                 _TMP_ONNX_FILE_,
-                                                                                 table=self.table,
-                                                                                 max_nodes=self.cur_node_size,
-                                                                                 max_gen_millisec=self._PER_MODEL_TIMEOUT_,
-                                                                                 inp_gen=self.inp_gen,
-                                                                                 save_torch=use_torch,
-                                                                                 summaries=self.summaries,
-                                                                                 seed=seed,
-                                                                                 use_bitvec=self.use_bitvec,
-                                                                                 merge_op_v=self.merge_op_v)
+                            sat_inputs, state, edge_set, seed, ret_profile = \
+                                forked_execution(self.mode,
+                                                 _TMP_ONNX_FILE_,
+                                                 table=self.table,
+                                                 max_nodes=self.cur_node_size,
+                                                 max_gen_millisec=self._PER_MODEL_TIMEOUT_,
+                                                 inp_gen=self.inp_gen,
+                                                 save_torch=use_torch,
+                                                 summaries=self.summaries,
+                                                 seed=seed,
+                                                 use_bitvec=self.use_bitvec,
+                                                 merge_op_v=self.merge_op_v)
                             self.stage = 'load model'
                             progress.refresh()
                             load_t_s = time.time()
@@ -377,7 +384,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     progress.update(
                         task_coverage, completed=__COV_DRIVER__.get_now())
                     info.update({
-                        'model_gen_t': self.cur_model_gen_t,
+                        'model_input_gen_t': self.cur_model_gen_t,
                         'model_eval_t': self.cur_model_eval_t,
                         'edge_cov': __COV_DRIVER__.get_now(),
                         'bugs': self.reporter.n_bug,
@@ -388,6 +395,8 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         'node_size': self.cur_node_size,
                         'load_model_time': load_model_time,
                         'check_model_time': check_model_time,
+                        'input_gen_t': ret_profile['gen_input_t'],
+                        'model_gen_t': ret_profile['gen_model_t'],
                     })
                     for s in self.summaries:
                         info.update(
@@ -442,6 +451,9 @@ if __name__ == '__main__':
         backends = {'tch-opt': TchExecutor(dev='cuda'),
                     'tch-debug': TchExecutor(opt_level=0, dev='cpu')}
         __COV_DRIVER__ = TchExecutor.coverage_install()
+    elif args.backend == 'dummy':  # for debugging
+        backends = {'dummy': DummyExecutor()}
+        __COV_DRIVER__ = DummyExecutor.coverage_install()
     else:
         raise NotImplementedError("Other backends not supported yet.")
     skip = 'backend:' + args.backend

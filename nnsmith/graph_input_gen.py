@@ -44,7 +44,9 @@ def safe_wrapper(func):
 def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, output_path, use_bitvec, merge_op_v, ipc_dict):
     random.seed(seed if seed is not None else random.getrandbits(32))
     ipc_dict['seed'] = seed
+    profile = ipc_dict['profile']
 
+    gen_model_st = time.time()
     if gen_method == 'random':
         gen, solution = random_model_gen(
             max_nodes=max_nodes, timeout=max_gen_millisec, use_bitvec=use_bitvec, merge_op_v=merge_op_v)
@@ -73,6 +75,8 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
     net = SymbolNet(gen.abstract_graph, solution, verbose=False,
                     alive_shapes=gen.alive_shapes)
 
+    gen_input_st = time.time()
+    profile['gen_model_t'] = gen_input_st - gen_model_st
     sat_inputs = None
     if inp_gen == 'random':
         with torch.no_grad():
@@ -88,6 +92,7 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
         ipc_dict['sat_inputs'] = ret_inputs
     else:
         ipc_dict['sat_inputs'] = None
+    profile['gen_input_t'] = time.time() - gen_input_st
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -117,6 +122,7 @@ def forked_execution(
         ipc_dict['state']['summaries'] = summaries
         ipc_dict['edges'] = set()
         ipc_dict['table'] = table
+        ipc_dict['profile'] = manager.dict()
         nnsmith_fork = os.environ.get(
             'NNSMITH_FORK', 'forkserver')  # specify the fork method
         if nnsmith_fork != 'inprocess':  # let's try to get rid of fork
@@ -165,7 +171,7 @@ def forked_execution(
             for src, dst in ipc_dict['state']['unsolvable']:
                 table.on_unsolvable(ALL_OP_STR2TYPE[src], ALL_OP_STR2TYPE[dst])
 
-        return ipc_dict['sat_inputs'], ipc_dict['state'], ipc_dict['edges'], ipc_dict['seed']
+        return ipc_dict['sat_inputs'], ipc_dict['state'], ipc_dict['edges'], ipc_dict['seed'], dict(ipc_dict['profile'])
 
 
 # TODO(from Jiawei @Jinkun): stop using this implementation.

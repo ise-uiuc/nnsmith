@@ -15,16 +15,23 @@ import onnx.checker
 class CrashExecutor(DiffTestBackend):
     """For testing purposes"""
 
-    def predict(self, model, inputs):
+    def predict(self, *args, **kwargs):
         assert False
 
 
 class HangExecutor(DiffTestBackend):
     """For testing purposes"""
 
-    def predict(self, model, inputs):
+    def predict(self, *args, **kwargs):
         while True:
             pass
+
+
+class DummyExecutor(DiffTestBackend):
+    """Doing nothing"""
+
+    def predict(self, *args, **kwargs):
+        return {}
 
 
 class BackendCreator:

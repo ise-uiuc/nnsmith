@@ -1731,6 +1731,7 @@ def config_skip_op(skip_config):
         'ort': [],
         'xla': [],
         'tch': [],
+        'dummy': [],
     }
     print('skip config:', skip_config)
     skip_config = skip_config.split(',')
