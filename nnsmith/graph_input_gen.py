@@ -41,7 +41,7 @@ def safe_wrapper(func):
     return wrapper
 
 
-def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, output_path, use_bitvec, merge_op_v, ipc_dict):
+def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, output_path, use_bitvec, merge_op_v, limnf, ipc_dict):
     random.seed(seed if seed is not None else random.getrandbits(32))
     ipc_dict['seed'] = seed
     profile = ipc_dict['profile']
@@ -49,12 +49,12 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
     gen_model_st = time.time()
     if gen_method == 'random':
         gen, solution = random_model_gen(
-            max_nodes=max_nodes, timeout=max_gen_millisec, use_bitvec=use_bitvec, merge_op_v=merge_op_v)
+            max_nodes=max_nodes, timeout=max_gen_millisec, use_bitvec=use_bitvec, merge_op_v=merge_op_v, limnf=limnf)
     elif gen_method == 'table':
         gen, solution = table_model_gen(
             table=ipc_dict['table'],
             state=ipc_dict['state'],
-            max_nodes=max_nodes, timeout=max_gen_millisec, use_bitvec=use_bitvec, merge_op_v=merge_op_v)
+            max_nodes=max_nodes, timeout=max_gen_millisec, use_bitvec=use_bitvec, merge_op_v=merge_op_v, limnf=limnf)
         abs_graph = gen.abstract_graph
         unique_set = set()
         for src, dst in abs_graph.edges():
@@ -65,7 +65,7 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
     elif gen_method == 'guided':
         from nnsmith.graph_gen import GuidedGen
         gen = GuidedGen(
-            seed=seed, summaries=ipc_dict['state']['summaries'], use_bitvec=use_bitvec, merge_op_v=merge_op_v)
+            seed=seed, summaries=ipc_dict['state']['summaries'], use_bitvec=use_bitvec, merge_op_v=merge_op_v, limnf=limnf)
         gen.abstract_gen(max_node_size=max_nodes,
                          max_gen_millisec=max_gen_millisec)
         solution = gen.get_symbol_solutions()
@@ -105,7 +105,7 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
 # @safe_wrapper
 def forked_execution(
         gen_method, output_path, seed=None, max_nodes=10, max_gen_millisec=2000, table=None, save_torch=False, inp_gen='random',
-        use_bitvec=False, summaries=None, merge_op_v=None):
+        use_bitvec=False, summaries=None, merge_op_v=None, limnf=True):
     if seed is None:
         seed = random.getrandbits(32)
 
@@ -131,7 +131,7 @@ def forked_execution(
                 '`--skip` option may not have any effect in forkserver mode. Subprocess call output may be covered by the panel.')
         if nnsmith_fork != 'inprocess':  # let's try to get rid of fork
             p = mp.get_context(nnsmith_fork).Process(
-                target=subprocess_call, args=(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, output_path, use_bitvec, merge_op_v, ipc_dict,))
+                target=subprocess_call, args=(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, output_path, use_bitvec, merge_op_v, limnf, ipc_dict,))
 
             p_duration = None
             try:
@@ -171,7 +171,7 @@ def forked_execution(
                     'return code not zero: {}'.format(p.exitcode))
         else:
             subprocess_call(gen_method, seed, max_nodes,
-                            max_gen_millisec, inp_gen, output_path, use_bitvec, merge_op_v, ipc_dict)
+                            max_gen_millisec, inp_gen, output_path, use_bitvec, merge_op_v, limnf, ipc_dict)
             for src, dst in ipc_dict['state']['unsolvable']:
                 table.on_unsolvable(ALL_OP_STR2TYPE[src], ALL_OP_STR2TYPE[dst])
 

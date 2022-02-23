@@ -156,7 +156,8 @@ class CustomProgress(Progress):
 
 class FuzzingLoop:  # TODO: Support multiple backends.
     def __init__(self, backends: Dict[str, DiffTestBackend], mode='table', root=None, time_budget=60 * 60 * 4, max_nodes=32, inp_gen='random',
-                 summaries: List[SummaryBase] = None, fork_bkn=False, _PER_MODEL_TIMEOUT_=1000, use_bitvec=False, no_progress=False, merge_op_v=None):
+                 summaries: List[SummaryBase] = None, fork_bkn=False, _PER_MODEL_TIMEOUT_=1000, use_bitvec=False, no_progress=False, merge_op_v=None,
+                 limnf=True):
         self.root = root
         self.reporter = Reporter(
             report_folder=root, name_hint=list(backends.keys())[0])
@@ -192,6 +193,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         self.use_bitvec = use_bitvec
         self.no_progress = no_progress
         self.merge_op_v = merge_op_v
+        self.limnf = limnf
 
         rich.print(
             f'[bold yellow]To exit the program: `kill {os.getpid()}`[/bold yellow]')
@@ -279,7 +281,8 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                                                  summaries=self.summaries,
                                                  seed=seed,
                                                  use_bitvec=self.use_bitvec,
-                                                 merge_op_v=self.merge_op_v)
+                                                 merge_op_v=self.merge_op_v,
+                                                 limnf=self.limnf)
                             self.stage = 'load model'
                             progress.refresh()
                             load_t_s = time.time()
@@ -431,6 +434,9 @@ if __name__ == '__main__':
     parser.add_argument('--no_progress', action='store_true')
     parser.add_argument('--merge_op_v', default=None,
                         help='merge op version. Use to pick among EXPANDED_OP_VX')
+    parser.set_defaults(limnf=True)
+    parser.add_argument('--no_limnf', dest='limnf', action='store_false',
+                        help='Disable the limit on the number of floats')
     args = parser.parse_args()
 
     backends = None
@@ -475,6 +481,7 @@ if __name__ == '__main__':
         _PER_MODEL_TIMEOUT_=args.gen_timeout,
         use_bitvec=args.use_bitvec,
         no_progress=args.no_progress,
-        merge_op_v=args.merge_op_v
+        merge_op_v=args.merge_op_v,
+        limnf=args.limnf,
     )
     fuzzing_loop.fuzz()

@@ -327,7 +327,7 @@ class SymbolNet(nn.Module):
 class SimpleGenerator:
 
     def __init__(self, min_dims=[1, 3, 48, 48], skip=[Input], viz_sbs=False, megabyte_lim=6 * 1024, seed=None, verbose=False, use_bitvec=False,
-                 viz_verbose=False, merge_op_v=None):
+                 viz_verbose=False, merge_op_v=None, limnf=True):
         if seed is not None:
             np.random.seed(seed)
             random.seed(seed)
@@ -365,6 +365,7 @@ class SimpleGenerator:
         self.last_soln = None
         self.wts = None
         self.merge_op_v = merge_op_v or 'v0'  # v0 as default version
+        self.limnf = limnf
 
     def new_sym(self, name):
         if self.use_bitvec:
@@ -685,8 +686,9 @@ class PureSymbolGen(SimpleGenerator):
         # FIXME sometimes the constraints are too complicated to return stable result.
         SanityCheck.eq(check_res, z3.sat,
                        msg=f'Constraints not sat but {check_res}.')
-        self.n_floats = nnsmith_add(
-            self.n_floats, input_tensor_shape.nelement())
+        if self.limnf:
+            self.n_floats = nnsmith_add(
+                self.n_floats, input_tensor_shape.nelement())
         self.n_inps += 1
         return input_tensor_shape
 
@@ -706,7 +708,9 @@ class PureSymbolGen(SimpleGenerator):
 
         # make a copy
         output_shapes = node.shape_fn(copy.deepcopy(input_shapes))
-        tmp_n_floats = nnsmith_add(self.n_floats, node.n_floats(input_shapes))
+        if self.limnf:
+            tmp_n_floats = nnsmith_add(
+                self.n_floats, node.n_floats(input_shapes))
 
         for shape in output_shapes:
             for c in shape.gt_zero():
@@ -714,8 +718,10 @@ class PureSymbolGen(SimpleGenerator):
 
         self.cur_node = node
         constraints.extend(self.extra_constraints(node, ishape_indices))
-        check_res = self.check_sat(
-            *constraints, nnsmith_le(tmp_n_floats, self.limit_float))
+        if self.limnf:
+            check_res = self.check_sat(
+                *constraints, nnsmith_le(tmp_n_floats, self.limit_float))
+        check_res = self.check_sat(*constraints)
         if check_res == z3.unknown:  # Timeout thing.
             self.on_timeout(node, ishape_indices)
 
@@ -724,7 +730,8 @@ class PureSymbolGen(SimpleGenerator):
 
         for c in constraints:
             self.solver.add(c)
-        self.n_floats = tmp_n_floats
+        if self.limnf:
+            self.n_floats = tmp_n_floats
 
         self.insert_node(node, ishape_indices, output_shapes)
         return True
@@ -1003,6 +1010,11 @@ def parse_args():
     parser.add_argument('--viz_graph', action='store_true')
     parser.add_argument('--mode', default='random')
     parser.add_argument('--merge_op_v', default=None)
+    parser.add_argument(
+        '--skip', help='Node types to skip. Split by `,`. By default a blacklist for each backend is also appended.', type=str)
+    parser.set_defaults(limnf=True)
+    parser.add_argument('--no_limnf', dest='limnf', action='store_false',
+                        help='Disable the limit on the number of floats')
     return parser.parse_args()
 
 
@@ -1015,27 +1027,18 @@ def random_model_gen(
         timeout=50000,
         verbose=False,
         mode='random',
-        merge_op_v=None,):
-    if verbose:
-        strt_time = time.time()
+        merge_op_v=None,
+        limnf=True,):
 
     GenCls = {
         'random': PureSymbolGen,
         'guided': GuidedGen,
     }[mode]
     gen = GenCls(min_dims=min_dims,
-                 viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec, merge_op_v=merge_op_v)
+                 viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec, merge_op_v=merge_op_v, limnf=limnf)
     gen.abstract_gen(max_node_size=max_nodes,
                      max_gen_millisec=timeout)
-    if verbose:
-        print(
-            f'{time.time() - strt_time}s to generate a graph w/ {len(gen.abstract_graph.nodes())} nodes')
-
     solution = gen.get_symbol_solutions()
-    if verbose:
-        print(
-            f'{len(solution)} symbols and {len(gen.solver.assertions())} constraints.')
-        print(solution)
 
     return gen, solution
 
@@ -1050,12 +1053,13 @@ def table_model_gen(
         use_bitvec=False,
         timeout=50000,
         verbose=False,
-        merge_op_v=None):
+        merge_op_v=None,
+        limnf=True,):
     if verbose:
         strt_time = time.time()
 
     gen = CoverageTableGen(table=table, state=state, min_dims=min_dims,
-                           viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec, merge_op_v=merge_op_v)
+                           viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec, merge_op_v=merge_op_v, limnf=limnf)
 
     gen.abstract_gen(max_node_size=max_nodes,
                      max_gen_millisec=timeout)
@@ -1083,9 +1087,17 @@ if __name__ == '__main__':
         seed = random.getrandbits(32)
     print(f"Using seed {seed}")
     torch.manual_seed(seed)
+    if args.skip is not None:
+        config_skip_op(args.skip)
 
+    strt_time = time.time()
     gen, solution = random_model_gen(min_dims=args.min_dims, seed=seed, viz_sbs=args.viz_sbs, max_nodes=args.max_nodes,
-                                     use_bitvec=args.use_bitvec, timeout=args.timeout, verbose=args.verbose, mode=args.mode)
+                                     use_bitvec=args.use_bitvec, timeout=args.timeout, verbose=args.verbose, mode=args.mode,
+                                     limnf=args.limnf, merge_op_v=args.merge_op_v)
+    print(
+        f'{len(solution)} symbols and {len(gen.solver.assertions())} constraints.')
+    print(
+        f'{time.time() - strt_time}s to generate a graph w/ {len(gen.abstract_graph.nodes())} nodes')
     if args.verbose or args.viz_graph:
         gen.viz(args.output_path + '.png')
 
