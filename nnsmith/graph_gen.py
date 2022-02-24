@@ -187,12 +187,12 @@ class SymbolNet(nn.Module):
 
         n_step = max_iter
         interval = 1 / n_step
+        dev = torch.device('cuda' if use_cuda else 'cpu')
         for v in np.linspace(-1, 1, n_step):
-            inputs = [v + torch.rand(ii.op.shape)
+            inputs = [v + torch.rand(ii.op.shape, device=dev)
                       * interval for ii in self.input_info]
 
             if use_cuda:
-                inputs = [inp.cuda() for inp in inputs]
                 self = self.cuda()
 
             self.forward(*inputs)
@@ -205,8 +205,9 @@ class SymbolNet(nn.Module):
         return sat_inputs
 
     def grad_input_gen(self, max_iter=10, init_tensors=None, use_cuda=False) -> Optional[List[torch.Tensor]]:
+        dev = torch.device('cuda' if use_cuda else 'cpu')
         if init_tensors is None:
-            inputs = [torch.nn.parameter.Parameter(torch.rand(ii.op.shape))
+            inputs = [torch.nn.parameter.Parameter(torch.rand(ii.op.shape, device=dev))
                       for ii in self.input_info]
         else:
             inputs = [torch.nn.parameter.Parameter(
