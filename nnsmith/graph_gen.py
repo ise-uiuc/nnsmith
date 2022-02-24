@@ -909,14 +909,14 @@ PARAM_CONFIG1 = {
     },
     # last bin is eseentially no constraint, to ensure -1 can be included
     # defaultdict(lambda: [Bin(i, i + 1, scale='log', base=2) for i in range(8)] + [Bin(None, None)]),
-    'Reshape': defaultdict(lambda: [])
+    # 'Reshape': defaultdict(lambda: [])
 }
-PARAM_CONFIG1['Reshape1D'] = PARAM_CONFIG1['Reshape']
-PARAM_CONFIG1['Reshape2D'] = PARAM_CONFIG1['Reshape']
-PARAM_CONFIG1['Reshape3D'] = PARAM_CONFIG1['Reshape']
-PARAM_CONFIG1['Reshape4D'] = PARAM_CONFIG1['Reshape']
-PARAM_CONFIG1['Reshape5D'] = PARAM_CONFIG1['Reshape']
-PARAM_CONFIG1['Reshape6D'] = PARAM_CONFIG1['Reshape']
+# PARAM_CONFIG1['Reshape1D'] = PARAM_CONFIG1['Reshape']
+# PARAM_CONFIG1['Reshape2D'] = PARAM_CONFIG1['Reshape']
+# PARAM_CONFIG1['Reshape3D'] = PARAM_CONFIG1['Reshape']
+# PARAM_CONFIG1['Reshape4D'] = PARAM_CONFIG1['Reshape']
+# PARAM_CONFIG1['Reshape5D'] = PARAM_CONFIG1['Reshape']
+# PARAM_CONFIG1['Reshape6D'] = PARAM_CONFIG1['Reshape']
 PARAM_CONFIG2 = {
     'NCHWConv2d': {
         'kernel_h_size': [Bin(1, 256, scale='linear')],
@@ -975,7 +975,9 @@ class GuidedGen(PureSymbolGen):
         ret = []
         construct_param_dict = signature(node.__init__).parameters
         config = self.param_config.get(
-            node.__class__.__name__, self.default_config)
+            node.__class__.__name__, None)
+        if config is None:
+            return ret
 
         # if len(construct_param_dict) > 0:
         #     print('Op {} constraint:'.format(node))
