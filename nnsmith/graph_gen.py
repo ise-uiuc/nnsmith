@@ -268,7 +268,7 @@ class SymbolNet(nn.Module):
                     cond = (input_tensors[1] == 0).any()
                 if cond:
                     input_tensors[1] = torch.clip(
-                        input_tensors[1], torch.ones(size=[1], dtype=input_tensors[1].dtype).to(input_tensors[1].device))
+                        input_tensors[1], torch.ones(size=[1], dtype=input_tensors[1].dtype, device=input_tensors[1].device))
                 self.hacked[node_id] = cond
             if self.verbose:
                 print(

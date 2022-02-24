@@ -74,6 +74,9 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
 
     net = SymbolNet(gen.abstract_graph, solution, verbose=False,
                     alive_shapes=gen.alive_shapes)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        torch2onnx(net, output_path, use_cuda=use_cuda)
 
     gen_input_st = time.time()
     profile['model_gen_t'] = gen_input_st - gen_model_st
@@ -81,9 +84,9 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
     if inp_gen == 'random':
         with torch.no_grad():
             net.eval()
-            sat_inputs = net.rand_input_gen()
+            sat_inputs = net.rand_input_gen(use_cuda)
     elif inp_gen == 'grad':
-        sat_inputs = net.grad_input_gen()
+        sat_inputs = net.grad_input_gen(use_cuda)
     elif inp_gen == 'none':
         sat_inputs = None
     else:
@@ -99,9 +102,6 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
     export_t_s = time.time()
     profile['input_gen_t'] = export_t_s - gen_input_st
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        torch2onnx(net, output_path, use_cuda=use_cuda)
     dump_t_s = time.time()
     profile['export_t'] = dump_t_s - export_t_s
 
