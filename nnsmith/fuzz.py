@@ -79,7 +79,8 @@ class Reporter:  # From Tzer.
                     '\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n')
                 f.write(repo.git.diff())
 
-            f.write(f'START TIME: {datetime.datetime.now()}')
+            f.write(f'START TIME: {datetime.datetime.now()}\n')
+            f.write(f'COMMAND: {sys.argv}\n')
             _log_repo(f, 'Fuzzer', fuzz_repo)
             if 'tvm' in name_hint and os.getenv('TVM_HOME'):
                 _log_repo(f, 'TVM', git.Repo(os.getenv('TVM_HOME')))
@@ -275,6 +276,9 @@ class FuzzingLoop:  # TODO: Support multiple backends.
 
                     gen_t_s = time.time()
                     gen_succ = False
+                    if len(self.profile) == 0:  # warmup
+                        NNSMITH_FORK_OLD = os.environ.get(
+                            'NNSMITH_FORK', None)
                     while not gen_succ:
                         gen_info = {'Iteration': len(self.profile)}
                         try:
@@ -289,10 +293,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                             self.stage = 'gen model'
                             progress.refresh()
                             forked_exe_t_s = time.time()
-                            if len(self.profile) == 0:  # warmup
-                                NNSMITH_FORK_OLD = os.environ.get(
-                                    'NNSMITH_FORK', None)
-                                os.environ['NNSMITH_FORK'] = 'inprocess'
+                            os.environ['NNSMITH_FORK'] = 'inprocess'
                             sat_inputs, state, edge_set, seed, ret_profile = \
                                 forked_execution(self.mode,
                                                  _TMP_ONNX_FILE_,
@@ -307,11 +308,6 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                                                  merge_op_v=self.merge_op_v,
                                                  limnf=self.limnf,
                                                  use_cuda=self.use_cuda)
-                            if len(self.profile) == 0:  # warmup done
-                                if NNSMITH_FORK_OLD is None:
-                                    del os.environ['NNSMITH_FORK']
-                                else:
-                                    os.environ['NNSMITH_FORK'] = NNSMITH_FORK_OLD
                             gen_info.update(ret_profile)
                             gen_info['forked_exe_time'] = time.time() - \
                                 forked_exe_t_s
@@ -342,6 +338,11 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         self.gen_profile = self.gen_profile.append(
                             gen_info, ignore_index=True)
 
+                    if len(self.profile) == 0:  # warmup done
+                        if NNSMITH_FORK_OLD is None:
+                            del os.environ['NNSMITH_FORK']
+                        else:
+                            os.environ['NNSMITH_FORK'] = NNSMITH_FORK_OLD
                     # Generation time logging.
                     self.cur_gen_t = time.time() - gen_t_s
                     self.fastest_gen_t = min(
