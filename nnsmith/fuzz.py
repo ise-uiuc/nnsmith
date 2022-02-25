@@ -160,7 +160,7 @@ class CustomProgress(Progress):
 class FuzzingLoop:  # TODO: Support multiple backends.
     def __init__(self, backends: Dict[str, DiffTestBackend], mode='table', root=None, time_budget=60 * 60 * 4, max_nodes=32, inp_gen='random',
                  summaries: List[SummaryBase] = None, fork_bkn=False, _PER_MODEL_TIMEOUT_=1000, use_bitvec=False, no_progress=False, merge_op_v=None,
-                 limnf=True, use_cuda=False):
+                 limnf=True, use_cuda=False, warmup=False):
         self.root = root
         self.reporter = Reporter(
             report_folder=root, name_hint=list(backends.keys())[0])
@@ -201,6 +201,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         self.merge_op_v = merge_op_v
         self.limnf = limnf
         self.use_cuda = use_cuda
+        self.warmup = warmup
 
         rich.print(
             f'[bold yellow]To exit the program: `kill {os.getpid()}`[/bold yellow]')
@@ -276,7 +277,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
 
                     gen_t_s = time.time()
                     gen_succ = False
-                    if len(self.profile) == 0:  # warmup
+                    if len(self.profile) == 0 and self.warmup:  # warmup
                         NNSMITH_FORK_OLD = os.environ.get(
                             'NNSMITH_FORK', None)
                         os.environ['NNSMITH_FORK'] = 'inprocess'
@@ -338,7 +339,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         self.gen_profile = self.gen_profile.append(
                             gen_info, ignore_index=True)
 
-                    if len(self.profile) == 0:  # warmup done
+                    if len(self.profile) == 0 and self.warmup:  # warmup done
                         if NNSMITH_FORK_OLD is None:
                             del os.environ['NNSMITH_FORK']
                         else:
@@ -475,6 +476,7 @@ if __name__ == '__main__':
     parser.add_argument('--no_limnf', dest='limnf', action='store_false',
                         help='Disable the limit on the number of floats')
     parser.add_argument('--use_cuda', action='store_true')
+    parser.add_argument('--warmup', action='store_true')
     args = parser.parse_args()
 
     backends = None
@@ -522,5 +524,6 @@ if __name__ == '__main__':
         merge_op_v=args.merge_op_v,
         limnf=args.limnf,
         use_cuda=args.use_cuda,
+        warmup=args.warmup,
     )
     fuzzing_loop.fuzz()
