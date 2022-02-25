@@ -170,6 +170,14 @@ class DType(Enum):
         return s[len('DType.'):]
 
     @staticmethod
+    def is_float(dtype):
+        if isinstance(dtype, str):
+            dtype = DType.from_str(dtype)
+        
+        return dtype in [DType.float32, DType.float64]
+
+
+    @staticmethod
     def from_str(s):
         return {
             'float32': DType.float32,
@@ -407,8 +415,8 @@ class AbsOpBase(ABC):
     def torch(self) -> Callable[..., torch.Tensor]:
         raise NotImplementedError
 
-    def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
-        return self.inp_ranks
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        raise NotImplementedError
 
     @check_require_fn  # Public API.
     def requires(self, input_shapes):
@@ -489,10 +497,11 @@ class ElementWiseUnaryOp(UnaryOpBase):
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         SanityCheck.eq(len(input_shapes), 1)
         return [input_shapes[0]]
-
-    def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
-        return [out_ranks[0]]
-
+    
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        return [
+            (out_shape_var[0].ndims, out_shape_var[0].dtype),
+            ]
 
 # class ElementWiseBinaryOp(BinaryOpBase):
 #     def __init__(self):
@@ -532,6 +541,13 @@ class BcastBinaryOp(BinaryOpBase):
 
     def _requires(self, input_shapes):
         return broadcast_cons_binary(*(ish.shape for ish in input_shapes))
+    
+    # FIXME: should be more flexible but need some constraints.
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        return [
+            (out_shape_var[0].ndims, out_shape_var[0].dtype),
+            (out_shape_var[0].ndims, out_shape_var[0].dtype),
+            ]
 
 
 class BcastBinaryOp1(BcastBinaryOp):  # +-*/ max min
@@ -539,27 +555,15 @@ class BcastBinaryOp1(BcastBinaryOp):  # +-*/ max min
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
     _bcast_out_dtypes = None
 
-    # FIXME: should be more flexible but need some constraints.
-    def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
-        return [out_ranks[0], out_ranks[0]]
-
-
 class BcastBinaryOp2(BcastBinaryOp):  # > < =
     in_dtypes = [(i, i) for i in DTYPE_ALL]
     out_dtypes = [(DType.bool,)]
     _bcast_out_dtypes = [DType.bool]
 
-    def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
-        return [out_ranks[0], out_ranks[0]]
-
-
 class BcastBinaryOp3(BcastBinaryOp):  # logical and or xor
     in_dtypes = [(DType.bool, DType.bool)]
     out_dtypes = [(DType.bool,)]
     _bcast_out_dtypes = [DType.bool]
-
-    def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
-        return [out_ranks[0], out_ranks[0]]
 
 
 class Where(TernaryOpBase):
@@ -587,8 +591,12 @@ class Where(TernaryOpBase):
     def torch(self):
         return torch.where
 
-    def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
-        return [out_ranks[0], out_ranks[0], out_ranks[0]]
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        return [
+            (out_shape_var[0].ndims, DType.bool),
+            (out_shape_var[0].ndims, out_shape_var[0].dtype),
+            (out_shape_var[0].ndims, out_shape_var[0].dtype),
+            ]
 
 
 # bcast binary ops from https://github.com/onnx/onnx/blob/master/docs/Broadcasting.md
@@ -1043,9 +1051,10 @@ class Expand(UnaryOpBase, ABC):
     def torch(self):
         return lambda x: x.expand(*self.shape_fn([ShapeVar.from_torch(x)])[0].shape)
 
-    def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
-        return [out_ranks[0]]
-
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        return [
+            (out_shape_var[0].ndims, out_shape_var[0].dtype)
+            ]
 
 class ExpandLast1(Expand):
     def __init__(self, expand_n: Union[int, z3.ExprRef]):
@@ -1156,8 +1165,8 @@ class NCHWConv2d(UnaryOpBase):
         outs = super().n_floats(input_shapes)
         return nnsmith_add(nnsmith_add(w.nelement(), padded_data.nelement()), outs)
 
-    def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
-        return [4]
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        return [(4, out_shape_var[0].dtype)]
 
 
 class Reshape(UnaryOpBase, ABC):
@@ -1318,9 +1327,8 @@ class Transpose(UnaryOpBase, ABC):
             return x.transpose(dim0, dim1)
         return f
 
-    def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
-        return out_ranks
-
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        return [(out_shape_var[0].ndims, out_shape_var[0].dtype)]
 
 # Sum, Min, Max, Mean, ArgMin, ArgMax, Squeeze, Size
 
@@ -1347,6 +1355,8 @@ class ReduceBase(UnaryOpBase, ABC):
         SanityCheck.ge(len(input_shapes[0].shape), self.num_dim)
         return []
 
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        return [(self.inp_ranks[0], out_shape_var[0].dtype)]
 
 class SqueezeBase(ReduceBase, ABC):
     def _requires(self, input_shapes):
@@ -1678,10 +1688,8 @@ class Concat(AbsOpBase):
         axis = self.extra_attrs['axis']
         return lambda *args: torch.cat(args, axis)
 
-    def deduct_inp_ranks(self, out_ranks: List) -> List[int]:
-        # in concat they must have the same rank.
-        return [out_ranks[0]] * self.arity
-
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        return [(out_shape_var[0].ndims, out_shape_var[0].dtype) for _ in range(self.arity)]
 
 # NOTE(JK) This is ugly. I think the root cause is we are using a class to represent a node type that we want to insert.
 # A more flexible approach is to use an instance. For example, to represent Expand node types, instead of classes [ExpandLast1, ExpandLast2, ...],
@@ -1713,6 +1721,11 @@ class Cast(ElementWiseUnaryOp):
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         assert len(input_shapes) == 1
         return [ShapeVar(input_shapes[0].shape, self.extra_attrs['to'])]
+
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        return [
+            (out_shape_var[0].ndims, self.extra_attrs['to'])
+        ]
 
     def torch(self):
         return lambda x: x.to(dtype=self.extra_attrs['to'].value)

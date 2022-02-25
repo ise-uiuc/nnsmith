@@ -1,9 +1,8 @@
 # See https://github.com/Z3Prover/z3/issues/5656
 import z3  # Always import z3 first to avoid incompatibility issue.
-from collections import Counter, defaultdict
+from collections import defaultdict
 import math
 import textwrap
-from sklearn.utils import shuffle
 
 import networkx as nx
 from summary import ParamShapeSummary
@@ -185,20 +184,31 @@ class SymbolNet(nn.Module):
             SanityCheck.eq(out.dtype, self.alive_shapes[shape_idx][1].dtype.value, msg_head +
                            f'torch dtype ({out.dtype}) != symbolic dtype ({self.alive_shapes[shape_idx][1].dtype.value})')
 
-    def get_random_inps(self) -> List[torch.Tensor]:
-        return [torch.rand(ii.op.shape_var.shape).type(ii.op.shape_var.dtype.value) for ii in self.input_info]
+    def get_random_inps(self, margin=10, base='center') -> List[torch.Tensor]:
+        if base == 'center':
+            base = margin / 2
+        else:
+            assert isinstance(base, int) or isinstance(base, float)
+        
+        inputs = []
+        for ii in self.input_info:
+            dtype = ii.op.shape_var.dtype.value
+            fp_tensor = base + torch.rand(ii.op.shape_var.shape) * margin
+            if DType.is_float(dtype):
+                inputs.append(fp_tensor.to(dtype))
+            else:
+                inputs.append(torch.round(fp_tensor).to(dtype))
+        
+        return inputs
 
-    def rand_input_gen(self, max_iter=10, use_cuda=False) -> Optional[List[torch.Tensor]]:
+    def rand_input_gen(self, max_iter=10, margin=10, base='center', use_cuda=False) -> Optional[List[torch.Tensor]]:
         last_check_intermediate_numeric = self.check_intermediate_numeric
         self.check_intermediate_numeric = True
 
         sat_inputs = None
-
-        n_step = max_iter
-        interval = 1 / n_step
-        for v in np.linspace(-1, 1, n_step):
-            inputs = [v + torch.rand(ii.op.shape_var.shape).type(ii.op.shape_var.dtype.value)
-                      * interval for ii in self.input_info]
+        
+        for _ in range(max_iter):
+            inputs = self.get_random_inps(margin, base)
 
             if use_cuda:
                 inputs = [inp.cuda() for inp in inputs]
@@ -213,13 +223,12 @@ class SymbolNet(nn.Module):
         self.check_intermediate_numeric = last_check_intermediate_numeric
         return sat_inputs
 
-    def grad_input_gen(self, max_iter=10, init_tensors=None, use_cuda=False) -> Optional[List[torch.Tensor]]:
+    def grad_input_gen(self, max_iter=10, init_tensors=None, margin=10, base='center',use_cuda=False) -> Optional[List[torch.Tensor]]:
         if init_tensors is None:
-            inputs = [torch.nn.parameter.Parameter(torch.rand(ii.op.shape_var.shape).type(ii.op.shape_var.dtype.value))
-                      for ii in self.input_info]
-        else:
-            inputs = [torch.nn.parameter.Parameter(
-                tensor.data) for tensor in init_tensors]
+            init_tensors = self.get_random_inps(margin, base)
+
+        inputs = [torch.nn.parameter.Parameter(
+            tensor.data) for tensor in init_tensors]
         self.enable_training(extra_trainable=inputs)
 
         last_check_intermediate_numeric = self.check_intermediate_numeric
@@ -862,9 +871,9 @@ class PureSymbolGen(SimpleGenerator):
 
         # S2.2: reusing outputs failed. as a fallback, promote all free vars to placeholders.
         new_inp_placeholders = []
-        for dim in node.deduct_inp_ranks([s.ndims for s in occupied_holder_shapes]):
+        for rank, dtype in node.deduct_inp_ranks_and_dtype(occupied_holder_shapes):
             new_inp_placeholders.append(self.create_placeholder(
-                dim if dim != -1 else random.randint(0, 4)))
+                rank if rank != -1 else random.randint(0, 4), dtype=dtype))
 
         input_shapes = [p.out_shape for p in new_inp_placeholders]
         constraints = node.requires(input_shapes)
@@ -881,6 +890,11 @@ class PureSymbolGen(SimpleGenerator):
 
         if check_res != z3.sat:
             return False
+
+        # if self.verbose:
+        print('>> Backward insertion node: ', node)
+        print('\tinputs:', new_inp_placeholders)
+        print('\toutputs:', to_occupy)
 
         for c in constraints:
             self.solver.add(c)
@@ -1207,7 +1221,7 @@ if __name__ == '__main__':
     input_st = time.time()
 
     sat_inputs = None
-    if args.input_gen == 'v3':
+    if args.input_gen == 'v3' or args.input_gen == 'random':
         with torch.no_grad():
             net.eval()
             sat_inputs = net.rand_input_gen()
