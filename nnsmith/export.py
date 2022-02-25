@@ -31,8 +31,8 @@ def torch2onnx(model, filename, verbose=False, use_cuda=False):
     # Dummy inputs
     dummy_inputs = []
     for _, svar in model.plausible_input_shape.items():
-        dummy_inputs.append(torch.zeros(svar.shape).to(
-            dtype=svar.dtype.value, device=dev))
+        dummy_inputs.append(torch.zeros(
+            svar.shape, device=dev, dtype=svar.dtype.value))
     if verbose:
         print(f"Generated model:\n{model}")
 

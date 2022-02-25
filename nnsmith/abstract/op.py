@@ -598,7 +598,7 @@ class StopFoldConst(torch.nn.Module):
 
     @torch.no_grad()
     def forward(self):
-        return self.param.to(self.dtype, device=_DEV)
+        return self.param.to(dtype=self.dtype, device=_DEV)
 
 
 class Constant(AbsOpBase):

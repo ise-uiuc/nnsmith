@@ -84,9 +84,9 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
     if inp_gen == 'random':
         with torch.no_grad():
             net.eval()
-            sat_inputs = net.rand_input_gen(use_cuda)
+            sat_inputs = net.rand_input_gen(use_cuda=use_cuda)
     elif inp_gen == 'grad':
-        sat_inputs = net.grad_input_gen(use_cuda)
+        sat_inputs = net.grad_input_gen(use_cuda=use_cuda)
     elif inp_gen == 'none':
         sat_inputs = None
     else:
