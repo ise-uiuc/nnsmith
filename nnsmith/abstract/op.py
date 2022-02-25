@@ -1235,6 +1235,8 @@ class Reshape(UnaryOpBase, ABC):
     def torch(self):
         return lambda x: x.reshape(*self.target_shape)
 
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        return [(-1, out_shape_var[0].dtype)]
 
 # Expand 6 times.
 class Reshape1D(Reshape):
