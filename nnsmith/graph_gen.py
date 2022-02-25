@@ -34,9 +34,12 @@ class RequiredDimNotFound(Exception):
 ALIVE_SHAPE_TYPE = List[Tuple[int, ShapeVar, int]]
 
 
-InputInfo = NamedTuple(
+InputInfoBase = NamedTuple(
     'InputInfo', [('op', Input), ('oid', int), ('node_id', int), ('input_name', str)])
 
+class InputInfo(InputInfoBase):
+    def __repr__(self) -> str:
+        return f"InputInfo(op={self.op}<{self.op.shape_var.dtype.value}>, oid={self.oid}, node_id={self.node_id}, input_name={self.input_name})"
 
 class SymbolNet(nn.Module):
     def __init__(self, graph: nx.MultiDiGraph, model: z3.ModelRef, verbose=False, alive_shapes: ALIVE_SHAPE_TYPE = None,
@@ -488,7 +491,7 @@ class SimpleGenerator:
         if oshapes is None:
             input_shapes = [self.alive_shapes[idx][1]
                             for idx in ishape_indices]
-            oshapes = node.shape_fn(copy.deepcopy(input_shapes))
+            oshapes = node.shape_fn(input_shapes)
 
         succ_nid = self.get_new_node_id()
         if isinstance(node, Placeholder):
@@ -813,7 +816,7 @@ class PureSymbolGen(SimpleGenerator):
             # self.viz('currentgraph.png')
 
         # make a copy
-        output_shapes = node.shape_fn(copy.deepcopy(input_shapes))
+        output_shapes = node.shape_fn(input_shapes)
         tmp_n_floats = nnsmith_add(self.n_floats, node.n_floats(input_shapes))
 
         for shape in output_shapes:
@@ -865,7 +868,7 @@ class PureSymbolGen(SimpleGenerator):
 
         input_shapes = [p.out_shape for p in new_inp_placeholders]
         constraints = node.requires(input_shapes)
-        output_shapes = node.shape_fn(copy.deepcopy(input_shapes))
+        output_shapes = node.shape_fn(input_shapes)
 
         for i, shape in enumerate(output_shapes):
             constraints.extend(shape.eq(occupied_holder_shapes[i]))

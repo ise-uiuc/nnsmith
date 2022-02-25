@@ -243,7 +243,7 @@ def check_shape_fn(func):
         SanityCheck.eq(len(input_shapes), len(self.inp_ranks), "{} requires {} inputs, but got {}".format(
             self.__class__.__name__,
             len(self.inp_ranks), len(input_shapes)))
-        res = func(self, input_shapes)
+        res = func(self, deepcopy(input_shapes))
         SanityCheck.eq(len(res), len(self.out_ranks), "{} requires {} outputs, but got {}".format(
             self.__class__.__name__,
             len(self.out_ranks), len(res)))
@@ -258,7 +258,7 @@ def check_require_fn(func):
         SanityCheck.eq(len(input_shapes), len(self.inp_ranks), "{} requires {} inputs, but got {}".format(
             self.__class__.__name__,
             len(self.inp_ranks), len(input_shapes)))
-        return func(self, input_shapes)
+        return func(self, deepcopy(input_shapes))
     return wrapper_check_require_fn
 
 
