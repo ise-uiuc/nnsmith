@@ -822,9 +822,7 @@ class PureSymbolGen(SimpleGenerator):
             print('---> Trying to solve: ', node, constraints)
             print('---> total constraints: \n',
                   '\n'.join(sorted(map(str, set(self.solver.assertions())))))
-            # self.viz('currentgraph.png')
 
-        # make a copy
         output_shapes = node.shape_fn(input_shapes)
         tmp_n_floats = nnsmith_add(self.n_floats, node.n_floats(input_shapes))
 
@@ -845,6 +843,11 @@ class PureSymbolGen(SimpleGenerator):
         for c in constraints:
             self.solver.add(c)
         self.n_floats = tmp_n_floats
+
+        if self.verbose:
+            print('>> Forward insertion node: ', node)
+            print('\tinputs:', input_shapes)
+            print('\toutputs:', output_shapes)
 
         self.forward_insert_node(node, ishape_indices, output_shapes)
         return True
@@ -891,10 +894,10 @@ class PureSymbolGen(SimpleGenerator):
         if check_res != z3.sat:
             return False
 
-        # if self.verbose:
-        print('>> Backward insertion node: ', node)
-        print('\tinputs:', new_inp_placeholders)
-        print('\toutputs:', to_occupy)
+        if self.verbose:
+            print('>> Backward insertion node: ', node)
+            print('\tinputs:', new_inp_placeholders)
+            print('\toutputs:', to_occupy)
 
         for c in constraints:
             self.solver.add(c)
