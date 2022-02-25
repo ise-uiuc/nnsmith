@@ -1287,9 +1287,9 @@ class Transpose(UnaryOpBase, ABC):
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         dim0, dim1 = self._init_swap_dims(input_shapes[0].shape)
-        shape_var = input_shapes[0]
-        shape_var.shape[dim0], shape_var.shape[dim1] = shape_var.shape[dim1], shape_var.shape[dim0]
-        return [shape_var]
+        shape = list(input_shapes[0].shape)
+        shape[dim0], shape[dim1] = shape[dim1], shape[dim0]
+        return [ShapeVar(shape, input_shapes[0].dtype)]
 
     def _requires(self, input_shapes):
         dim0, dim1 = self._init_swap_dims(input_shapes[0].shape)
