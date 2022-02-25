@@ -3,6 +3,7 @@ from enum import Enum
 import fnmatch
 from functools import reduce
 import functools
+import os
 from typing import List, Tuple, Union, Callable, Type
 from inspect import signature
 import random
@@ -30,6 +31,13 @@ from nnsmith.error import SanityCheck, ConstraintCheck
 ARITH_MAX_WIDTH: int = 64
 _INFERRED = False
 _DEV = torch.device("cpu")
+FLOPS_LIM = os.getenv("NNSMITH_FLOPS_LIM", None)
+if FLOPS_LIM == 'on':  # use predefined value
+    FLOPS_LIM = 2**22
+elif FLOPS_LIM is None:
+    pass
+else:
+    FLOPS_LIM = float(FLOPS_LIM)
 
 
 def _op_set_use_cuda(use_cuda):
@@ -428,6 +436,9 @@ class AbsOpBase(ABC):
 
     def n_floats(self, input_shapes: List[ShapeVar]) -> z3.ExprRef:
         return reduce(nnsmith_add, [i.nelement() for i in self.last_outs])
+
+    def flops(self, input_shapes):
+        return 0
 
     def __repr__(self) -> str:
         return self.__class__.__name__
@@ -1100,6 +1111,9 @@ class NCHWConv2d(UnaryOpBase):
         cons.append(nnsmith_ge(self.padding, 0))
         # not too extream to avoid torch exporter issue
         cons.append(nnsmith_le(self.padding, 255))
+        # limit FLOPS
+        if FLOPS_LIM is not None:
+            cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
         for c in cons:
             if isinstance(c, z3.ExprRef):
                 ret.append(c)
@@ -1110,6 +1124,11 @@ class NCHWConv2d(UnaryOpBase):
     def torch(self):
         return torch.nn.Conv2d(self.in_channels, self.out_channels, kernel_size=(self.kernel_h_size, self.kernel_w_size), stride=self.stride,
                                padding=self.padding, device=_DEV)
+
+    def flops(self, input_shapes):
+        w = ShapeVar([self.out_channels, self.in_channels, self.kernel_h_size,
+                     self.kernel_w_size], dtype=input_shapes[0].dtype)
+        return nnsmith_mul(self._shape_fn(input_shapes)[0].nelement(), w.nelement())
 
     def n_floats(self, input_shapes):
         padded_data = ShapeVar(
@@ -1172,13 +1191,14 @@ class Reshape(UnaryOpBase, ABC):
                 lambda x, y: nnsmith_mul(x, y), self.target_shape, 1)
             cons = [nnsmith_eq(total_pixels, reduce(
                 lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape, 1))]
-            # should not be too extreme!
-            __DIM_LIMIT__ = 4096
-            lim = __DIM_LIMIT__
-            for s in self.target_shape[::-1]:
-                cons.append(nnsmith_le(s, lim))
-                lim //= 2
-                lim = max(lim, 1)
+            if os.getenv('NNSMITH_CONS_RESHAPE', 'on') != 'off':
+                # should not be too extreme!
+                __DIM_LIMIT__ = 4096
+                lim = __DIM_LIMIT__
+                for s in self.target_shape[::-1]:
+                    cons.append(nnsmith_le(s, lim))
+                    lim //= 2
+                    lim = max(lim, 1)
             return cons
         else:
             # If you use auto mode (specifying -1 for some dimensions), then the total number of input pixels must be exactly divisible by that of the output shape.
@@ -1698,6 +1718,8 @@ class Gemm(TernaryOpBase):
         mat1, mat2 = input_shapes[1], input_shapes[2]
         cons.append(mat1.shape[1] == mat2.shape[0])
         self._set_or_get_extra_attrs(input_shapes[0].dtype.value)
+        if FLOPS_LIM is not None:
+            cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
         return cons
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
@@ -1707,6 +1729,10 @@ class Gemm(TernaryOpBase):
     def torch(self):
         extra_attrs = self._set_or_get_extra_attrs()
         return lambda *args: torch.addmm(*args, beta=extra_attrs['beta'], alpha=extra_attrs['alpha'])
+
+    def flops(self, input_shapes):
+        mat1, mat2 = input_shapes[1], input_shapes[2]
+        return mat1.shape[0] * mat1.shape[1] * mat2.shape[1]
 
 
 def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:

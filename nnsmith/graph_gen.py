@@ -34,11 +34,14 @@ ALIVE_SHAPE_TYPE = List[Tuple[int, ShapeVar, int]]
 InputInfo = NamedTuple(
     'InputInfo', [('op', Input), ('oid', int), ('node_id', int), ('input_name', str)])
 
+__MB_LIM__ = 6 * 1024
+
 
 class SymbolNet(nn.Module):
     def __init__(self, graph: nx.MultiDiGraph, model: z3.ModelRef, verbose=False, alive_shapes: ALIVE_SHAPE_TYPE = None,
-                 record_intermediate=False, use_gradient=False):
+                 record_intermediate=False, use_gradient=False, megabyte_lim=__MB_LIM__):
         super(SymbolNet, self).__init__()
+        self.megabyte_lim = megabyte_lim
         self.verbose = verbose
         self.tensors = []  # 1) edges; 2) leaf nodes; 3) input -> 0;
         self.ref_cnt = []  # ref cnt -> tensors; erased on 0;
@@ -61,6 +64,7 @@ class SymbolNet(nn.Module):
 
         tmp_op_output_map = {}  # node id -> output idx in tensors;
         shape_vars = {}
+        n_floats, flops = 0, 0
         for node_id in nx.topological_sort(graph):
             n_inp = graph.nodes[node_id]['nin']
             n_out = graph.nodes[node_id]['nout']
@@ -120,6 +124,15 @@ class SymbolNet(nn.Module):
                 shape_vars[i] for i in ishape_indices]
             self.concrete_graph.nodes[node_id]['out_svs'] = [
                 shape_vars[i] for i in shape_indices]
+            # ensure n_floats and flops within limit
+            tmp_inp = [shape_vars[i] for i in ishape_indices]
+            op.shape_fn(tmp_inp)
+            n_floats += op.n_floats(tmp_inp)
+            assert n_floats * 8 < megabyte_lim * 1024 * \
+                1024, f'Current number of elements ({n_floats/1024/1024}m) exceeded memory limit ({megabyte_lim} MB)'
+            if FLOPS_LIM is not None:
+                assert op.flops(
+                    tmp_inp) < FLOPS_LIM, f'Current number of flops ({op.flops(tmp_inp)}m) exceeded limit ({FLOPS_LIM} m)'
 
         if self.verbose:
             print('input_info=', self.input_info)
@@ -327,7 +340,7 @@ class SymbolNet(nn.Module):
 
 class SimpleGenerator:
 
-    def __init__(self, min_dims=[1, 3, 48, 48], skip=[Input], viz_sbs=False, megabyte_lim=6 * 1024, seed=None, verbose=False, use_bitvec=False,
+    def __init__(self, min_dims=[1, 3, 48, 48], skip=[Input], viz_sbs=False, megabyte_lim=__MB_LIM__, seed=None, verbose=False, use_bitvec=False,
                  viz_verbose=False, merge_op_v=None, limnf=True):
         if seed is not None:
             np.random.seed(seed)
