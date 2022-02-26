@@ -68,6 +68,7 @@ class SymbolNet(nn.Module):
         tmp_op_output_map = {}  # node id -> output idx in tensors;
         shape_vars = {}
         for node_id in nx.topological_sort(graph):
+            print(f'{node_id=}')
             n_inp = graph.nodes[node_id]['nin']
             n_out = graph.nodes[node_id]['nout']
 
@@ -117,12 +118,15 @@ class SymbolNet(nn.Module):
             # concretize shapevars
             ishape_indices = self.graph.nodes[node_id]['ishape_indices']
             shape_indices = self.graph.nodes[node_id]['shape_indices']
+            print(shape_vars.keys())
+            print('\tinput ', ishape_indices)
+            print('\toutput ', shape_indices)
             for shape_idx in shape_indices:
                 shape = self.alive_shapes[shape_idx][1].shape
                 dtype = self.alive_shapes[shape_idx][1].dtype
                 shape = [model.eval(i).as_long() if isinstance(
                     i, z3.ExprRef) else i for i in shape]
-                assert shape_idx not in shape_vars
+                assert shape_idx not in shape_vars, f"{shape_idx} already exists"
                 shape_vars[shape_idx] = ShapeVar(shape, dtype)
             self.concrete_graph.nodes[node_id]['in_svs'] = [
                 shape_vars[i] for i in ishape_indices]
@@ -390,7 +394,7 @@ class SimpleGenerator:
 
     def create_placeholder(self, dim, dtype=None):
         shapevar = ShapeVar(
-            shape=[self.new_sym('var%s_%s' % (
+            shape=[self.new_sym('v%s_%s' % (
                 self.monotonic_placeholder_id, k)) for k in range(dim)],
             dtype=dtype if dtype is not None else random.choice(DTYPE_ALL))
         self.monotonic_placeholder_id += 1
@@ -520,10 +524,13 @@ class SimpleGenerator:
                 self.dim2shape_idx.setdefault(
                     len(shape_var.shape), []).append(shape_idx)
         else:
+            # When taking the position of placeholders, we do not need to add new alive shapes.
             shape_indices = force_shape_indices
 
         # NOTE: because of backward insertion, we may not be able to limit the symbol size as there will be some
         # trivially equivalent symbols which harms the readability. (e.g., relations like `a = b` is not known).
+        # NOTE: `shape_indices` and `ishape_indices` are indices of alive_shapes
+        print(f'add node {succ_nid}')
         self.abstract_graph.add_node(
             succ_nid, op=node,
             nin=len(ishape_indices),
@@ -535,8 +542,13 @@ class SimpleGenerator:
 
         for in_operand_idx, idx in enumerate(ishape_indices):
             pred_nid, svar, out_operand_idx = self.alive_shapes[idx]
-            self.abstract_graph.add_edge(pred_nid, succ_nid, key=str(uuid.uuid1()), shape_idx=idx, operand_idx=(
-                out_operand_idx, in_operand_idx), label=f'{out_operand_idx}-{in_operand_idx}: <{svar.dtype}>{svar.shape}' if not self.viz_verbose else '')
+            print(f'source node is {node}')
+            print(f'add edge {idx}: {pred_nid} -> {succ_nid}')
+            self.abstract_graph.add_edge(
+                pred_nid, succ_nid, key=str(uuid.uuid1()), 
+                shape_idx=idx, 
+                operand_idx=(out_operand_idx, in_operand_idx), 
+                label=f'{idx}: ({out_operand_idx},{in_operand_idx}) <{svar.dtype}>{svar.shape}' if not self.viz_verbose else '')
 
         if self.is_viz_sbs:
             self.viz()
@@ -544,8 +556,8 @@ class SimpleGenerator:
         return succ_nid
 
     def get_new_node_id(self):
-        if self.reusable_placeholder_nx_indices:
-            return self.reusable_placeholder_nx_indices.pop()
+        # if self.reusable_placeholder_nx_indices:
+        #     return self.reusable_placeholder_nx_indices.pop()
         ret = self.monotonic_nx_node_idx
         self.monotonic_nx_node_idx += 1
         return ret
@@ -556,6 +568,9 @@ class SimpleGenerator:
     def backward_insert_node(self, node, input_nodes: List[Union[int, Placeholder]], occupied_idx):
         # self.placeholder idx -> nx graph node idx
         occ_holder_idx_nx = [self.placeholders[i] for i in occupied_idx]
+
+        # if the PH to occupy has no consumers, we simply reassign its alive shape.
+        reuse_init_alive_shape = occupied_idx[0] == 0 # NOTE: we assume the first node is a placeholder.
 
         ishape_indices = []
         for input_node in input_nodes:
@@ -583,36 +598,49 @@ class SimpleGenerator:
                 ishape_indices.append(input_node)
 
         # Insert node
+        to_occ_alive_shape_idx = [self.id2nxnode(nx_nid)['shape_indices'][0] for nx_nid in occ_holder_idx_nx]
         op_nx_idx = self.forward_insert_node(
             node,
-            ishape_indices,
-            [self.alive_shapes[self.id2nxnode(nx_nid)['shape_indices'][0]][1]
-                for nx_nid in occ_holder_idx_nx],
-            force_shape_indices=[self.id2nxnode(nx_nid)['shape_indices'][0] for nx_nid in occ_holder_idx_nx])
+            ishape_indices=ishape_indices,
+            oshapes=[self.alive_shapes[as_idx][1] for as_idx in to_occ_alive_shape_idx],
+            force_shape_indices=to_occ_alive_shape_idx)
 
         # Insert edges and remove placeholders
         for i, nx_idx in enumerate(occ_holder_idx_nx):
             for (src, dst, key) in list(self.abstract_graph.edges(nx_idx, keys=True)):
                 # multi-graph
-                edge_info = self.abstract_graph.get_edge_data(
-                    src, dst, key=key)
-                _, svar, out_operand_idx = self.alive_shapes[edge_info['shape_idx']]
+                edge_info = copy.deepcopy(self.abstract_graph.get_edge_data(src, dst, key=key))
+                old_edge_idx = edge_info['shape_idx']
+                # recall alive shape:
+                # 1. op nx idx
+                # 2. shape var
+                # 3. out operand idx
+
+                _, svar, _ = self.alive_shapes[old_edge_idx]
                 out_operand_idx = i
                 in_operand_idx = edge_info['operand_idx'][1]
+
+                # add cur node -> dst
                 self.abstract_graph.add_edge(
                     op_nx_idx,
                     dst,
                     key=str(uuid.uuid1()),
                     shape_idx=edge_info['shape_idx'],  # reuse old alive shape
                     operand_idx=(out_operand_idx, in_operand_idx),
-                    label=f'{out_operand_idx}-{in_operand_idx}: <{svar.dtype}>{svar.shape}' if not self.viz_verbose else ''
+                    label=f'{old_edge_idx}: ({out_operand_idx},{in_operand_idx}) <{svar.dtype}>{svar.shape}' if not self.viz_verbose else ''
                 )
-                self.alive_shapes[edge_info['shape_idx']] = (
-                    op_nx_idx, *self.alive_shapes[edge_info['shape_idx']][1:])
+                self.alive_shapes[old_edge_idx] = (op_nx_idx, svar, out_operand_idx)
+                print(f'update alive shape [{old_edge_idx}]: {nx_idx} -> {op_nx_idx}')
+
                 self.abstract_graph.remove_edge(src, dst, key=key)
+                print(f'rm edge {edge_info["shape_idx"]}: {src} -> {dst}')
+
+            if reuse_init_alive_shape: # update alive_shape[0]
+                self.alive_shapes[0] = (op_nx_idx, self.alive_shapes[0][1], 0)
 
             # remove placeholders
             self.abstract_graph.remove_node(nx_idx)
+            print(f'rm node {nx_idx}')
             self.reusable_placeholder_nx_indices.append(nx_idx)
             self.placeholders.remove(nx_idx)
 
