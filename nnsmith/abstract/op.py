@@ -704,6 +704,7 @@ class Constant(AbsOpBase):
 
     def __init__(self, dim: int):
         super().__init__()
+        self.dim = dim
         self.inp_ranks = []
         self.out_ranks = [dim]
 
