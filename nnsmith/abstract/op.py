@@ -1792,8 +1792,10 @@ def config_skip_op(skip_config):
         if op_name_pattern.find(':') != -1:
             op_name_pattern, skip_comb = op_name_pattern.split(':')
             skip_comb = skip_comb.split(',')
-        for op_name in fnmatch.filter(map(lambda x: x.__name__, ALL_OP_TYPES), op_name_pattern):
-            op = globals()[op_name]
+        op_name_pattern = op_name_pattern.lower()
+        for op_name in fnmatch.filter(map(lambda x: x.__name__.lower(), ALL_OP_TYPES), op_name_pattern):
+            op_id = [i.__name__.lower() for i in ALL_OP_TYPES].index(op_name)
+            op = ALL_OP_TYPES[op_id]
             msg = ['skip op:', op_name]
             if skip_comb is not None:  # only skip some dtype combinations
                 skip_comb = tuple(map(DType.from_str, skip_comb))
