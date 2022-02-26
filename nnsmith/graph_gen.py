@@ -68,7 +68,6 @@ class SymbolNet(nn.Module):
         tmp_op_output_map = {}  # node id -> output idx in tensors;
         shape_vars = {}
         for node_id in nx.topological_sort(graph):
-            print(f'{node_id=}')
             n_inp = graph.nodes[node_id]['nin']
             n_out = graph.nodes[node_id]['nout']
 
@@ -118,9 +117,6 @@ class SymbolNet(nn.Module):
             # concretize shapevars
             ishape_indices = self.graph.nodes[node_id]['ishape_indices']
             shape_indices = self.graph.nodes[node_id]['shape_indices']
-            print(shape_vars.keys())
-            print('\tinput ', ishape_indices)
-            print('\toutput ', shape_indices)
             for shape_idx in shape_indices:
                 shape = self.alive_shapes[shape_idx][1].shape
                 dtype = self.alive_shapes[shape_idx][1].dtype
@@ -530,7 +526,6 @@ class SimpleGenerator:
         # NOTE: because of backward insertion, we may not be able to limit the symbol size as there will be some
         # trivially equivalent symbols which harms the readability. (e.g., relations like `a = b` is not known).
         # NOTE: `shape_indices` and `ishape_indices` are indices of alive_shapes
-        print(f'add node {succ_nid}')
         self.abstract_graph.add_node(
             succ_nid, op=node,
             nin=len(ishape_indices),
@@ -542,8 +537,6 @@ class SimpleGenerator:
 
         for in_operand_idx, idx in enumerate(ishape_indices):
             pred_nid, svar, out_operand_idx = self.alive_shapes[idx]
-            print(f'source node is {node}')
-            print(f'add edge {idx}: {pred_nid} -> {succ_nid}')
             self.abstract_graph.add_edge(
                 pred_nid, succ_nid, key=str(uuid.uuid1()), 
                 shape_idx=idx, 
@@ -630,17 +623,14 @@ class SimpleGenerator:
                     label=f'{old_edge_idx}: ({out_operand_idx},{in_operand_idx}) <{svar.dtype}>{svar.shape}' if not self.viz_verbose else ''
                 )
                 self.alive_shapes[old_edge_idx] = (op_nx_idx, svar, out_operand_idx)
-                print(f'update alive shape [{old_edge_idx}]: {nx_idx} -> {op_nx_idx}')
 
                 self.abstract_graph.remove_edge(src, dst, key=key)
-                print(f'rm edge {edge_info["shape_idx"]}: {src} -> {dst}')
 
             if reuse_init_alive_shape: # update alive_shape[0]
                 self.alive_shapes[0] = (op_nx_idx, self.alive_shapes[0][1], 0)
 
             # remove placeholders
             self.abstract_graph.remove_node(nx_idx)
-            print(f'rm node {nx_idx}')
             self.reusable_placeholder_nx_indices.append(nx_idx)
             self.placeholders.remove(nx_idx)
 
