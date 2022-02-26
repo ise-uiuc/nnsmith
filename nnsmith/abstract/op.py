@@ -1083,14 +1083,9 @@ class Expand(UnaryOpBase, ABC):
         input_shape = input_shapes[0].shape
         if isinstance(self.expand_n, z3.ExprRef):
             if self.expand_last_dim <= len(input_shape):  # index valid
-                cons = [z3.Or(
-                    z3.And(
-                        nnsmith_eq(input_shape[-self.expand_last_dim], 1),
-                        nnsmith_ge(self.expand_n, 1)),
-                    z3.And(
-                        nnsmith_eq(
-                            input_shape[-self.expand_last_dim], self.expand_n),
-                        nnsmith_ge(self.expand_n, 1)))]
+                cons = [z3.And(
+                            nnsmith_eq(input_shape[-self.expand_last_dim], self.expand_n),
+                            nnsmith_ge(self.expand_n, 1))]
                 return cons
         else:
             # It is also valid to expand to 0. But just too tricky...
