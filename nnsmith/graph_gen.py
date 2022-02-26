@@ -36,9 +36,11 @@ ALIVE_SHAPE_TYPE = List[Tuple[int, ShapeVar, int]]
 InputInfoBase = NamedTuple(
     'InputInfo', [('op', Input), ('oid', int), ('node_id', int), ('input_name', str)])
 
+
 class InputInfo(InputInfoBase):
     def __repr__(self) -> str:
         return f"InputInfo(op={self.op}<{self.op.shape_var.dtype.value}>, oid={self.oid}, node_id={self.node_id}, input_name={self.input_name})"
+
 
 __MB_LIM__ = 6 * 1024
 
@@ -122,14 +124,11 @@ class SymbolNet(nn.Module):
             # concretize shapevars
             ishape_indices = self.graph.nodes[node_id]['ishape_indices']
             shape_indices = self.graph.nodes[node_id]['shape_indices']
-            print(f'{op=}')
             for shape_idx in shape_indices:
                 shape = self.alive_shapes[shape_idx][1].shape
                 dtype = self.alive_shapes[shape_idx][1].dtype
-                print(f'{shape=}')
                 shape = [model.eval(i).as_long() if isinstance(
                     i, z3.ExprRef) else i for i in shape]
-                print(f'after -> {shape=}')
                 assert shape_idx not in shape_vars, f"{shape_idx} already exists"
                 shape_vars[shape_idx] = ShapeVar(shape, dtype)
             self.concrete_graph.nodes[node_id]['in_svs'] = [
@@ -207,16 +206,17 @@ class SymbolNet(nn.Module):
             base = margin / 2
         else:
             assert isinstance(base, int) or isinstance(base, float)
-        
+
         inputs = []
         for ii in self.input_info:
             dtype = ii.op.shape_var.dtype.value
-            fp_tensor = base + torch.rand(ii.op.shape_var.shape, device=dev) * margin
+            fp_tensor = base + \
+                torch.rand(ii.op.shape_var.shape, device=dev) * margin
             if DType.is_float(dtype):
                 inputs.append(fp_tensor.to(dtype))
             else:
                 inputs.append(torch.round(fp_tensor).to(dtype))
-        
+
         return inputs
 
     def rand_input_gen(self, max_iter=10, margin=10, base='center', use_cuda=False) -> Optional[List[torch.Tensor]]:
@@ -224,7 +224,7 @@ class SymbolNet(nn.Module):
         self.check_intermediate_numeric = True
 
         sat_inputs = None
-        
+
         for _ in range(max_iter):
             inputs = self.get_random_inps(margin, base, use_cuda)
 
@@ -240,9 +240,10 @@ class SymbolNet(nn.Module):
         self.check_intermediate_numeric = last_check_intermediate_numeric
         return sat_inputs
 
-    def grad_input_gen(self, max_iter=10, init_tensors=None, margin=10, base='center',use_cuda=False) -> Optional[List[torch.Tensor]]:
+    def grad_input_gen(self, max_iter=10, init_tensors=None, margin=10, base='center', use_cuda=False) -> Optional[List[torch.Tensor]]:
         if init_tensors is None:
-            init_tensors = self.get_random_inps(margin, base, use_cuda=use_cuda)
+            init_tensors = self.get_random_inps(
+                margin, base, use_cuda=use_cuda)
 
         inputs = [torch.nn.parameter.Parameter(
             tensor.data) for tensor in init_tensors]
@@ -574,9 +575,9 @@ class SimpleGenerator:
         for in_operand_idx, idx in enumerate(ishape_indices):
             pred_nid, svar, out_operand_idx = self.alive_shapes[idx]
             self.abstract_graph.add_edge(
-                pred_nid, succ_nid, key=str(uuid.uuid1()), 
-                shape_idx=idx, 
-                operand_idx=(out_operand_idx, in_operand_idx), 
+                pred_nid, succ_nid, key=str(uuid.uuid1()),
+                shape_idx=idx,
+                operand_idx=(out_operand_idx, in_operand_idx),
                 label=f'{idx}: ({out_operand_idx},{in_operand_idx}) <{svar.dtype}>{svar.shape}' if not self.viz_verbose else '')
 
         if self.is_viz_sbs:
@@ -599,7 +600,8 @@ class SimpleGenerator:
         occ_holder_idx_nx = [self.placeholders[i] for i in occupied_idx]
 
         # if the PH to occupy has no consumers, we simply reassign its alive shape.
-        reuse_init_alive_shape = occupied_idx[0] == 0 # NOTE: we assume the first node is a placeholder.
+        # NOTE: we assume the first node is a placeholder.
+        reuse_init_alive_shape = occupied_idx[0] == 0
 
         ishape_indices = []
         for input_node in input_nodes:
@@ -627,18 +629,21 @@ class SimpleGenerator:
                 ishape_indices.append(input_node)
 
         # Insert node
-        to_occ_alive_shape_idx = [self.id2nxnode(nx_nid)['shape_indices'][0] for nx_nid in occ_holder_idx_nx]
+        to_occ_alive_shape_idx = [self.id2nxnode(
+            nx_nid)['shape_indices'][0] for nx_nid in occ_holder_idx_nx]
         op_nx_idx = self.forward_insert_node(
             node,
             ishape_indices=ishape_indices,
-            oshapes=[self.alive_shapes[as_idx][1] for as_idx in to_occ_alive_shape_idx],
+            oshapes=[self.alive_shapes[as_idx][1]
+                     for as_idx in to_occ_alive_shape_idx],
             force_shape_indices=to_occ_alive_shape_idx)
 
         # Insert edges and remove placeholders
         for i, nx_idx in enumerate(occ_holder_idx_nx):
             for (src, dst, key) in list(self.abstract_graph.edges(nx_idx, keys=True)):
                 # multi-graph
-                edge_info = copy.deepcopy(self.abstract_graph.get_edge_data(src, dst, key=key))
+                edge_info = copy.deepcopy(
+                    self.abstract_graph.get_edge_data(src, dst, key=key))
                 old_edge_idx = edge_info['shape_idx']
                 # recall alive shape:
                 # 1. op nx idx
@@ -658,11 +663,12 @@ class SimpleGenerator:
                     operand_idx=(out_operand_idx, in_operand_idx),
                     label=f'{old_edge_idx}: ({out_operand_idx},{in_operand_idx}) <{svar.dtype}>{svar.shape}' if not self.viz_verbose else ''
                 )
-                self.alive_shapes[old_edge_idx] = (op_nx_idx, svar, out_operand_idx)
+                self.alive_shapes[old_edge_idx] = (
+                    op_nx_idx, svar, out_operand_idx)
 
                 self.abstract_graph.remove_edge(src, dst, key=key)
 
-            if reuse_init_alive_shape: # update alive_shape[0]
+            if reuse_init_alive_shape:  # update alive_shape[0]
                 self.alive_shapes[0] = (op_nx_idx, self.alive_shapes[0][1], 0)
 
             # remove placeholders
@@ -736,10 +742,6 @@ class SimpleGenerator:
         # S1 - select Y: Y must be a placeholder; (this also means the graph must start w/ a placeholder)
         placeholder_indices = self.pick_shape_var_idx(
             type(op), op.out_ranks, op.out_dtypes, candidate_shapes=[self.id2nxnode(idx)['op'].out_shape for idx in self.placeholders])
-
-        print(type(op))
-        print([self.id2nxnode(self.placeholders[idx])[
-              'op'].out_shape for idx in placeholder_indices])
 
         if self.try_occupy_placeholder(op, placeholder_indices):
             return True

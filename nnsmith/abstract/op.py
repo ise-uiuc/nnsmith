@@ -204,9 +204,8 @@ class DType(Enum):
     def is_float(dtype):
         if isinstance(dtype, str):
             dtype = DType.from_str(dtype)
-        
-        return dtype in [DType.float32, DType.float64]
 
+        return dtype in [DType.float32, DType.float64]
 
     @staticmethod
     def from_str(s):
@@ -534,11 +533,11 @@ class ElementWiseUnaryOp(UnaryOpBase):
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         SanityCheck.eq(len(input_shapes), 1)
         return [input_shapes[0]]
-    
+
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
         return [
             (out_shape_var[0].ndims, out_shape_var[0].dtype),
-            ]
+        ]
 
 # class ElementWiseBinaryOp(BinaryOpBase):
 #     def __init__(self):
@@ -560,6 +559,7 @@ class ElementWiseUnaryOp(UnaryOpBase):
 #                 assert l == r
 #         return ret
 
+
 class BcastBinaryOp(BinaryOpBase):
     bcastable = True
     # by default, output dtype is the same as the first input dtype
@@ -578,13 +578,13 @@ class BcastBinaryOp(BinaryOpBase):
 
     def _requires(self, input_shapes):
         return broadcast_cons_binary(*(ish.shape for ish in input_shapes))
-    
+
     # FIXME: should be more flexible but need some constraints.
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
         return [
             (out_shape_var[0].ndims, out_shape_var[0].dtype),
             (out_shape_var[0].ndims, out_shape_var[0].dtype),
-            ]
+        ]
 
 
 class BcastBinaryOp1(BcastBinaryOp):  # +-*/ max min
@@ -592,10 +592,12 @@ class BcastBinaryOp1(BcastBinaryOp):  # +-*/ max min
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
     _bcast_out_dtypes = None
 
+
 class BcastBinaryOp2(BcastBinaryOp):  # > < =
     in_dtypes = [(i, i) for i in DTYPE_ALL]
     out_dtypes = [(DType.bool,)]
     _bcast_out_dtypes = [DType.bool]
+
 
 class BcastBinaryOp3(BcastBinaryOp):  # logical and or xor
     in_dtypes = [(DType.bool, DType.bool)]
@@ -633,7 +635,7 @@ class Where(TernaryOpBase):
             (out_shape_var[0].ndims, DType.bool),
             (out_shape_var[0].ndims, out_shape_var[0].dtype),
             (out_shape_var[0].ndims, out_shape_var[0].dtype),
-            ]
+        ]
 
 
 # bcast binary ops from https://github.com/onnx/onnx/blob/master/docs/Broadcasting.md
@@ -1085,8 +1087,9 @@ class Expand(UnaryOpBase, ABC):
         if isinstance(self.expand_n, z3.ExprRef):
             if self.expand_last_dim <= len(input_shape):  # index valid
                 cons = [z3.And(
-                            nnsmith_eq(input_shape[-self.expand_last_dim], self.expand_n),
-                            nnsmith_ge(self.expand_n, 1))]
+                    nnsmith_eq(
+                        input_shape[-self.expand_last_dim], self.expand_n),
+                    nnsmith_ge(self.expand_n, 1))]
                 return cons
         else:
             # It is also valid to expand to 0. But just too tricky...
@@ -1102,7 +1105,8 @@ class Expand(UnaryOpBase, ABC):
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
         return [
             (out_shape_var[0].ndims, out_shape_var[0].dtype)
-            ]
+        ]
+
 
 class ExpandLast1(Expand):
     def __init__(self, expand_n: Union[int, z3.ExprRef]):
@@ -1296,6 +1300,8 @@ class Reshape(UnaryOpBase, ABC):
         return [(-1, out_shape_var[0].dtype)]
 
 # Expand 6 times.
+
+
 class Reshape1D(Reshape):
     # Inputs are target shape.
     def __init__(self, dim0: Union[int, z3.ExprRef]):
@@ -1393,6 +1399,7 @@ class Transpose(UnaryOpBase, ABC):
 
 # Sum, Min, Max, Mean, ArgMin, ArgMax, Squeeze, Size
 
+
 class ReduceBase(UnaryOpBase, ABC):
     _reduce_out_dtype = None  # None means same as input dtype
 
@@ -1418,6 +1425,7 @@ class ReduceBase(UnaryOpBase, ABC):
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
         return [(self.inp_ranks[0], out_shape_var[0].dtype)]
+
 
 class SqueezeBase(ReduceBase, ABC):
     in_dtypes = [(i,) for i in DTYPE_ALL]
@@ -1756,6 +1764,7 @@ class Concat(AbsOpBase):
 # A more flexible approach is to use an instance. For example, to represent Expand node types, instead of classes [ExpandLast1, ExpandLast2, ...],
 # use instances [Expand(expand_last_dim=1, expand_n=Placeholder), Expand(2, Placeholder), ...], where the Placeholder represents the params needing z3 to model.
 
+
 Concat1 = partialclass(Concat, 'Concat1', 1)
 Concat2 = partialclass(Concat, 'Concat2', 2)
 Concat3 = partialclass(Concat, 'Concat3', 3)
@@ -1790,30 +1799,41 @@ class Cast(ElementWiseUnaryOp, ABC):
     def torch(self):
         return lambda x: x.to(dtype=self.extra_attrs['to'].value)
 
+
 class CastF32(Cast):
     out_dtypes = [(DType.float32,)]
+
     def __init__(self):
         super().__init__(DType.float32)
 
+
 class CastF64(Cast):
     out_dtypes = [(DType.float64,)]
+
     def __init__(self):
         super().__init__(DType.float64)
 
+
 class CastI32(Cast):
     out_dtypes = [(DType.int32,)]
+
     def __init__(self):
         super().__init__(DType.int32)
 
+
 class CastI64(Cast):
     out_dtypes = [(DType.int64,)]
+
     def __init__(self):
         super().__init__(DType.int64)
 
+
 class CastBool(Cast):
     out_dtypes = [(DType.bool,)]
+
     def __init__(self):
         super().__init__(DType.bool)
+
 
 class Gemm(TernaryOpBase):
     # https://pytorch.org/docs/stable/generated/torch.addmm.html?highlight=addmm#torch.addmm
