@@ -282,7 +282,7 @@ def check_shape_fn(func):
         SanityCheck.eq(len(input_shapes), len(self.inp_ranks), "{} requires {} inputs, but got {}".format(
             self.__class__.__name__,
             len(self.inp_ranks), len(input_shapes)))
-        res = func(self, deepcopy(input_shapes))
+        res = func(self, input_shapes)
         SanityCheck.eq(len(res), len(self.out_ranks), "{} requires {} outputs, but got {}".format(
             self.__class__.__name__,
             len(self.out_ranks), len(res)))
@@ -1769,15 +1769,14 @@ Concat4 = partialclass(Concat, 'Concat4', 4)
 Concat5 = partialclass(Concat, 'Concat5', 5)
 
 
-class Cast(ElementWiseUnaryOp):
+class Cast(ElementWiseUnaryOp, ABC):
     in_dtypes = [(i,) for i in DTYPE_ALL]
-    out_dtypes = [(i,) for i in DTYPE_ALL]
 
-    def __init__(self):
+    def __init__(self, dtype):
         super().__init__()
         self.inp_ranks = [-1]
         self.out_ranks = [-1]
-        self.extra_attrs = {'to': random.choice(DTYPE_ALL)}
+        self.extra_attrs = {'to': dtype}
 
     def __str__(self) -> str:
         return 'Cast ' + str(self.extra_attrs)
@@ -1797,6 +1796,30 @@ class Cast(ElementWiseUnaryOp):
     def torch(self):
         return lambda x: x.to(dtype=self.extra_attrs['to'].value)
 
+class CastF32(Cast):
+    out_dtypes = [(DType.float32,)]
+    def __init__(self):
+        super().__init__(DType.float32)
+
+class CastF64(Cast):
+    out_dtypes = [(DType.float64,)]
+    def __init__(self):
+        super().__init__(DType.float64)
+
+class CastI32(Cast):
+    out_dtypes = [(DType.int32,)]
+    def __init__(self):
+        super().__init__(DType.int32)
+
+class CastI64(Cast):
+    out_dtypes = [(DType.int64,)]
+    def __init__(self):
+        super().__init__(DType.int64)
+
+class CastBool(Cast):
+    out_dtypes = [(DType.bool,)]
+    def __init__(self):
+        super().__init__(DType.bool)
 
 class Gemm(TernaryOpBase):
     # https://pytorch.org/docs/stable/generated/torch.addmm.html?highlight=addmm#torch.addmm
