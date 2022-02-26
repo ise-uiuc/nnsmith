@@ -117,11 +117,14 @@ class SymbolNet(nn.Module):
             # concretize shapevars
             ishape_indices = self.graph.nodes[node_id]['ishape_indices']
             shape_indices = self.graph.nodes[node_id]['shape_indices']
+            print(f'{op=}')
             for shape_idx in shape_indices:
                 shape = self.alive_shapes[shape_idx][1].shape
                 dtype = self.alive_shapes[shape_idx][1].dtype
+                print(f'{shape=}')
                 shape = [model.eval(i).as_long() if isinstance(
                     i, z3.ExprRef) else i for i in shape]
+                print(f'after -> {shape=}')
                 assert shape_idx not in shape_vars, f"{shape_idx} already exists"
                 shape_vars[shape_idx] = ShapeVar(shape, dtype)
             self.concrete_graph.nodes[node_id]['in_svs'] = [
@@ -385,6 +388,7 @@ class SimpleGenerator:
         # <op idx>
         self.placeholders: List[int] = []
         init_placeholder = self.create_placeholder(len(min_dims))
+        self.solver.add(init_placeholder.out_shape.gt_zero())
         self.forward_insert_node(init_placeholder, [], oshapes=[
                                  init_placeholder.out_shape])
 
