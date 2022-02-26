@@ -1049,7 +1049,7 @@ class Expand(UnaryOpBase, ABC):
         return []
 
     def torch(self):
-        return lambda x: x.expand(*self.shape_fn([ShapeVar.from_torch(x)])[0].shape)
+        return lambda x: x.expand(*self._shape_fn([ShapeVar.from_torch(x)])[0].shape)
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
         return [
