@@ -896,12 +896,15 @@ class PureSymbolGen(SimpleGenerator):
 
         # S2.2: reusing outputs failed. as a fallback, promote all free vars to placeholders.
         new_inp_placeholders = []
+        constraints = []
         for rank, dtype in node.deduct_inp_ranks_and_dtype(occupied_holder_shapes):
-            new_inp_placeholders.append(self.create_placeholder(
-                rank if rank != -1 else random.randint(0, 4), dtype=dtype))
+            ph = self.create_placeholder(
+                rank if rank != -1 else random.randint(0, 4), dtype=dtype)
+            new_inp_placeholders.append(ph)
+            constraints.extend(ph.out_shape.gt_zero())
 
         input_shapes = [p.out_shape for p in new_inp_placeholders]
-        constraints = node.requires(input_shapes)
+        constraints.extend(node.requires(input_shapes))
         output_shapes = node.shape_fn(input_shapes)
 
         for i, shape in enumerate(output_shapes):
