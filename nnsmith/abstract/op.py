@@ -1706,6 +1706,7 @@ def partialclass(cls, name, *args, **kwds) -> Type[AbsOpBase]:
 
 class Concat(AbsOpBase):
     MAX_ARITY = 5
+    MAX_RANK = 5
     in_dtypes = [tuple(i for _ in range(5))
                  for i in DTYPE_ALL]  # suport max concat 5 tensors
     out_dtypes = [(i,) for i in DTYPE_ALL]
@@ -1715,22 +1716,19 @@ class Concat(AbsOpBase):
 
     def __init__(self, arity):
         super().__init__()
-        assert arity <= self.MAX_ARITY
+        SanityCheck.le(arity, self.MAX_ARITY)
         self.arity = arity
-        self.inp_ranks = [-1] * arity
-        self.out_ranks = [-1]
+        self.concat_rank = random.randint(1, 5)
+        self.extra_attrs['axis'] = random.randint(0, self.concat_rank - 1)
+        self.inp_ranks = [self.concat_rank] * arity
+        self.out_ranks = [self.concat_rank]
         self.same_inp_dims = True
-
-    def _get_axis(self, ndim):
-        if 'axis' not in self.extra_attrs:
-            self.extra_attrs['axis'] = random.randint(0, ndim - 1)
-        return self.extra_attrs['axis']
 
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
         ndims = input_shapes[0].ndims
-        ConstraintCheck.true(ndims > 0)
-        axis = self._get_axis(ndims)
-        assert ndims > axis
+        SanityCheck.gt(ndims, 0)
+        axis = self.extra_attrs['axis']
+        SanityCheck.gt(ndims, axis)
 
         for s in input_shapes:
             SanityCheck.eq(s.ndims, ndims)
@@ -1744,8 +1742,8 @@ class Concat(AbsOpBase):
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         ndims = input_shapes[0].ndims
-        ConstraintCheck.true(ndims > 0)
-        axis = self._get_axis(ndims)
+        SanityCheck.true(ndims > 0)
+        axis = self.extra_attrs['axis']
         os = ShapeVar(input_shapes[0].shape, input_shapes[0].dtype)
         os.shape[axis] = reduce(
             nnsmith_add, [s.shape[axis] for s in input_shapes])
