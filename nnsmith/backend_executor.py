@@ -15,16 +15,23 @@ import onnx.checker
 class CrashExecutor(DiffTestBackend):
     """For testing purposes"""
 
-    def predict(self, model, inputs):
+    def predict(self, *args, **kwargs):
         assert False
 
 
 class HangExecutor(DiffTestBackend):
     """For testing purposes"""
 
-    def predict(self, model, inputs):
+    def predict(self, *args, **kwargs):
         while True:
             pass
+
+
+class DummyExecutor(DiffTestBackend):
+    """Doing nothing"""
+
+    def predict(self, *args, **kwargs):
+        return {}
 
 
 class BackendCreator:
@@ -44,9 +51,7 @@ class BackendCreator:
     def __call__(self, *args, **kwargs):
         name = self.name
         if name == 'ort':
-            print('importing ort....')
             from nnsmith.backends.ort_graph import ORTExecutor
-            print('imported')
             return ORTExecutor()
         elif name == 'tvm-debug':
             from nnsmith.backends.tvm_graph import TVMExecutor

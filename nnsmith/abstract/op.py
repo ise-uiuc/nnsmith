@@ -4,6 +4,7 @@ from enum import Enum
 import fnmatch
 from functools import reduce
 import functools
+import os
 from typing import List, Tuple, Union, Callable, Type
 from inspect import signature
 import random
@@ -30,6 +31,19 @@ from nnsmith.error import SanityCheck, ConstraintCheck
 
 ARITH_MAX_WIDTH: int = 64
 _INFERRED = False
+_DEV = torch.device("cpu")
+FLOPS_LIM = os.getenv("NNSMITH_FLOPS_LIM", None)
+if FLOPS_LIM == 'on':  # use predefined value
+    FLOPS_LIM = 2**22
+elif FLOPS_LIM is None:
+    pass
+else:
+    FLOPS_LIM = float(FLOPS_LIM)
+
+
+def _op_set_use_cuda(use_cuda):
+    global _DEV
+    _DEV = torch.device('cuda' if use_cuda else 'cpu')
 
 
 def align_bvs(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef], carry=False, mult=False):
@@ -40,7 +54,10 @@ def align_bvs(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.E
         return (left, right)
     # We assume that the width of an arithmetic type is ARITH_MAX_WIDTH.
     if left_is_arith:
-        left_size = ARITH_MAX_WIDTH
+        if isinstance(left, int):
+            left_size = min(ARITH_MAX_WIDTH, left.bit_length())
+        else:
+            left_size = ARITH_MAX_WIDTH
     elif isinstance(left, z3.BitVecRef):
         left_size = left.size()
     else:
@@ -48,7 +65,10 @@ def align_bvs(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.E
             f"Unsupported alignment value {left} of type {type(left)}")
     # We assume that the width of an arithmetic type is ARITH_MAX_WIDTH.
     if right_is_arith:
-        right_size = ARITH_MAX_WIDTH
+        if isinstance(right, int):
+            right_size = min(ARITH_MAX_WIDTH, right.bit_length())
+        else:
+            right_size = ARITH_MAX_WIDTH
     elif isinstance(right, z3.BitVecRef):
         right_size = right.size()
     else:
@@ -62,23 +82,34 @@ def align_bvs(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.E
     SanityCheck.le(right_size, ARITH_MAX_WIDTH,
                    f"Bitvector sizes must not exceed {ARITH_MAX_WIDTH} bits.")
     diff = left_size - right_size
-    if left_is_arith and diff >= 0:
-        right = z3.ZeroExt(diff, right)
-        return left, right
-    if right_is_arith and diff <= 0:
-        left = z3.ZeroExt(abs(diff), left)
-        return left, right
+    if left_is_arith:
+        if diff > 0:
+            right = z3.Concat(z3.BitVecVal(0, diff), right)
+        if isinstance(left, z3.IntNumRef):
+            left = left.as_long()
+        return z3.BitVecVal(left, right.size()), z3.simplify(right)
+    if right_is_arith:
+        if diff < 0:
+            left = z3.Concat(z3.BitVecVal(0, abs(diff)), left)
+        if isinstance(left, z3.IntNumRef):
+            left = left.as_long()
+        return left, z3.BitVecVal(right, left.size())
     if diff < 0:
-        left = z3.ZeroExt(abs(diff), left)
+        left = z3.Concat(z3.BitVecVal(0, abs(diff)), left)
     elif diff > 0:
-        right = z3.ZeroExt(diff, right)
+        right = z3.Concat(z3.BitVecVal(0, diff), right)
+
     if carry and max(left_size, right_size) < ARITH_MAX_WIDTH:
-        left = z3.ZeroExt(1, left)
-        right = z3.ZeroExt(1, right)
+        left = z3.Concat(z3.BitVecVal(0, 1), left)
+        right = z3.Concat(z3.BitVecVal(0, 1), right)
     if mult:
-        max_val = min(max(left_size, right_size), ARITH_MAX_WIDTH)
-        left = z3.ZeroExt(max_val, left)
-        right = z3.ZeroExt(max_val, right)
+        max_val = right.size() + left.size()
+        if max_val >= ARITH_MAX_WIDTH:
+            return (left, right)
+        else:
+            max_val = ARITH_MAX_WIDTH - max_val
+        left = z3.Concat(z3.BitVecVal(0, max_val), left)
+        right = z3.Concat(z3.BitVecVal(0, max_val), right)
     return (left, right)
 
 
@@ -275,7 +306,8 @@ def _prepend_to(x, max_dim):
 
 
 def z3_bcast(x: Union[int, z3.ExprRef], y: Union[int, z3.ExprRef], *args: Union[int, z3.ExprRef]):
-    return z3.If(y == 1, x, y) if len(args) == 0 else z3_bcast(z3_bcast(x, y), *args)
+    x, y = align_bvs(x, y)
+    return z3.simplify(z3.If(nnsmith_eq(y, 1), x, y)) if len(args) == 0 else z3_bcast(z3_bcast(x, y), *args)
 
 
 def broadcast_shapes(*shapes: List[Union[z3.ExprRef, int]]) -> List[Union[z3.ExprRef, int]]:
@@ -306,12 +338,13 @@ def broadcast_cons(*shapes: List[Union[z3.ExprRef, int]]) -> List[z3.ExprRef]:
             for x in shapes:
                 if len(x) > j:
                     axis_cons.append(
-                        z3.Or(nnsmith_eq(x[i], tgt_shape[i]), x[i] == 1))
+                        z3.Or(nnsmith_eq(x[i], tgt_shape[i]), nnsmith_eq(x[i], 1)))
             axis_cons = z3.simplify(z3.And(*axis_cons))
             cons.append(axis_cons)
         else:
             args_dim_sz = [_prepend_to(x, max_dim)[i] for x in shapes]
-            valid = all(s == tgt_shape[i] or s == 1 for s in args_dim_sz)
+            valid = all(nnsmith_eq(s, tgt_shape[i]) or nnsmith_eq(
+                s, 1) for s in args_dim_sz)
             # TODO(JK): enable this after fixing issue #2
             # assert valid, "Invalid broadcast shapes {}. Specific dim sizes: {}".format(shapes, args_dim_sz)
             cons.append(z3.BoolVal(valid))
@@ -330,9 +363,10 @@ def broadcast_cons_binary(*shapes: List[Union[z3.ExprRef, int]]) -> List[z3.Expr
         i = -j - 1
         if isinstance(tgt_shape[i], z3.ExprRef):
             cons.append(z3.simplify(
-                z3.Or(lhs[i] == 1, rhs[i] == 1, nnsmith_eq(lhs[i], rhs[i]))))
+                z3.Or(nnsmith_eq(lhs[i], 1), nnsmith_eq(rhs[i], 1), nnsmith_eq(lhs[i], rhs[i]))))
         else:
-            valid = lhs[i] == 1 or rhs[i] == 1 or nnsmith_eq(lhs[i], rhs[i])
+            valid = nnsmith_eq(lhs[i], 1) or nnsmith_eq(
+                rhs[i], 1) or nnsmith_eq(lhs[i], rhs[i])
             # TODO(JK): enable this after fixing issue #2
             # assert valid, "Invalid broadcast shapes lhs={}, rhs={}".format(lhs, rhs)
             cons.append(z3.BoolVal(valid))
@@ -361,9 +395,9 @@ def broadcast_to_cons(*shapes: List[Union[z3.ExprRef, int]]) -> List[z3.ExprRef]
         for i in range(max_dim):
             if isinstance(tgt[i], z3.ExprRef) or isinstance(src[i], z3.ExprRef):
                 cons.append(z3.simplify(
-                    z3.Or(src[i] == 1, nnsmith_eq(src[i], tgt[i]))))
+                    z3.Or(nnsmith_eq(src[i], 1), nnsmith_eq(src[i], tgt[i]))))
             else:
-                valid = src[i] == 1 or nnsmith_eq(src[i], tgt[i])
+                valid = nnsmith_eq(src[i], 1) or nnsmith_eq(src[i], tgt[i])
                 # TODO(JK): enable this after fixing issue #2
                 # assert valid, "Invalid broadcast shapes lhs={}, rhs={}".format(lhs, rhs)
                 cons.append(z3.BoolVal(valid))
@@ -424,6 +458,9 @@ class AbsOpBase(ABC):
 
     def n_floats(self, input_shapes: List[ShapeVar]) -> z3.ExprRef:
         return reduce(nnsmith_add, [i.nelement() for i in self.last_outs])
+
+    def flops(self, input_shapes):
+        return 0
 
     def __repr__(self) -> str:
         return self.__class__.__name__
@@ -586,7 +623,7 @@ class Where(TernaryOpBase):
 
     def _requires(self, input_shapes):
         return broadcast_cons(*(ish.shape for ish in input_shapes)) \
-            + [input_shapes[1].dtype == input_shapes[2].dtype]
+            + [z3.BoolVal(input_shapes[1].dtype == input_shapes[2].dtype)]
 
     def torch(self):
         return torch.where
@@ -634,7 +671,7 @@ class StopFoldConst(torch.nn.Module):
 
     @torch.no_grad()
     def forward(self):
-        return self.param.to(self.dtype)
+        return self.param.to(dtype=self.dtype, device=_DEV)
 
 
 class Input(AbsOpBase):
@@ -679,7 +716,8 @@ class Constant(AbsOpBase):
         return []
 
     def torch(self) -> Callable[..., torch.Tensor]:
-        data = torch.randn(self.shape_var.shape).to(self.shape_var.dtype.value)
+        data = torch.randn(self.shape_var.shape, device=_DEV).to(
+            self.shape_var.dtype.value)
         return StopFoldConst(data)
 
 
@@ -821,6 +859,8 @@ class GELU(ElementWiseUnaryOp):
 
 
 class LeakyReLU(ElementWiseUnaryOp):
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
+
     def __init__(self):
         """See https://pytorch.org/docs/stable/generated/torch.nn.LeakyReLU.html
         """
@@ -832,11 +872,13 @@ class LeakyReLU(ElementWiseUnaryOp):
 
 
 class PReLU(ElementWiseUnaryOp):
+    in_dtypes = [(DType.float32,)]
+
     def __init__(self):
         super().__init__()
 
     def torch(self):
-        return torch.nn.PReLU()
+        return torch.nn.PReLU(device=_DEV)
 
 
 class Sigmoid(ElementWiseUnaryOp):
@@ -850,7 +892,11 @@ class Sigmoid(ElementWiseUnaryOp):
         return torch.sigmoid
 
 
-class Sin(ElementWiseUnaryOp):
+class TrigonometricOp(ElementWiseUnaryOp):
+    pass
+
+
+class Sin(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
@@ -861,7 +907,7 @@ class Sin(ElementWiseUnaryOp):
         return torch.sin
 
 
-class Cos(ElementWiseUnaryOp):
+class Cos(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
@@ -872,7 +918,7 @@ class Cos(ElementWiseUnaryOp):
         return torch.cos
 
 
-class Asin(ElementWiseUnaryOp):
+class Asin(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
@@ -886,7 +932,7 @@ class Asin(ElementWiseUnaryOp):
         return torch.where(x.abs() > 1, x.abs() - 1, torch.zeros_like(x))
 
 
-class Acos(ElementWiseUnaryOp):
+class Acos(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
@@ -900,7 +946,7 @@ class Acos(ElementWiseUnaryOp):
         return torch.where(x.abs() > 1, x.abs(), torch.zeros_like(x))
 
 
-class Tan(ElementWiseUnaryOp):
+class Tan(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
@@ -911,7 +957,7 @@ class Tan(ElementWiseUnaryOp):
         return torch.tan
 
 
-class Atan(ElementWiseUnaryOp):
+class Atan(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
@@ -923,6 +969,8 @@ class Atan(ElementWiseUnaryOp):
 
 
 class Abs(ElementWiseUnaryOp):
+    in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+
     def __init__(self):
         super().__init__()
 
@@ -942,6 +990,8 @@ class Ceil(ElementWiseUnaryOp):
 
 
 class Clip(ElementWiseUnaryOp):
+    in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+
     def __init__(self):
         super().__init__()
         self.min = -1
@@ -992,6 +1042,8 @@ class Log2(ElementWiseUnaryOp):
 
 
 class Neg(ElementWiseUnaryOp):
+    in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+
     def __init__(self):
         super().__init__()
 
@@ -1142,6 +1194,9 @@ class NCHWConv2d(UnaryOpBase):
         cons.append(nnsmith_ge(self.padding, 0))
         # not too extream to avoid torch exporter issue
         cons.append(nnsmith_le(self.padding, 255))
+        # limit FLOPS
+        if FLOPS_LIM is not None:
+            cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
         for c in cons:
             if isinstance(c, z3.ExprRef):
                 ret.append(c)
@@ -1151,7 +1206,12 @@ class NCHWConv2d(UnaryOpBase):
 
     def torch(self):
         return torch.nn.Conv2d(self.in_channels, self.out_channels, kernel_size=(self.kernel_h_size, self.kernel_w_size), stride=self.stride,
-                               padding=self.padding)
+                               padding=self.padding, device=_DEV)
+
+    def flops(self, input_shapes):
+        w = ShapeVar([self.out_channels, self.in_channels, self.kernel_h_size,
+                     self.kernel_w_size], dtype=input_shapes[0].dtype)
+        return nnsmith_mul(self._shape_fn(input_shapes)[0].nelement(), w.nelement())
 
     def n_floats(self, input_shapes):
         padded_data = ShapeVar(
@@ -1218,13 +1278,14 @@ class Reshape(UnaryOpBase, ABC):
                 lambda x, y: nnsmith_mul(x, y), self.target_shape, 1)
             cons = [nnsmith_eq(total_pixels, reduce(
                 lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape, 1))]
-            # should not be too extreme!
-            __DIM_LIMIT__ = 4096
-            lim = __DIM_LIMIT__
-            for s in self.target_shape[::-1]:
-                cons.append(nnsmith_le(s, lim))
-                lim //= 2
-                lim = max(lim, 1)
+            if os.getenv('NNSMITH_CONS_RESHAPE', 'on') != 'off':
+                # should not be too extreme!
+                __DIM_LIMIT__ = 4096
+                lim = __DIM_LIMIT__
+                for s in self.target_shape[::-1]:
+                    cons.append(nnsmith_le(s, lim))
+                    lim //= 2
+                    lim = max(lim, 1)
             return cons
         else:
             # If you use auto mode (specifying -1 for some dimensions), then the total number of input pixels must be exactly divisible by that of the output shape.
@@ -1295,6 +1356,8 @@ class Reshape5D(Reshape):
 
 
 class Transpose(UnaryOpBase, ABC):
+    in_dtypes = [(i,) for i in DTYPE_ALL]
+
     def __init__(self):
         """See https://pytorch.org/docs/stable/generated/torch.transpose.html
         """
@@ -1313,9 +1376,9 @@ class Transpose(UnaryOpBase, ABC):
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         dim0, dim1 = self._init_swap_dims(input_shapes[0].shape)
-        shape_var = input_shapes[0]
-        shape_var.shape[dim0], shape_var.shape[dim1] = shape_var.shape[dim1], shape_var.shape[dim0]
-        return [shape_var]
+        shape = list(input_shapes[0].shape)
+        shape[dim0], shape[dim1] = shape[dim1], shape[dim0]
+        return [ShapeVar(shape, input_shapes[0].dtype)]
 
     def _requires(self, input_shapes):
         dim0, dim1 = self._init_swap_dims(input_shapes[0].shape)
@@ -1361,6 +1424,8 @@ class ReduceBase(UnaryOpBase, ABC):
         return [(self.inp_ranks[0], out_shape_var[0].dtype)]
 
 class SqueezeBase(ReduceBase, ABC):
+    in_dtypes = [(i,) for i in DTYPE_ALL]
+
     def _requires(self, input_shapes):
         SanityCheck.eq(len(input_shapes[0].shape), self.num_dim)
         if isinstance(input_shapes[0].shape[self.extra_attrs['reduce_dim']], z3.ExprRef):
@@ -1763,6 +1828,8 @@ class Gemm(TernaryOpBase):
         mat1, mat2 = input_shapes[1], input_shapes[2]
         cons.append(mat1.shape[1] == mat2.shape[0])
         self._set_or_get_extra_attrs(input_shapes[0].dtype.value)
+        if FLOPS_LIM is not None:
+            cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
         return cons
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
@@ -1772,6 +1839,10 @@ class Gemm(TernaryOpBase):
     def torch(self):
         extra_attrs = self._set_or_get_extra_attrs()
         return lambda *args: torch.addmm(*args, beta=extra_attrs['beta'], alpha=extra_attrs['alpha'])
+
+    def flops(self, input_shapes):
+        mat1, mat2 = input_shapes[1], input_shapes[2]
+        return mat1.shape[0] * mat1.shape[1] * mat2.shape[1]
 
 
 def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
@@ -1792,6 +1863,11 @@ def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
 
 ALL_OP_TYPES = _glob_leaf_op_classes()
 ALL_OP_STR2TYPE = {c.__name__: c for c in ALL_OP_TYPES}
+EXPANDED_OP_V0 = [Constant, Cast]
+EXPANDED_OP_V1 = [Concat, Constant, Expand, Reshape, ArgMax,
+                  ArgMin, ReduceMax, ReduceMin, ReduceMean, SqueezeBase,
+                  ReduceSum, TrigonometricOp]
+EXPANDED_OP = EXPANDED_OP_V1  # points to latest version
 
 
 def config_skip_op(skip_config):
@@ -1813,6 +1889,7 @@ def config_skip_op(skip_config):
         'ort': [],
         'xla': [],
         'tch': [],
+        'dummy': [],
     }
     print('skip config:', skip_config)
     skip_config = skip_config.split(',')

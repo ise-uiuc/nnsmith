@@ -9,6 +9,7 @@ from nnsmith import util
 
 class TchExecutor(DiffTestBackend):
     def __init__(self, opt_level=0, dev='cpu'):
+        super().__init__()
         self.opt_level = opt_level  # TODO add more opt levels
         assert dev in ['cpu', 'cuda']
         self.dev = dev

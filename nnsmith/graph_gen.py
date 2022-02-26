@@ -40,10 +40,14 @@ class InputInfo(InputInfoBase):
     def __repr__(self) -> str:
         return f"InputInfo(op={self.op}<{self.op.shape_var.dtype.value}>, oid={self.oid}, node_id={self.node_id}, input_name={self.input_name})"
 
+__MB_LIM__ = 6 * 1024
+
+
 class SymbolNet(nn.Module):
     def __init__(self, graph: nx.MultiDiGraph, model: z3.ModelRef, verbose=False, alive_shapes: ALIVE_SHAPE_TYPE = None,
-                 record_intermediate=False, use_gradient=False):
+                 record_intermediate=False, use_gradient=False, megabyte_lim=__MB_LIM__):
         super(SymbolNet, self).__init__()
+        self.megabyte_lim = megabyte_lim
         self.verbose = verbose
         self.tensors = []  # 1) edges; 2) leaf nodes; 3) input -> 0;
         self.ref_cnt = []  # ref cnt -> tensors; erased on 0;
@@ -67,6 +71,7 @@ class SymbolNet(nn.Module):
 
         tmp_op_output_map = {}  # node id -> output idx in tensors;
         shape_vars = {}
+        n_floats, flops = 0, 0
         for node_id in nx.topological_sort(graph):
             n_inp = graph.nodes[node_id]['nin']
             n_out = graph.nodes[node_id]['nout']
@@ -131,6 +136,15 @@ class SymbolNet(nn.Module):
                 shape_vars[i] for i in ishape_indices]
             self.concrete_graph.nodes[node_id]['out_svs'] = [
                 shape_vars[i] for i in shape_indices]
+            # ensure n_floats and flops within limit
+            tmp_inp = [shape_vars[i] for i in ishape_indices]
+            op.shape_fn(tmp_inp)
+            n_floats += op.n_floats(tmp_inp)
+            assert n_floats * 8 < megabyte_lim * 1024 * \
+                1024, f'Current number of elements ({n_floats/1024/1024}m) exceeded memory limit ({megabyte_lim} MB)'
+            if FLOPS_LIM is not None:
+                assert op.flops(
+                    tmp_inp) < FLOPS_LIM, f'Current number of flops ({op.flops(tmp_inp)}m) exceeded limit ({FLOPS_LIM} m)'
 
         if self.verbose:
             print('input_info=', self.input_info)
@@ -187,7 +201,8 @@ class SymbolNet(nn.Module):
             SanityCheck.eq(out.dtype, self.alive_shapes[shape_idx][1].dtype.value, msg_head +
                            f'torch dtype ({out.dtype}) != symbolic dtype ({self.alive_shapes[shape_idx][1].dtype.value})')
 
-    def get_random_inps(self, margin=10, base='center') -> List[torch.Tensor]:
+    def get_random_inps(self, margin=10, base='center', use_cuda=False) -> List[torch.Tensor]:
+        dev = torch.device('cuda' if use_cuda else 'cpu')
         if base == 'center':
             base = margin / 2
         else:
@@ -196,7 +211,7 @@ class SymbolNet(nn.Module):
         inputs = []
         for ii in self.input_info:
             dtype = ii.op.shape_var.dtype.value
-            fp_tensor = base + torch.rand(ii.op.shape_var.shape) * margin
+            fp_tensor = base + torch.rand(ii.op.shape_var.shape, device=dev) * margin
             if DType.is_float(dtype):
                 inputs.append(fp_tensor.to(dtype))
             else:
@@ -211,10 +226,9 @@ class SymbolNet(nn.Module):
         sat_inputs = None
         
         for _ in range(max_iter):
-            inputs = self.get_random_inps(margin, base)
+            inputs = self.get_random_inps(margin, base, use_cuda)
 
             if use_cuda:
-                inputs = [inp.cuda() for inp in inputs]
                 self = self.cuda()
 
             self.forward(*inputs)
@@ -228,7 +242,7 @@ class SymbolNet(nn.Module):
 
     def grad_input_gen(self, max_iter=10, init_tensors=None, margin=10, base='center',use_cuda=False) -> Optional[List[torch.Tensor]]:
         if init_tensors is None:
-            init_tensors = self.get_random_inps(margin, base)
+            init_tensors = self.get_random_inps(margin, base, use_cuda=use_cuda)
 
         inputs = [torch.nn.parameter.Parameter(
             tensor.data) for tensor in init_tensors]
@@ -288,7 +302,7 @@ class SymbolNet(nn.Module):
                     cond = (input_tensors[1] == 0).any()
                 if cond:
                     input_tensors[1] = torch.clip(
-                        input_tensors[1], torch.ones(size=[1], dtype=input_tensors[1].dtype).to(input_tensors[1].device))
+                        input_tensors[1], torch.ones(size=[1], dtype=input_tensors[1].dtype, device=input_tensors[1].device))
                 self.hacked[node_id] = cond
             if self.verbose:
                 print(
@@ -347,8 +361,8 @@ class SymbolNet(nn.Module):
 
 class SimpleGenerator:
 
-    def __init__(self, min_dims=[1, 3, 48, 48], skip=[Input], viz_sbs=False, megabyte_lim=6 * 1024, seed=None, verbose=False, use_bitvec=False,
-                 viz_verbose=False):
+    def __init__(self, min_dims=[1, 3, 48, 48], skip=[Input], viz_sbs=False, megabyte_lim=__MB_LIM__, seed=None, verbose=False, use_bitvec=False,
+                 viz_verbose=False, merge_op_v=None, limnf=True):
         if seed is not None:
             np.random.seed(seed)
             random.seed(seed)
@@ -358,9 +372,13 @@ class SimpleGenerator:
 
         self.op_candidates = [
             op for op in ALL_OP_TYPES if op not in skip and not op._skip]
-        self.solver = z3.Solver()
-        # 4 bytes per float (assume we use float32)
-        self.limit_float = 1024**2 * megabyte_lim / 4
+        if use_bitvec:
+            self.solver = z3.SolverFor("QF_UFBV")
+        else:
+            self.solver = z3.Solver()
+
+        # 4 bytes per float (assume we use float64)
+        self.limit_float = 1024**2 * megabyte_lim / 8
 
         # Node -> op: AbsOpBase
         # Edge -> shape_idx:-> self.alive_shapes
@@ -384,6 +402,8 @@ class SimpleGenerator:
         self.reusable_placeholder_nx_indices = []
         self.last_soln = None
         self.wts = None
+        self.merge_op_v = merge_op_v or 'v0'  # v0 as default version
+        self.limnf = limnf
 
         # <op idx>
         self.placeholders: List[int] = []
@@ -402,7 +422,9 @@ class SimpleGenerator:
 
     def new_sym(self, name):
         if self.use_bitvec:
-            return z3.BitVec(name, 8)
+            bv_size = 8
+            zero_size = ARITH_MAX_WIDTH - bv_size
+            return z3.ZeroExt(zero_size, z3.BitVec(name, bv_size))
         else:
             return z3.Int(name)
 
@@ -464,8 +486,17 @@ class SimpleGenerator:
                 self.abstract_graph.nodes[holder_idx]['op'] = self.abstract_graph.nodes[holder_idx]['op'].to_input(
                 )
 
+    def check_arith_ref(self, var):
+        SanityCheck.true(isinstance(
+            var, (z3.BitVecRef, z3.BoolRef)), f"{type(var)}not supported.")
+        for child in var.children():
+            self.check_arith_ref(child)
+
     def check_sat(self, *assumptions):
         start = time.time()
+        if self.use_bitvec:
+            for assump in assumptions:
+                self.check_arith_ref(assump)
         cres = self.solver.check(*assumptions)
 
         checking_time = int((time.time() - start) * 1000)
@@ -484,7 +515,8 @@ class SimpleGenerator:
 
     def compute_wts(self):
         self.wts = [1] * len(self.op_candidates)
-        normalize_op_t = [Constant, Cast]
+        normalize_op_t = {'latest': EXPANDED_OP, 'v1': EXPANDED_OP_V1,
+                          'v0': EXPANDED_OP_V0}[self.merge_op_v]
         op_t_idx = {}
         for i in range(len(self.op_candidates)):
             for op_t in normalize_op_t:
@@ -822,13 +854,15 @@ class PureSymbolGen(SimpleGenerator):
             # The batch size should not have a big min size (avoid unnecessary computation);
             # FIXME: input constraints will make SMT solving costly.
             for i in range(len(input_tensor_shape.shape)):
-                self.solver.add(input_tensor_shape.shape[i] >= min_dims[i])
+                self.solver.add(nnsmith_ge(
+                    input_tensor_shape.shape[i], min_dims[i]))
         check_res = self.check_sat()
         # FIXME sometimes the constraints are too complicated to return stable result.
         SanityCheck.eq(check_res, z3.sat,
                        msg=f'Constraints not sat but {check_res}.')
-        self.n_floats = nnsmith_add(
-            self.n_floats, input_tensor_shape.nelement())
+        if self.limnf:
+            self.n_floats = nnsmith_add(
+                self.n_floats, input_tensor_shape.nelement())
         self.n_inps += 1
         return input_tensor_shape
 
@@ -845,8 +879,11 @@ class PureSymbolGen(SimpleGenerator):
             print('---> total constraints: \n',
                   '\n'.join(sorted(map(str, set(self.solver.assertions())))))
 
+        # make a copy
         output_shapes = node.shape_fn(input_shapes)
-        tmp_n_floats = nnsmith_add(self.n_floats, node.n_floats(input_shapes))
+        if self.limnf:
+            tmp_n_floats = nnsmith_add(
+                self.n_floats, node.n_floats(input_shapes))
 
         for shape in output_shapes:
             for c in shape.gt_zero():
@@ -854,8 +891,10 @@ class PureSymbolGen(SimpleGenerator):
 
         self.cur_node = node
         constraints.extend(self.extra_constraints(node, ishape_indices))
-        check_res = self.check_sat(
-            *constraints, nnsmith_le(tmp_n_floats, self.limit_float))
+        if self.limnf:
+            check_res = self.check_sat(
+                *constraints, nnsmith_le(tmp_n_floats, self.limit_float))
+        check_res = self.check_sat(*constraints)
         if check_res == z3.unknown:  # Timeout thing.
             self.on_timeout(node, ishape_indices)
 
@@ -864,7 +903,8 @@ class PureSymbolGen(SimpleGenerator):
 
         for c in constraints:
             self.solver.add(c)
-        self.n_floats = tmp_n_floats
+        if self.limnf:
+            self.n_floats = tmp_n_floats
 
         if self.verbose:
             print('>> Forward insertion node: ', node)
@@ -1080,6 +1120,8 @@ class Bin:
         return self.to_linear(x)
 
     def sample_range(self):
+        if self.lb == None and self.ub == None:
+            return None, None
         if self.ub == None:  # one-sided
             return self.to_linear(self.lb), None
         lb = self.sample()
@@ -1091,24 +1133,69 @@ class Bin:
         return lb, ub
 
 
+PARAM_CONFIG1 = {
+    'NCHWConv2d': {
+        'kernel_h_size': [Bin(i, i + 1, scale='log', base=2) for i in range(8)],
+        'kernel_w_size': [Bin(i, i + 1, scale='log', base=2) for i in range(8)],
+        'stride': [Bin(i, i + 1, scale='log', base=2) for i in range(8)],
+        'padding': [Bin(i, i + 1, scale='log', base=2) for i in range(8)] + [Bin(0, 1)],
+        'out_channels': [Bin(i, i + 1, scale='log', base=2) for i in range(8)] +
+        [Bin(8, None, scale='log', base=2)],
+        'in_channels': [],  # skip
+    },
+    # last bin is eseentially no constraint, to ensure -1 can be included
+    # defaultdict(lambda: [Bin(i, i + 1, scale='log', base=2) for i in range(8)] + [Bin(None, None)]),
+    # 'Reshape': defaultdict(lambda: [])
+}
+# PARAM_CONFIG1['Reshape1D'] = PARAM_CONFIG1['Reshape']
+# PARAM_CONFIG1['Reshape2D'] = PARAM_CONFIG1['Reshape']
+# PARAM_CONFIG1['Reshape3D'] = PARAM_CONFIG1['Reshape']
+# PARAM_CONFIG1['Reshape4D'] = PARAM_CONFIG1['Reshape']
+# PARAM_CONFIG1['Reshape5D'] = PARAM_CONFIG1['Reshape']
+# PARAM_CONFIG1['Reshape6D'] = PARAM_CONFIG1['Reshape']
+PARAM_CONFIG2 = {
+    'NCHWConv2d': {
+        'kernel_h_size': [Bin(1, 256, scale='linear')],
+        'kernel_w_size': [Bin(1, 256, scale='linear')],
+        'stride': [Bin(1, 256, scale='linear')],
+        'padding': [Bin(1, 256, scale='linear')] + [Bin(0, 1)],
+        'out_channels': [Bin(1, 256, scale='linear')] +
+        [Bin(256, None, scale='linear')],
+        'in_channels': [],  # skip
+    },
+}
+
+
 class GuidedGen(PureSymbolGen):
-    def __init__(self, summaries=None, scale='log', base=2, default_bins=8, **kwargs):
+    def __init__(self, summaries=None, scale='log', base=2, default_bins=8, constrain_prob=1, **kwargs):
         super(GuidedGen, self).__init__(**kwargs)
 
+        self.constrain_prob = constrain_prob
         self.base = 2
-        self.param_config = {
-            'NCHWConv2d': {
-                'kernel_h_size': [Bin(i, i + 1, scale=scale, base=base) for i in range(8)],
-                'kernel_w_size': [Bin(i, i + 1, scale=scale, base=base) for i in range(8)],
-                'stride': [Bin(i, i + 1, scale=scale, base=base) for i in range(8)],
-                'padding': [Bin(i, i + 1, scale=scale, base=base) for i in range(8)] + [Bin(0, 1)],
-                'in_channels': [Bin(i, i + 1, scale=scale, base=base) for i in range(8)] +
-                [Bin(8, None, scale=scale, base=base)],
-                'out_channels': [],  # skip
-            },
-        }
-        self.default_config = defaultdict(
-            lambda: [Bin(i, i + 1, scale=scale, base=base) for i in range(default_bins)])
+        self.param_config = PARAM_CONFIG1
+        if scale == 'log':
+            self.default_config = defaultdict(
+                lambda: [Bin(i, i + 1, scale=scale, base=base) for i in range(default_bins)] +
+                [Bin(default_bins, None, scale=scale, base=base)])
+        else:
+            assert scale == 'linear', scale
+            self.default_config = defaultdict(
+                lambda: [Bin(0, 256, scale='linear')] + [Bin(256, None, scale='linear')])
+        self.scale = scale
+        # self.inp
+
+    def insert_input_node(self, min_dims, dtype=DType.float32) -> ShapeVar:
+        ish = super().insert_input_node(min_dims, dtype, constrain_min=False)
+        constraints = []
+        for i in ish.shape:
+            bins = self.default_config[0]
+            lb, ub = bins[random.randint(0, len(bins) - 1)].sample_range()
+            constraints.extend(self.range_constrain(i, lb, ub))
+        # throw exception for now since this is unlikely to happen
+        assert self.check_sat(
+            *constraints, nnsmith_le(self.n_floats, self.limit_float)) == z3.sat, 'Input constraints too tight'
+        self.solver.add(*constraints)
+        return ish
 
     def range_constrain(self, param, lb, ub):
         ret = []
@@ -1119,10 +1206,14 @@ class GuidedGen(PureSymbolGen):
         return ret
 
     def extra_constraints(self, node: AbsOpBase, ishape_indices: List[int]):
+        if random.uniform(0, 1) < self.constrain_prob:
+            return []
         ret = []
         construct_param_dict = signature(node.__init__).parameters
         config = self.param_config.get(
-            node.__class__.__name__, self.default_config)
+            node.__class__.__name__, None)
+        if config is None:
+            return ret
 
         # if len(construct_param_dict) > 0:
         #     print('Op {} constraint:'.format(node))
@@ -1156,6 +1247,14 @@ def parse_args():
     parser.add_argument('--use_bitvec', action='store_true')
     parser.add_argument('--viz_graph', action='store_true')
     parser.add_argument('--mode', default='random')
+    parser.add_argument('--merge_op_v', default=None)
+    parser.add_argument(
+        '--skip', help='Node types to skip. Split by `,`. By default a blacklist for each backend is also appended.', type=str)
+    parser.set_defaults(limnf=True)
+    parser.add_argument('--no_limnf', dest='limnf', action='store_false',
+                        help='Disable the limit on the number of floats')
+    parser.add_argument('--use_cuda', action='store_true')
+    parser.add_argument('--no_export', action='store_true')
     return parser.parse_args()
 
 
@@ -1168,27 +1267,18 @@ def random_model_gen(
         timeout=50000,
         verbose=False,
         mode='random',
-        **kwargs):
-    if verbose:
-        strt_time = time.time()
+        merge_op_v=None,
+        limnf=True,):
 
     GenCls = {
         'random': PureSymbolGen,
         'guided': GuidedGen,
     }[mode]
     gen = GenCls(min_dims=min_dims,
-                 viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec, **kwargs)
+                 viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec, merge_op_v=merge_op_v, limnf=limnf)
     gen.abstract_gen(max_node_size=max_nodes,
                      max_gen_millisec=timeout)
-    if verbose:
-        print(
-            f'{time.time() - strt_time}s to generate a graph w/ {len(gen.abstract_graph.nodes())} nodes')
-
     solution = gen.get_symbol_solutions()
-    if verbose:
-        print(
-            f'{len(solution)} symbols and {len(gen.solver.assertions())} constraints.')
-        print(solution)
 
     return gen, solution
 
@@ -1202,12 +1292,14 @@ def table_model_gen(
         seed=None,
         use_bitvec=False,
         timeout=50000,
-        verbose=False):
+        verbose=False,
+        merge_op_v=None,
+        limnf=True,):
     if verbose:
         strt_time = time.time()
 
     gen = CoverageTableGen(table=table, state=state, min_dims=min_dims,
-                           viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec)
+                           viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec, merge_op_v=merge_op_v, limnf=limnf)
 
     gen.abstract_gen(max_node_size=max_nodes,
                      max_gen_millisec=timeout)
@@ -1235,16 +1327,26 @@ if __name__ == '__main__':
         seed = random.getrandbits(32)
     print(f"Using seed {seed}")
     torch.manual_seed(seed)
+    if args.skip is not None:
+        config_skip_op(args.skip)
 
+    strt_time = time.time()
     gen, solution = random_model_gen(min_dims=args.min_dims, seed=seed, viz_sbs=args.viz_sbs, max_nodes=args.max_nodes,
-                                     use_bitvec=args.use_bitvec, timeout=args.timeout, verbose=args.verbose, mode=args.mode)
-
+                                     use_bitvec=args.use_bitvec, timeout=args.timeout, verbose=args.verbose, mode=args.mode,
+                                     limnf=args.limnf, merge_op_v=args.merge_op_v)
+    print(
+        f'{len(solution)} symbols and {len(gen.solver.assertions())} constraints.')
+    print(
+        f'{time.time() - strt_time}s to generate a graph w/ {len(gen.abstract_graph.nodes())} nodes')
+    srt_time = time.time()
     if args.verbose or args.viz_graph:
         gen.viz(args.output_path + '.png')
 
+    if args.no_export:
+        exit(0)
     net = SymbolNet(gen.abstract_graph, solution, verbose=args.verbose,
                     alive_shapes=gen.alive_shapes)
-
+    print('Initializing SymbolNet time: {}s'.format(time.time() - srt_time))
     # turn this on so that nan in the intermediate tensors can be detected too
     input_st = time.time()
 
@@ -1252,22 +1354,28 @@ if __name__ == '__main__':
     if args.input_gen == 'v3' or args.input_gen == 'random':
         with torch.no_grad():
             net.eval()
-            sat_inputs = net.rand_input_gen()
+            sat_inputs = net.rand_input_gen(use_cuda=args.use_cuda)
             infer_succ = sat_inputs is not None
     elif args.input_gen == 'grad':
+        infer_succ = None  # TODO: are we able to know this?
         try:
-            sat_inputs = net.grad_input_gen()
+            sat_inputs = net.grad_input_gen(use_cuda=args.use_cuda)
         except RuntimeError as e:
             if 'does not have a grad_fn' in str(e):
                 # means some op are not differentiable.
                 pass
             else:
                 raise e
+    elif args.input_gen == 'none':
+        infer_succ = None
+    else:
+        raise ValueError(f'Unknown input gen {args.input_gen}')
 
     ed_time = time.time()
+    print('Time to generate inputs: {:.3f}s'.format(ed_time - input_st))
 
-    if sat_inputs is not None:
-        torch2onnx(net, args.output_path, verbose=args.verbose)
+    torch2onnx(net, args.output_path, verbose=args.verbose,
+               use_cuda=args.use_cuda)
 
     stats = {
         'gen_succ': True,

@@ -16,7 +16,7 @@ import pandas as pd
 from tqdm import tqdm
 import torch
 
-from nnsmith.abstract.op import ALL_OP_STR2TYPE, ALL_OP_TYPES
+from nnsmith.abstract.op import ALL_OP_STR2TYPE, ALL_OP_TYPES, _op_set_use_cuda
 from nnsmith.backends import DiffTestBackend
 from nnsmith.error import SanityCheck
 from nnsmith.graph_gen import SymbolNet, random_model_gen, table_model_gen
@@ -41,18 +41,20 @@ def safe_wrapper(func):
     return wrapper
 
 
-def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, output_path, ipc_dict):
-    random.seed(seed if seed is not None else random.getrandbits(32))
+def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, output_path, use_bitvec, merge_op_v, limnf, use_cuda, ipc_dict):
+    _op_set_use_cuda(use_cuda)
     ipc_dict['seed'] = seed
+    profile = ipc_dict['profile']
 
+    gen_model_st = time.time()
     if gen_method == 'random':
         gen, solution = random_model_gen(
-            max_nodes=max_nodes, timeout=max_gen_millisec)
+            max_nodes=max_nodes, timeout=max_gen_millisec, use_bitvec=use_bitvec, merge_op_v=merge_op_v, limnf=limnf, seed=seed)
     elif gen_method == 'table':
         gen, solution = table_model_gen(
             table=ipc_dict['table'],
             state=ipc_dict['state'],
-            max_nodes=max_nodes, timeout=max_gen_millisec)
+            max_nodes=max_nodes, timeout=max_gen_millisec, use_bitvec=use_bitvec, merge_op_v=merge_op_v, limnf=limnf, seed=seed)
         abs_graph = gen.abstract_graph
         unique_set = set()
         for src, dst in abs_graph.edges():
@@ -63,7 +65,7 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
     elif gen_method == 'guided':
         from nnsmith.graph_gen import GuidedGen
         gen = GuidedGen(
-            seed=seed, summaries=ipc_dict['state']['summaries'])
+            summaries=ipc_dict['state']['summaries'], use_bitvec=use_bitvec, merge_op_v=merge_op_v, limnf=limnf, seed=seed)
         gen.abstract_gen(max_node_size=max_nodes,
                          max_gen_millisec=max_gen_millisec)
         solution = gen.get_symbol_solutions()
@@ -72,14 +74,23 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
 
     net = SymbolNet(gen.abstract_graph, solution, verbose=False,
                     alive_shapes=gen.alive_shapes)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        torch2onnx(net, output_path, use_cuda=use_cuda)
 
+    gen_input_st = time.time()
+    profile['model_gen_t'] = gen_input_st - gen_model_st
     sat_inputs = None
     if inp_gen == 'random':
         with torch.no_grad():
             net.eval()
-            sat_inputs = net.rand_input_gen()
+            sat_inputs = net.rand_input_gen(use_cuda=use_cuda)
     elif inp_gen == 'grad':
-        sat_inputs = net.grad_input_gen()
+        sat_inputs = net.grad_input_gen(use_cuda=use_cuda)
+    elif inp_gen == 'none':
+        sat_inputs = None
+    else:
+        raise ValueError(f'Unknown inp_gen: {inp_gen}')
 
     if sat_inputs is not None:
         ret_inputs = {}
@@ -88,18 +99,21 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
         ipc_dict['sat_inputs'] = ret_inputs
     else:
         ipc_dict['sat_inputs'] = None
+    export_t_s = time.time()
+    profile['input_gen_t'] = export_t_s - gen_input_st
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        torch2onnx(net, output_path)
+    dump_t_s = time.time()
+    profile['export_t'] = dump_t_s - export_t_s
 
     cloudpickle.dump(net.concrete_graph, open(
         output_path + '-graph.pkl', 'wb'), protocol=4)
+    profile['dump_t'] = time.time() - dump_t_s
 
 
 # @safe_wrapper
 def forked_execution(
-        gen_method, output_path, seed=None, max_nodes=10, max_gen_millisec=2000, table=None, save_torch=False, inp_gen='random', **kwargs):
+        gen_method, output_path, seed=None, max_nodes=10, max_gen_millisec=2000, table=None, save_torch=False, inp_gen='random',
+        use_bitvec=False, summaries=None, merge_op_v=None, limnf=True, use_cuda=False):
     if seed is None:
         seed = random.getrandbits(32)
 
@@ -113,14 +127,19 @@ def forked_execution(
         ipc_dict = manager.dict()
         ipc_dict['state'] = manager.dict()
         ipc_dict['state']['unsolvable'] = manager.list()
-        ipc_dict['state']['summaries'] = kwargs['summaries']
+        ipc_dict['state']['summaries'] = summaries
         ipc_dict['edges'] = set()
         ipc_dict['table'] = table
+        ipc_dict['profile'] = manager.dict()
         nnsmith_fork = os.environ.get(
-            'NNSMITH_FORK', 'forkserver')  # specify the fork method
+            'NNSMITH_FORK', 'fork')  # specify the fork method.
+        if nnsmith_fork == 'forkserver':
+            # TODO(JK): integrate the initializations (skip op, infer type, etc.) and rich panel into forkserver
+            warnings.warn(
+                '`--skip` option may not have any effect in forkserver mode. Subprocess call output may be covered by the panel.')
         if nnsmith_fork != 'inprocess':  # let's try to get rid of fork
             p = mp.get_context(nnsmith_fork).Process(
-                target=subprocess_call, args=(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, output_path, ipc_dict,))
+                target=subprocess_call, args=(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, output_path, use_bitvec, merge_op_v, limnf, use_cuda, ipc_dict,))
 
             p_duration = None
             try:
@@ -160,11 +179,11 @@ def forked_execution(
                     'return code not zero: {}'.format(p.exitcode))
         else:
             subprocess_call(gen_method, seed, max_nodes,
-                            max_gen_millisec, inp_gen, output_path, ipc_dict)
+                            max_gen_millisec, inp_gen, output_path, use_bitvec, merge_op_v, limnf, use_cuda, ipc_dict)
             for src, dst in ipc_dict['state']['unsolvable']:
                 table.on_unsolvable(ALL_OP_STR2TYPE[src], ALL_OP_STR2TYPE[dst])
 
-        return ipc_dict['sat_inputs'], ipc_dict['state'], ipc_dict['edges'], ipc_dict['seed']
+        return ipc_dict['sat_inputs'], ipc_dict['state'], ipc_dict['edges'], ipc_dict['seed'], dict(ipc_dict['profile'])
 
 
 # TODO(from Jiawei @Jinkun): stop using this implementation.

@@ -19,6 +19,7 @@ from rich.progress import Progress, BarColumn, ProgressColumn
 from rich.panel import Panel
 from rich.console import RenderableType
 from rich.columns import Columns
+from backend_executor import DummyExecutor
 
 from nnsmith.abstract.op import ALL_OP_TYPES, auto_infer_in_dtypes, config_skip_op
 from nnsmith import util
@@ -76,8 +77,10 @@ class Reporter:  # From Tzer.
                 f.write(repo.git.status())
                 f.write(
                     '\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n')
+                f.write(repo.git.diff())
 
-            f.write(f'START TIME: {datetime.datetime.now()}')
+            f.write(f'START TIME: {datetime.datetime.now()}\n')
+            f.write(f'COMMAND: {sys.argv}\n')
             _log_repo(f, 'Fuzzer', fuzz_repo)
             if 'tvm' in name_hint and os.getenv('TVM_HOME'):
                 _log_repo(f, 'TVM', git.Repo(os.getenv('TVM_HOME')))
@@ -127,6 +130,8 @@ class Reporter:  # From Tzer.
                 os.path.join(self.report_folder, f'profile.pkl.bak')))
         profile.to_pickle(os.path.join(self.report_folder,
                           f'profile.pkl'), protocol=4)
+        fuzz.gen_profile.to_pickle(os.path.join(self.report_folder,
+                                                f'gen_profile.pkl'), protocol=4)
         for i in fuzz.summaries:
             i.dump(os.path.join(self.report_folder, f'{i}.pkl'))
 
@@ -140,20 +145,22 @@ class Reporter:  # From Tzer.
 
 
 class CustomProgress(Progress):
-    def __init__(self, fuzz_status, columns: List[Union[str, ProgressColumn]]):
+    def __init__(self, fuzz_status, columns: List[Union[str, ProgressColumn]], disable=False):
         self.fuzz_status = fuzz_status
-        super().__init__(*columns)
+        super().__init__(*columns, disable=disable)
 
     def get_renderables(self) -> Iterable[RenderableType]:
         """Get a number of renderables for the progress display."""
-        yield self.fuzz_status()
+        for i in self.fuzz_status():
+            yield i
         table = self.make_tasks_table(self.tasks)
         yield table
 
 
 class FuzzingLoop:  # TODO: Support multiple backends.
     def __init__(self, backends: Dict[str, DiffTestBackend], mode='table', root=None, time_budget=60 * 60 * 4, max_nodes=32, inp_gen='random',
-                 summaries: List[SummaryBase] = None, fork_bkn=False, _PER_MODEL_TIMEOUT_=1000):
+                 summaries: List[SummaryBase] = None, fork_bkn=False, _PER_MODEL_TIMEOUT_=1000, use_bitvec=False, no_progress=False, merge_op_v=None,
+                 limnf=True, use_cuda=False, warmup=False):
         self.root = root
         self.reporter = Reporter(
             report_folder=root, name_hint=list(backends.keys())[0])
@@ -167,9 +174,9 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         self.time_budget = time_budget
         self.max_nodes = max_nodes
 
-        self.cur_model_gen_t = float('nan')
-        self.slowest_model_gen_t = -float("inf")
-        self.fastest_model_gen_t = float("inf")
+        self.cur_gen_t = float('nan')
+        self.slowest_gen_t = -float("inf")
+        self.fastest_gen_t = float("inf")
 
         self.cur_model_eval_t = float('nan')
         self.slowest_model_eval_t = -float("inf")
@@ -184,8 +191,17 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         self._PER_MODEL_TIMEOUT_ = _PER_MODEL_TIMEOUT_  # milliseconds
 
         self.profile = pd.DataFrame(
-            columns=['model_gen_t', 'model_eval_t', 'bugs', 'edge_cov'])
+            columns=['gen_t', 'model_eval_t', 'bugs', 'edge_cov'])
+        # record the generation time of each model and its input, including the failed ones
+        self.gen_profile = pd.DataFrame(
+            columns=['model_gen_t', 'input_gen_t', 'gen_succ'])
         self.summaries = summaries or []
+        self.use_bitvec = use_bitvec
+        self.no_progress = no_progress
+        self.merge_op_v = merge_op_v
+        self.limnf = limnf
+        self.use_cuda = use_cuda
+        self.warmup = warmup
 
         rich.print(
             f'[bold yellow]To exit the program: `kill {os.getpid()}`[/bold yellow]')
@@ -193,7 +209,9 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             '[grey]This is because we use z3 written in C++ w/ Python wrappers. Ctrl+C may not stop it.')
 
     def rich(self):
-        return Columns([
+        breakdown = ', '.join(
+            f'[cyan]{k}[/cyan]: {v:.1f}s' for k, v in self.gen_profile.mean().to_dict().items() if k.endswith('_t') or k.endswith('_time'))
+        return [Columns([
             Panel.fit(
                 f'{datetime.timedelta(seconds=round(time.time()-self.start_time))} ~ '
                 f'{datetime.timedelta(seconds=self.time_budget)}'
@@ -203,17 +221,31 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             Panel.fit(f'{self.reporter.n_bug}/{len(self.profile)}'
                       f'\n{self.stage}',
                       title="Bug/Iter", style="magenta", width=16),
-            Panel.fit(f'[green]Fast: {self.fastest_model_gen_t:.3f}s[/green]|'
-                      f'[bold]Cur: {self.cur_model_gen_t:.3f}s[/bold]\n'
-                      f'[red]Slow: {self.slowest_model_gen_t:.3f}s[/red]|'
-                      f'[red]Avg: {self.profile["model_gen_t"].mean():.3f}s',
-                      title="Model Generation Time"),
             Panel.fit(f'[green]Fast: {self.fastest_model_eval_t:.3f}s[/green]|'
-                      f'[bold]Cur: {self.cur_model_eval_t:.3f}s[/bold]\n'
+                      f'[bold]Last: {self.cur_model_eval_t:.3f}s[/bold]\n'
                       f'[red]Slow: {self.slowest_model_eval_t:.3f}s[/red]|'
                       f'[red]Avg: {self.profile["model_eval_t"].mean():.3f}s',
                       title="Model Evaluation Time"),
-        ])
+        ]),
+            Columns([
+                Panel.fit(f'[green]Fast: {self.gen_profile["model_gen_t"].min():.3f}s[/green]|'
+                          f'[bold]Last: {self.gen_profile["model_gen_t"].iloc[-1] if len(self.gen_profile["model_gen_t"]) else float("nan"):.3f}s[/bold]\n'
+                          f'[red]Slow: {self.gen_profile["model_gen_t"].max():.3f}s[/red]|'
+                          f'[red]Avg: {self.gen_profile["model_gen_t"].mean():.3f}s',
+                          title="Model Generation Time"),
+                Panel.fit(f'[green]Fast: {self.gen_profile["input_gen_t"].min():.3f}s[/green]|'
+                          f'[bold]Last: {self.gen_profile["input_gen_t"].iloc[-1] if len(self.gen_profile["input_gen_t"]) else float("nan"):.3f}s[/bold]\n'
+                          f'[red]Slow: {self.gen_profile["input_gen_t"].max():.3f}s[/red]|'
+                          f'[red]Avg: {self.gen_profile["input_gen_t"].mean():.3f}s',
+                          title="Input Generation Time"),
+                Panel.fit(f'[green]Fast: {self.profile["gen_t"].min():.3f}s[/green]|'
+                          f'[bold]Last: {self.profile["gen_t"].iloc[-1] if len(self.profile["gen_t"]) else float("nan"):.3f}s[/bold]\n'
+                          f'[red]Slow: {self.profile["gen_t"].max():.3f}s[/red]|'
+                          f'[red]Avg: {self.profile["gen_t"].mean():.3f}s',
+                          title="Gen Phase (+retry) Time"),
+            ]),
+            f'[green]Generation Success rate:[/green]: {self.gen_profile["gen_succ"].mean()*100:.1f}%\t[green]Breakdown[/green]: {breakdown}',
+        ]
 
     def fuzz(self):
         _TMP_ONNX_FILE_ = f'tmp_{uuid.uuid4()}.onnx'
@@ -231,6 +263,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     BarColumn(),
                     '[progress.percentage]{task.completed:>3.0f}/{task.total}',
                     '[progress.percentage]{task.percentage:>3.0f}%'],
+                disable=self.no_progress
             ) as progress:
                 task_fuzz = progress.add_task(
                     '[green]Fuzzing time.', total=self.time_budget)
@@ -243,46 +276,80 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     record_coverage_t = time.time() - st
 
                     gen_t_s = time.time()
-                    while True:
+                    gen_succ = False
+                    if len(self.profile) == 0 and self.warmup:  # warmup
+                        NNSMITH_FORK_OLD = os.environ.get(
+                            'NNSMITH_FORK', None)
+                        os.environ['NNSMITH_FORK'] = 'inprocess'
+                    while not gen_succ:
+                        gen_info = {'Iteration': len(self.profile)}
                         try:
                             seed = random.getrandbits(32)
                             self.cur_seed = seed
-                            self.cur_node_size = random.randint(
-                                1, self.max_nodes)
+                            # TODO: for backward compatibility. Use the lines after in the future
+                            self.cur_node_size = 10
+                            # self.cur_node_size = random.randint(
+                            #     1, self.max_nodes)
+                            gen_info['seed'] = seed
+                            gen_info['cur_node_size'] = self.cur_node_size
                             self.stage = 'gen model'
                             progress.refresh()
-                            sat_inputs, state, edge_set, seed = forked_execution(self.mode,
-                                                                                 _TMP_ONNX_FILE_,
-                                                                                 table=self.table,
-                                                                                 max_node_size=self.cur_node_size,
-                                                                                 max_gen_millisec=self._PER_MODEL_TIMEOUT_,
-                                                                                 inp_gen=self.inp_gen,
-                                                                                 save_torch=use_torch,
-                                                                                 summaries=self.summaries,
-                                                                                 seed=seed)
+                            forked_exe_t_s = time.time()
+                            sat_inputs, state, edge_set, seed, ret_profile = \
+                                forked_execution(self.mode,
+                                                 _TMP_ONNX_FILE_,
+                                                 table=self.table,
+                                                 max_nodes=self.cur_node_size,
+                                                 max_gen_millisec=self._PER_MODEL_TIMEOUT_,
+                                                 inp_gen=self.inp_gen,
+                                                 save_torch=use_torch,
+                                                 summaries=self.summaries,
+                                                 seed=seed,
+                                                 use_bitvec=self.use_bitvec,
+                                                 merge_op_v=self.merge_op_v,
+                                                 limnf=self.limnf,
+                                                 use_cuda=self.use_cuda)
+                            gen_info.update(ret_profile)
+                            gen_info['forked_exe_time'] = time.time() - \
+                                forked_exe_t_s
                             self.stage = 'load model'
                             progress.refresh()
                             load_t_s = time.time()
                             onnx_model = DiffTestBackend.get_onnx_proto(
                                 _TMP_ONNX_FILE_)
-                            load_model_time = time.time() - load_t_s
+                            gen_info['load_model_t'] = time.time() - \
+                                load_t_s
                             check_t_s = time.time()
                             self.stage = 'check model'
                             progress.refresh()
                             onnx.checker.check_model(
                                 onnx_model, full_check=True)
-                            check_model_time = time.time() - check_t_s
-                            break
+                            gen_info['check_model_t'] = time.time() - \
+                                check_t_s
+                            gen_succ = True
                         except Exception as e:
                             traceback.print_exc()
+                            print('Seed:', seed, 'cur_node_size:',
+                                  self.cur_node_size)
                             print('retrying...')
+                        gen_info['gen_succ'] = gen_succ
+                        gen_info['time_stamp'] = time.perf_counter() - \
+                            self.start_time
 
+                        self.gen_profile = self.gen_profile.append(
+                            gen_info, ignore_index=True)
+
+                    if len(self.profile) == 0 and self.warmup:  # warmup done
+                        if NNSMITH_FORK_OLD is None:
+                            del os.environ['NNSMITH_FORK']
+                        else:
+                            os.environ['NNSMITH_FORK'] = NNSMITH_FORK_OLD
                     # Generation time logging.
-                    self.cur_model_gen_t = time.time() - gen_t_s
-                    self.fastest_model_gen_t = min(
-                        self.fastest_model_gen_t, self.cur_model_gen_t)
-                    self.slowest_model_gen_t = max(
-                        self.slowest_model_gen_t, self.cur_model_gen_t)
+                    self.cur_gen_t = time.time() - gen_t_s
+                    self.fastest_gen_t = min(
+                        self.fastest_gen_t, self.cur_gen_t)
+                    self.slowest_gen_t = max(
+                        self.slowest_gen_t, self.cur_gen_t)
 
                     eval_inputs = None
                     if sat_inputs is not None:
@@ -358,7 +425,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     graph = pickle.load(
                         open(_TMP_ONNX_FILE_ + '-graph.pkl', 'rb'))
                     for i in self.summaries:
-                        i.update(graph)
+                        i.update(graph, len(self.profile))
                     summaries_t = time.time() - summaries_st
                     cur_time = time.time()
                     progress.update(
@@ -366,7 +433,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     progress.update(
                         task_coverage, completed=__COV_DRIVER__.get_now())
                     info.update({
-                        'model_gen_t': self.cur_model_gen_t,
+                        'gen_t': self.cur_gen_t,
                         'model_eval_t': self.cur_model_eval_t,
                         'edge_cov': __COV_DRIVER__.get_now(),
                         'bugs': self.reporter.n_bug,
@@ -375,8 +442,6 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         'record_coverage_time': record_coverage_t,
                         'seed': seed,
                         'node_size': self.cur_node_size,
-                        'load_model_time': load_model_time,
-                        'check_model_time': check_model_time,
                     })
                     for s in self.summaries:
                         info.update(
@@ -403,6 +468,15 @@ if __name__ == '__main__':
     parser.add_argument('--inp_gen', type=str, default='random')
     parser.add_argument('--gen_timeout', type=int,
                         default=1000, help='in milliseconds')
+    parser.add_argument('--use_bitvec', action='store_true')
+    parser.add_argument('--no_progress', action='store_true')
+    parser.add_argument('--merge_op_v', default=None,
+                        help='merge op version. Use to pick among EXPANDED_OP_VX')
+    parser.set_defaults(limnf=True)
+    parser.add_argument('--no_limnf', dest='limnf', action='store_false',
+                        help='Disable the limit on the number of floats')
+    parser.add_argument('--use_cuda', action='store_true')
+    parser.add_argument('--warmup', action='store_true')
     args = parser.parse_args()
 
     backends = None
@@ -427,6 +501,9 @@ if __name__ == '__main__':
         backends = {'tch-opt': TchExecutor(dev='cuda'),
                     'tch-debug': TchExecutor(opt_level=0, dev='cpu')}
         __COV_DRIVER__ = TchExecutor.coverage_install()
+    elif args.backend == 'dummy':  # for debugging
+        backends = {'dummy': DummyExecutor()}
+        __COV_DRIVER__ = DummyExecutor.coverage_install()
     else:
         raise NotImplementedError("Other backends not supported yet.")
     skip = 'backend:' + args.backend
@@ -441,6 +518,12 @@ if __name__ == '__main__':
         time_budget=args.time_budget,
         inp_gen=args.inp_gen,
         summaries=[ParamShapeSummary(), GraphSummary(), GraphSummary(level=1)],
-        _PER_MODEL_TIMEOUT_=args.gen_timeout
+        _PER_MODEL_TIMEOUT_=args.gen_timeout,
+        use_bitvec=args.use_bitvec,
+        no_progress=args.no_progress,
+        merge_op_v=args.merge_op_v,
+        limnf=args.limnf,
+        use_cuda=args.use_cuda,
+        warmup=args.warmup,
     )
     fuzzing_loop.fuzz()
