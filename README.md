@@ -166,5 +166,6 @@ pip install onnxruntime-gpu # the order matters; and you have to split the insta
 - [ ] **High-Priority** Parameter-wise Fuzzing;
 - [x] (Experimental) Improve input-searching algorithm @jiawei
     - [x] [Gradient-based Input Searching](https://dl.acm.org/doi/pdf/10.1145/3468264.3468612)
-- [ ] Implement the re-designed graph construction algorithm (mixed forward/backward construction) @jiawei
+- [x] Implement the re-designed graph construction algorithm (mixed forward/backward construction) @jiawei
+- [ ] Enhance fw-bw insertion by reusing outputs in backward insertion mode @jiawei
 
