@@ -8,3 +8,5 @@ pandas==1.3.5
 rich
 networkx
 psutil
+tqdm
+cloudpickle
