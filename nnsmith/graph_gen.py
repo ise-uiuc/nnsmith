@@ -345,6 +345,7 @@ class SimpleGenerator:
         if seed is not None:
             np.random.seed(seed)
             random.seed(seed)
+            torch.manual_seed(seed)
         self.verbose = verbose
         self.viz_verbose = viz_verbose
         auto_infer_in_dtypes(self.verbose)
