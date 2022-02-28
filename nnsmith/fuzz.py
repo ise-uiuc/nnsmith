@@ -42,7 +42,7 @@ _COV_BY_TIME_NAME_ = 'cov_by_time.csv'
 
 
 class Reporter:  # From Tzer.
-    def __init__(self, report_folder=None, name_hint='') -> None:
+    def __init__(self, report_folder=None, name_hint='', yes=False) -> None:
         # Checks
         self.start_time = time.perf_counter()
         self.report_folder = report_folder
@@ -52,7 +52,7 @@ class Reporter:  # From Tzer.
 
         if os.path.exists(self.report_folder):
             # TODO: Allow continous fuzzing...
-            decision = ''
+            decision = '' if not yes else 'y'
             while decision.lower() not in ['y', 'n']:
                 decision = input(
                     'Report folder already exists. Press [Y/N] to continue or exit...')
@@ -160,10 +160,10 @@ class CustomProgress(Progress):
 class FuzzingLoop:  # TODO: Support multiple backends.
     def __init__(self, backends: Dict[str, DiffTestBackend], mode='table', root=None, time_budget=60 * 60 * 4, max_nodes=32, inp_gen='random',
                  summaries: List[SummaryBase] = None, fork_bkn=False, _PER_MODEL_TIMEOUT_=1000, use_bitvec=False, no_progress=False, merge_op_v=None,
-                 limnf=True, use_cuda=False, warmup=False):
+                 limnf=True, use_cuda=False, warmup=False, yes=False):
         self.root = root
         self.reporter = Reporter(
-            report_folder=root, name_hint=list(backends.keys())[0])
+            report_folder=root, name_hint=list(backends.keys())[0], yes=yes)
         self.mode = mode  # `random` or `table`
         self.inp_gen = inp_gen  # `random` or `grad`
         self.table = GenerationTable() if mode == 'table' else None
@@ -478,6 +478,7 @@ if __name__ == '__main__':
                         help='Disable the limit on the number of floats')
     parser.add_argument('--use_cuda', action='store_true')
     parser.add_argument('--warmup', action='store_true')
+    parser.add_argument('-y', action='store_true', help='Yes to all')
     args = parser.parse_args()
 
     backends = None
@@ -526,5 +527,6 @@ if __name__ == '__main__':
         limnf=args.limnf,
         use_cuda=args.use_cuda,
         warmup=args.warmup,
+        yes=args.y
     )
     fuzzing_loop.fuzz()
