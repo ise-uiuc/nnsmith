@@ -60,9 +60,11 @@ class Reporter:  # From Tzer.
                 raise NNSmithInternalError(
                     f'{self.report_folder} already exist... We want an empty folder to report...')
             else:
-                shutil.rmtree(self.report_folder)
+                for f in Path(self.report_folder).glob('*'):
+                    if str(f.name) not in ['stdout.log', 'stderr.log']:
+                        os.system(f'rm -rf {f}')
 
-        os.mkdir(self.report_folder)
+        Path(self.report_folder).mkdir(parents=True, exist_ok=True)
         print(f'Create report folder: {self.report_folder}')
 
         print(f'Using `{self.report_folder}` as the fuzzing report folder')
