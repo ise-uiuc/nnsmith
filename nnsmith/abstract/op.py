@@ -863,6 +863,7 @@ class GELU(ElementWiseUnaryOp):
 
 class LeakyReLU(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __init__(self):
         """See https://pytorch.org/docs/stable/generated/torch.nn.LeakyReLU.html
@@ -876,6 +877,7 @@ class LeakyReLU(ElementWiseUnaryOp):
 
 class PReLU(ElementWiseUnaryOp):
     in_dtypes = [(DType.float32,)]
+    out_dtypes = [(DType.float32,)]
 
     def __init__(self):
         super().__init__()
