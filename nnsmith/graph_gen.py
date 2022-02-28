@@ -412,6 +412,7 @@ class SimpleGenerator:
         self.solver.add(init_placeholder.out_shape.gt_zero())
         self.forward_insert_node(init_placeholder, [], oshapes=[
                                  init_placeholder.out_shape])
+        self.init_ph_alive = True
 
     def create_placeholder(self, dim, dtype=None):
         shapevar = ShapeVar(
@@ -599,10 +600,6 @@ class SimpleGenerator:
         # self.placeholder idx -> nx graph node idx
         occ_holder_idx_nx = [self.placeholders[i] for i in occupied_idx]
 
-        # if the PH to occupy has no consumers, we simply reassign its alive shape.
-        # NOTE: we assume the first node is a placeholder.
-        reuse_init_alive_shape = occupied_idx[0] == 0
-
         ishape_indices = []
         for input_node in input_nodes:
             # Insert Placeholder in `input_nodes`
@@ -668,8 +665,11 @@ class SimpleGenerator:
 
                 self.abstract_graph.remove_edge(src, dst, key=key)
 
-            if reuse_init_alive_shape:  # update alive_shape[0]
+            # if the PH to occupy has no consumers, we simply reassign its alive shape.
+            # NOTE: we assume the first node is a placeholder.
+            if self.init_ph_alive:  # update alive_shape[0]
                 self.alive_shapes[0] = (op_nx_idx, self.alive_shapes[0][1], 0)
+                self.init_ph_alive = False
 
             # remove placeholders
             self.abstract_graph.remove_node(nx_idx)
