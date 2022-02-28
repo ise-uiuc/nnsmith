@@ -168,4 +168,4 @@ pip install onnxruntime-gpu # the order matters; and you have to split the insta
     - [x] [Gradient-based Input Searching](https://dl.acm.org/doi/pdf/10.1145/3468264.3468612)
 - [x] Implement the re-designed graph construction algorithm (mixed forward/backward construction) @jiawei
 - [ ] Enhance fw-bw insertion by reusing outputs in backward insertion mode @jiawei
-
+- [x] LEMON coverage evaluation ([modified](https://github.com/ganler/LEMON) to make it work) @jiawei
