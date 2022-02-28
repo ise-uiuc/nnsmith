@@ -956,9 +956,7 @@ class PureSymbolGen(SimpleGenerator):
         constraints.extend(node.requires(input_shapes))
         output_shapes = node.shape_fn(input_shapes)
 
-        print(input_shapes)
         for i, shape in enumerate(output_shapes):
-            print(shape, node, occupied_holder_shapes[i])
             constraints.extend(shape.eq(occupied_holder_shapes[i]))
             constraints.extend(shape.gt_zero())
 
