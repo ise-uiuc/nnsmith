@@ -21,6 +21,9 @@ from nnsmith.backends import DiffTestBackend
 from nnsmith.error import SanityCheck
 from nnsmith.graph_gen import SymbolNet, random_model_gen, table_model_gen
 from nnsmith.export import torch2onnx
+import util
+
+_DEFAULT_FORK_METHOD = 'fork'
 
 
 class ModelGenSubProcesssError(Exception):
@@ -111,7 +114,7 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
 
 
 # @safe_wrapper
-def forked_execution(
+def _forked_execution(
         gen_method, output_path, seed=None, max_nodes=10, max_gen_millisec=2000, table=None, save_torch=False, inp_gen='random',
         use_bitvec=False, summaries=None, merge_op_v=None, limnf=True, use_cuda=False):
     if seed is None:
@@ -132,7 +135,9 @@ def forked_execution(
         ipc_dict['table'] = table
         ipc_dict['profile'] = manager.dict()
         nnsmith_fork = os.environ.get(
-            'NNSMITH_FORK', 'fork')  # specify the fork method.
+            'NNSMITH_FORK', _DEFAULT_FORK_METHOD)  # specify the fork method.
+        if nnsmith_fork == 'pool':
+            nnsmith_fork = 'fork'
         if nnsmith_fork == 'forkserver':
             # TODO(JK): integrate the initializations (skip op, infer type, etc.) and rich panel into forkserver
             warnings.warn(
@@ -182,8 +187,21 @@ def forked_execution(
                             max_gen_millisec, inp_gen, output_path, use_bitvec, merge_op_v, limnf, use_cuda, ipc_dict)
             for src, dst in ipc_dict['state']['unsolvable']:
                 table.on_unsolvable(ALL_OP_STR2TYPE[src], ALL_OP_STR2TYPE[dst])
-
+        # make ipc_dict serializable
+        del ipc_dict['state']['summaries']
+        ipc_dict['state']['unsolvable'] = list(ipc_dict['state']['unsolvable'])
+        ipc_dict['state'] = dict(ipc_dict['state'])
         return ipc_dict['sat_inputs'], ipc_dict['state'], ipc_dict['edges'], ipc_dict['seed'], dict(ipc_dict['profile'])
+
+
+forkpool_execution = util.forkpool_execution(_forked_execution)
+
+
+def forked_execution(*args, **kwargs):
+    nnsmith_fork = os.environ.get(
+        'NNSMITH_FORK', _DEFAULT_FORK_METHOD)  # specify the fork method.
+
+    return _forked_execution(*args, **kwargs) if nnsmith_fork != 'pool' else forkpool_execution(*args, **kwargs)
 
 
 # TODO(from Jiawei @Jinkun): stop using this implementation.

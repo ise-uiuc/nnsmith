@@ -1,6 +1,9 @@
+import multiprocessing
 import os
 import sys
 from contextlib import contextmanager
+from multiprocessing import Pool, Queue, Process
+import multiprocessing.pool
 
 
 def fileno(file_or_fd):
@@ -36,3 +39,40 @@ def stdout_redirected(to=os.devnull, stdout=None):
 
 def merged_stderr_stdout():  # $ exec 2>&1
     return stdout_redirected(to=sys.stdout, stdout=sys.stderr)
+
+
+def forkpool_execution(func):
+    '''func must be a reliable function that won't hang'''
+    def server(q, rq):
+        while True:
+            args, kwargs = q.get()
+            try:
+                res = func(*args, **kwargs)
+                rq.put(('res', res))
+            except Exception as e:
+                rq.put(('error', str(e)))
+    pool = None
+    q = None
+    rq = None
+    manager = multiprocessing.Manager()
+
+    def wrapper(*args, **kwargs):
+        nonlocal pool, q, rq
+        if pool is None:
+            q, rq = manager.Queue(), manager.Queue()
+            pool = Process(target=server, args=(q, rq))
+            pool.start()
+        q.put((args, kwargs))
+        ret = rq.get()
+        if ret[0] == 'error':
+            raise RuntimeError(ret[1])
+        return ret[1]
+
+    def terminate():
+        nonlocal pool
+        if pool is not None:
+            pool.terminate()
+            pool.join()
+
+    wrapper.terminate = terminate
+    return wrapper

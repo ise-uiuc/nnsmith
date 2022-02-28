@@ -28,7 +28,7 @@ from nnsmith.graph_gen import GenerationTable
 from nnsmith.backends import DiffTestBackend
 from nnsmith.input_gen import gen_one_input
 from nnsmith.difftest import assert_allclose
-from nnsmith.graph_input_gen import forked_execution
+from nnsmith.graph_input_gen import forked_execution, forkpool_execution
 import networkx as nx
 import onnx
 from summary import GraphSummary, ParamShapeSummary, SummaryBase
@@ -453,6 +453,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         finally:  # cleanup
             os.system('rm ' + _TMP_ONNX_FILE_ + '*')
             last_cov = __COV_DRIVER__.get_now()
+        forkpool_execution.terminate()
         self.reporter.flush(self)
 
 
