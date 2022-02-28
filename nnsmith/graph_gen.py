@@ -740,8 +740,15 @@ class SimpleGenerator:
     def try_backward_insert(self, op: AbsOpBase):
         # we know that: Y = op(X)
         # S1 - select Y: Y must be a placeholder; (this also means the graph must start w/ a placeholder)
+        ph_candidates = []
+        for idx in self.placeholders:
+            oshape = self.id2nxnode(idx)['op'].out_shape
+            if isinstance(op, Expand) and oshape.ndims < op.expand_last_dim:
+                continue
+            ph_candidates.append(oshape)
+
         placeholder_indices = self.pick_shape_var_idx(
-            type(op), op.out_ranks, op.out_dtypes, candidate_shapes=[self.id2nxnode(idx)['op'].out_shape for idx in self.placeholders])
+            type(op), op.out_ranks, op.out_dtypes, candidate_shapes=ph_candidates)
 
         if self.try_occupy_placeholder(op, placeholder_indices):
             return True
@@ -949,7 +956,9 @@ class PureSymbolGen(SimpleGenerator):
         constraints.extend(node.requires(input_shapes))
         output_shapes = node.shape_fn(input_shapes)
 
+        print(input_shapes)
         for i, shape in enumerate(output_shapes):
+            print(shape, node, occupied_holder_shapes[i])
             constraints.extend(shape.eq(occupied_holder_shapes[i]))
             constraints.extend(shape.gt_zero())
 

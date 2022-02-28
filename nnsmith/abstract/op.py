@@ -1103,8 +1103,11 @@ class Expand(UnaryOpBase, ABC):
         return lambda x: x.expand(*self._shape_fn([ShapeVar.from_torch(x)])[0].shape)
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        inp_rank = self.expand_last_dim if out_shape_var[
+            0].ndims < self.expand_last_dim else out_shape_var[0].ndims
+        ConstraintCheck.ge(out_shape_var[0].ndims, self.expand_last_dim)
         return [
-            (out_shape_var[0].ndims, out_shape_var[0].dtype)
+            (inp_rank, out_shape_var[0].dtype)
         ]
 
 
