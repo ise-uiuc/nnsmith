@@ -160,7 +160,7 @@ class CustomProgress(Progress):
 
 
 class FuzzingLoop:  # TODO: Support multiple backends.
-    def __init__(self, backends: Dict[str, DiffTestBackend], mode='table', root=None, time_budget=60 * 60 * 4, max_nodes=32, inp_gen='random',
+    def __init__(self, backends: Dict[str, DiffTestBackend], mode='table', root=None, time_budget=60 * 60 * 4, max_nodes=None, fix_nodes=10, inp_gen='random',
                  summaries: List[SummaryBase] = None, fork_bkn=False, _PER_MODEL_TIMEOUT_=1000, use_bitvec=False, no_progress=False, merge_op_v=None,
                  limnf=True, use_cuda=False, warmup=False, yes=False):
         self.root = root
@@ -175,6 +175,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
 
         self.time_budget = time_budget
         self.max_nodes = max_nodes
+        self.fix_nodes = fix_nodes
 
         self.cur_gen_t = float('nan')
         self.slowest_gen_t = -float("inf")
@@ -289,9 +290,11 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                             seed = random.getrandbits(32)
                             self.cur_seed = seed
                             # TODO: for backward compatibility. Use the lines after in the future
-                            self.cur_node_size = 10
-                            # self.cur_node_size = random.randint(
-                            #     1, self.max_nodes)
+                            if self.fix_nodes is not None:
+                                self.cur_node_size = self.fix_nodes
+                            else:
+                                self.cur_node_size = random.randint(
+                                    1, self.max_nodes)
                             gen_info['seed'] = seed
                             gen_info['cur_node_size'] = self.cur_node_size
                             self.stage = 'gen model'
@@ -481,7 +484,13 @@ if __name__ == '__main__':
     parser.add_argument('--use_cuda', action='store_true')
     parser.add_argument('--warmup', action='store_true')
     parser.add_argument('-y', action='store_true', help='Yes to all')
+    parser.add_argument('--max_nodes', type=int)
+    parser.add_argument('--fix_nodes', type=int)
     args = parser.parse_args()
+    assert int(args.fix_nodes is not None) + \
+        int(args.max_nodes is not None) <= 1, '--fix_nodes and --max_nodes cannot be specified together'
+    if args.fix_nodes is None and args.max_nodes is None:
+        args.fix_nodes = 10  # default behavior
 
     backends = None
     if args.backend == 'tvm':
@@ -529,6 +538,8 @@ if __name__ == '__main__':
         limnf=args.limnf,
         use_cuda=args.use_cuda,
         warmup=args.warmup,
-        yes=args.y
+        yes=args.y,
+        max_nodes=args.max_nodes,
+        fix_nodes=args.fix_nodes,
     )
     fuzzing_loop.fuzz()
