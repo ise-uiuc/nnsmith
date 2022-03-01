@@ -352,6 +352,8 @@ class SimpleGenerator:
 
         self.op_candidates = [
             op for op in ALL_OP_TYPES if op not in skip and not op._skip]
+        if os.getenv('NNSMITH_DEBUG_CONV_ONLY', None) is not None:  # for debugging only
+            self.op_candidates = [NCHWConv2d]
         if use_bitvec:
             self.solver = z3.SolverFor("QF_UFBV")
         else:
@@ -912,6 +914,19 @@ class Bin:
         return lb, ub
 
 
+PARAM_CONFIG0 = {
+    'NCHWConv2d': {
+        'kernel_h_size': [Bin(i, i + 1, scale='log', base=2) for i in range(8)],
+        'kernel_w_size': [Bin(i, i + 1, scale='log', base=2) for i in range(8)],
+        'stride': [Bin(i, i + 1, scale='log', base=2) for i in range(8)],
+        'padding': [Bin(i, i + 1, scale='log', base=2) for i in range(8)] + [Bin(0, 1)],
+        # 'in_channels': [Bin(i, i + 1, scale='log', base=2) for i in range(8)] +
+        # [Bin(8, None, scale='log', base=2)],
+        'in_channels': [],
+        'out_channels': [],  # skip
+    },
+}
+
 PARAM_CONFIG1 = {
     'NCHWConv2d': {
         'kernel_h_size': [Bin(i, i + 1, scale='log', base=2) for i in range(8)],
@@ -950,7 +965,8 @@ class GuidedGen(PureSymbolGen):
 
         self.constrain_prob = constrain_prob
         self.base = 2
-        self.param_config = PARAM_CONFIG1
+        self.param_config = [PARAM_CONFIG0, PARAM_CONFIG1,
+                             PARAM_CONFIG2][int(os.getenv('NNSMITH_G_CONFIG', 1))]
         if scale == 'log':
             self.default_config = defaultdict(
                 lambda: [Bin(i, i + 1, scale=scale, base=base) for i in range(default_bins)] +
