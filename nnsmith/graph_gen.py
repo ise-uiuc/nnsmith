@@ -1000,7 +1000,7 @@ class GuidedGen(PureSymbolGen):
         return ret
 
     def extra_constraints(self, node: AbsOpBase, ishape_indices: List[int]):
-        if random.uniform(0, 1) < self.constrain_prob:
+        if random.uniform(0, 1) > self.constrain_prob:
             return []
         ret = []
         construct_param_dict = signature(node.__init__).parameters
