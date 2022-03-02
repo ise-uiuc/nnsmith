@@ -32,6 +32,7 @@ from nnsmith.graph_input_gen import forked_execution, forkpool_execution
 import networkx as nx
 import onnx
 from summary import GraphSummary, ParamShapeSummary, SummaryBase
+import socket
 
 __COV_DRIVER__ = None
 
@@ -83,6 +84,11 @@ class Reporter:  # From Tzer.
 
             f.write(f'START TIME: {datetime.datetime.now()}\n')
             f.write(f'COMMAND: {sys.argv}\n')
+            f.write(f'NNSMITH ENVIRONMENT:\n')
+            for k, v in os.environ.items():
+                if k.startswith('NNSMITH_'):
+                    f.write(f'\t{k}={v}\n')
+            f.write(f'HOSTNAME: {socket.gethostname()}\n')
             _log_repo(f, 'Fuzzer', fuzz_repo)
             if 'tvm' in name_hint and os.getenv('TVM_HOME'):
                 _log_repo(f, 'TVM', git.Repo(os.getenv('TVM_HOME')))
