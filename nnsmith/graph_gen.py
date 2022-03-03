@@ -712,7 +712,8 @@ class PureSymbolGen(SimpleGenerator):
     # subclasses may override this
     def extra_constraints(self, node: AbsOpBase, ishape_indices: List[int]):
         if os.getenv('NNSMITH_DEBUG_GROUPRES', None) is not None and isinstance(node, Reshape):
-            return __PARAM_CONFIG3_RESHAPE(node, ishape_indices)
+            return {'3': _PARAM_CONFIG3_RESHAPE, '4': _PARAM_CONFIG4_RESHAPE}[os.getenv('NNSMITH_G_CONFIG')](node, ishape_indices,
+                                                                                                             signature(node.__init__).parameters, self, False)
         return []
 
     def try_insert_node(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
@@ -962,79 +963,107 @@ PARAM_CONFIG2 = {
 }
 
 
-def __PARAM_CONFIG3_RESHAPE(node, ishape_indices, construct_param_dict, gen: SimpleGenerator):
+def random_group(n, k):
+    xs = sorted([random.randint(0, n - k) for _ in range(k - 1)])
+    xs = [0] + xs + [n - k]
+    ret = []
+    perm = list(range(n))
+    random.shuffle(perm)
+    for i in range(k):
+        st = xs[i] + i
+        ed = xs[i + 1] + i + 1
+        assert st < ed, (xs, st, ed)
+        assert ed <= n, (st, ed, n)
+        assert st >= 0, (st, ed, n)
+        ret.append([perm[j] for j in range(st, ed)])
+    return ret
+
+
+def __GROUP_RESHAPE(node, ishape_indices, construct_param_dict, gen: SimpleGenerator, ng, bin):
     bins = [Bin(i, i + 1, scale='log', base=2)
             for i in range(8)] + [Bin(None, None)]
     ret = []
 
-    def random_group(n, k):
-        xs = sorted([random.randint(0, n - k) for _ in range(k - 1)])
-        xs = [0] + xs + [n - k]
-        ret = []
-        perm = list(range(n))
-        random.shuffle(perm)
-        for i in range(k):
-            st = xs[i] + i
-            ed = xs[i + 1] + i + 1
-            assert st < ed, (xs, st, ed)
-            assert ed <= n, (st, ed, n)
-            assert st >= 0, (st, ed, n)
-            ret.append([perm[j] for j in range(st, ed)])
-        return ret
-
     inp = gen.alive_shapes[ishape_indices[0]][1]
     src_len, dst_len = inp.ndims, len(construct_param_dict)
-    larger_len, smaller_len = max(src_len, dst_len), min(src_len, dst_len)
-    group = random_group(larger_len, smaller_len)
-    if src_len < dst_len:
-        src2dst = group
-    else:
-        src2dst = [None] * src_len
-        for j in range(len(group)):
-            for i in group[j]:
-                assert src2dst[i] is None, (src2dst, group, i)
-                src2dst[i] = [j]
-        assert None not in src2dst, (src2dst, group)
+    src_group = random_group(src_len, ng)
+    dst_group = random_group(dst_len, ng)
+    assert len(src_group) == len(dst_group) == ng, (src_group, dst_group)
 
     construct_params = list(construct_param_dict.keys())
-    for s in range(len(src2dst)):
-        ds = src2dst[s]
-        disable = list(range(len(ds)))
-        random.shuffle(disable)
-        disable = disable[:1]
-        for idx, d in enumerate(ds):
-            if idx in disable:
-                continue
-            key = construct_params[d]
-            param = getattr(node, key)
-            if len(bins) == 0:
-                continue
-            bin_id = random.randint(0, len(bins) - 1)
-            lb, ub = bins[bin_id].sample_range()
-            ret.extend(gen.range_constrain(param, lb, ub))
+    if bin:
+        for gid in range(ng):
+            ds = dst_group[gid]
+            disable = list(range(len(ds)))
+            random.shuffle(disable)
+            disable = disable[:1]
+            for idx, d in enumerate(ds):
+                if idx in disable:
+                    continue
+                key = construct_params[d]
+                param = getattr(node, key)
+                if len(bins) == 0:
+                    continue
+                bin_id = random.randint(0, len(bins) - 1)
+                lb, ub = bins[bin_id].sample_range()
+                ret.extend(range_constrain(param, lb, ub))
     # group constraints
+    # TODO(JK): replace reshape's original constraint with this one if we need further performance improvement
     src_vars = gen.alive_shapes[ishape_indices[0]][1].shape
     dst_vars = [getattr(node, key) for key in construct_param_dict]
-    if src_len < dst_len:
-        larger_vars, smaller_vars = dst_vars, src_vars
-    else:
-        larger_vars, smaller_vars = src_vars, dst_vars
     cons_group = []
-    for i in range(len(group)):
-        cons_group.append(nnsmith_eq(smaller_vars[i], reduce(
-            nnsmith_mul, [larger_vars[j] for j in group[i]], 1)))
+    for gid in range(ng):
+        src_idx = src_group[gid]
+        dst_idx = dst_group[gid]
+        src_prod = reduce(nnsmith_mul, [src_vars[i] for i in src_idx], 1)
+        dst_prod = reduce(nnsmith_mul, [dst_vars[i] for i in dst_idx], 1)
+        cons_group.append(nnsmith_eq(src_prod, dst_prod))
+
     ret.extend(cons_group)
     return ret
 
 
+def _PARAM_CONFIG3_RESHAPE(node, ishape_indices, construct_param_dict, gen: SimpleGenerator, bin=True):
+    inp = gen.alive_shapes[ishape_indices[0]][1]
+    src_len, dst_len = inp.ndims, len(construct_param_dict)
+    ng = min(src_len, dst_len)
+    return __GROUP_RESHAPE(node, ishape_indices, construct_param_dict, gen, ng, bin)
+
+
+def _PARAM_CONFIG4_RESHAPE(node, ishape_indices, construct_param_dict, gen: SimpleGenerator, bin=True):
+    inp = gen.alive_shapes[ishape_indices[0]][1]
+    src_len, dst_len = inp.ndims, len(construct_param_dict)
+    ng = random.randint(1, min(src_len, dst_len))
+    print('ng=', ng, src_len, dst_len)
+    return __GROUP_RESHAPE(node, ishape_indices, construct_param_dict, gen, ng, bin)
+
+
 PARAM_CONFIG3 = copy.deepcopy(PARAM_CONFIG1)
-PARAM_CONFIG3['Reshape'] = __PARAM_CONFIG3_RESHAPE
-PARAM_CONFIG3['Reshape1D'] = __PARAM_CONFIG3_RESHAPE
-PARAM_CONFIG3['Reshape2D'] = __PARAM_CONFIG3_RESHAPE
-PARAM_CONFIG3['Reshape3D'] = __PARAM_CONFIG3_RESHAPE
-PARAM_CONFIG3['Reshape4D'] = __PARAM_CONFIG3_RESHAPE
-PARAM_CONFIG3['Reshape5D'] = __PARAM_CONFIG3_RESHAPE
-PARAM_CONFIG3['Reshape6D'] = __PARAM_CONFIG3_RESHAPE
+PARAM_CONFIG3['Reshape'] = _PARAM_CONFIG3_RESHAPE
+PARAM_CONFIG3['Reshape1D'] = _PARAM_CONFIG3_RESHAPE
+PARAM_CONFIG3['Reshape2D'] = _PARAM_CONFIG3_RESHAPE
+PARAM_CONFIG3['Reshape3D'] = _PARAM_CONFIG3_RESHAPE
+PARAM_CONFIG3['Reshape4D'] = _PARAM_CONFIG3_RESHAPE
+PARAM_CONFIG3['Reshape5D'] = _PARAM_CONFIG3_RESHAPE
+PARAM_CONFIG3['Reshape6D'] = _PARAM_CONFIG3_RESHAPE
+
+PARAM_CONFIG4 = copy.deepcopy(PARAM_CONFIG1)
+PARAM_CONFIG4['Reshape'] = _PARAM_CONFIG4_RESHAPE
+PARAM_CONFIG4['Reshape1D'] = _PARAM_CONFIG4_RESHAPE
+PARAM_CONFIG4['Reshape2D'] = _PARAM_CONFIG4_RESHAPE
+PARAM_CONFIG4['Reshape4D'] = _PARAM_CONFIG4_RESHAPE
+PARAM_CONFIG4['Reshape4D'] = _PARAM_CONFIG4_RESHAPE
+PARAM_CONFIG4['Reshape5D'] = _PARAM_CONFIG4_RESHAPE
+PARAM_CONFIG4['Reshape6D'] = _PARAM_CONFIG4_RESHAPE
+
+
+def range_constrain(param, lb, ub):
+    ret = []
+    if lb is not None:
+        ret.append(nnsmith_ge(param, lb))
+    if ub is not None:
+        ret.append(nnsmith_lt(param, ub))
+    return ret
 
 
 class GuidedGen(PureSymbolGen):
@@ -1062,20 +1091,12 @@ class GuidedGen(PureSymbolGen):
         for i in ish.shape:
             bins = self.default_config[0]
             lb, ub = bins[random.randint(0, len(bins) - 1)].sample_range()
-            constraints.extend(self.range_constrain(i, lb, ub))
+            constraints.extend(range_constrain(i, lb, ub))
         # throw exception for now since this is unlikely to happen
         assert self.check_sat(
             *constraints, nnsmith_le(self.n_floats, self.limit_float)) == z3.sat, 'Input constraints too tight'
         self.solver.add(*constraints)
         return ish
-
-    def range_constrain(self, param, lb, ub):
-        ret = []
-        if lb is not None:
-            ret.append(nnsmith_ge(param, lb))
-        if ub is not None:
-            ret.append(nnsmith_lt(param, ub))
-        return ret
 
     def extra_constraints(self, node: AbsOpBase, ishape_indices: List[int]):
         if random.uniform(0, 1) > self.constrain_prob:
@@ -1101,7 +1122,7 @@ class GuidedGen(PureSymbolGen):
             bin_id = random.randint(0, len(bins) - 1)
             lb, ub = bins[bin_id].sample_range()
             # print('\t{} <= {} < {}'.format(lb, key, ub))
-            ret.extend(self.range_constrain(param, lb, ub))
+            ret.extend(range_constrain(param, lb, ub))
         return ret
 
 
