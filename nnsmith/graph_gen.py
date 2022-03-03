@@ -960,6 +960,81 @@ PARAM_CONFIG2 = {
 }
 
 
+def __PARAM_CONFIG3_RESHAPE(node, ishape_indices, construct_param_dict, gen: SimpleGenerator):
+    bins = [Bin(i, i + 1, scale='log', base=2)
+            for i in range(8)] + [Bin(None, None)]
+    ret = []
+
+    def random_group(n, k):
+        xs = sorted([random.randint(0, n - k) for _ in range(k - 1)])
+        xs = [0] + xs + [n - k]
+        ret = []
+        perm = list(range(n))
+        random.shuffle(perm)
+        for i in range(k):
+            st = xs[i] + i
+            ed = xs[i + 1] + i + 1
+            assert st < ed, (xs, st, ed)
+            assert ed <= n, (st, ed, n)
+            assert st >= 0, (st, ed, n)
+            ret.append([perm[j] for j in range(st, ed)])
+        return ret
+
+    inp = gen.alive_shapes[ishape_indices[0]][1]
+    src_len, dst_len = inp.ndims, len(construct_param_dict)
+    larger_len, smaller_len = max(src_len, dst_len), min(src_len, dst_len)
+    group = random_group(larger_len, smaller_len)
+    if src_len < dst_len:
+        src2dst = group
+    else:
+        src2dst = [None] * src_len
+        for j in range(len(group)):
+            for i in group[j]:
+                assert src2dst[i] is None, (src2dst, group, i)
+                src2dst[i] = [j]
+        assert None not in src2dst, (src2dst, group)
+
+    construct_params = list(construct_param_dict.keys())
+    for s in range(len(src2dst)):
+        ds = src2dst[s]
+        disable = list(range(len(ds)))
+        random.shuffle(disable)
+        disable = disable[:1]
+        for idx, d in enumerate(ds):
+            if idx in disable:
+                continue
+            key = construct_params[d]
+            param = getattr(node, key)
+            if len(bins) == 0:
+                continue
+            bin_id = random.randint(0, len(bins) - 1)
+            lb, ub = bins[bin_id].sample_range()
+            ret.extend(gen.range_constrain(param, lb, ub))
+    # group constraints
+    src_vars = gen.alive_shapes[ishape_indices[0]][1].shape
+    dst_vars = [getattr(node, key) for key in construct_param_dict]
+    if src_len < dst_len:
+        larger_vars, smaller_vars = dst_vars, src_vars
+    else:
+        larger_vars, smaller_vars = src_vars, dst_vars
+    cons_group = []
+    for i in range(len(group)):
+        cons_group.append(nnsmith_eq(smaller_vars[i], reduce(
+            nnsmith_mul, [larger_vars[j] for j in group[i]], 1)))
+    ret.extend(cons_group)
+    return ret
+
+
+PARAM_CONFIG3 = copy.deepcopy(PARAM_CONFIG1)
+PARAM_CONFIG3['Reshape'] = __PARAM_CONFIG3_RESHAPE
+PARAM_CONFIG3['Reshape1D'] = __PARAM_CONFIG3_RESHAPE
+PARAM_CONFIG3['Reshape2D'] = __PARAM_CONFIG3_RESHAPE
+PARAM_CONFIG3['Reshape3D'] = __PARAM_CONFIG3_RESHAPE
+PARAM_CONFIG3['Reshape4D'] = __PARAM_CONFIG3_RESHAPE
+PARAM_CONFIG3['Reshape5D'] = __PARAM_CONFIG3_RESHAPE
+PARAM_CONFIG3['Reshape6D'] = __PARAM_CONFIG3_RESHAPE
+
+
 class GuidedGen(PureSymbolGen):
     def __init__(self, summaries=None, scale='log', base=2, default_bins=8, constrain_prob=1, **kwargs):
         super(GuidedGen, self).__init__(**kwargs)
@@ -967,7 +1042,7 @@ class GuidedGen(PureSymbolGen):
         self.constrain_prob = constrain_prob
         self.base = 2
         self.param_config = [PARAM_CONFIG0, PARAM_CONFIG1,
-                             PARAM_CONFIG2][int(os.getenv('NNSMITH_G_CONFIG', 1))]
+                             PARAM_CONFIG2, PARAM_CONFIG3][int(os.getenv('NNSMITH_G_CONFIG', 1))]
         if scale == 'log':
             self.default_config = defaultdict(
                 lambda: [Bin(i, i + 1, scale=scale, base=base) for i in range(default_bins)] +
@@ -1009,6 +1084,8 @@ class GuidedGen(PureSymbolGen):
             node.__class__.__name__, None)
         if config is None:
             return ret
+        if callable(config):
+            return config(node, ishape_indices, construct_param_dict, self)
 
         # if len(construct_param_dict) > 0:
         #     print('Op {} constraint:'.format(node))
