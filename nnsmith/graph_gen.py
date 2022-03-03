@@ -1008,7 +1008,6 @@ def __GROUP_RESHAPE(node, ishape_indices, construct_param_dict, gen: SimpleGener
                 lb, ub = bins[bin_id].sample_range()
                 ret.extend(range_constrain(param, lb, ub))
     # group constraints
-    # TODO(JK): replace reshape's original constraint with this one if we need further performance improvement
     src_vars = gen.alive_shapes[ishape_indices[0]][1].shape
     dst_vars = [getattr(node, key) for key in construct_param_dict]
     cons_group = []
@@ -1034,7 +1033,9 @@ def _PARAM_CONFIG4_RESHAPE(node, ishape_indices, construct_param_dict, gen: Simp
     inp = gen.alive_shapes[ishape_indices[0]][1]
     src_len, dst_len = inp.ndims, len(construct_param_dict)
     ng = random.randint(1, min(src_len, dst_len))
-    print('ng=', ng, src_len, dst_len)
+    ub = min(src_len, dst_len)
+    ng = random.choices(range(1, ub + 1), k=1,
+                        weights=[2**i for i in range(ub)])[0]
     return __GROUP_RESHAPE(node, ishape_indices, construct_param_dict, gen, ng, bin)
 
 
@@ -1051,7 +1052,7 @@ PARAM_CONFIG4 = copy.deepcopy(PARAM_CONFIG1)
 PARAM_CONFIG4['Reshape'] = _PARAM_CONFIG4_RESHAPE
 PARAM_CONFIG4['Reshape1D'] = _PARAM_CONFIG4_RESHAPE
 PARAM_CONFIG4['Reshape2D'] = _PARAM_CONFIG4_RESHAPE
-PARAM_CONFIG4['Reshape4D'] = _PARAM_CONFIG4_RESHAPE
+PARAM_CONFIG4['Reshape3D'] = _PARAM_CONFIG4_RESHAPE
 PARAM_CONFIG4['Reshape4D'] = _PARAM_CONFIG4_RESHAPE
 PARAM_CONFIG4['Reshape5D'] = _PARAM_CONFIG4_RESHAPE
 PARAM_CONFIG4['Reshape6D'] = _PARAM_CONFIG4_RESHAPE
@@ -1073,7 +1074,7 @@ class GuidedGen(PureSymbolGen):
         self.constrain_prob = constrain_prob
         self.base = 2
         self.param_config = [PARAM_CONFIG0, PARAM_CONFIG1,
-                             PARAM_CONFIG2, PARAM_CONFIG3][int(os.getenv('NNSMITH_G_CONFIG', 1))]
+                             PARAM_CONFIG2, PARAM_CONFIG3, PARAM_CONFIG4][int(os.getenv('NNSMITH_G_CONFIG', 1))]
         if scale == 'log':
             self.default_config = defaultdict(
                 lambda: [Bin(i, i + 1, scale=scale, base=base) for i in range(default_bins)] +

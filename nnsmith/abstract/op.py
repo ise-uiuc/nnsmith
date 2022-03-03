@@ -1184,6 +1184,8 @@ class Reshape(UnaryOpBase, ABC):
         return [shape_var]
 
     def _requires(self, input_shapes):
+        if int(os.getenv('NNSMITH_G_CONFIG', 1)) >= 3:  # TODO(JK): remove this once stablized
+            return []
         # TODO: How to handle -1 with input shapes?
         # If your target shape is concrete, then your output shape's total pixels must be the same as the input shape's.
         if -1 not in self.target_shape:
