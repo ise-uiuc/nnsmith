@@ -711,9 +711,6 @@ class PureSymbolGen(SimpleGenerator):
 
     # subclasses may override this
     def extra_constraints(self, node: AbsOpBase, ishape_indices: List[int]):
-        if os.getenv('NNSMITH_DEBUG_GROUPRES', None) is not None and isinstance(node, Reshape):
-            return {'3': _PARAM_CONFIG3_RESHAPE, '4': _PARAM_CONFIG4_RESHAPE}[os.getenv('NNSMITH_G_CONFIG')](node, ishape_indices,
-                                                                                                             signature(node.__init__).parameters, self, False)
         return []
 
     def try_insert_node(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
@@ -1039,6 +1036,14 @@ def _PARAM_CONFIG4_RESHAPE(node, ishape_indices, construct_param_dict, gen: Simp
     return __GROUP_RESHAPE(node, ishape_indices, construct_param_dict, gen, ng, bin)
 
 
+# for ablation study
+def _PARAM_CONFIG5_RESHAPE(node, ishape_indices, construct_param_dict, gen: SimpleGenerator, bin=True):
+    inp = gen.alive_shapes[ishape_indices[0]][1]
+    src_len, dst_len = inp.ndims, len(construct_param_dict)
+    ng = 1
+    return __GROUP_RESHAPE(node, ishape_indices, construct_param_dict, gen, ng, bin)
+
+
 PARAM_CONFIG3 = copy.deepcopy(PARAM_CONFIG1)
 PARAM_CONFIG3['Reshape'] = _PARAM_CONFIG3_RESHAPE
 PARAM_CONFIG3['Reshape1D'] = _PARAM_CONFIG3_RESHAPE
@@ -1057,6 +1062,15 @@ PARAM_CONFIG4['Reshape4D'] = _PARAM_CONFIG4_RESHAPE
 PARAM_CONFIG4['Reshape5D'] = _PARAM_CONFIG4_RESHAPE
 PARAM_CONFIG4['Reshape6D'] = _PARAM_CONFIG4_RESHAPE
 
+PARAM_CONFIG5 = copy.deepcopy(PARAM_CONFIG1)
+PARAM_CONFIG5['Reshape'] = _PARAM_CONFIG5_RESHAPE
+PARAM_CONFIG5['Reshape1D'] = _PARAM_CONFIG5_RESHAPE
+PARAM_CONFIG5['Reshape2D'] = _PARAM_CONFIG5_RESHAPE
+PARAM_CONFIG5['Reshape3D'] = _PARAM_CONFIG5_RESHAPE
+PARAM_CONFIG5['Reshape4D'] = _PARAM_CONFIG5_RESHAPE
+PARAM_CONFIG5['Reshape5D'] = _PARAM_CONFIG5_RESHAPE
+PARAM_CONFIG5['Reshape6D'] = _PARAM_CONFIG5_RESHAPE
+
 
 def range_constrain(param, lb, ub):
     ret = []
@@ -1074,7 +1088,7 @@ class GuidedGen(PureSymbolGen):
         self.constrain_prob = constrain_prob
         self.base = 2
         self.param_config = [PARAM_CONFIG0, PARAM_CONFIG1,
-                             PARAM_CONFIG2, PARAM_CONFIG3, PARAM_CONFIG4][int(os.getenv('NNSMITH_G_CONFIG', 1))]
+                             PARAM_CONFIG2, PARAM_CONFIG3, PARAM_CONFIG4, PARAM_CONFIG5][int(os.getenv('NNSMITH_G_CONFIG', 1))]
         if scale == 'log':
             self.default_config = defaultdict(
                 lambda: [Bin(i, i + 1, scale=scale, base=base) for i in range(default_bins)] +
