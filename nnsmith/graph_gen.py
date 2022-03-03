@@ -711,6 +711,8 @@ class PureSymbolGen(SimpleGenerator):
 
     # subclasses may override this
     def extra_constraints(self, node: AbsOpBase, ishape_indices: List[int]):
+        if os.getenv('NNSMITH_DEBUG_GROUPRES', None) is not None and isinstance(node, Reshape):
+            return __PARAM_CONFIG3_RESHAPE(node, ishape_indices)
         return []
 
     def try_insert_node(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
