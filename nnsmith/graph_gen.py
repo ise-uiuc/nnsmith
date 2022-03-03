@@ -128,7 +128,7 @@ class SymbolNet(nn.Module):
             tmp_inp = [shape_vars[i] for i in ishape_indices]
             op.shape_fn(tmp_inp)
             n_floats += op.n_floats(tmp_inp)
-            assert n_floats * 8 < megabyte_lim * 1024 * \
+            assert n_floats * 8 <= megabyte_lim * 1024 * \
                 1024, f'Current number of elements ({n_floats/1024/1024}m) exceeded memory limit ({megabyte_lim} MB)'
             if FLOPS_LIM is not None:
                 assert op.flops(
@@ -360,7 +360,7 @@ class SimpleGenerator:
             self.solver = z3.Solver()
 
         # 4 bytes per float (assume we use float64)
-        self.limit_float = 1024**2 * megabyte_lim / 8
+        self.limit_float = 1024**2 * megabyte_lim // 8
 
         # Node -> op: AbsOpBase
         # Edge -> shape_idx:-> self.alive_shapes
@@ -738,7 +738,8 @@ class PureSymbolGen(SimpleGenerator):
         if self.limnf:
             check_res = self.check_sat(
                 *constraints, nnsmith_le(tmp_n_floats, self.limit_float))
-        check_res = self.check_sat(*constraints)
+        else:
+            check_res = self.check_sat(*constraints)
         if check_res == z3.unknown:  # Timeout thing.
             self.on_timeout(node, ishape_indices)
 
