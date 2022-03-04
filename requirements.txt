@@ -1,3 +1,4 @@
+--extra-index-url https://pypi.ngc.nvidia.com
 torch
 onnx
 z3-solver
