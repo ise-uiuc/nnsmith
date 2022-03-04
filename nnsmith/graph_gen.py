@@ -384,13 +384,22 @@ class SimpleGenerator:
         self.merge_op_v = merge_op_v or 'v0'  # v0 as default version
         self.limnf = limnf
 
-    def new_sym(self, name):
+    def new_sym(self, name, bv_size=None):
         if self.use_bitvec:
-            bv_size = 8
+            bv_size = bv_size or 8
             zero_size = ARITH_MAX_WIDTH - bv_size
             return z3.ZeroExt(zero_size, z3.BitVec(name, bv_size))
         else:
             return z3.Int(name)
+
+    def new_syms(self, names):
+        if self.use_bitvec:
+            # bv_size = random.randint(6, 8)
+            bv_sizes = list(map(len, random_group(30, len(names))))
+            assert len(bv_sizes) == len(names)
+            return [self.new_sym(name, bvsize) for name, bvsize in zip(names, bv_sizes)]
+        else:
+            return [self.new_sym(name) for name in names]
 
     @ abstractmethod
     def insert_input_node(self, min_dims, shape=None, dtype=DType.float32) -> ShapeVar:
@@ -685,8 +694,9 @@ class SimpleGenerator:
 
 class PureSymbolGen(SimpleGenerator):
     def insert_input_node(self, min_dims, dtype=DType.float32, constrain_min=True) -> ShapeVar:
-        input_tensor_shape = ShapeVar(
-            shape=[self.new_sym('i%s_s%s' % (self.n_inps, k)) for k in range(len(min_dims))], dtype=dtype)
+        syms = self.new_syms(['i%s_s%s' % (self.n_inps, k)
+                             for k in range(len(min_dims))])
+        input_tensor_shape = ShapeVar(shape=syms, dtype=dtype)
         input_node = Input(self.n_inps, dtype, *input_tensor_shape.shape)
 
         self.insert_node(input_node, [], oshapes=[input_tensor_shape])
