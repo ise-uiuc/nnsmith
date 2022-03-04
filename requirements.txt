@@ -13,3 +13,4 @@ gitpython
 pandas==1.3.5
 rich
 networkx
+cloudpickle
