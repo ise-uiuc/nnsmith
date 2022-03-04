@@ -1143,6 +1143,22 @@ class NCHWConv2d(UnaryOpBase):
         return nnsmith_add(nnsmith_add(w.nelement(), padded_data.nelement()), outs)
 
 
+def random_group(n, k):
+    xs = sorted([random.randint(0, n - k) for _ in range(k - 1)])
+    xs = [0] + xs + [n - k]
+    ret = []
+    perm = list(range(n))
+    random.shuffle(perm)
+    for i in range(k):
+        st = xs[i] + i
+        ed = xs[i + 1] + i + 1
+        assert st < ed, (xs, st, ed)
+        assert ed <= n, (st, ed, n)
+        assert st >= 0, (st, ed, n)
+        ret.append([perm[j] for j in range(st, ed)])
+    return ret
+
+
 class Reshape(UnaryOpBase, ABC):
     in_dtypes = [(i,) for i in DTYPE_ALL]
 
@@ -1184,29 +1200,66 @@ class Reshape(UnaryOpBase, ABC):
         return [shape_var]
 
     def _requires(self, input_shapes):
-        if int(os.getenv('NNSMITH_G_CONFIG', 1)) >= 3:  # TODO(JK): remove this once stablized
-            return []
-        # TODO: How to handle -1 with input shapes?
-        # If your target shape is concrete, then your output shape's total pixels must be the same as the input shape's.
-        if -1 not in self.target_shape:
-            total_pixels = reduce(
-                lambda x, y: nnsmith_mul(x, y), self.target_shape, 1)
-            cons = [nnsmith_eq(total_pixels, reduce(
-                lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape, 1))]
-            if os.getenv('NNSMITH_CONS_RESHAPE', 'on') != 'off':
-                # should not be too extreme!
-                __DIM_LIMIT__ = 4096
-                lim = __DIM_LIMIT__
-                for s in self.target_shape[::-1]:
-                    cons.append(nnsmith_le(s, lim))
-                    lim //= 2
-                    lim = max(lim, 1)
-            return cons
+        # if int(os.getenv('NNSMITH_G_CONFIG', 1)) >= 3:  # TODO(JK): remove this once stablized
+        #     return []
+        # # TODO: How to handle -1 with input shapes?
+        # # If your target shape is concrete, then your output shape's total pixels must be the same as the input shape's.
+        # if -1 not in self.target_shape:
+        #     total_pixels = reduce(
+        #         lambda x, y: nnsmith_mul(x, y), self.target_shape, 1)
+        #     cons = [nnsmith_eq(total_pixels, reduce(
+        #         lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape, 1))]
+        #     if os.getenv('NNSMITH_CONS_RESHAPE', 'on') != 'off':
+        #         # should not be too extreme!
+        #         __DIM_LIMIT__ = 4096
+        #         lim = __DIM_LIMIT__
+        #         for s in self.target_shape[::-1]:
+        #             cons.append(nnsmith_le(s, lim))
+        #             lim //= 2
+        #             lim = max(lim, 1)
+        #     return cons
+        # else:
+        #     # If you use auto mode (specifying -1 for some dimensions), then the total number of input pixels must be exactly divisible by that of the output shape.
+        #     minimul_pixels = reduce(
+        #         lambda x, y: nnsmith_mul(x, y), [v for v in self.target_shape if v != -1], 1)
+        #     return [nnsmith_eq(nnsmith_mod(reduce(lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape, 1), minimul_pixels), 0)]
+
+        ret = []
+
+        inp = input_shapes[0]
+        src_len, dst_len = inp.ndims, len(self.target_shape)
+        gres_config = os.getenv('NNSMITH_G_CONFIG', '5')
+        if gres_config == '5':
+            ng = 1
+        elif gres_config == '3':
+            ng = min(src_len, dst_len)
+        elif gres_config == '4':
+            ub = min(src_len, dst_len)
+            ng = random.choices(range(1, ub + 1), k=1,
+                                weights=[2**i for i in range(ub)])[0]
         else:
-            # If you use auto mode (specifying -1 for some dimensions), then the total number of input pixels must be exactly divisible by that of the output shape.
-            minimul_pixels = reduce(
-                lambda x, y: nnsmith_mul(x, y), [v for v in self.target_shape if v != -1], 1)
-            return [nnsmith_eq(nnsmith_mod(reduce(lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape, 1), minimul_pixels), 0)]
+            raise ValueError(
+                f'NNSMITH_G_CONFIG={gres_config} is not recognized')
+        src_group = random_group(src_len, ng)
+        dst_group = random_group(dst_len, ng)
+        self.ng = ng
+        self.src_group = src_group
+        self.dst_group = dst_group
+        assert len(src_group) == len(dst_group) == ng, (src_group, dst_group)
+
+        # group constraints
+        src_vars = inp.shape
+        dst_vars = self.target_shape
+        cons_group = []
+        for gid in range(ng):
+            src_idx = src_group[gid]
+            dst_idx = dst_group[gid]
+            src_prod = reduce(nnsmith_mul, [src_vars[i] for i in src_idx], 1)
+            dst_prod = reduce(nnsmith_mul, [dst_vars[i] for i in dst_idx], 1)
+            cons_group.append(nnsmith_eq(src_prod, dst_prod))
+
+        ret.extend(cons_group)
+        return ret
 
     def torch(self):
         return lambda x: x.reshape(*self.target_shape)

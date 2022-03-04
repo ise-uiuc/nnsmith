@@ -960,31 +960,14 @@ PARAM_CONFIG2 = {
 }
 
 
-def random_group(n, k):
-    xs = sorted([random.randint(0, n - k) for _ in range(k - 1)])
-    xs = [0] + xs + [n - k]
-    ret = []
-    perm = list(range(n))
-    random.shuffle(perm)
-    for i in range(k):
-        st = xs[i] + i
-        ed = xs[i + 1] + i + 1
-        assert st < ed, (xs, st, ed)
-        assert ed <= n, (st, ed, n)
-        assert st >= 0, (st, ed, n)
-        ret.append([perm[j] for j in range(st, ed)])
-    return ret
-
-
-def __GROUP_RESHAPE(node, ishape_indices, construct_param_dict, gen: SimpleGenerator, ng, bin):
+def __GROUP_RESHAPE(node, ishape_indices, construct_param_dict, bin=True):
     bins = [Bin(i, i + 1, scale='log', base=2)
             for i in range(8)] + [Bin(None, None)]
     ret = []
 
-    inp = gen.alive_shapes[ishape_indices[0]][1]
-    src_len, dst_len = inp.ndims, len(construct_param_dict)
-    src_group = random_group(src_len, ng)
-    dst_group = random_group(dst_len, ng)
+    src_group = node.src_group
+    dst_group = node.dst_group
+    ng = node.ng
     assert len(src_group) == len(dst_group) == ng, (src_group, dst_group)
 
     construct_params = list(construct_param_dict.keys())
@@ -1004,72 +987,22 @@ def __GROUP_RESHAPE(node, ishape_indices, construct_param_dict, gen: SimpleGener
                 bin_id = random.randint(0, len(bins) - 1)
                 lb, ub = bins[bin_id].sample_range()
                 ret.extend(range_constrain(param, lb, ub))
-    # group constraints
-    src_vars = gen.alive_shapes[ishape_indices[0]][1].shape
-    dst_vars = [getattr(node, key) for key in construct_param_dict]
-    cons_group = []
-    for gid in range(ng):
-        src_idx = src_group[gid]
-        dst_idx = dst_group[gid]
-        src_prod = reduce(nnsmith_mul, [src_vars[i] for i in src_idx], 1)
-        dst_prod = reduce(nnsmith_mul, [dst_vars[i] for i in dst_idx], 1)
-        cons_group.append(nnsmith_eq(src_prod, dst_prod))
 
-    ret.extend(cons_group)
     return ret
 
 
-def _PARAM_CONFIG3_RESHAPE(node, ishape_indices, construct_param_dict, gen: SimpleGenerator, bin=True):
-    inp = gen.alive_shapes[ishape_indices[0]][1]
-    src_len, dst_len = inp.ndims, len(construct_param_dict)
-    ng = min(src_len, dst_len)
-    return __GROUP_RESHAPE(node, ishape_indices, construct_param_dict, gen, ng, bin)
-
-
-def _PARAM_CONFIG4_RESHAPE(node, ishape_indices, construct_param_dict, gen: SimpleGenerator, bin=True):
-    inp = gen.alive_shapes[ishape_indices[0]][1]
-    src_len, dst_len = inp.ndims, len(construct_param_dict)
-    ng = random.randint(1, min(src_len, dst_len))
-    ub = min(src_len, dst_len)
-    ng = random.choices(range(1, ub + 1), k=1,
-                        weights=[2**i for i in range(ub)])[0]
-    return __GROUP_RESHAPE(node, ishape_indices, construct_param_dict, gen, ng, bin)
-
-
-# for ablation study
-def _PARAM_CONFIG5_RESHAPE(node, ishape_indices, construct_param_dict, gen: SimpleGenerator, bin=True):
-    inp = gen.alive_shapes[ishape_indices[0]][1]
-    src_len, dst_len = inp.ndims, len(construct_param_dict)
-    ng = 1
-    return __GROUP_RESHAPE(node, ishape_indices, construct_param_dict, gen, ng, bin)
-
-
 PARAM_CONFIG3 = copy.deepcopy(PARAM_CONFIG1)
-PARAM_CONFIG3['Reshape'] = _PARAM_CONFIG3_RESHAPE
-PARAM_CONFIG3['Reshape1D'] = _PARAM_CONFIG3_RESHAPE
-PARAM_CONFIG3['Reshape2D'] = _PARAM_CONFIG3_RESHAPE
-PARAM_CONFIG3['Reshape3D'] = _PARAM_CONFIG3_RESHAPE
-PARAM_CONFIG3['Reshape4D'] = _PARAM_CONFIG3_RESHAPE
-PARAM_CONFIG3['Reshape5D'] = _PARAM_CONFIG3_RESHAPE
-PARAM_CONFIG3['Reshape6D'] = _PARAM_CONFIG3_RESHAPE
+PARAM_CONFIG3['Reshape'] = __GROUP_RESHAPE
+PARAM_CONFIG3['Reshape1D'] = __GROUP_RESHAPE
+PARAM_CONFIG3['Reshape2D'] = __GROUP_RESHAPE
+PARAM_CONFIG3['Reshape3D'] = __GROUP_RESHAPE
+PARAM_CONFIG3['Reshape4D'] = __GROUP_RESHAPE
+PARAM_CONFIG3['Reshape5D'] = __GROUP_RESHAPE
+PARAM_CONFIG3['Reshape6D'] = __GROUP_RESHAPE
 
-PARAM_CONFIG4 = copy.deepcopy(PARAM_CONFIG1)
-PARAM_CONFIG4['Reshape'] = _PARAM_CONFIG4_RESHAPE
-PARAM_CONFIG4['Reshape1D'] = _PARAM_CONFIG4_RESHAPE
-PARAM_CONFIG4['Reshape2D'] = _PARAM_CONFIG4_RESHAPE
-PARAM_CONFIG4['Reshape3D'] = _PARAM_CONFIG4_RESHAPE
-PARAM_CONFIG4['Reshape4D'] = _PARAM_CONFIG4_RESHAPE
-PARAM_CONFIG4['Reshape5D'] = _PARAM_CONFIG4_RESHAPE
-PARAM_CONFIG4['Reshape6D'] = _PARAM_CONFIG4_RESHAPE
+PARAM_CONFIG4 = copy.deepcopy(PARAM_CONFIG3)
 
-PARAM_CONFIG5 = copy.deepcopy(PARAM_CONFIG1)
-PARAM_CONFIG5['Reshape'] = _PARAM_CONFIG5_RESHAPE
-PARAM_CONFIG5['Reshape1D'] = _PARAM_CONFIG5_RESHAPE
-PARAM_CONFIG5['Reshape2D'] = _PARAM_CONFIG5_RESHAPE
-PARAM_CONFIG5['Reshape3D'] = _PARAM_CONFIG5_RESHAPE
-PARAM_CONFIG5['Reshape4D'] = _PARAM_CONFIG5_RESHAPE
-PARAM_CONFIG5['Reshape5D'] = _PARAM_CONFIG5_RESHAPE
-PARAM_CONFIG5['Reshape6D'] = _PARAM_CONFIG5_RESHAPE
+PARAM_CONFIG5 = copy.deepcopy(PARAM_CONFIG3)
 
 
 def range_constrain(param, lb, ub):
@@ -1123,7 +1056,7 @@ class GuidedGen(PureSymbolGen):
         if config is None:
             return ret
         if callable(config):
-            return config(node, ishape_indices, construct_param_dict, self)
+            return config(node, ishape_indices, construct_param_dict)
 
         # if len(construct_param_dict) > 0:
         #     print('Op {} constraint:'.format(node))
