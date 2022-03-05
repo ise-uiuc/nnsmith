@@ -383,6 +383,7 @@ class SimpleGenerator:
         self.wts = None
         self.merge_op_v = merge_op_v or 'v0'  # v0 as default version
         self.limnf = limnf
+        self.n_floats_cons = []
 
     def new_sym(self, name, bv_size=None):
         if self.use_bitvec:
@@ -714,8 +715,10 @@ class PureSymbolGen(SimpleGenerator):
         SanityCheck.eq(check_res, z3.sat,
                        msg=f'Constraints not sat but {check_res}.')
         if self.limnf:
-            self.n_floats = nnsmith_add(
-                self.n_floats, input_tensor_shape.nelement())
+            # self.n_floats = nnsmith_add(
+            #     self.n_floats, input_tensor_shape.nelement())
+            self.n_floats_cons.append(nnsmith_le(
+                input_tensor_shape.nelement(), self.limit_float // 8))
         self.n_inps += 1
         return input_tensor_shape
 
@@ -736,8 +739,11 @@ class PureSymbolGen(SimpleGenerator):
         # make a copy
         output_shapes = node.shape_fn(copy.deepcopy(input_shapes))
         if self.limnf:
-            tmp_n_floats = nnsmith_add(
-                self.n_floats, node.n_floats(input_shapes))
+            # tmp_n_floats = nnsmith_add(
+            #     self.n_floats, node.n_floats(input_shapes))
+            tmp_n_floats_cons = self.n_floats_cons + \
+                [nnsmith_le(node.n_floats(input_shapes),
+                            self.limit_float // 8)]
 
         for shape in output_shapes:
             for c in shape.gt_zero():
@@ -746,8 +752,10 @@ class PureSymbolGen(SimpleGenerator):
         self.cur_node = node
         constraints.extend(self.extra_constraints(node, ishape_indices))
         if self.limnf:
+            # check_res = self.check_sat(
+            #     *constraints, nnsmith_le(tmp_n_floats, self.limit_float))
             check_res = self.check_sat(
-                *constraints, nnsmith_le(tmp_n_floats, self.limit_float))
+                *constraints, *tmp_n_floats_cons)
         else:
             check_res = self.check_sat(*constraints)
         if check_res == z3.unknown:  # Timeout thing.
@@ -759,7 +767,8 @@ class PureSymbolGen(SimpleGenerator):
         for c in constraints:
             self.solver.add(c)
         if self.limnf:
-            self.n_floats = tmp_n_floats
+            # self.n_floats = tmp_n_floats
+            self.n_floats_cons = tmp_n_floats_cons
 
         self.insert_node(node, ishape_indices, output_shapes)
         return True
