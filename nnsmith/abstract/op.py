@@ -1259,6 +1259,15 @@ class Reshape(UnaryOpBase, ABC):
             cons_group.append(nnsmith_eq(src_prod, dst_prod))
 
         ret.extend(cons_group)
+        if os.getenv('NNSMITH_CONS_RESHAPE', 'on') != 'off':
+            # should not be too extreme!
+            __DIM_LIMIT__ = 4096
+            lim = __DIM_LIMIT__
+            for s in self.target_shape[::-1]:
+                ret.append(nnsmith_le(s, lim))
+                lim //= 2
+                lim = max(lim, 1)
+        assert -1 not in self.target_shape
         return ret
 
     def torch(self):
