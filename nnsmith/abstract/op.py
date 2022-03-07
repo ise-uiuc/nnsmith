@@ -539,12 +539,12 @@ class BcastBinaryOp1(BcastBinaryOp):  # +-*/ max min
     _bcast_out_dtypes = None
 
 
-class BcastBinaryOp2(BcastBinaryOp):  # > < =
+class Comparator(BcastBinaryOp):  # > < =
     in_dtypes = [(i, i) for i in DTYPE_ALL]
     _bcast_out_dtypes = [DType.bool]
 
 
-class BcastBinaryOp3(BcastBinaryOp):  # logical and or xor
+class Logical(BcastBinaryOp):  # logical and or xor
     in_dtypes = [(DType.bool, DType.bool)]
     _bcast_out_dtypes = [DType.bool]
 
@@ -583,13 +583,13 @@ Mul = type('Mul', (BcastBinaryOp1,), {'torch': lambda self: torch.mul})
 Max = type('Max', (BcastBinaryOp1,), {'torch': lambda self: torch.max})
 Min = type('Min', (BcastBinaryOp1,), {'torch': lambda self: torch.min})
 
-Equal = type('Equal', (BcastBinaryOp2,), {'torch': lambda self: torch.eq})
-Greater = type('Greater', (BcastBinaryOp2,), {'torch': lambda self: torch.gt})
-Less = type('Less', (BcastBinaryOp2,), {'torch': lambda self: torch.lt})
+Equal = type('Equal', (Comparator,), {'torch': lambda self: torch.eq})
+Greater = type('Greater', (Comparator,), {'torch': lambda self: torch.gt})
+Less = type('Less', (Comparator,), {'torch': lambda self: torch.lt})
 
-And = type('And', (BcastBinaryOp3,), {'torch': lambda self: torch.logical_and})
-Or = type('Or', (BcastBinaryOp3,), {'torch': lambda self: torch.logical_or})
-Xor = type('Xor', (BcastBinaryOp3,), {'torch': lambda self: torch.logical_xor})
+And = type('And', (Logical,), {'torch': lambda self: torch.logical_and})
+Or = type('Or', (Logical,), {'torch': lambda self: torch.logical_or})
+Xor = type('Xor', (Logical,), {'torch': lambda self: torch.logical_xor})
 
 # TODO: support exactly what onnx spec says (e.g., int support in the rhs)
 # lhs_dtypes = (DType.int32, DType.int64, DType.float32, DType.float64)
@@ -1809,8 +1809,11 @@ ALL_OP_STR2TYPE = {c.__name__: c for c in ALL_OP_TYPES}
 EXPANDED_OP_V0 = [Constant, Cast]
 EXPANDED_OP_V1 = [Concat, Constant, Expand, Reshape, ArgMax,
                   ArgMin, ReduceMax, ReduceMin, ReduceMean, SqueezeBase,
-                  ReduceSum, TrigonometricOp]
-EXPANDED_OP = EXPANDED_OP_V1  # points to latest version
+                  ReduceSum, TrigonometricOp, Comparator, Logical, BcastBinaryOp1]
+# less aggressive. may switch to EXPANDED_OP_V1 on backward mode?
+EXPANDED_OP_V2 = [Concat, Constant, Expand,
+                  Reshape, TrigonometricOp, Comparator, Logical, BcastBinaryOp1]
+EXPANDED_OP = EXPANDED_OP_V2  # points to latest version
 
 
 def config_skip_op(skip_config):
@@ -1915,7 +1918,7 @@ def auto_infer_in_dtypes(verbose=False):
             print('infered result:', valid_combs)
         if op_t.in_dtypes is not None:
             # we disable type promotion for bcast binary ops so the difference is fine
-            if verbose and valid_combs != op_t.in_dtypes and not issubclass(op_t, (BcastBinaryOp1, BcastBinaryOp2, BcastBinaryOp3)):
+            if verbose and valid_combs != op_t.in_dtypes and not issubclass(op_t, (BcastBinaryOp1, Comparator, Logical)):
                 warnings.warn('Inferred result for `{}` different from given one.\nInferred={}\n, given={}'.format(
                     op_t.__name__, valid_combs, op_t.in_dtypes))
         else:
