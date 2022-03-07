@@ -441,7 +441,7 @@ class SimpleGenerator:
             "timeout",
             max_gen_millisec // 3,
             "memory_max_size",
-            16 * 1024,  # MB
+            50 * 1024,  # MB
         )
         num_inputs = max(
             1, int((max_node_size + 9) // 10 + random.gauss(0, 1)))
@@ -718,7 +718,7 @@ class PureSymbolGen(SimpleGenerator):
             # self.n_floats = nnsmith_add(
             #     self.n_floats, input_tensor_shape.nelement())
             self.n_floats_cons.append(nnsmith_le(
-                input_tensor_shape.nelement(), self.limit_float // 8))
+                input_tensor_shape.nelement(), self.limit_float // 16))
         self.n_inps += 1
         return input_tensor_shape
 
@@ -743,7 +743,7 @@ class PureSymbolGen(SimpleGenerator):
             #     self.n_floats, node.n_floats(input_shapes))
             tmp_n_floats_cons = self.n_floats_cons + \
                 [nnsmith_le(node.n_floats(input_shapes),
-                            self.limit_float // 8)]
+                            self.limit_float // 16)]
 
         for shape in output_shapes:
             for c in shape.gt_zero():
