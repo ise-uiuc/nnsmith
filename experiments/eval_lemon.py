@@ -117,7 +117,7 @@ if __name__ == '__main__':
 
     os.mkdir(args.report_folder)
 
-    cov_file = open(args.out_dir + '/cov_by_time.csv', 'w')
+    cov_file = open(args.report_folder + '/cov_by_time.csv', 'w')
 
     time_list = []
     file_list = []
