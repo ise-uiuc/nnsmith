@@ -1233,7 +1233,7 @@ class Reshape(UnaryOpBase, ABC):
             ng = 1
         elif gres_config == '3':
             ng = min(src_len, dst_len)
-        elif gres_config == '4':
+        elif gres_config == '4':  # TODO(JK): scalar reshape
             ub = min(src_len, dst_len)
             ng = random.choices(range(1, ub + 1), k=1,
                                 weights=[2**i for i in range(ub)])[0]
