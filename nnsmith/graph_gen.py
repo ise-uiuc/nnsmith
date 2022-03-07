@@ -396,7 +396,8 @@ class SimpleGenerator:
     def new_syms(self, names):
         if self.use_bitvec:
             # bv_size = random.randint(6, 8)
-            bv_sizes = list(map(len, random_group(30, len(names))))
+            bv_sizes = list(map(len, random_group(
+                int(os.getenv("NNSMITH_BITS", 30)), len(names))))
             assert len(bv_sizes) == len(names)
             return [self.new_sym(name, bvsize) for name, bvsize in zip(names, bv_sizes)]
         else:
@@ -464,9 +465,10 @@ class SimpleGenerator:
 
     def check_arith_ref(self, var):
         SanityCheck.true(isinstance(
-            var, (z3.BitVecRef, z3.BoolRef)), f"{type(var)}not supported.")
-        for child in var.children():
-            self.check_arith_ref(child)
+            var, (z3.BitVecRef, z3.BoolRef, bool)), f"{type(var)}not supported.")
+        if not isinstance(var, bool):
+            for child in var.children():
+                self.check_arith_ref(child)
 
     def check_sat(self, *assumptions):
         start = time.time()
