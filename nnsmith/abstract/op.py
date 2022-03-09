@@ -1057,6 +1057,82 @@ class Neg(ElementWiseUnaryOp):
         return torch.neg
 
 
+class Pool2d(AbsOpBase):
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
+
+    def __init__(self,
+                 kernel_h_size: Union[int, z3.ExprRef],
+                 kernel_w_size: Union[int, z3.ExprRef],
+                 stride: Union[int, z3.ExprRef],
+                 padding: Union[int, z3.ExprRef]):
+        super().__init__()
+        self.kernel_h_size = kernel_h_size
+        self.kernel_w_size = kernel_w_size
+        self.stride = stride
+        self.padding = padding
+
+        self.inp_ranks = [4]  # NCHW
+        self.out_ranks = [4]  # NCHW
+
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        is_symbolic_inp = input_shapes[0].constains_symbol() or isinstance(self.kernel_w_size, z3.ExprRef) or isinstance(
+            self.kernel_h_size, z3.ExprRef) or isinstance(self.stride, z3.ExprRef) or isinstance(self.padding, z3.ExprRef)
+
+        shape_var = ShapeVar([], dtype=input_shapes[0].dtype)
+        # Batch dim: just copy
+        shape_var.shape.append(input_shapes[0].shape[0])
+        # Output channels
+        shape_var.shape.append(input_shapes[0].shape[1])
+        if not is_symbolic_inp:
+            shape_var.shape.append(
+                (input_shapes[0].shape[2] - self.kernel_h_size + 2 * self.padding) // self.stride + 1)
+            shape_var.shape.append(
+                (input_shapes[0].shape[3] - self.kernel_w_size + 2 * self.padding) // self.stride + 1)
+        else:
+            shape_var.shape.append(
+                (nnsmith_div(nnsmith_add(nnsmith_sub(input_shapes[0].shape[2], self.kernel_h_size), 2 * self.padding), self.stride) + 1))
+            shape_var.shape.append(
+                (nnsmith_div(nnsmith_add(nnsmith_sub(input_shapes[0].shape[3], self.kernel_w_size), 2 * self.padding), self.stride) + 1))
+        return [shape_var]
+
+    def _requires(self, input_shapes):
+        cons = []
+        ret = []
+        cons.append(nnsmith_ge(self.kernel_h_size, 1))
+        cons.append(nnsmith_ge(self.kernel_w_size, 1))
+        cons.append(nnsmith_le(self.kernel_h_size,
+                    nnsmith_add(input_shapes[0].shape[2], 2 * self.padding)))
+        cons.append(nnsmith_le(self.kernel_w_size,
+                    nnsmith_add(input_shapes[0].shape[3], 2 * self.padding)))
+        cons.append(nnsmith_ge(self.stride, 1))
+        cons.append(nnsmith_ge(self.padding, 0))
+        # not too extream to avoid torch exporter issue
+        cons.append(nnsmith_le(self.padding, 255))
+        # limit FLOPS
+        if FLOPS_LIM is not None:
+            cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
+        for c in cons:
+            if isinstance(c, z3.ExprRef):
+                ret.append(c)
+            else:
+                ConstraintCheck.true(c)
+        return ret
+
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        return [(4, out_shape_var[0].dtype)]
+
+
+class MaxPool2d(Pool2d):
+    def torch(self) -> Callable[..., torch.Tensor]:
+        return torch.nn.MaxPool2d(kernel_size=(self.kernel_h_size, self.kernel_w_size), stride=self.stride, padding=self.padding, device=_DEV)
+
+
+class AvgPool2d(Pool2d):
+    def torch(self) -> Callable[..., torch.Tensor]:
+        return torch.nn.AvgPool2d(kernel_size=(self.kernel_h_size, self.kernel_w_size), stride=self.stride, padding=self.padding, device=_DEV)
+
+
 class Expand(UnaryOpBase, ABC):
     in_dtypes = [(i,) for i in DTYPE_ALL]
     out_dtypes = [(i,) for i in DTYPE_ALL]
@@ -1133,6 +1209,7 @@ class ExpandLast4(Expand):
     def __init__(self, expand_n: Union[int, z3.ExprRef]):
         super().__init__(expand_last_dim=4, expand_n=expand_n)
 
+
 class BatchNorm2d(UnaryOpBase):
     in_dtypes = [(DType.float32,)]
     out_dtypes = [(DType.float32,)]
@@ -1143,21 +1220,22 @@ class BatchNorm2d(UnaryOpBase):
         self.out_ranks = [4]
         self.in_channels = in_channels
         self.out_channels = out_channels
-    
+
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         SanityCheck.eq(input_shapes[0].ndims, 4)
         input_shapes[0].shape[1] = self.out_channels
         return [input_shapes[0]]
-    
+
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
         SanityCheck.eq(input_shapes[0].ndims, 4)
         return [input_shapes[0].shape[1] == self.in_channels]
-    
+
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
         return [(4, DType.float32)]
-    
+
     def torch(self) -> Callable[..., torch.Tensor]:
         return torch.nn.BatchNorm2d(num_features=self.out_channels)
+
 
 class NCHWConv2d(UnaryOpBase):
     # FIXME: torch exporter does not support float64, may miss bugs
@@ -2140,3 +2218,19 @@ if __name__ == '__main__':
     assert concrete_op.in_channels == model[b0].as_long()
     assert concrete_op.out_channels == model[b1].as_long()
 
+    # Test `concrete` function.
+    p0, p1, p2, p3 = z3.Ints('p0 p1 p2 p3')
+    op = AvgPool2d(p0, p1, p2, p3)
+    s = z3.Solver()
+    shape = ShapeVar([1, 3, 224, 224], DType.float32)
+    for c in op.requires([shape]):
+        s.add(c)
+    for c in op.shape_fn([shape])[0].gt_zero():
+        s.add(c)
+    assert s.check() == z3.sat
+    model = s.model()
+    concrete_op = concretize(op, model)
+    assert concrete_op.kernel_h_size == model[p0].as_long()
+    assert concrete_op.kernel_w_size == model[p1].as_long()
+    assert concrete_op.stride == model[p2].as_long()
+    assert concrete_op.padding == model[p3].as_long()
