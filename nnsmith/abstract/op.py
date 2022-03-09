@@ -1048,6 +1048,7 @@ class Log2(ElementWiseUnaryOp):
 
 class Neg(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+    out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
 
     def __init__(self):
         super().__init__()
