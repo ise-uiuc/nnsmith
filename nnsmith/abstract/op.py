@@ -1128,7 +1128,7 @@ class NCHWConv2d(UnaryOpBase):
     def flops(self, input_shapes):
         w = ShapeVar([self.out_channels, self.in_channels, self.kernel_h_size,
                      self.kernel_w_size], dtype=input_shapes[0].dtype)
-        return nnsmith_mul(self._shape_fn(input_shapes)[0].nelement(), w.nelement())
+        return nnsmith_mul(nnsmith_mul(nnsmith_mul(self._shape_fn(input_shapes)[0].nelement(), self.in_channels), self.kernel_h_size), self.kernel_w_size)
 
     def n_floats(self, input_shapes):
         padded_data = ShapeVar(
