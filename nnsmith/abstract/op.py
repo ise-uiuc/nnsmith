@@ -1132,6 +1132,31 @@ class ExpandLast4(Expand):
     def __init__(self, expand_n: Union[int, z3.ExprRef]):
         super().__init__(expand_last_dim=4, expand_n=expand_n)
 
+class BatchNorm2d(UnaryOpBase):
+    in_dtypes = [(DType.float32,)]
+    out_dtypes = [(DType.float32,)]
+
+    def __init__(self, in_channels: Union[int, z3.ExprRef], out_channels: Union[int, z3.ExprRef]):
+        super().__init__()
+        self.inp_ranks = [4]
+        self.out_ranks = [4]
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+    
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        SanityCheck.eq(input_shapes[0].ndims, 4)
+        input_shapes[0].shape[1] = self.out_channels
+        return [input_shapes[0]]
+    
+    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+        SanityCheck.eq(input_shapes[0].ndims, 4)
+        return [input_shapes[0].shape[1] == self.in_channels]
+    
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        return [(4, DType.float32)]
+    
+    def torch(self) -> Callable[..., torch.Tensor]:
+        return torch.nn.BatchNorm2d(num_features=self.out_channels)
 
 class NCHWConv2d(UnaryOpBase):
     # FIXME: torch exporter does not support float64, may miss bugs
@@ -2023,6 +2048,7 @@ if __name__ == '__main__':
     # Test shape functions
     print(len(ALL_OP_TYPES), 'operators supported:')
     print(ALL_OP_TYPES)
+    auto_infer_in_dtypes()
 
     # ReLU
     lhs = torch.relu(torch.randn(1, 1, 1, 1)).shape
@@ -2098,3 +2124,18 @@ if __name__ == '__main__':
     assert concrete_op.kernel_w_size == model[p3].as_long()
     assert concrete_op.stride == model[p4].as_long()
     assert concrete_op.padding == model[p5].as_long()
+
+    b0, b1 = z3.Ints('b0 b1')
+    op = BatchNorm2d(b0, b1)
+    s = z3.Solver()
+    for c in op.requires([shape]):
+        s.add(c)
+    for c in op.shape_fn([shape])[0].gt_zero():
+        s.add(c)
+    assert s.check() == z3.sat
+    model = s.model()
+    concrete_op = concretize(op, model)
+
+    assert concrete_op.in_channels == model[b0].as_long()
+    assert concrete_op.out_channels == model[b1].as_long()
+
