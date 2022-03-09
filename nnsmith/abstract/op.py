@@ -1057,6 +1057,21 @@ class Neg(ElementWiseUnaryOp):
         return torch.neg
 
 
+class Softmax(ElementWiseUnaryOp):
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
+
+    def __init__(self, dim: Union[int, z3.ExprRef]):
+        super().__init__()
+        self.dim = dim
+
+    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+        return [nnsmith_lt(self.dim, input_shapes[0].ndims)]
+    
+    def torch(self) -> Callable[..., torch.Tensor]:
+        return torch.nn.Softmax(dim=self.dim)
+
+
 class Pool2d(AbsOpBase):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
