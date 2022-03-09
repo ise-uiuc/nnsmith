@@ -1140,12 +1140,12 @@ class Pool2d(AbsOpBase):
 
 class MaxPool2d(Pool2d):
     def torch(self) -> Callable[..., torch.Tensor]:
-        return torch.nn.MaxPool2d(kernel_size=(self.kernel_h_size, self.kernel_w_size), stride=self.stride, padding=self.padding, device=_DEV)
+        return torch.nn.MaxPool2d(kernel_size=(self.kernel_h_size, self.kernel_w_size), stride=self.stride, padding=self.padding)
 
 
 class AvgPool2d(Pool2d):
     def torch(self) -> Callable[..., torch.Tensor]:
-        return torch.nn.AvgPool2d(kernel_size=(self.kernel_h_size, self.kernel_w_size), stride=self.stride, padding=self.padding, device=_DEV)
+        return torch.nn.AvgPool2d(kernel_size=(self.kernel_h_size, self.kernel_w_size), stride=self.stride, padding=self.padding)
 
 
 class Expand(UnaryOpBase, ABC):
@@ -1225,31 +1225,20 @@ class ExpandLast4(Expand):
         super().__init__(expand_last_dim=4, expand_n=expand_n)
 
 
-class BatchNorm2d(UnaryOpBase):
+class BatchNorm2d(ElementWiseUnaryOp):
     in_dtypes = [(DType.float32,)]
     out_dtypes = [(DType.float32,)]
 
-    def __init__(self, in_channels: Union[int, z3.ExprRef], out_channels: Union[int, z3.ExprRef]):
+    def __init__(self):
         super().__init__()
         self.inp_ranks = [4]
         self.out_ranks = [4]
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        SanityCheck.eq(input_shapes[0].ndims, 4)
-        input_shapes[0].shape[1] = self.out_channels
-        return [input_shapes[0]]
-
-    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
-        SanityCheck.eq(input_shapes[0].ndims, 4)
-        return [input_shapes[0].shape[1] == self.in_channels]
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
         return [(4, DType.float32)]
 
     def torch(self) -> Callable[..., torch.Tensor]:
-        return torch.nn.BatchNorm2d(num_features=self.out_channels)
+        return lambda x : torch.nn.BatchNorm2d(num_features=x.shape[1])(x)
 
 
 class NCHWConv2d(UnaryOpBase):
@@ -1827,6 +1816,34 @@ class ArgMax5D(ArgMax):
         self.inp_ranks = [5]
 
 
+class Linear(UnaryOpBase):
+    in_dtypes = [(DType.float32,)]
+    out_dtypes = [(DType.float32,)]
+
+    def __init__(self, ifeat: Union[int, z3.ExprRef], ofeat: Union[int, z3.ExprRef]):
+        super().__init__()
+        self.ifeat = ifeat
+        self.ofeat = ofeat
+        self.inp_ranks = [-1]
+        self.inp_ranks = [-1] # at least one dim. cannot be zero.
+    
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        return [ShapeVar(shape=[*input_shapes[:-1], self.ofeat], dtype=DType.float32)]
+    
+    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+        return [
+            nnsmith_ge(self.ifeat, 1),
+            nnsmith_ge(self.ofeat, 1),
+            nnsmith_eq(input_shapes[0].shape[-1], self.ifeat)
+            ]
+    
+    def torch(self) -> Callable[..., torch.Tensor]:
+        return torch.nn.Linear(in_features=self.ifeat, out_features=self.ofeat)
+    
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        return [(out_shape_var[0].ndims, DType.float32)]
+
+
 def partialclass(cls, name, *args, **kwds) -> Type[AbsOpBase]:
     return type(name, (cls,),
                 {'__init__': functools.partialmethod(cls.__init__, *args, **kwds)})
@@ -2218,20 +2235,6 @@ if __name__ == '__main__':
     assert concrete_op.kernel_w_size == model[p3].as_long()
     assert concrete_op.stride == model[p4].as_long()
     assert concrete_op.padding == model[p5].as_long()
-
-    b0, b1 = z3.Ints('b0 b1')
-    op = BatchNorm2d(b0, b1)
-    s = z3.Solver()
-    for c in op.requires([shape]):
-        s.add(c)
-    for c in op.shape_fn([shape])[0].gt_zero():
-        s.add(c)
-    assert s.check() == z3.sat
-    model = s.model()
-    concrete_op = concretize(op, model)
-
-    assert concrete_op.in_channels == model[b0].as_long()
-    assert concrete_op.out_channels == model[b1].as_long()
 
     # Test `concrete` function.
     p0, p1, p2, p3 = z3.Ints('p0 p1 p2 p3')
