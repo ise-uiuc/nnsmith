@@ -1416,6 +1416,16 @@ class Reshape(UnaryOpBase, ABC):
 
 # Expand 6 times.
 
+class Flatten(Reshape):    
+    # Inputs are target shape.
+    def __init__(self, dim0: Union[int, z3.ExprRef]):
+        super().__init__()
+        self.dim0 = dim0
+        self.target_shape = [dim0]
+        self.out_ranks = [1]
+
+    def torch(self):
+        return lambda x: x.flatten()
 
 class Reshape1D(Reshape):
     # Inputs are target shape.
