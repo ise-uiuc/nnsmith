@@ -25,6 +25,9 @@ from nnsmith.abstract.op import *
 
 
 NNSMITH_LIMNF_V = os.getenv('NNSMITH_LIMNF_V', '0')
+assert NNSMITH_LIMNF_V in ['0', '1']
+NNSMITH_BV_SIZE = os.getenv('NNSMITH_BV_SIZE', '8')
+
 
 class RequiredDimNotFound(Exception):
     pass
@@ -389,7 +392,11 @@ class SimpleGenerator:
 
     def new_sym(self, name, bv_size=None):
         if self.use_bitvec:
-            bv_size = bv_size or 8
+            bv_size = bv_size or NNSMITH_BV_SIZE
+            if isinstance(bv_size, str) and bv_size.startswith('random'):
+                bv_size = random.randint(1, int(bv_size[len('random'):]))
+            elif isinstance(bv_size, str):
+                bv_size = int(bv_size)
             zero_size = ARITH_MAX_WIDTH - bv_size
             return z3.ZeroExt(zero_size, z3.BitVec(name, bv_size))
         else:
