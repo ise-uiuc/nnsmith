@@ -36,18 +36,20 @@ def torch2onnx(model, filename, verbose=False, use_cuda=False):
     if verbose:
         print(f"Generated model:\n{model}")
 
-    with warnings.catch_warnings():
-        warnings.simplefilter(
-            "default" if verbose else "ignore", category=torch.jit.TracerWarning)
-        model.to(dev)
-        torch.onnx.export(
-            model, tuple(dummy_inputs),
-            filename,
-            input_names=input_names,
-            output_names=[f'o{i}' for i in range(model.n_output)],
-            verbose=verbose,
-            dynamic_axes=dynamic_axes,
-            opset_version=14)
+    with torch.no_grad():
+        with warnings.catch_warnings():
+            warnings.simplefilter(
+                "default" if verbose else "ignore", category=torch.jit.TracerWarning)
+            model.to(dev)
+            model.eval()
+            torch.onnx.export(
+                model, tuple(dummy_inputs),
+                filename,
+                input_names=input_names,
+                output_names=[f'o{i}' for i in range(model.n_output)],
+                verbose=verbose,
+                dynamic_axes=dynamic_axes,
+                opset_version=14)
 
 
 if __name__ == "__main__":

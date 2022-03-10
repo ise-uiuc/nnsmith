@@ -72,6 +72,32 @@ python experiments/input_search.py --max_nodes 15 --n_model 100 --n_inp_sample 1
 python experiments/plot_inp_search.py
 ```
 
+### Coverage normalization
+
+Note that this step is not necessary as the coverage branch of TVM should already have the `blocklist.txt` file.
+
+1. Run fuzzing with source-level coverage on all baselines.
+
+```shell
+LLVM_PROFILE_FILE="nnsmith.profraw" python nnsmith/fuzz.py --root source-cov
+LLVM_PROFILE_FILE="lemon.profraw" python experiments/eval_lemon.py --model_dir /path/to/lemon_outputs --report_folder lemon
+# other baseline commands;
+```
+
+2. Generate coverage reports (`coverage.txt`).
+
+```shell
+llvm-profdata-14 merge -sparse nnsmith.profraw lemon.profraw -o tvm.profdata
+llvm-cov-14 report /PATH/TO/tvm/build/libtvm.so -instr-profile=tvm.profdata > coverage.txt
+```
+
+3. Generate `blocklist.txt` based on `coverage.txt`.
+
+```shell
+python experiments/tvm_blocklist_gen.py --tvm_home /PATH/TO/tvm --src_cov_report coverage.txt
+# you got `tvm-blocklist.txt`
+```
+
 ## Notes
 
 <details><summary><b>Minor Coding Spec</b> <i>[click to expand]</i></summary>
@@ -160,11 +186,11 @@ pip install onnxruntime-gpu # the order matters; and you have to split the insta
     - `./build.sh --config RelWithDebInfo --build_shared_lib --parallel --build_wheel --skip_onnx_tests`
     - `pip install build/Linux/RelWithDebInfo/dist/onnxruntime-1.11.0-cp38-cp38-linux_x86_64.whl --force-reinstall`
 - [x] Enable multiple inputs; @jinkun
-- [ ] **Op Batch 2**: See https://github.com/ise-uiuc/nnsmith/issues/6
-    - [ ] Casting, GeLU, Dropout, Softmax;
-    - [ ] BatchNorm, LayerNorm;
 - [ ] **High-Priority** Parameter-wise Fuzzing;
 - [x] (Experimental) Improve input-searching algorithm @jiawei
     - [x] [Gradient-based Input Searching](https://dl.acm.org/doi/pdf/10.1145/3468264.3468612)
-- [ ] Implement the re-designed graph construction algorithm (mixed forward/backward construction) @jiawei
-
+- [x] Implement the re-designed graph construction algorithm (mixed forward/backward construction) @jiawei
+- [ ] Enhance fw-bw insertion by reusing outputs in backward insertion mode @jiawei
+- [x] LEMON coverage evaluation ([modified](https://github.com/ganler/LEMON) to make it work) @jiawei
+- [x] Coverage normalization. @jiawei
+- [x] **Op Batch 3**: Softmax, BatchNorm, Linear, Flatten, *Pool2d. @jiawei
