@@ -1224,22 +1224,24 @@ class ExpandLast4(Expand):
     def __init__(self, expand_n: Union[int, z3.ExprRef]):
         super().__init__(expand_last_dim=4, expand_n=expand_n)
 
-
 class BatchNorm2d(ElementWiseUnaryOp):
     in_dtypes = [(DType.float32,)]
     out_dtypes = [(DType.float32,)]
 
-    def __init__(self):
+    def __init__(self, nfeat):
         super().__init__()
         self.inp_ranks = [4]
         self.out_ranks = [4]
+        self.nfeat = nfeat
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
         return [(4, DType.float32)]
 
-    def torch(self) -> Callable[..., torch.Tensor]:
-        return lambda x : torch.nn.BatchNorm2d(num_features=x.shape[1])(x)
+    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+        return [nnsmith_eq(self.nfeat, input_shapes[0].shape[1])]
 
+    def torch(self) -> Callable[..., torch.Tensor]:
+        return torch.nn.BatchNorm2d(num_features=self.nfeat)
 
 class NCHWConv2d(UnaryOpBase):
     # FIXME: torch exporter does not support float64, may miss bugs
