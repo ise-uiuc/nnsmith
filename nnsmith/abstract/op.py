@@ -1908,7 +1908,9 @@ class Linear(UnaryOpBase):
         self.inp_ranks = [-1]  # at least one dim. cannot be zero.
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        return [ShapeVar(shape=[*input_shapes[:-1], self.ofeat], dtype=DType.float32)]
+        assert len(input_shapes) == 1, "Linear only takes one input, but got {}".format(
+            len(input_shapes))
+        return [ShapeVar(shape=[*input_shapes[0].shape[:-1], self.ofeat], dtype=DType.float32)]
 
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
         return [
