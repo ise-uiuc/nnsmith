@@ -991,7 +991,7 @@ class PureSymbolGen(SimpleGenerator):
             ph = self.create_placeholder(
                 rank if rank != -1 else
                 random.choices(range(MAX_RANK + 1),
-                               weights=[1, 1, 1, 1, 2, 1]),
+                               weights=[1, 1, 1, 1, 2, 1, 0.5])[0],
                 dtype=dtype)
             new_inp_placeholders.append(ph)
             constraints.extend(ph.out_shape.gt_zero())
@@ -1005,7 +1005,7 @@ class PureSymbolGen(SimpleGenerator):
             constraints.extend(shape.gt_zero())
 
         self.cur_node = node
-        # TODO: not considering extra constraints for now.
+        constraints.extend(self.extra_constraints(node, occ_holder_indices))
         # TODO: consider nfloats.
         check_res = self.check_sat(*constraints)
 
