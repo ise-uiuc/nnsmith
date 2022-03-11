@@ -1074,6 +1074,7 @@ class Softmax(ElementWiseUnaryOp):
 
 
 class Pool2d(AbsOpBase):
+    # TODO: distinguish stride_h and stride_w
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
@@ -1145,6 +1146,11 @@ class MaxPool2d(Pool2d):
 
 
 class AvgPool2d(Pool2d):
+    # TODO: model more
+    # self.extra_attrs['ceil_mode'] = random.choice([False, True])
+    # self.extra_attrs['count_include_pad'] = random.choice([False, True])
+    # self.extra_attrs['divisor_override'] = None  # ignore for now
+
     def torch(self) -> Callable[..., torch.Tensor]:
         return torch.nn.AvgPool2d(kernel_size=(self.kernel_h_size, self.kernel_w_size), stride=self.stride, padding=self.padding)
 
