@@ -1067,7 +1067,7 @@ class Softmax(ElementWiseUnaryOp):
 
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
         return [nnsmith_lt(self.dim, input_shapes[0].ndims)]
-    
+
     def torch(self) -> Callable[..., torch.Tensor]:
         return torch.nn.Softmax(dim=self.dim)
 
@@ -1224,6 +1224,7 @@ class ExpandLast4(Expand):
     def __init__(self, expand_n: Union[int, z3.ExprRef]):
         super().__init__(expand_last_dim=4, expand_n=expand_n)
 
+
 class BatchNorm2d(ElementWiseUnaryOp):
     in_dtypes = [(DType.float32,)]
     out_dtypes = [(DType.float32,)]
@@ -1242,6 +1243,7 @@ class BatchNorm2d(ElementWiseUnaryOp):
 
     def torch(self) -> Callable[..., torch.Tensor]:
         return torch.nn.BatchNorm2d(num_features=self.nfeat)
+
 
 class NCHWConv2d(UnaryOpBase):
     # FIXME: torch exporter does not support float64, may miss bugs
@@ -1480,7 +1482,8 @@ class Reshape(UnaryOpBase, ABC):
 
 # Expand 6 times.
 
-class Flatten(Reshape):    
+
+class Flatten(Reshape):
     # Inputs are target shape.
     def __init__(self, dim0: Union[int, z3.ExprRef]):
         super().__init__()
@@ -1490,6 +1493,7 @@ class Flatten(Reshape):
 
     def torch(self):
         return lambda x: x.flatten()
+
 
 class Reshape1D(Reshape):
     # Inputs are target shape.
@@ -1901,21 +1905,21 @@ class Linear(UnaryOpBase):
         self.ifeat = ifeat
         self.ofeat = ofeat
         self.inp_ranks = [-1]
-        self.inp_ranks = [-1] # at least one dim. cannot be zero.
-    
+        self.inp_ranks = [-1]  # at least one dim. cannot be zero.
+
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         return [ShapeVar(shape=[*input_shapes[:-1], self.ofeat], dtype=DType.float32)]
-    
+
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
         return [
             nnsmith_ge(self.ifeat, 1),
             nnsmith_ge(self.ofeat, 1),
             nnsmith_eq(input_shapes[0].shape[-1], self.ifeat)
-            ]
-    
+        ]
+
     def torch(self) -> Callable[..., torch.Tensor]:
         return torch.nn.Linear(in_features=self.ifeat, out_features=self.ofeat)
-    
+
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
         return [(out_shape_var[0].ndims, DType.float32)]
 
