@@ -251,7 +251,7 @@ class ShapeVar:
             if isinstance(self.shape[i], z3.ExprRef) or isinstance(other.shape[i], z3.ExprRef):
                 ret.append(nnsmith_eq(self.shape[i], other.shape[i]))
             else:
-                ConstraintCheck.gt(self.shape[i], other.shape[i])
+                ConstraintCheck.eq(self.shape[i], other.shape[i])
         return ret
 
     def torch(self):
@@ -1433,6 +1433,10 @@ class Reshape(UnaryOpBase, ABC):
 
         inp = input_shapes[0]
         src_len, dst_len = inp.ndims, len(self.target_shape)
+        if src_len == 0:
+            src_len = 1  # special handling for scalar
+        if dst_len == 0:
+            dst_len = 1  # special handling for scalar
         gres_config = os.getenv('NNSMITH_G_CONFIG', '5')
         if gres_config == '5':
             ng = 1
@@ -1455,6 +1459,10 @@ class Reshape(UnaryOpBase, ABC):
         # group constraints
         src_vars = inp.shape
         dst_vars = self.target_shape
+        if len(src_vars) == 0:
+            src_vars = [1]  # special handling for scalar
+        if len(dst_vars) == 0:
+            dst_vars = [1]  # special handling for scalar
         cons_group = []
         for gid in range(ng):
             src_idx = src_group[gid]
@@ -2248,6 +2256,15 @@ if __name__ == '__main__':
     print(len(ALL_OP_TYPES), 'operators supported:')
     print(ALL_OP_TYPES)
     auto_infer_in_dtypes()
+
+    # Reshape from scalar
+    lhs = ShapeVar([], DType.float32)
+    s = z3.Solver()
+    op = Reshape1D(1)
+    rhs = op.shape_fn([lhs])
+    assert all(rhs[0].eq(ShapeVar([1], DType.float32))), (lhs, rhs)
+    s.add(*op.requires([lhs]))
+    assert s.check() == z3.sat
 
     # ReLU
     lhs = torch.relu(torch.randn(1, 1, 1, 1)).shape
