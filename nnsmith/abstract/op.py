@@ -181,6 +181,13 @@ def nnsmith_mod(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3
     return left % right
 
 
+def nnsmith_min(left, right):
+    if isinstance(left, int) and isinstance(right, int):
+        return min(left, right)
+    left, right = align_bvs(left, right)
+    return z3.If(nnsmith_le(left, right), left, right)
+
+
 class DType(Enum):
     # float16 = 'float16'
     float32 = torch.float32
@@ -1126,9 +1133,8 @@ class Pool2d(AbsOpBase):
         cons.append(nnsmith_ge(self.padding, 0))
         # not too extream to avoid torch exporter issue
         cons.append(nnsmith_le(self.padding, 255))
-        # limit FLOPS
-        if FLOPS_LIM is not None:
-            cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
+        cons.append(nnsmith_le(nnsmith_mul(2, self.padding),
+                    nnsmith_min(self.kernel_h_size, self.kernel_w_size)))
         for c in cons:
             if isinstance(c, z3.ExprRef):
                 ret.append(c)
