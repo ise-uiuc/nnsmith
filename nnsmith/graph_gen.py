@@ -1,13 +1,15 @@
-from collections import Counter, defaultdict
+# See https://github.com/Z3Prover/z3/issues/5656
+import z3  # Always import z3 first to avoid incompatibility issue.
+from collections import defaultdict
 import math
 import textwrap
-import z3  # Always import z3 first to avoid incompatibility issue.
-# See https://github.com/Z3Prover/z3/issues/5656
+
 import networkx as nx
 from summary import ParamShapeSummary
 import torch
 from torch import nn
 import numpy as np
+import uuid
 
 import pickle
 import cloudpickle
@@ -36,8 +38,14 @@ class RequiredDimNotFound(Exception):
 ALIVE_SHAPE_TYPE = List[Tuple[int, ShapeVar, int]]
 
 
-InputInfo = NamedTuple(
+InputInfoBase = NamedTuple(
     'InputInfo', [('op', Input), ('oid', int), ('node_id', int), ('input_name', str)])
+
+
+class InputInfo(InputInfoBase):
+    def __repr__(self) -> str:
+        return f"InputInfo(op={self.op}<{self.op.shape_var.dtype.value}>, oid={self.oid}, node_id={self.node_id}, input_name={self.input_name})"
+
 
 __MB_LIM__ = 6 * 1024
 
@@ -52,6 +60,7 @@ class SymbolNet(nn.Module):
         self.ref_cnt = []  # ref cnt -> tensors; erased on 0;
         self.instructions = []  # <Func, <input idx>, <output idx>>
         self.n_output = 0
+        self.inp_id_cnt = 0
 
         # keep track of layers and weights so that the tracing can work properly
         self.mlist = nn.ModuleList()
@@ -112,6 +121,8 @@ class SymbolNet(nn.Module):
             else:  # Should be input node
                 SanityCheck.true(type(op) is Input, 'type(op) should be Input')
                 SanityCheck.eq(len(output_idx), 1)
+                op.idx = self.inp_id_cnt
+                self.inp_id_cnt += 1
                 self.input_info.append(
                     InputInfo(op=op, oid=output_idx[0], node_id=node_id, input_name=f'i{op.idx}'))
 
@@ -123,7 +134,7 @@ class SymbolNet(nn.Module):
                 dtype = self.alive_shapes[shape_idx][1].dtype
                 shape = [model.eval(i).as_long() if isinstance(
                     i, z3.ExprRef) else i for i in shape]
-                assert shape_idx not in shape_vars
+                assert shape_idx not in shape_vars, f"{shape_idx} already exists"
                 shape_vars[shape_idx] = ShapeVar(shape, dtype)
             self.concrete_graph.nodes[node_id]['in_svs'] = [
                 shape_vars[i] for i in ishape_indices]
@@ -142,9 +153,9 @@ class SymbolNet(nn.Module):
         if self.verbose:
             print('input_info=', self.input_info)
         self.input_spec = {
-            f'i{ii.op.idx}': ii.op.shape for ii in self.input_info}
-        self.plausible_input_shape = {f'i{ii.op.idx}': ShapeVar(
-            ii.op.shape, dtype=ii.op.dtype) for ii in self.input_info}
+            f'i{ii.op.idx}': ii.op.shape_var.shape for ii in self.input_info}
+        self.plausible_input_shape = {
+            f'i{ii.op.idx}': ii.op.shape_var for ii in self.input_info}
         self.first_run = True
         self.hacked = {}  # make forward deterministic
 
@@ -194,21 +205,33 @@ class SymbolNet(nn.Module):
             SanityCheck.eq(out.dtype, self.alive_shapes[shape_idx][1].dtype.value, msg_head +
                            f'torch dtype ({out.dtype}) != symbolic dtype ({self.alive_shapes[shape_idx][1].dtype.value})')
 
-    def get_random_inps(self) -> List[torch.Tensor]:
-        return [torch.rand(ii.op.shape) for ii in self.input_info]
+    def get_random_inps(self, margin=10, base='center', use_cuda=False) -> List[torch.Tensor]:
+        dev = torch.device('cuda' if use_cuda else 'cpu')
+        if base == 'center':
+            base = margin / 2
+        else:
+            assert isinstance(base, int) or isinstance(base, float)
 
-    def rand_input_gen(self, max_iter=10, use_cuda=False) -> Optional[List[torch.Tensor]]:
+        inputs = []
+        for ii in self.input_info:
+            dtype = ii.op.shape_var.dtype.value
+            fp_tensor = base + \
+                torch.rand(ii.op.shape_var.shape, device=dev) * margin
+            if DType.is_float(dtype):
+                inputs.append(fp_tensor.to(dtype))
+            else:
+                inputs.append(torch.round(fp_tensor).to(dtype))
+
+        return inputs
+
+    def rand_input_gen(self, max_iter=10, margin=10, base='center', use_cuda=False) -> Optional[List[torch.Tensor]]:
         last_check_intermediate_numeric = self.check_intermediate_numeric
         self.check_intermediate_numeric = True
 
         sat_inputs = None
 
-        n_step = max_iter
-        interval = 1 / n_step
-        dev = torch.device('cuda' if use_cuda else 'cpu')
-        for v in np.linspace(-1, 1, n_step):
-            inputs = [v + torch.rand(ii.op.shape, device=dev)
-                      * interval for ii in self.input_info]
+        for _ in range(max_iter):
+            inputs = self.get_random_inps(margin, base, use_cuda)
 
             if use_cuda:
                 self = self.cuda()
@@ -222,14 +245,13 @@ class SymbolNet(nn.Module):
         self.check_intermediate_numeric = last_check_intermediate_numeric
         return sat_inputs
 
-    def grad_input_gen(self, max_iter=10, init_tensors=None, use_cuda=False) -> Optional[List[torch.Tensor]]:
-        dev = torch.device('cuda' if use_cuda else 'cpu')
+    def grad_input_gen(self, max_iter=10, init_tensors=None, margin=10, base='center', use_cuda=False) -> Optional[List[torch.Tensor]]:
         if init_tensors is None:
-            inputs = [torch.nn.parameter.Parameter(torch.rand(ii.op.shape, device=dev))
-                      for ii in self.input_info]
-        else:
-            inputs = [torch.nn.parameter.Parameter(
-                tensor.data) for tensor in init_tensors]
+            init_tensors = self.get_random_inps(
+                margin, base, use_cuda=use_cuda)
+
+        inputs = [torch.nn.parameter.Parameter(
+            tensor.data) for tensor in init_tensors]
         self.enable_training(extra_trainable=inputs)
 
         last_check_intermediate_numeric = self.check_intermediate_numeric
@@ -384,11 +406,30 @@ class SimpleGenerator:
         self.min_dims = min_dims
         self.n_floats = 0
         self.n_inps = 0
+        self.monotonic_placeholder_id = 0
+        self.monotonic_nx_node_idx = 0
+        self.reusable_placeholder_nx_indices = []
         self.last_soln = None
         self.wts = None
         self.merge_op_v = merge_op_v or 'v0'  # v0 as default version
         self.limnf = limnf
         self.n_floats_cons = []
+
+        # <op idx>
+        self.placeholders: List[int] = []
+        init_placeholder = self.create_placeholder(len(min_dims))
+        self.solver.add(init_placeholder.out_shape.gt_zero())
+        self.forward_insert_node(init_placeholder, [], oshapes=[
+                                 init_placeholder.out_shape])
+        self.init_ph_alive = True
+
+    def create_placeholder(self, dim, dtype=None):
+        shapevar = ShapeVar(
+            shape=[self.new_sym('v%s_%s' % (
+                self.monotonic_placeholder_id, k)) for k in range(dim)],
+            dtype=dtype if dtype is not None else random.choice(DTYPE_ALL))
+        self.monotonic_placeholder_id += 1
+        return Placeholder(shapevar)
 
     def new_sym(self, name, bv_size=None):
         if self.use_bitvec:
@@ -421,6 +462,10 @@ class SimpleGenerator:
         raise NotImplementedError
 
     @ abstractmethod
+    def try_occupy_placeholder(self, node: AbsOpBase, placeholder_indices: List[int]) -> bool:
+        raise NotImplementedError
+
+    @ abstractmethod
     def get_symbol_solutions(self) -> List:
         raise NotImplementedError
 
@@ -430,15 +475,6 @@ class SimpleGenerator:
             bool: add more checks to determine whether to exit the generation.
         """
         return False
-
-    # def concretize_input_shape(self, model):
-    #     shape = []
-    #     for s in self.input_shape.shape:
-    #         if isinstance(s, z3.ExprRef):
-    #             shape.append(model.eval(s, model_completion=True).as_long())
-    #         else:
-    #             shape.append(s)
-    #     return shape
 
     def abstract_gen(self, max_node_size=10, max_gen_millisec=2000):
         z3.set_param(
@@ -453,10 +489,6 @@ class SimpleGenerator:
             "memory_max_size",
             50 * 1024,  # MB
         )
-        num_inputs = max(
-            1, int((max_node_size + 9) // 10 + random.gauss(0, 1)))
-        for _ in range(num_inputs):
-            self.insert_input_node(self.min_dims)
         init_time = time.time()
         while time.time() - init_time < max_gen_millisec / 1000 and len(
                 self.abstract_graph.nodes) < max_node_size:
@@ -467,10 +499,17 @@ class SimpleGenerator:
         if len(self.abstract_graph.nodes) != max_node_size:
             print(
                 f'[WARNING]: graph size: {len(self.abstract_graph.nodes)} != expected size: {max_node_size}')
-        # self.fix_graph_dependency()
-
-    def shape_idx_to_op_idx(self, shape_idx: int) -> int:
-        return self.alive_shapes[shape_idx][0]
+        # init graph placeholders
+        shuffled_placeholder = self.placeholders
+        self.abstract_graph.nodes[shuffled_placeholder[0]
+                                  ]['op'] = self.abstract_graph.nodes[shuffled_placeholder[0]]['op'].to_input()
+        for holder_idx in shuffled_placeholder[1:]:
+            if random.randint(0, 1):
+                self.abstract_graph.nodes[holder_idx]['op'] = self.abstract_graph.nodes[holder_idx]['op'].to_const(
+                )
+            else:
+                self.abstract_graph.nodes[holder_idx]['op'] = self.abstract_graph.nodes[holder_idx]['op'].to_input(
+                )
 
     def check_arith_ref(self, var):
         SanityCheck.true(isinstance(
@@ -519,38 +558,147 @@ class SimpleGenerator:
             self.compute_wts()
         return random.choices(self.op_candidates, k=1, weights=self.wts)[0]
 
-    def insert_node(self, node: AbsOpBase, ishape_indices: List[int], oshapes: List[ShapeVar] = None):
+    def forward_insert_node(self, node: AbsOpBase, ishape_indices: List[int], oshapes: List[ShapeVar] = None, force_shape_indices=None) -> int:
         if oshapes is None:
             input_shapes = [self.alive_shapes[idx][1]
                             for idx in ishape_indices]
-            oshapes = node.shape_fn(copy.deepcopy(input_shapes))
+            oshapes = node.shape_fn(input_shapes)
 
-        new_node_idx = len(self.abstract_graph.nodes)
-        shape_idx_st = len(self.alive_shapes)
+        succ_nid = self.get_new_node_id()
+        if isinstance(node, Placeholder):
+            self.placeholders.append(succ_nid)
+
         shape_indices = []
-        for i, shape_var in enumerate(oshapes):
-            if node.out_dims[i] == -1:
-                node.out_dims[i] = len(shape_var.shape)
-            else:
-                SanityCheck.eq(node.out_dims[i], len(shape_var.shape), "{}'s dimension size is not {} in {}".format(
-                    shape_var.shape, node.out_dims[i], node.__class__.__name__))
-            shape_idx = len(self.alive_shapes)
-            shape_indices.append(shape_idx)
-            self.alive_shapes.append((new_node_idx, shape_var, i))
-            self.dim2shape_idx.setdefault(
-                len(shape_var.shape), []).append(shape_idx)
-        shape_idx_ed = len(self.alive_shapes)
+        if force_shape_indices is None:
+            for i, shape_var in enumerate(oshapes):
+                if node.out_ranks[i] == -1:
+                    node.out_ranks[i] = len(shape_var.shape)
+                else:
+                    SanityCheck.eq(node.out_ranks[i], len(shape_var.shape), "{}'s dimension size is not {} in {}".format(
+                        shape_var.shape, node.out_ranks[i], node.__class__.__name__))
+                shape_idx = len(self.alive_shapes)
+                shape_indices.append(shape_idx)
+                self.alive_shapes.append((succ_nid, shape_var, i))
+                self.dim2shape_idx.setdefault(
+                    len(shape_var.shape), []).append(shape_idx)
+        else:
+            # When taking the position of placeholders, we do not need to add new alive shapes.
+            shape_indices = force_shape_indices
 
+        # NOTE: because of backward insertion, we may not be able to limit the symbol size as there will be some
+        # trivially equivalent symbols which harms the readability. (e.g., relations like `a = b` is not known).
+        # NOTE: `shape_indices` and `ishape_indices` are indices of alive_shapes
         self.abstract_graph.add_node(
-            new_node_idx, op=node, nin=len(ishape_indices), nout=len(oshapes),
+            succ_nid, op=node,
+            nin=len(ishape_indices),
+            nout=len(oshapes),
+            shape_indices=shape_indices,
+            ishape_indices=ishape_indices,
             label=textwrap.fill(
-                (f'#{new_node_idx}, [{shape_idx_st},{shape_idx_ed}), ' if not self.viz_verbose else '') +
-                f'{node}', width=30), shape_indices=shape_indices, ishape_indices=ishape_indices)
+                f'#{succ_nid} ~ {node}' if not self.viz_verbose else '', width=30))
 
         for in_operand_idx, idx in enumerate(ishape_indices):
-            old_node_idx, svar, out_operand_idx = self.alive_shapes[idx]
-            self.abstract_graph.add_edge(old_node_idx, new_node_idx, shape_idx=idx, operand_idx=(
-                out_operand_idx, in_operand_idx), label=f'{out_operand_idx}-{in_operand_idx}: {svar}' if not self.viz_verbose else '')
+            pred_nid, svar, out_operand_idx = self.alive_shapes[idx]
+            self.abstract_graph.add_edge(
+                pred_nid, succ_nid, key=str(uuid.uuid1()),
+                shape_idx=idx,
+                operand_idx=(out_operand_idx, in_operand_idx),
+                label=f'{idx}: ({out_operand_idx},{in_operand_idx}) <{svar.dtype}>{svar.shape}' if not self.viz_verbose else '')
+
+        if self.is_viz_sbs:
+            self.viz()
+
+        return succ_nid
+
+    def get_new_node_id(self):
+        # if self.reusable_placeholder_nx_indices:
+        #     return self.reusable_placeholder_nx_indices.pop()
+        ret = self.monotonic_nx_node_idx
+        self.monotonic_nx_node_idx += 1
+        return ret
+
+    def id2nxnode(self, id):
+        return self.abstract_graph.nodes[id]
+
+    def backward_insert_node(self, node, input_nodes: List[Union[int, Placeholder]], occupied_idx):
+        # self.placeholder idx -> nx graph node idx
+        occ_holder_idx_nx = [self.placeholders[i] for i in occupied_idx]
+
+        ishape_indices = []
+        for input_node in input_nodes:
+            # Insert Placeholder in `input_nodes`
+            if isinstance(input_node, Placeholder):
+                nid = self.get_new_node_id()
+                shape_idx = len(self.alive_shapes)
+                self.alive_shapes.append((nid, input_node.out_shape, 0))
+                self.dim2shape_idx.setdefault(
+                    input_node.out_shape.ndims, []
+                ).append(shape_idx)
+                self.abstract_graph.add_node(
+                    nid,
+                    op=input_node,
+                    nin=0,
+                    nout=1,
+                    ishape_indices=[],
+                    shape_indices=[shape_idx],
+                    label=textwrap.fill(
+                        f'#{nid} ~ {input_node}' if not self.viz_verbose else '', width=30),
+                )
+                ishape_indices.append(shape_idx)
+                self.placeholders.append(nid)
+            else:
+                ishape_indices.append(input_node)
+
+        # Insert node
+        to_occ_alive_shape_idx = [self.id2nxnode(
+            nx_nid)['shape_indices'][0] for nx_nid in occ_holder_idx_nx]
+        op_nx_idx = self.forward_insert_node(
+            node,
+            ishape_indices=ishape_indices,
+            oshapes=[self.alive_shapes[as_idx][1]
+                     for as_idx in to_occ_alive_shape_idx],
+            force_shape_indices=to_occ_alive_shape_idx)
+
+        # Insert edges and remove placeholders
+        for i, nx_idx in enumerate(occ_holder_idx_nx):
+            for (src, dst, key) in list(self.abstract_graph.edges(nx_idx, keys=True)):
+                # multi-graph
+                edge_info = copy.deepcopy(
+                    self.abstract_graph.get_edge_data(src, dst, key=key))
+                old_edge_idx = edge_info['shape_idx']
+                # recall alive shape:
+                # 1. op nx idx
+                # 2. shape var
+                # 3. out operand idx
+
+                _, svar, _ = self.alive_shapes[old_edge_idx]
+                out_operand_idx = i
+                in_operand_idx = edge_info['operand_idx'][1]
+
+                # add cur node -> dst
+                self.abstract_graph.add_edge(
+                    op_nx_idx,
+                    dst,
+                    key=str(uuid.uuid1()),
+                    shape_idx=edge_info['shape_idx'],  # reuse old alive shape
+                    operand_idx=(out_operand_idx, in_operand_idx),
+                    label=f'{old_edge_idx}: ({out_operand_idx},{in_operand_idx}) <{svar.dtype}>{svar.shape}' if not self.viz_verbose else ''
+                )
+                self.alive_shapes[old_edge_idx] = (
+                    op_nx_idx, svar, out_operand_idx)
+
+                self.abstract_graph.remove_edge(src, dst, key=key)
+
+            # if the PH to occupy has no consumers, we simply reassign its alive shape.
+            # NOTE: we assume the first node is a placeholder.
+            if self.init_ph_alive:  # update alive_shape[0]
+                self.alive_shapes[0] = (op_nx_idx, self.alive_shapes[0][1], 0)
+                self.init_ph_alive = False
+
+            # remove placeholders
+            self.abstract_graph.remove_node(nx_idx)
+            self.reusable_placeholder_nx_indices.append(nx_idx)
+            self.placeholders.remove(nx_idx)
 
         if self.is_viz_sbs:
             self.viz()
@@ -587,32 +735,13 @@ class SimpleGenerator:
 
         return False
 
-    def try_insert_node_type(self, node_t, max_shape_var_pick_time=3) -> bool:
-        if self.verbose:
-            print(f'Inserting node #{len(self.abstract_graph.nodes)}: '
-                  f'trying to insert node type {node_t.__name__}')
-        if issubclass(node_t, Input):
-            try:
-                self.insert_input_node(self.min_dims)
-            # TODO: check the exception type (ideally only z3 check_failure), don't drop internal errors
-            except:
-                return False
-            return True
-        op_param_n = signature(node_t).parameters
-        op_id = len(self.abstract_graph.nodes)
-        op_params = [self.new_sym('op%s_%s' % (op_id, k))
-                     for k in range(len(op_param_n))]
-
-        op: AbsOpBase = node_t(*op_params)
-
-        n_inp = len(op.inp_dims)
-        same_input_dims = op.same_inp_dims
-
+    def try_forward_insert(self, op: AbsOpBase):
+        n_inp = len(op.inp_ranks)
         dim_spec_list = []
 
-        if same_input_dims:  # find `n_inp` under the same input shapes.
+        if op.same_inp_dims:  # find `n_inp` under the same input shapes.
             final_dim = -1
-            for dim in op.inp_dims:
+            for dim in op.inp_ranks:
                 if dim != -1:
                     if final_dim == -1:
                         final_dim = dim
@@ -622,14 +751,54 @@ class SimpleGenerator:
                 final_dim = random.choice(list(self.dim2shape_idx.keys()))
             dim_spec_list = [final_dim] * n_inp
         else:  # inputs have different dimension sizes.
-            dim_spec_list = op.inp_dims
+            dim_spec_list = op.inp_ranks
+
+        ishape_indices = self.pick_shape_var_idx(
+            type(op), dim_spec_list, op.in_dtypes, candidate_shapes=[s[1] for s in self.alive_shapes])
+
+        if self.try_insert_node(op, ishape_indices):
+            return True
+
+        return False
+
+    def try_backward_insert(self, op: AbsOpBase):
+        # we know that: Y = op(X)
+        # S1 - select Y: Y must be a placeholder; (this also means the graph must start w/ a placeholder)
+        ph_candidates = []
+        for idx in self.placeholders:
+            oshape = self.id2nxnode(idx)['op'].out_shape
+            if isinstance(op, Expand) and oshape.ndims < op.expand_last_dim:
+                continue
+            ph_candidates.append(oshape)
+
+        placeholder_indices = self.pick_shape_var_idx(
+            type(op), op.out_ranks, op.out_dtypes, candidate_shapes=ph_candidates)
+
+        if self.try_occupy_placeholder(op, placeholder_indices):
+            return True
+
+        return False
+
+    def try_insert_node_type(self, node_t, max_shape_var_pick_time=3) -> bool:
+        if self.verbose:
+            print(f'Inserting node #{len(self.abstract_graph.nodes)}: '
+                  f'trying to insert node type {node_t.__name__}')
+
+        op_param_n = signature(node_t).parameters
+        op_id = len(self.abstract_graph.nodes)
+        op_params = [self.new_sym('op%s_%s' % (op_id, k))
+                     for k in range(len(op_param_n))]
+
+        op: AbsOpBase = node_t(*op_params)
 
         try:
             for _ in range(max_shape_var_pick_time):
-                ishape_indices = self.pick_shape_var_idx(
-                    node_t, dim_spec_list, op.in_dtypes)
-                if self.try_insert_node(op, ishape_indices):
-                    return True
+                if random.randint(0, 1):
+                    if self.try_forward_insert(op):
+                        return True
+                else:
+                    if self.try_backward_insert(op):
+                        return True
         except RequiredDimNotFound:
             if self.verbose:
                 traceback.print_exc()
@@ -641,28 +810,28 @@ class SimpleGenerator:
 
         return False
 
-    def filter_alive_shapes(self, ndim, dtype):
-        cans = range(len(self.alive_shapes))
+    def filter_shapes(self, ndim, dtype, candidate_shapes: List[ShapeVar]):
+        cans = range(len(candidate_shapes))
 
         cans = list(filter(  # filter with ndim
-            lambda sid: self.alive_shapes[sid][1].ndims == ndim or ndim == -1, cans))
+            lambda sid: candidate_shapes[sid].ndims == ndim or ndim == -1, cans))
         if len(cans) == 0:
             raise RequiredDimNotFound(
                 'Cannot find a shape variable with #dimensions %s.' % ndim)
 
         if dtype is not None:
             cans = list(filter(  # filter with dtype
-                lambda sid: self.alive_shapes[sid][1].dtype == dtype, cans))
+                lambda sid: candidate_shapes[sid].dtype == dtype, cans))
             if len(cans) == 0:
                 raise RequiredDimNotFound(
                     'Cannot find a shape variable with #dimensions %s and dtype %s.' % (ndim, dtype))
 
         return cans
 
-    def pick_alive_shape(self, node_t, candidates):
+    def pick_shape(self, node_t, candidates):
         return random.choice(candidates)
 
-    def pick_shape_var_idx(self, node_t, ndim_list: List[int], dtype_combs: List[DTypeComb]) -> List[int]:
+    def pick_shape_var_idx(self, node_t, ndim_list: List[int], dtype_combs: List[DTypeComb], candidate_shapes: List[ShapeVar]) -> List[int]:
         """Randomly pick indices to shape variables from the output pool.
 
         Args:
@@ -678,8 +847,8 @@ class SimpleGenerator:
 
         all_can_dtypes = []
         for i, ndim in enumerate(ndim_list):
-            all_can_dtypes.extend([self.alive_shapes[i][1].dtype for i in self.filter_alive_shapes(
-                ndim=ndim, dtype=None)])
+            all_can_dtypes.extend([candidate_shapes[i].dtype for i in self.filter_shapes(
+                ndim=ndim, dtype=None, candidate_shapes=candidate_shapes)])
         # only use dtypes currently available after ndim filtering
         dtype_combs = [comb for comb in dtype_combs if all(
             i in all_can_dtypes for i in comb)]
@@ -688,10 +857,10 @@ class SimpleGenerator:
                 node_t, ndim_list, dtype_combs))
         dtype_comb = random.choice(dtype_combs)
         for i, ndim in enumerate(ndim_list):
-            candidates = self.filter_alive_shapes(
-                ndim=ndim, dtype=dtype_comb[i])
+            candidates = self.filter_shapes(
+                ndim=ndim, dtype=dtype_comb[i], candidate_shapes=candidate_shapes)
             shape_var_candidates.append(
-                self.pick_alive_shape(node_t, candidates))
+                self.pick_shape(node_t, candidates))
 
         return shape_var_candidates
 
@@ -711,7 +880,7 @@ class PureSymbolGen(SimpleGenerator):
         input_tensor_shape = ShapeVar(shape=syms, dtype=dtype)
         input_node = Input(self.n_inps, dtype, *input_tensor_shape.shape)
 
-        self.insert_node(input_node, [], oshapes=[input_tensor_shape])
+        self.forward_insert_node(input_node, [], oshapes=[input_tensor_shape])
         for c in input_tensor_shape.gt_zero():
             self.solver.add(c)
 
@@ -747,10 +916,9 @@ class PureSymbolGen(SimpleGenerator):
             print('---> Trying to solve: ', node, constraints)
             print('---> total constraints: \n',
                   '\n'.join(sorted(map(str, set(self.solver.assertions())))))
-            # self.viz('currentgraph.png')
 
         # make a copy
-        output_shapes = node.shape_fn(copy.deepcopy(input_shapes))
+        output_shapes = node.shape_fn(input_shapes)
         if self.limnf:
             if NNSMITH_LIMNF_V == '0':
                 tmp_n_floats = nnsmith_add(
@@ -789,7 +957,70 @@ class PureSymbolGen(SimpleGenerator):
             elif NNSMITH_LIMNF_V == '1':
                 self.n_floats_cons = tmp_n_floats_cons
 
-        self.insert_node(node, ishape_indices, output_shapes)
+        if self.verbose:
+            print('>> Forward insertion node: ', node)
+            print('\tinputs:', input_shapes)
+            print('\toutputs:', output_shapes)
+
+        self.forward_insert_node(node, ishape_indices, output_shapes)
+        return True
+
+    def try_occupy_placeholder(self, node: AbsOpBase, occ_holder_indices: List[int]) -> bool:
+        # S2 - create X: X can be
+        #                   - a new placeholder (fallback)
+        #                   - an existing alive shape
+
+        to_occupy = [self.id2nxnode(self.placeholders[i])['op']
+                     for i in occ_holder_indices]
+
+        occupied_holder_shapes = [holder.out_shape for holder in to_occupy]
+
+        # S2.2: try to reuse some existing outputs;
+        # TODO: allow reuse existing alive shapes
+        # n_inps = len(node.inp_ranks)
+        # max_try = 2
+        # n_reuse = n_inps - 1
+        # while n_reuse > 0 and max_try > 0:
+        #     # TODO...
+        #     max_try -= 1
+        #     n_reuse -= 1
+
+        # S2.2: reusing outputs failed. as a fallback, promote all free vars to placeholders.
+        new_inp_placeholders = []
+        constraints = []
+        for rank, dtype in node.deduct_inp_ranks_and_dtype(occupied_holder_shapes):
+            ph = self.create_placeholder(
+                rank if rank != -1 else random.randint(0, 4), dtype=dtype)
+            new_inp_placeholders.append(ph)
+            constraints.extend(ph.out_shape.gt_zero())
+
+        input_shapes = [p.out_shape for p in new_inp_placeholders]
+        constraints.extend(node.requires(input_shapes))
+        output_shapes = node.shape_fn(input_shapes)
+
+        for i, shape in enumerate(output_shapes):
+            constraints.extend(shape.eq(occupied_holder_shapes[i]))
+            constraints.extend(shape.gt_zero())
+
+        self.cur_node = node
+        # TODO: not considering extra constraints for now.
+        # TODO: consider nfloats.
+        check_res = self.check_sat(*constraints)
+
+        if check_res != z3.sat:
+            return False
+
+        if self.verbose:
+            print('>> Backward insertion node: ', node)
+            print('\tinputs:', new_inp_placeholders)
+            print('\toutputs:', to_occupy)
+
+        for c in constraints:
+            self.solver.add(c)
+
+        self.backward_insert_node(
+            node, new_inp_placeholders, occ_holder_indices)
+
         return True
 
     def on_timeout(self, node: AbsOpBase, ishape_indices: List[int]):
@@ -840,9 +1071,9 @@ class GenerationTable:
                     continue
 
                 inp_dims = tar_t(
-                    *[None for _ in signature(tar_t).parameters]).inp_dims
+                    *[None for _ in signature(tar_t).parameters]).inp_ranks
                 out_dims = src_t(
-                    *[None for _ in signature(src_t).parameters]).out_dims
+                    *[None for _ in signature(src_t).parameters]).out_ranks
 
                 if -1 in inp_dims or -1 in out_dims or set(inp_dims).intersection(out_dims):
                     continue
@@ -919,7 +1150,7 @@ class CoverageTableGen(PureSymbolGen):
         # node -> ishape_indices :: on_unsolvable
         for idx in ishape_indices:
             self.state['unsolvable'].append(
-                (type(node).__name__, type(self.abstract_graph.nodes[self.alive_shapes[idx][0]]['op']).__name__))
+                (type(node).__name__, type(self.id2nxnode(self.alive_shapes[idx][0])['op']).__name__))
 
 
 class Bin:
@@ -1232,7 +1463,7 @@ if __name__ == '__main__':
     input_st = time.time()
 
     sat_inputs = None
-    if args.input_gen == 'v3':
+    if args.input_gen == 'v3' or args.input_gen == 'random':
         with torch.no_grad():
             net.eval()
             sat_inputs = net.rand_input_gen(use_cuda=args.use_cuda)

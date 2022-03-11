@@ -32,13 +32,13 @@ class ParamShapeSummary(SummaryBase):
         super().__init__()
         # op_name -> {param_name: {value1: itr1, value2: itr2, ...], in_shapes_0: {shape1: itr1, shape2: itr2, ...}, ...}, where itrx is the iteration number of this record
         self.data = {}
-        for op_t in Op.ALL_OP_TYPES + [Op.Input]:
+        for op_t in Op.ALL_OP_TYPES + [Op.Input, Op.Constant]:
             op_name = op_t.__name__
             self.data[op_name] = {}
             for i in range(len(op_t.in_dtypes[0])):  # arity
                 self.data[op_name][f'in_shapes_{i}'] = {}
             nouts = len(op_t(
-                *[None for _ in signature(op_t).parameters]).out_dims)
+                *[None for _ in signature(op_t).parameters]).out_ranks)
             for i in range(nouts):  # num_outputs
                 self.data[op_name][f'out_shapes_{i}'] = {}
             if issubclass(op_t, Op.Input):
@@ -48,7 +48,7 @@ class ParamShapeSummary(SummaryBase):
                 self.data[op_name]['param_' + key] = {}
 
     def update(self, graph: nx.MultiDiGraph, itr):
-        for node_id in range(len(graph.nodes)):
+        for node_id in graph.nodes:
             op = graph.nodes[node_id]['op']  # type: Op.AbsOpBase
             op_name = op.__class__.__name__
             in_svs = graph.nodes[node_id]['in_svs']
@@ -82,7 +82,7 @@ class GraphSummary(SummaryBase):
         self.edge_cnt = {}  # edge -> [itr1, itr2, ...]
         self.node_cnt = {}  # node -> [itr1, itr2, ...]
         self.input_comb_cnt = {}  # node -> input_comb -> [itr1, itr2, ...]
-        _ALL_OP_TYPES = Op.ALL_OP_TYPES + [Op.Input]
+        _ALL_OP_TYPES = Op.ALL_OP_TYPES + [Op.Input, Op.Constant]
         for op_t in _ALL_OP_TYPES:
             op_name = self.node_name[op_t.__name__]
             self.node_cnt[op_name] = []
@@ -116,7 +116,7 @@ class GraphSummary(SummaryBase):
         }
 
     def merge_nodes(self, level):
-        _ALL_OP_TYPES = Op.ALL_OP_TYPES + [Op.Input]
+        _ALL_OP_TYPES = Op.ALL_OP_TYPES + [Op.Input, Op.Constant]
         node_name = {}
         for op_t in _ALL_OP_TYPES:
             op_name = op_t.__name__
@@ -137,7 +137,7 @@ class GraphSummary(SummaryBase):
         return super().__repr__() + f'_lv{self.level}'
 
     def update(self, graph: nx.MultiDiGraph, itr):
-        for node_id in range(len(graph.nodes)):
+        for node_id in graph.nodes:
             op = graph.nodes[node_id]['op']  # type: Op.AbsOpBase
             op_name = self.node_name[op.__class__.__name__]
             _record(self.node_cnt, op_name, itr)

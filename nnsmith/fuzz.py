@@ -474,7 +474,7 @@ if __name__ == '__main__':
     parser.add_argument('--root', type=str, default='./fuzz_report')
     parser.add_argument('--time_budget', type=int, default=60 * 60 * 4)
     parser.add_argument('--backend', type=str, default='tvm')
-    parser.add_argument('--mode', type=str, default='table')
+    parser.add_argument('--mode', type=str, default='random')
     parser.add_argument(
         '--skip', help='Node types to skip. Split by `,`. By default a blacklist for each backend is also appended.', type=str)
     parser.add_argument('--inp_gen', type=str, default='random')
