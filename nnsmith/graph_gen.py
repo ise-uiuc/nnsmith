@@ -402,7 +402,7 @@ class SimpleGenerator:
         self.is_viz_sbs = viz_sbs
 
         self.use_bitvec = use_bitvec
-        # self.input_shape = self.insert_input_node(min_dims)
+        # self.input_shape = self.insert_placeholder_node(min_dims)
         self.min_dims = min_dims
         self.n_floats = 0
         self.n_inps = 0
@@ -417,17 +417,15 @@ class SimpleGenerator:
 
         # <op idx>
         self.placeholders: List[int] = []
-        init_placeholder = self.create_placeholder(len(min_dims))
-        self.solver.add(init_placeholder.out_shape.gt_zero())
-        self.forward_insert_node(init_placeholder, [], oshapes=[
-                                 init_placeholder.out_shape])
+        self.insert_placeholder_node(min_dims)
         self.init_ph_alive = True
         self.forward_prob = 0.5 if forward_prob is None else forward_prob
 
     def create_placeholder(self, dim, dtype=None):
+        syms = self.new_syms(['i%s_s%s' % (self.n_inps, k)
+                              for k in range(dim)])
         shapevar = ShapeVar(
-            shape=[self.new_sym('v%s_%s' % (
-                self.monotonic_placeholder_id, k)) for k in range(dim)],
+            shape=syms,
             dtype=dtype if dtype is not None else random.choice(DTYPE_ALL))
         self.monotonic_placeholder_id += 1
         return Placeholder(shapevar)
@@ -455,7 +453,7 @@ class SimpleGenerator:
             return [self.new_sym(name) for name in names]
 
     @ abstractmethod
-    def insert_input_node(self, min_dims, shape=None, dtype=DType.float32) -> ShapeVar:
+    def insert_placeholder_node(self, min_dims, shape=None, dtype=DType.float32) -> ShapeVar:
         raise NotImplementedError
 
     @ abstractmethod
@@ -709,8 +707,9 @@ class SimpleGenerator:
             print(f'Inserting node #{len(self.abstract_graph.nodes)}: '
                   f'trying to insert node type {node_t.__name__}')
         if issubclass(node_t, Input):
+            raise NotImplementedError
             try:
-                self.insert_input_node(self.min_dims)
+                self.insert_placeholder_node(self.min_dims)
             # TODO: check the exception type (ideally only z3 check_failure), don't drop internal errors
             except:
                 return False
@@ -875,22 +874,20 @@ class SimpleGenerator:
 
 
 class PureSymbolGen(SimpleGenerator):
-    def insert_input_node(self, min_dims, dtype=DType.float32, constrain_min=True) -> ShapeVar:
-        syms = self.new_syms(['i%s_s%s' % (self.n_inps, k)
-                             for k in range(len(min_dims))])
-        input_tensor_shape = ShapeVar(shape=syms, dtype=dtype)
-        input_node = Input(self.n_inps, dtype, *input_tensor_shape.shape)
+    def insert_placeholder_node(self, min_dims, dtype=DType.float32, constrain_min=True) -> ShapeVar:
+        init_placeholder = self.create_placeholder(len(min_dims), dtype)
+        self.forward_insert_node(init_placeholder, [], oshapes=[
+                                 init_placeholder.out_shape])
 
-        self.forward_insert_node(input_node, [], oshapes=[input_tensor_shape])
-        for c in input_tensor_shape.gt_zero():
+        for c in init_placeholder.out_shape.gt_zero():
             self.solver.add(c)
 
         if not self.use_bitvec and constrain_min:  # bit vector is randomizable
             # The batch size should not have a big min size (avoid unnecessary computation);
             # FIXME: input constraints will make SMT solving costly.
-            for i in range(len(input_tensor_shape.shape)):
+            for i in range(len(init_placeholder.out_shape.shape)):
                 self.solver.add(nnsmith_ge(
-                    input_tensor_shape.shape[i], min_dims[i]))
+                    init_placeholder.out_shape.shape[i], min_dims[i]))
         check_res = self.check_sat()
         # FIXME sometimes the constraints are too complicated to return stable result.
         SanityCheck.eq(check_res, z3.sat,
@@ -898,12 +895,12 @@ class PureSymbolGen(SimpleGenerator):
         if self.limnf:
             if NNSMITH_LIMNF_V == '0':
                 self.n_floats = nnsmith_add(
-                    self.n_floats, input_tensor_shape.nelement())
+                    self.n_floats, init_placeholder.out_shape.nelement())
             elif NNSMITH_LIMNF_V == '1':
                 self.n_floats_cons.append(nnsmith_le(
-                    input_tensor_shape.nelement(), self.limit_float // 16))
+                    init_placeholder.out_shape.nelement(), self.limit_float // 16))
         self.n_inps += 1
-        return input_tensor_shape
+        return init_placeholder
 
     # subclasses may override this
     def extra_constraints(self, node: AbsOpBase, ishape_indices: List[int]):
@@ -1303,8 +1300,8 @@ class GuidedGen(PureSymbolGen):
         self.scale = scale
         # self.inp
 
-    def insert_input_node(self, min_dims, dtype=DType.float32) -> ShapeVar:
-        ish = super().insert_input_node(min_dims, dtype, constrain_min=False)
+    def insert_placeholder_node(self, min_dims, dtype=DType.float32) -> ShapeVar:
+        ish = super().insert_placeholder_node(min_dims, dtype, constrain_min=False)
         constraints = []
         for i in ish.shape:
             bins = self.default_config[0]
