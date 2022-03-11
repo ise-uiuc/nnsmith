@@ -368,7 +368,7 @@ class SymbolNet(nn.Module):
 class SimpleGenerator:
 
     def __init__(self, min_dims=[1, 3, 48, 48], skip=[Input], viz_sbs=False, megabyte_lim=__MB_LIM__, seed=None, verbose=False, use_bitvec=False,
-                 viz_verbose=False, merge_op_v=None, limnf=True):
+                 viz_verbose=False, merge_op_v=None, limnf=True, forward_prob=None):
         if seed is not None:
             np.random.seed(seed)
             random.seed(seed)
@@ -422,6 +422,7 @@ class SimpleGenerator:
         self.forward_insert_node(init_placeholder, [], oshapes=[
                                  init_placeholder.out_shape])
         self.init_ph_alive = True
+        self.forward_prob = 0.5 if forward_prob is None else forward_prob
 
     def create_placeholder(self, dim, dtype=None):
         shapevar = ShapeVar(
@@ -793,7 +794,7 @@ class SimpleGenerator:
 
         try:
             for _ in range(max_shape_var_pick_time):
-                if random.randint(0, 1):
+                if random.randint(0, 1) < self.forward_prob:
                     if self.try_forward_insert(op):
                         return True
                 else:
@@ -1367,6 +1368,7 @@ def parse_args():
                         help='Disable the limit on the number of floats')
     parser.add_argument('--use_cuda', action='store_true')
     parser.add_argument('--no_export', action='store_true')
+    parser.add_argument('--forward_prob', type=float)
     return parser.parse_args()
 
 
@@ -1380,14 +1382,16 @@ def random_model_gen(
         verbose=False,
         mode='random',
         merge_op_v=None,
-        limnf=True,):
+        limnf=True,
+        forward_prob=None,):
 
     GenCls = {
         'random': PureSymbolGen,
         'guided': GuidedGen,
     }[mode]
     gen = GenCls(min_dims=min_dims,
-                 viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec, merge_op_v=merge_op_v, limnf=limnf)
+                 viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec, merge_op_v=merge_op_v, limnf=limnf,
+                 forward_prob=forward_prob)
     gen.abstract_gen(max_node_size=max_nodes,
                      max_gen_millisec=timeout)
     solution = gen.get_symbol_solutions()
