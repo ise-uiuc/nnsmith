@@ -39,6 +39,7 @@ elif FLOPS_LIM is None:
     pass
 else:
     FLOPS_LIM = float(FLOPS_LIM)
+MAX_RANK = 6
 
 
 def _op_set_use_cuda(use_cuda):

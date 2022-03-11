@@ -987,8 +987,12 @@ class PureSymbolGen(SimpleGenerator):
         new_inp_placeholders = []
         constraints = []
         for rank, dtype in node.deduct_inp_ranks_and_dtype(occupied_holder_shapes):
+            # oversample rank 4 tensors as they may be more important
             ph = self.create_placeholder(
-                rank if rank != -1 else random.randint(0, 4), dtype=dtype)
+                rank if rank != -1 else
+                random.choices(range(MAX_RANK + 1),
+                               weights=[1, 1, 1, 1, 2, 1]),
+                dtype=dtype)
             new_inp_placeholders.append(ph)
             constraints.extend(ph.out_shape.gt_zero())
 
