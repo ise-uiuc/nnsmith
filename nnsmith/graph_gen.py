@@ -495,9 +495,9 @@ class SimpleGenerator:
                 break
             node_t = self.pick_next_op_type()
             self.try_insert_node_type(node_t)
-        if len(self.abstract_graph.nodes) != max_node_size:
+        if len(self.abstract_graph.nodes) < max_node_size:
             print(
-                f'[WARNING]: graph size: {len(self.abstract_graph.nodes)} != expected size: {max_node_size}')
+                f'[WARNING]: graph size: {len(self.abstract_graph.nodes)} < expected size: {max_node_size}')
         # init graph placeholders
         shuffled_placeholder = self.placeholders
         self.abstract_graph.nodes[shuffled_placeholder[0]
