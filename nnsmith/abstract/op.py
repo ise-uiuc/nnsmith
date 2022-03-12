@@ -1179,8 +1179,11 @@ class Slice(UnaryOpBase):
         self.step = step
 
     def __str__(self) -> str:
-        tail = {'axis': self.extra_attrs['axis'],
-                'region': self.extra_attrs['region']}
+        if 'axis' in self.extra_attrs:
+            tail = {'axis': self.extra_attrs['axis'],
+                    'region': self.extra_attrs['region']}
+        else:
+            tail = {}
         if isinstance(self.start, int):
             tail['start'] = self.start
         if isinstance(self.end, int):
