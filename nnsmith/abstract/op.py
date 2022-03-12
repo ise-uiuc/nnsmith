@@ -1251,18 +1251,21 @@ class Slice(UnaryOpBase):
         l, r = (0, nnsmith_sub(dim_s, 1))
         # range for end
         ll, rr = (0, dim_s)
-        if not isinstance(self.start, int):
-            cons.append(z3.And(  # start \in [l, r]
-                nnsmith_ge(self.start, l),
-                nnsmith_le(self.start, r)))
+        assert not isinstance(self.start, int)
+        cons.append(z3.And(  # start \in [l, r]
+            nnsmith_ge(self.start, l),
+            nnsmith_le(self.start, r)))
         if not isinstance(self.end, int):
             cons.append(z3.And(  # end \in [ll, rr]
                 nnsmith_ge(self.end, ll),
                 nnsmith_le(self.end, rr)))
+        else:
+            assert self.end == self.INT_MAX
 
         cons.append(nnsmith_ge(self.step, 1))  # forward slicing only
         cons.append(nnsmith_le(self.step, dim_s))
-        cons.append(nnsmith_gt(self.end, self.start))
+        if self.end != self.INT_MAX:
+            cons.append(nnsmith_gt(self.end, self.start))
         return cons
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
