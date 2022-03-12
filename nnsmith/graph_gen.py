@@ -1401,7 +1401,7 @@ def parse_args():
     parser.add_argument('--merge_op_v', default=None)
     parser.add_argument(
         '--skip', help='Node types to skip. Split by `,`. By default a blacklist for each backend is also appended.', type=str)
-    parser.set_defaults(limnf=True)
+    parser.set_defaults(limnf=False)
     parser.add_argument('--no_limnf', dest='limnf', action='store_false',
                         help='Disable the limit on the number of floats')
     parser.add_argument('--use_cuda', action='store_true')

@@ -484,7 +484,7 @@ if __name__ == '__main__':
     parser.add_argument('--no_progress', action='store_true')
     parser.add_argument('--merge_op_v', default=None,
                         help='merge op version. Use to pick among EXPANDED_OP_VX')
-    parser.set_defaults(limnf=True)
+    parser.set_defaults(limnf=False)
     parser.add_argument('--no_limnf', dest='limnf', action='store_false',
                         help='Disable the limit on the number of floats')
     parser.add_argument('--use_cuda', action='store_true')
