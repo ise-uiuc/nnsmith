@@ -1066,7 +1066,9 @@ class Softmax(ElementWiseUnaryOp):
         self.dim = dim
 
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
-        return [nnsmith_lt(self.dim, input_shapes[0].ndims)]
+        return [
+            nnsmith_lt(self.dim, input_shapes[0].ndims), 
+            nnsmith_ge(self.dim, 1)]
     
     def torch(self) -> Callable[..., torch.Tensor]:
         return torch.nn.Softmax(dim=self.dim)
