@@ -452,6 +452,10 @@ class SimpleGenerator:
         """
         return False
 
+    def num_op(self) -> int:
+        # exclude placeholders.
+        return len(self.abstract_graph.nodes) - len(self.placeholders)
+
     def abstract_gen(self, max_node_size=10, max_gen_millisec=2000):
         z3.set_param(
             "smt.phase_selection",
@@ -466,13 +470,12 @@ class SimpleGenerator:
             16 * 1024,  # MB
         )
         init_time = time.time()
-        while time.time() - init_time < max_gen_millisec / 1000 and len(
-                self.abstract_graph.nodes) < max_node_size:
+        while time.time() - init_time < max_gen_millisec / 1000 and self.num_op() < max_node_size:
             if self.extra_exit_check():
                 break
             node_t = self.pick_next_op_type()
             self.try_insert_node_type(node_t)
-        if abs(len(self.abstract_graph.nodes) - max_node_size) >= 3:
+        if abs(self.num_op() - max_node_size) >= 3:
             print(
                 f'[WARNING]: graph size: {len(self.abstract_graph.nodes)} != expected size: {max_node_size}')
         # init graph placeholders
