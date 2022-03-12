@@ -23,7 +23,7 @@ from nnsmith.graph_gen import SymbolNet, random_model_gen, table_model_gen
 from nnsmith.export import torch2onnx
 import util
 
-_DEFAULT_FORK_METHOD = 'fork'
+_DEFAULT_FORK_METHOD = 'pool'
 
 
 class ModelGenSubProcesssError(Exception):
