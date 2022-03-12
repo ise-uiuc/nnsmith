@@ -32,13 +32,19 @@ from nnsmith.error import SanityCheck, ConstraintCheck
 ARITH_MAX_WIDTH: int = 64
 _INFERRED = False
 _DEV = torch.device("cpu")
-FLOPS_LIM = os.getenv("NNSMITH_FLOPS_LIM", None)
-if FLOPS_LIM == 'on':  # use predefined value
-    FLOPS_LIM = 2**22
-elif FLOPS_LIM is None:
-    pass
+FLOPS_LIM = os.getenv("NNSMITH_FLOPS_LIM", 'auto')
+if FLOPS_LIM == 'auto':  # use predefined value
+    FLOPS_LIM = 2**30
+elif FLOPS_LIM == 'off':
+    FLOPS_LIM = None
 else:
     FLOPS_LIM = float(FLOPS_LIM)
+
+# control wheter to model FLOPS in z3 too. If not, we will check it after model is concretized.
+Z3_CONS_FLOPS = os.getenv("NNSMITH_Z3_CONS_FLOPS", 'off')
+assert Z3_CONS_FLOPS in [
+    'on', 'off'], "NNSMITH_Z3_CONS_FLOPS must be either 'on' or 'off'"
+Z3_CONS_FLOPS = Z3_CONS_FLOPS == 'on'
 MAX_RANK = 6
 
 
@@ -570,6 +576,12 @@ class ElementWiseUnaryOp(UnaryOpBase):
 #         return ret
 
 
+def bcast_rand_ndims(num_svars, target_ndims):
+    res = [random.randint(0, target_ndims) for _ in range(num_svars)]
+    res[random.randint(0, num_svars - 1)] = target_ndims
+    return res
+
+
 class BcastBinaryOp(BinaryOpBase):
     bcastable = True
     # by default, output dtype is the same as the first input dtype
@@ -589,11 +601,11 @@ class BcastBinaryOp(BinaryOpBase):
     def _requires(self, input_shapes):
         return broadcast_cons_binary(*(ish.shape for ish in input_shapes))
 
-    # FIXME: should be more flexible but need some constraints.
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        x, y = bcast_rand_ndims(2, out_shape_var[0].ndims)
         return [
-            (out_shape_var[0].ndims, out_shape_var[0].dtype),
-            (out_shape_var[0].ndims, out_shape_var[0].dtype),
+            (x, out_shape_var[0].dtype),
+            (y, out_shape_var[0].dtype),
         ]
 
 
@@ -607,6 +619,14 @@ class Comparator(BcastBinaryOp):  # > < =
     in_dtypes = [(i, i) for i in DTYPE_ALL]
     out_dtypes = [(DType.bool,)]
     _bcast_out_dtypes = [DType.bool]
+
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        x, y = bcast_rand_ndims(2, out_shape_var[0].ndims)
+        in_dtypes = random.choice(self.in_dtypes)
+        return [
+            (x, in_dtypes[0]),
+            (y, in_dtypes[1]),
+        ]
 
 
 class Logical(BcastBinaryOp):  # logical and or xor
@@ -641,10 +661,11 @@ class Where(TernaryOpBase):
         return torch.where
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        x, y, z = bcast_rand_ndims(3, out_shape_var[0].ndims)
         return [
-            (out_shape_var[0].ndims, DType.bool),
-            (out_shape_var[0].ndims, out_shape_var[0].dtype),
-            (out_shape_var[0].ndims, out_shape_var[0].dtype),
+            (x, DType.bool),
+            (y, out_shape_var[0].dtype),
+            (z, out_shape_var[0].dtype),
         ]
 
 
@@ -1137,12 +1158,20 @@ class Pool2d(AbsOpBase):
         cons.append(nnsmith_le(self.padding, 255))
         cons.append(nnsmith_le(nnsmith_mul(2, self.padding),
                     nnsmith_min(self.kernel_h_size, self.kernel_w_size)))
+        # limit FLOPS
+        if Z3_CONS_FLOPS:
+            cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
         for c in cons:
             if isinstance(c, z3.ExprRef):
                 ret.append(c)
             else:
                 ConstraintCheck.true(c)
         return ret
+
+    def flops(self, input_shapes):
+        return nnsmith_mul(nnsmith_mul(self.shape_fn(input_shapes)[0].nelement(),
+                                       self.kernel_h_size),
+                           self.kernel_w_size)
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
         return [(4, out_shape_var[0].dtype)]
@@ -1433,7 +1462,7 @@ class NCHWConv2d(UnaryOpBase):
         # not too extream to avoid torch exporter issue
         cons.append(nnsmith_le(self.padding, 255))
         # limit FLOPS
-        if FLOPS_LIM is not None:
+        if Z3_CONS_FLOPS:
             cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
         for c in cons:
             if isinstance(c, z3.ExprRef):
@@ -2217,7 +2246,7 @@ class Gemm(TernaryOpBase):
         mat1, mat2 = input_shapes[1], input_shapes[2]
         cons.append(mat1.shape[1] == mat2.shape[0])
         self._set_or_get_extra_attrs(input_shapes[0].dtype.value)
-        if FLOPS_LIM is not None:
+        if Z3_CONS_FLOPS:
             cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
         return cons
 
