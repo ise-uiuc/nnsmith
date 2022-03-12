@@ -148,3 +148,4 @@ if __name__ == '__main__':
             else:
                 config_file.write(f'{time_diffs[i - 1] + cvt_time},FAILURE\n')
             print(e)
+        config_file.flush()
