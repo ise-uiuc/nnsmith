@@ -1259,13 +1259,12 @@ class Slice(UnaryOpBase):
             cons.append(z3.And(  # end \in [ll, rr]
                 nnsmith_ge(self.end, ll),
                 nnsmith_le(self.end, rr)))
+            cons.append(nnsmith_gt(self.end, self.start))
         else:
             assert self.end == self.INT_MAX
 
         cons.append(nnsmith_ge(self.step, 1))  # forward slicing only
         cons.append(nnsmith_le(self.step, dim_s))
-        if self.end != self.INT_MAX:
-            cons.append(nnsmith_gt(self.end, self.start))
         return cons
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
