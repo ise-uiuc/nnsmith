@@ -2036,6 +2036,12 @@ class Gemm(TernaryOpBase):
         mat1, mat2 = input_shapes[1], input_shapes[2]
         return mat1.shape[0] * mat1.shape[1] * mat2.shape[1]
 
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        dtype = out_shape_var[0].dtype
+        return [
+            (-1, dtype), 
+            (2, dtype), 
+            (2, dtype)]
 
 def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
     ret = []
