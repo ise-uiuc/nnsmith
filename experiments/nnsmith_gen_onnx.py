@@ -67,7 +67,6 @@ if __name__ == '__main__':
                 print(f'Fail when seed={seed}')
                 print(e)
                 label = 'FAILURE'
-                raise e
             
             time_diff = time.time() - tstart
             config_file.write(f'{time_diff:.5f},{label}\n')
