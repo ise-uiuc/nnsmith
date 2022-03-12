@@ -23,7 +23,6 @@ from tqdm import tqdm
 # CMD EXAMPLE: 
 # python experiments/cov_eval.py --model_dir lemon --report_folder test-cov --backend tvm --lib ../tvm/build/libtvm.so --llvm-version 14
 
-# Coverage report/sumary: {i}.txt
 # Coverage lcov:          {i}.lcov
 # Timing / # model:       stats.csv
 
@@ -41,6 +40,7 @@ if __name__ == '__main__':
     parser.add_argument('--dev', type=str, default='cpu', help='cpu/gpu')
     parser.add_argument('--seed', type=int, default=233, help='to generate random input data')
     parser.add_argument('--lib', type=str, required=True, help='path to instrumented library')
+    parser.add_argument('--max_time', type=int, default=60*60*24, help='max time in seconds for coverage evaluation')
     parser.add_argument('--llvm-version', type=str, default='', help='version of llvm during coverage stuff. must align w/ tvm.')
     args = parser.parse_args()
 
@@ -86,6 +86,7 @@ if __name__ == '__main__':
 
     print(f'==> Setting batch size: {batch_size}')
     batch_list = list(batched(lines, n=batch_size))
+    process_start_time = time()
 
     for i in tqdm(range(len(batch_list))):
         batch = batch_list[i]
@@ -130,8 +131,9 @@ if __name__ == '__main__':
                 llvm_cov += f'-{args.llvm_version}'
 
             profdata_path = os.path.join(args.report_folder, f'{i}.profdata')
+            # summary might be useless as it does not consider prior runs.
+            # 0 != os.system(f'{llvm_cov} report {args.lib} -instr-profile={profdata_path} > {sum_path}')
             if 0 != os.system(f'{llvm_profdata} merge -sparse {profraw_path} -o {profdata_path}') or \
-                0 != os.system(f'{llvm_cov} report {args.lib} -instr-profile={profdata_path} > {sum_path}') or \
                 0 != os.system(f'{llvm_cov} export {args.lib} -instr-profile={profdata_path} -format=lcov > {lcov_path}'):
                 print(f'Getting coverage failed!!', file=sys.stderr)
             else: # clean temporary files
@@ -149,6 +151,10 @@ if __name__ == '__main__':
         if p.stderr:
             stderr_file.write(p.stderr.read())
         stderr_file.flush()
+
+        if time() - process_start_time > args.max_time:
+            print(f'==> Timeout!')
+            break
 
     config_file.close()
     stderr_file.close()
