@@ -1452,7 +1452,7 @@ if __name__ == '__main__':
     strt_time = time.time()
     gen, solution = random_model_gen(min_dims=args.min_dims, seed=seed, viz_sbs=args.viz_sbs, max_nodes=args.max_nodes,
                                      use_bitvec=args.use_bitvec, timeout=args.timeout, verbose=args.verbose, mode=args.mode,
-                                     limnf=args.limnf, merge_op_v=args.merge_op_v)
+                                     limnf=args.limnf, merge_op_v=args.merge_op_v, forward_prob=args.forward_prob)
     print(
         f'{len(solution)} symbols and {len(gen.solver.assertions())} constraints.')
     print(
