@@ -1588,12 +1588,12 @@ class Reshape(UnaryOpBase, ABC):
             src_len = 1  # special handling for scalar
         if dst_len == 0:
             dst_len = 1  # special handling for scalar
-        gres_config = os.getenv('NNSMITH_G_CONFIG', '5')
+        gres_config = os.getenv('NNSMITH_G_CONFIG', '4')
         if gres_config == '5':
             ng = 1
         elif gres_config == '3':
             ng = min(src_len, dst_len)
-        elif gres_config == '4':  # TODO(JK): scalar reshape
+        elif gres_config == '4':
             ub = min(src_len, dst_len)
             ng = random.choices(range(1, ub + 1), k=1,
                                 weights=[2**i for i in range(ub)])[0]
@@ -1623,7 +1623,7 @@ class Reshape(UnaryOpBase, ABC):
             cons_group.append(nnsmith_eq(src_prod, dst_prod))
 
         ret.extend(cons_group)
-        if os.getenv('NNSMITH_CONS_RESHAPE', 'on') != 'off':
+        if os.getenv('NNSMITH_CONS_RESHAPE', 'off') != 'off':
             # should not be too extreme!
             __DIM_LIMIT__ = 4096
             lim = __DIM_LIMIT__
