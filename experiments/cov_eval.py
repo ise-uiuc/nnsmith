@@ -116,8 +116,9 @@ if __name__ == '__main__':
             '--backend', args.backend,
             '--dev', args.dev,
             '--seed', str(seed),
-        ], stdout=subprocess.PIPE, env=copied_env)
-        exit_code = p.wait()
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=copied_env)
+        outs, errs = p.communicate()
+        exit_code = p.returncode
         btime += time() - tstart # <=== ENDING
 
         # Wrap up this batch.
@@ -148,8 +149,8 @@ if __name__ == '__main__':
 
         # Write stderr
         stderr_file.write(f'iter {i}: {model_batch} ~ exit_code={exit_code}\n')
-        if p.stderr:
-            stderr_file.write(p.stderr.read())
+        if errs:
+            stderr_file.write(errs)
         stderr_file.flush()
 
         if time() - process_start_time > args.max_time:
