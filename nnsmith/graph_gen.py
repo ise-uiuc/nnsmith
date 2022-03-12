@@ -143,7 +143,10 @@ class SymbolNet(nn.Module):
             # ensure n_floats and flops within limit
             tmp_inp = [shape_vars[i] for i in ishape_indices]
             op.shape_fn(tmp_inp)
-            n_floats += op.n_floats(tmp_inp)
+            op_nfl = op.n_floats(tmp_inp)
+            if self.verbose:
+                print(f"op: {op} nfloats: {op_nfl}")
+            n_floats += op_nfl
             assert n_floats * 8 <= megabyte_lim * 1024 * \
                 1024, f'Current number of elements ({n_floats/1024/1024}m) exceeded memory limit ({megabyte_lim} MB)'
             if FLOPS_LIM is not None:
@@ -874,7 +877,7 @@ class SimpleGenerator:
 
 
 class PureSymbolGen(SimpleGenerator):
-    def insert_placeholder_node(self, min_dims, dtype=DType.float32, constrain_min=True) -> ShapeVar:
+    def insert_placeholder_node(self, min_dims, dtype=DType.float32, constrain_min=True) -> Placeholder:
         init_placeholder = self.create_placeholder(len(min_dims), dtype)
         self.forward_insert_node(init_placeholder, [], oshapes=[
                                  init_placeholder.out_shape])
@@ -1287,8 +1290,6 @@ def range_constrain(param, lb, ub):
 
 class GuidedGen(PureSymbolGen):
     def __init__(self, summaries=None, scale='log', base=2, default_bins=8, constrain_prob=1, **kwargs):
-        super(GuidedGen, self).__init__(**kwargs)
-
         self.constrain_prob = constrain_prob
         self.base = 2
         self.param_config = [PARAM_CONFIG0, PARAM_CONFIG1,
@@ -1303,11 +1304,12 @@ class GuidedGen(PureSymbolGen):
                 lambda: [Bin(0, 256, scale='linear')] + [Bin(256, None, scale='linear')])
         self.scale = scale
         # self.inp
+        super(GuidedGen, self).__init__(**kwargs)
 
     def insert_placeholder_node(self, min_dims, dtype=DType.float32) -> ShapeVar:
         ish = super().insert_placeholder_node(min_dims, dtype, constrain_min=False)
         constraints = []
-        for i in ish.shape:
+        for i in ish.out_shape.shape:
             bins = self.default_config[0]
             lb, ub = bins[random.randint(0, len(bins) - 1)].sample_range()
             constraints.extend(range_constrain(i, lb, ub))
