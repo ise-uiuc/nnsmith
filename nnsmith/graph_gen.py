@@ -408,7 +408,6 @@ class SimpleGenerator:
         # self.input_shape = self.insert_placeholder_node(min_dims)
         self.min_dims = min_dims
         self.n_floats = 0
-        self.n_inps = 0
         self.monotonic_placeholder_id = 0
         self.monotonic_nx_node_idx = 0
         self.reusable_placeholder_nx_indices = []
@@ -425,8 +424,8 @@ class SimpleGenerator:
         self.forward_prob = 0.5 if forward_prob is None else forward_prob
 
     def create_placeholder(self, dim, dtype=None):
-        syms = self.new_syms(['i%s_s%s' % (self.n_inps, k)
-                              for k in range(dim)])
+        syms = self.new_syms(['v%s_%s' % (
+            self.monotonic_placeholder_id, k) for k in range(dim)])
         shapevar = ShapeVar(
             shape=syms,
             dtype=dtype if dtype is not None else random.choice(DTYPE_ALL))
@@ -533,6 +532,9 @@ class SimpleGenerator:
                 f'[WARNING] check {self.cur_node} {checking_time} ms')
 
         if self.verbose:
+            print('---> total constraints: \n',
+                  '\n'.join(sorted(map(str, set(
+                      list(self.solver.assertions()) + list(assumptions))))))
             print(cres, '<-- checking time:', checking_time, 'ms')
 
             if cres == z3.unsat:
@@ -787,16 +789,17 @@ class SimpleGenerator:
             print(f'Inserting node #{len(self.abstract_graph.nodes)}: '
                   f'trying to insert node type {node_t.__name__}')
 
-        op_param_n = signature(node_t).parameters
-        op_id = len(self.abstract_graph.nodes)
-        op_params = [self.new_sym('op%s_%s' % (op_id, k))
-                     for k in range(len(op_param_n))]
-
-        op: AbsOpBase = node_t(*op_params)
-
         try:
             for _ in range(max_shape_var_pick_time):
-                if random.randint(0, 1) < self.forward_prob:
+                # should recreate a new instance since some attributes (like axis) should be initialized for each pick
+                op_param_n = signature(node_t).parameters
+                op_id = len(self.abstract_graph.nodes)
+                op_params = [self.new_sym('op%s_%s' % (op_id, k))
+                             for k in range(len(op_param_n))]
+
+                op: AbsOpBase = node_t(*op_params)
+
+                if random.uniform(0, 1) < self.forward_prob:
                     if self.try_forward_insert(op):
                         return True
                 else:
@@ -902,11 +905,10 @@ class PureSymbolGen(SimpleGenerator):
             elif NNSMITH_LIMNF_V == '1':
                 self.n_floats_cons.append(nnsmith_le(
                     init_placeholder.out_shape.nelement(), self.limit_float // 16))
-        self.n_inps += 1
         return init_placeholder
 
     # subclasses may override this
-    def extra_constraints(self, node: AbsOpBase, ishape_indices: List[int]):
+    def extra_constraints(self, node: AbsOpBase, input_shapes: List[ShapeVar]):
         return []
 
     def try_insert_node(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
@@ -915,8 +917,6 @@ class PureSymbolGen(SimpleGenerator):
 
         if self.verbose:
             print('---> Trying to solve: ', node, constraints)
-            print('---> total constraints: \n',
-                  '\n'.join(sorted(map(str, set(self.solver.assertions())))))
 
         # make a copy
         output_shapes = node.shape_fn(input_shapes)
@@ -934,7 +934,7 @@ class PureSymbolGen(SimpleGenerator):
                 constraints.append(c)
 
         self.cur_node = node
-        constraints.extend(self.extra_constraints(node, ishape_indices))
+        constraints.extend(self.extra_constraints(node, input_shapes))
         if self.limnf:
             if NNSMITH_LIMNF_V == '0':
                 check_res = self.check_sat(
@@ -967,6 +967,9 @@ class PureSymbolGen(SimpleGenerator):
         return True
 
     def try_occupy_placeholder(self, node: AbsOpBase, occ_holder_indices: List[int]) -> bool:
+        if self.verbose:
+            print(
+                f'---> Trying to occupy placeholder: {occ_holder_indices} for node {node}')
         # S2 - create X: X can be
         #                   - a new placeholder (fallback)
         #                   - an existing alive shape
@@ -1008,7 +1011,9 @@ class PureSymbolGen(SimpleGenerator):
             constraints.extend(shape.gt_zero())
 
         self.cur_node = node
-        constraints.extend(self.extra_constraints(node, occ_holder_indices))
+        # TODO(JK): remove the extra_constraints of placeholder once it's occupied.
+        # TODO(JK): add the extra_constraints for new placeholders
+        constraints.extend(self.extra_constraints(node, input_shapes))
         # TODO: consider nfloats.
         check_res = self.check_sat(*constraints)
 
@@ -1202,6 +1207,44 @@ PARAM_CONFIG0 = {
     },
 }
 
+
+def range_constrain(param, lb, ub):
+    ret = []
+    if lb is not None:
+        ret.append(nnsmith_ge(param, lb))
+    if ub is not None:
+        ret.append(nnsmith_lt(param, ub))
+    return ret
+
+
+def __SLICE_CONSTRAINTS(node, inp_shps: List[ShapeVar], construct_param_dict):
+    # NOTE(JK): backward mode is slow at generating a chain of many slice ops.
+    # Might be one potential general performance issue. If hit performance bottleneck someday,
+    # might want to revisit this (substitute old placeholder symbols might help?)
+    inp = inp_shps[0]
+    start = getattr(node, 'start')
+    end = getattr(node, 'end')
+    dim_s = inp.shape[node.extra_attrs['axis']]
+    MAX_TICKS = 1024
+    ret = []
+    lb = 0
+    if not isinstance(start, int):
+        if random.randint(0, 1) or True:
+            # start / (dim_s - 1) \in [l / MAX_TICKS, r / MAX_TICKS]
+            # start * MAX_TICKS \in [l * (dim_s-1) , r * (dim_s-1)]
+            var = nnsmith_mul(start, MAX_TICKS)
+            l, r = Bin(lb, MAX_TICKS).sample_range()
+            lb = l
+            ret.extend(range_constrain(var, l * (dim_s - 1), r * (dim_s - 1)))
+
+    if not isinstance(end, int):
+        if random.randint(0, 1) or True:
+            var = nnsmith_mul(end, MAX_TICKS)
+            l, r = Bin(lb, MAX_TICKS).sample_range()
+            ret.extend(range_constrain(var, l * dim_s, r * dim_s))
+    return ret
+
+
 PARAM_CONFIG1 = {
     'NCHWConv2d': {
         'kernel_h_size': [Bin(i, i + 1, scale='log', base=2) for i in range(8)],
@@ -1214,6 +1257,7 @@ PARAM_CONFIG1 = {
     },
     # last bin is eseentially no constraint, to ensure -1 can be included
     'Reshape': defaultdict(lambda: [Bin(i, i + 1, scale='log', base=2) for i in range(8)] + [Bin(None, None)]),
+    'Slice': __SLICE_CONSTRAINTS,
 }
 PARAM_CONFIG1['Reshape1D'] = PARAM_CONFIG1['Reshape']
 PARAM_CONFIG1['Reshape2D'] = PARAM_CONFIG1['Reshape']
@@ -1234,7 +1278,7 @@ PARAM_CONFIG2 = {
 }
 
 
-def __GROUP_RESHAPE(node, ishape_indices, construct_param_dict, bin=True):
+def __GROUP_RESHAPE(node, inp_shps, construct_param_dict, bin=True):
     bins = [Bin(i, i + 1, scale='log', base=2)
             for i in range(8)] + [Bin(None, None)]
     ret = []
@@ -1279,15 +1323,6 @@ PARAM_CONFIG4 = copy.deepcopy(PARAM_CONFIG3)
 PARAM_CONFIG5 = copy.deepcopy(PARAM_CONFIG3)
 
 
-def range_constrain(param, lb, ub):
-    ret = []
-    if lb is not None:
-        ret.append(nnsmith_ge(param, lb))
-    if ub is not None:
-        ret.append(nnsmith_lt(param, ub))
-    return ret
-
-
 class GuidedGen(PureSymbolGen):
     def __init__(self, summaries=None, scale='log', base=2, default_bins=8, constrain_prob=1, **kwargs):
         self.constrain_prob = constrain_prob
@@ -1306,20 +1341,20 @@ class GuidedGen(PureSymbolGen):
         # self.inp
         super(GuidedGen, self).__init__(**kwargs)
 
-    def insert_placeholder_node(self, min_dims, dtype=DType.float32) -> ShapeVar:
-        ish = super().insert_placeholder_node(min_dims, dtype, constrain_min=False)
-        constraints = []
-        for i in ish.out_shape.shape:
-            bins = self.default_config[0]
-            lb, ub = bins[random.randint(0, len(bins) - 1)].sample_range()
-            constraints.extend(range_constrain(i, lb, ub))
-        # throw exception for now since this is unlikely to happen
-        assert self.check_sat(
-            *constraints, nnsmith_le(self.n_floats, self.limit_float)) == z3.sat, 'Input constraints too tight'
-        self.solver.add(*constraints)
-        return ish
+    # def insert_placeholder_node(self, min_dims, dtype=DType.float32) -> ShapeVar:
+    #     ish = super().insert_placeholder_node(min_dims, dtype, constrain_min=False)
+    #     constraints = []
+    #     for i in ish.out_shape.shape:
+    #         bins = self.default_config[0]
+    #         lb, ub = bins[random.randint(0, len(bins) - 1)].sample_range()
+    #         constraints.extend(range_constrain(i, lb, ub))
+    #     # throw exception for now since this is unlikely to happen
+    #     assert self.check_sat(
+    #         *constraints, nnsmith_le(self.n_floats, self.limit_float)) == z3.sat, 'Input constraints too tight'
+    #     self.solver.add(*constraints)
+    #     return ish
 
-    def extra_constraints(self, node: AbsOpBase, ishape_indices: List[int]):
+    def extra_constraints(self, node: AbsOpBase, input_shapes: List[ShapeVar]):
         if random.uniform(0, 1) > self.constrain_prob:
             return []
         ret = []
@@ -1329,7 +1364,7 @@ class GuidedGen(PureSymbolGen):
         if config is None:
             return ret
         if callable(config):
-            return config(node, ishape_indices, construct_param_dict)
+            return config(node, input_shapes, construct_param_dict)
 
         # if len(construct_param_dict) > 0:
         #     print('Op {} constraint:'.format(node))
