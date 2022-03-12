@@ -5,7 +5,6 @@ import math
 import textwrap
 
 import networkx as nx
-from summary import ParamShapeSummary
 import torch
 from torch import nn
 import numpy as np
@@ -473,7 +472,7 @@ class SimpleGenerator:
                 break
             node_t = self.pick_next_op_type()
             self.try_insert_node_type(node_t)
-        if len(self.abstract_graph.nodes) != max_node_size:
+        if abs(len(self.abstract_graph.nodes) - max_node_size) >= 3:
             print(
                 f'[WARNING]: graph size: {len(self.abstract_graph.nodes)} != expected size: {max_node_size}')
         # init graph placeholders
