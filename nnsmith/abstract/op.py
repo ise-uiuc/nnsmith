@@ -1124,6 +1124,8 @@ class Pool2d(AbsOpBase):
         cons.append(nnsmith_ge(self.padding, 0))
         # not too extream to avoid torch exporter issue
         cons.append(nnsmith_le(self.padding, 255))
+        cons.append(nnsmith_le(self.padding, nnsmith_div(self.kernel_h_size, 2)))
+        cons.append(nnsmith_le(self.padding, nnsmith_div(self.kernel_w_size, 2)))
         # limit FLOPS
         if FLOPS_LIM is not None:
             cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
