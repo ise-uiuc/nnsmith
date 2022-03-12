@@ -4,7 +4,6 @@ import time
 from tqdm import tqdm
 import torch
 from nnsmith.backends import DiffTestBackend
-from nnsmith import util
 
 
 class TchExecutor(DiffTestBackend):
@@ -38,7 +37,6 @@ def _unittest():
     from nnsmith.backends.tvm_graph import TVMExecutor
     from nnsmith.graph_gen import SymbolNet
     from nnsmith import difftest, input_gen
-    import numpy as np
 
     def compare(tvm_exe, tch_exe):
         st = time.time()
@@ -47,12 +45,8 @@ def _unittest():
         onnx_model = tvm_exe.get_onnx_proto('output.onnx')
 
         # gen input
-        input_gen1 = input_gen.InputGenV3()
         inp_spec = tvm_exe.analyze_onnx_io(onnx_model)[0]
-        rng = input_gen1.infer_domain(onnx_model)
-        if rng is None:
-            return
-        inp = input_gen.gen_one_input_rngs(inp_spec, rng)
+        inp = input_gen.gen_one_input_rngs(inp_spec, rngs=None)
 
         st = time.time()
         tvm_out = tvm_exe.predict(onnx_model, inp)

@@ -76,7 +76,7 @@ class BackendCreator:
             raise ValueError(f'unknown backend: {name}')
 
 
-def run_backend_single_model(model_path: str, domain_path: str, backend: BackendCreator, dump_raw: str, seed: int = None, infer_domain=True):
+def run_backend_single_model(model_path: str, backend: BackendCreator, dump_raw: str, seed: int = None):
     """This function is for debugging purpose.
     Run the backend on the same process.
     Compared to run_backend_single_model_raw_input, this is new version with input gen on the fly
@@ -84,15 +84,8 @@ def run_backend_single_model(model_path: str, domain_path: str, backend: Backend
     backend = backend()
     model = DiffTestBackend.get_onnx_proto(model_path)
     inp_spec = DiffTestBackend.analyze_onnx_io(model)[0]
-    if domain_path is not None:
-        rngs = pickle.load(open(domain_path, 'rb'))
-    elif infer_domain:
-        rngs = input_gen.InputGenV3().infer_domain(model)
-        print('inferred domain', rngs)
-    else:
-        rngs = None
     inputs = input_gen.gen_one_input_rngs(
-        inp_spec, rngs, seed)
+        inp_spec, None, seed)
     outputs = backend.predict(model_path, inputs)
     if dump_raw is not None:
         pickle.dump(inputs, open(dump_raw + ".input", 'wb'))
@@ -133,8 +126,6 @@ if __name__ == '__main__':
                         help=f'One of {BackendCreator.NAME_MAP.keys()}')
     parser.add_argument('--model', type=str,
                         help='For debugging purpose: path to onnx model;')
-    parser.add_argument('--input_domain', type=str,
-                        help='When gen_input is specified: path to the domain pkl file. If not specified, it uses the default domain.')
     parser.add_argument(
         '--dump_raw', help='Dumps the raw output to the specified path')
     parser.add_argument('--raw_input', type=str,
@@ -143,15 +134,9 @@ if __name__ == '__main__':
                         help='to generate random input data')
     parser.add_argument('--cmp_with', type=str, default=None,
                         help='the backend to compare with')
-    parser.add_argument('--no_infer', action='store_true',
-                        help='Use default domain instead of inferring')
 
     # TODO: Add support for passing backend-specific options
     args = parser.parse_args()
-    if args.raw_input is not None:
-        assert args.input_domain is None, \
-            f"`input_domain`={args.input_domain} should not be specified when `raw_input` is specified." + \
-            "`raw_input` mode is mutually exclusive with `gen-on-the-fly` mode."
 
     st = time.time()
     if args.seed is None:
@@ -167,7 +152,7 @@ if __name__ == '__main__':
         if args.raw_input is not None:
             return run_backend_single_model_raw_input(args.model, args.raw_input, bknd, dump_raw)
         else:
-            return run_backend_single_model(args.model, args.input_domain, bknd, dump_raw, seed, not args.no_infer)
+            return run_backend_single_model(args.model, bknd, dump_raw, seed)
 
     outputs = run_backend(BackendCreator(args.backend), args.dump_raw)
     if args.cmp_with is not None:
