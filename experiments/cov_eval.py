@@ -98,7 +98,8 @@ if __name__ == '__main__':
         for line in batch:
             tstr, mstr = line.rstrip('\n').split(',')
             btime += float(tstr) # Generation time
-            model_batch.append(os.path.join(args.model_dir, mstr))
+            if mstr != 'FAILURE':
+                model_batch.append(os.path.join(args.model_dir, mstr))
 
         profraw_path = os.path.join(args.report_folder, f'{i}.profraw')
 
