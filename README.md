@@ -194,3 +194,10 @@ pip install onnxruntime-gpu # the order matters; and you have to split the insta
 - [x] LEMON coverage evaluation ([modified](https://github.com/ganler/LEMON) to make it work) @jiawei
 - [x] Coverage normalization. @jiawei
 - [x] **Op Batch 3**: Softmax, BatchNorm, Linear, Flatten, *Pool2d. @jiawei
+- [ ] 2-phase evaluation: first generate model quickly; then evaluate them with instrumentation.
+    - [x] LEMON
+    - [ ] nnsmith
+    - [ ] graph-fuzz
+- [ ] Implement baseline [graph-fuzz](https://dl.acm.org/doi/abs/10.1109/ICSE43902.2021.00037)
+- [ ] Migrate to source-level coverage (more information)
+
