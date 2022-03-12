@@ -171,6 +171,8 @@ def nnsmith_div(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3
     left, right = align_bvs(left, right)
     if isinstance(left, z3.BitVecRef) or isinstance(right, z3.BitVecRef):
         return z3.UDiv(left, right)
+    if isinstance(left, int) and isinstance(right, int):
+        return left // right
     return left / right
 
 
@@ -1161,6 +1163,109 @@ class AvgPool2d(Pool2d):
         return torch.nn.AvgPool2d(kernel_size=(self.kernel_h_size, self.kernel_w_size), stride=self.stride, padding=self.padding)
 
 
+class Slice(UnaryOpBase):
+    # pytorch slice always exported as a stack of single-dim slices, so only model sinlge-dim slice here
+    # pytorch slice only supports forward slicing, so only model forward slicing here
+    in_dtypes = [(i,) for i in DTYPE_ALL]
+    INT_MAX = 2**63 - 1
+    INT_MIN = -2**63
+
+    def __init__(self, start, end, step):
+        super().__init__()
+        self.inp_ranks = [-1]
+        self.out_ranks = [-1]
+        self.start = start
+        self.end = end
+        self.step = step
+
+    def __str__(self) -> str:
+        tail = {'axis': self.extra_attrs['axis'],
+                'region': self.extra_attrs['region']}
+        if isinstance(self.start, int):
+            tail['start'] = self.start
+        if isinstance(self.end, int):
+            tail['end'] = self.end
+        if isinstance(self.step, int):
+            tail['step'] = self.step
+        return super().__str__() + ' ' + str(tail)
+
+    def _get_attrs(self, ndims):
+        ConstraintCheck.true(ndims > 0)
+        if 'axis' not in self.extra_attrs:
+            self.extra_attrs['ndims'] = ndims
+            self.extra_attrs['axis'] = random.randint(0, ndims - 1)
+            # specifying the region of the start and end pointer.
+            # start \in [0, dim_s-1] if region=='right' else [-dim_s, -1]
+            # end \in [-dim_s, -1] if region=='left' else [0, dim_s]
+            self.extra_attrs['region'] = random.choice(
+                ['left', 'mid', 'right'])
+            if random.uniform(0, 1) < 0.1:
+                # torch exporter does not support start=INT_MIN
+                # if random.uniform(0, 1) < 0.5:
+                #     # because pytorch only supports forward slicing,
+                #     # start cannot be INT_MAX, otherwise it slices empty tensor
+                #     self.start = self.INT_MIN
+                # else:
+                self.end = self.INT_MAX
+        return self.extra_attrs['axis']
+
+    def _requires(self, input_shapes: List[ShapeVar]):
+        inp = input_shapes[0]
+        axis = self._get_attrs(inp.ndims)
+        reg = self.extra_attrs['region']
+        cons = []
+        dim_s = inp.shape[axis]
+        # range for start
+        l, r = (0, nnsmith_sub(dim_s, 1))
+        # range for end
+        ll, rr = (0, dim_s)
+        if not isinstance(self.start, int):
+            cons.append(z3.And(  # start \in [l, r]
+                nnsmith_ge(self.start, l),
+                nnsmith_le(self.start, r)))
+        if not isinstance(self.end, int):
+            cons.append(z3.And(  # end \in [ll, rr]
+                nnsmith_ge(self.end, ll),
+                nnsmith_le(self.end, rr)))
+
+        cons.append(nnsmith_ge(self.step, 1))  # forward slicing only
+        cons.append(nnsmith_le(self.step, dim_s))
+        cons.append(nnsmith_gt(self.end, self.start))
+        return cons
+
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        inp = input_shapes[0]
+        axis = self._get_attrs(inp.ndims)
+        s = list(inp.shape)
+        end = self.end
+        if self.end == Slice.INT_MAX:
+            end = inp.shape[axis]
+        s[axis] = nnsmith_div(
+            nnsmith_add(nnsmith_sub(end, self.start),
+                        nnsmith_sub(self.step, 1)),
+            self.step)
+        return [ShapeVar(s, input_shapes[0].dtype)]
+
+    def torch(self):
+        reg = self.extra_attrs['region']
+
+        def _func(x):
+            dim_s = x.shape[self.extra_attrs['axis']]
+            start, end = self.start, self.end
+            if reg in ['left', 'mid']:
+                start -= dim_s
+            # actual end would be 0, which is not really 'left'
+            if reg == 'left' and end < dim_s and end != Slice.INT_MAX:
+                end -= dim_s
+            s = tuple(slice(None, None) if i != self.extra_attrs['axis'] else slice(start, end, self.step)
+                      for i in range(self.extra_attrs['ndims']))
+            return x[s]
+        return _func
+
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        return [(out_shape_var[0].ndims, out_shape_var[0].dtype)]
+
+
 class Expand(UnaryOpBase, ABC):
     in_dtypes = [(i,) for i in DTYPE_ALL]
     out_dtypes = [(i,) for i in DTYPE_ALL]
@@ -2125,6 +2230,13 @@ class Gemm(TernaryOpBase):
         mat1, mat2 = input_shapes[1], input_shapes[2]
         return mat1.shape[0] * mat1.shape[1] * mat2.shape[1]
 
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        return [
+            (random.randint(0, 2), out_shape_var[0].dtype),
+            (2, out_shape_var[0].dtype),
+            (2, out_shape_var[0].dtype)
+        ]
+
 
 def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
     ret = []
@@ -2244,8 +2356,8 @@ def auto_infer_in_dtypes(verbose=False):
             print(f'Try auto inferring input dtype spec for `{op_t.__name__}`')
         valid_combs = None
         op = create_op(op_t)
-        in_dtype_combs: List[DTypeComb] = \
-            itertools.product(DTYPE_ALL, repeat=len(op.inp_ranks))
+        in_dtype_combs: List[DTypeComb] = itertools.product(
+            DTYPE_ALL, repeat=len(op.inp_ranks))
         valid_combs = [
             comb for comb in in_dtype_combs if _check_comb(comb, op)]
         if len(valid_combs) == 0:
