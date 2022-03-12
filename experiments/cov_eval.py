@@ -134,7 +134,7 @@ if __name__ == '__main__':
                 0 != os.system(f'{llvm_cov} export {args.lib} -instr-profile={profdata_path} -format=lcov > {lcov_path}'):
                 print(f'Getting coverage failed!!', file=sys.stderr)
             else: # clean temporary files
-                if 0 == os.system(f'lz4 {lcov_path} >/dev/null 2>&1'):
+                if 0 == os.system(f'lz4 {lcov_path}'):
                     os.remove(lcov_path)
                 os.remove(profraw_path)
                 os.remove(profdata_path)
