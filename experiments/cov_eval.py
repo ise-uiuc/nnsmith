@@ -95,6 +95,10 @@ if __name__ == '__main__':
     process_start_time = time()
 
     for i in tqdm(range(len(batch_list))):
+        if time() - process_start_time > args.max_time:
+            print(f'==> Timeout!')
+            break
+
         batch = batch_list[i]
         btime = 0
         sum_path = os.path.join(args.report_folder, f'{i}.txt')
@@ -123,8 +127,21 @@ if __name__ == '__main__':
             '--dev', args.dev,
             '--seed', str(seed),
         ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=copied_env)
-        outs, errs = p.communicate()
+        _, errs = p.communicate()
+        errs = errs.decode()
         exit_code = p.returncode
+
+        # Write stderr
+        stderr_file.write(f'iter {i}: {model_batch} ~ exit_code={exit_code}\n')
+        if errs:
+            stderr_file.write(errs)
+        stderr_file.flush()
+
+        if '$ORT.SKIP$' in errs: # all models are unsupported by ort. skip it.
+            if os.path.exists(profraw_path):
+                os.remove(profraw_path)
+            continue
+
         btime += time() - tstart # <=== ENDING
 
         # Wrap up this batch.
@@ -153,16 +170,6 @@ if __name__ == '__main__':
             print(f'{profraw_path} does not exist...', file=sys.stderr)
 
         record(btime, len(model_batch), seed)
-
-        # Write stderr
-        stderr_file.write(f'iter {i}: {model_batch} ~ exit_code={exit_code}\n')
-        if errs:
-            stderr_file.write(errs.decode())
-        stderr_file.flush()
-
-        if time() - process_start_time > args.max_time:
-            print(f'==> Timeout!')
-            break
 
     config_file.close()
     stderr_file.close()

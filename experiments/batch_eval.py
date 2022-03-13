@@ -29,6 +29,7 @@ if __name__ == '__main__':
     else:
         raise NotImplementedError("Other backends not supported yet.")
 
+    n_unsupported = 0
     for path in args.models:
         onnx_model = DiffTestBackend.get_onnx_proto(path)
         is_diff_test = os.path.exists(path + '.inp.pkl') # TODO: Check if needs to run diff test
@@ -44,7 +45,16 @@ if __name__ == '__main__':
                 eval_inputs = gen_one_input(input_spec, 0, 1)
                 backend.predict(onnx_model, eval_inputs)
         except Exception as e:
+            if 'onnxruntime.capi.onnxruntime_pybind11_state.NotImplemented' in str(type(e)) or \
+                "Unexpected data type for" in str(e):
+                # OK we hit an unsupported but valid op in ORT.
+                # For simplicity, and we don't want to change `in/out_dtypes`, we just skip it w/o counting time.
+                n_unsupported += 1
+                continue
             print("==============================================================", file=sys.stderr)
             print(f"Failed execution at {path}", file=sys.stderr)
             print(e, file=sys.stderr)
             # Done!
+
+    if n_unsupported == len(args.models):
+        print("$ORT.SKIP$ all ORT models are not supported. just don't count this.", file=sys.stderr)
