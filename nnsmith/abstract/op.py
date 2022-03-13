@@ -2073,6 +2073,7 @@ class Linear(UnaryOpBase):
         return [ShapeVar(shape=[*input_shapes[0].shape[:-1], self.ofeat], dtype=DType.float32)]
 
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+        ConstraintCheck.true(input_shapes[0].ndims >= 1)
         return [
             nnsmith_ge(self.ifeat, 1),
             nnsmith_ge(self.ofeat, 1),
