@@ -291,8 +291,8 @@ def check_shape_fn(func):
 
 def check_require_fn(func):
     def wrapper_check_require_fn(self, input_shapes):
-        SanityCheck.true(
-            _INFERRED, "Please call auto_infer_in_dtypes before using this function")
+        if not _INFERRED:
+            auto_infer_in_dtypes()
         SanityCheck.eq(len(input_shapes), len(self.inp_ranks), "{} requires {} inputs, but got {}".format(
             self.__class__.__name__,
             len(self.inp_ranks), len(input_shapes)))
@@ -1067,9 +1067,9 @@ class Softmax(ElementWiseUnaryOp):
 
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
         return [
-            nnsmith_lt(self.dim, input_shapes[0].ndims), 
+            nnsmith_lt(self.dim, input_shapes[0].ndims),
             nnsmith_ge(self.dim, 1)]
-    
+
     def torch(self) -> Callable[..., torch.Tensor]:
         return torch.nn.Softmax(dim=self.dim)
 
@@ -1126,8 +1126,10 @@ class Pool2d(AbsOpBase):
         cons.append(nnsmith_ge(self.padding, 0))
         # not too extream to avoid torch exporter issue
         cons.append(nnsmith_le(self.padding, 255))
-        cons.append(nnsmith_le(self.padding, nnsmith_div(self.kernel_h_size, 2)))
-        cons.append(nnsmith_le(self.padding, nnsmith_div(self.kernel_w_size, 2)))
+        cons.append(nnsmith_le(
+            self.padding, nnsmith_div(self.kernel_h_size, 2)))
+        cons.append(nnsmith_le(
+            self.padding, nnsmith_div(self.kernel_w_size, 2)))
         # limit FLOPS
         if FLOPS_LIM is not None:
             cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
@@ -1228,6 +1230,7 @@ class ExpandLast4(Expand):
     def __init__(self, expand_n: Union[int, z3.ExprRef]):
         super().__init__(expand_last_dim=4, expand_n=expand_n)
 
+
 class BatchNorm2d(ElementWiseUnaryOp):
     in_dtypes = [(DType.float32,)]
     out_dtypes = [(DType.float32,)]
@@ -1246,6 +1249,7 @@ class BatchNorm2d(ElementWiseUnaryOp):
 
     def torch(self) -> Callable[..., torch.Tensor]:
         return torch.nn.BatchNorm2d(num_features=self.nfeat)
+
 
 class NCHWConv2d(UnaryOpBase):
     # FIXME: torch exporter does not support float64, may miss bugs
@@ -1397,6 +1401,8 @@ class Reshape(UnaryOpBase, ABC):
                 lambda x, y: nnsmith_mul(x, y), self.target_shape, 1)
             cons = [nnsmith_eq(total_pixels, reduce(
                 lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape, 1))]
+            for s in self.target_shape:
+                cons.append(nnsmith_ge(s, 1))
             if os.getenv('NNSMITH_CONS_RESHAPE', 'on') != 'off':
                 # should not be too extreme!
                 __DIM_LIMIT__ = 4096
@@ -1420,7 +1426,8 @@ class Reshape(UnaryOpBase, ABC):
 
 # Expand 6 times.
 
-class Flatten(Reshape):    
+
+class Flatten(Reshape):
     # Inputs are target shape.
     def __init__(self, dim0: Union[int, z3.ExprRef]):
         super().__init__()
@@ -1430,6 +1437,7 @@ class Flatten(Reshape):
 
     def torch(self):
         return lambda x: x.flatten()
+
 
 class Reshape1D(Reshape):
     # Inputs are target shape.
@@ -1841,21 +1849,21 @@ class Linear(UnaryOpBase):
         self.ifeat = ifeat
         self.ofeat = ofeat
         self.inp_ranks = [-1]
-        self.out_ranks = [-1] # at least one dim. cannot be zero.
-    
+        self.out_ranks = [-1]  # at least one dim. cannot be zero.
+
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         return [ShapeVar(shape=[*input_shapes[0].shape[:-1], self.ofeat], dtype=DType.float32)]
-    
+
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
         return [
             nnsmith_ge(self.ifeat, 1),
             nnsmith_ge(self.ofeat, 1),
             nnsmith_eq(input_shapes[0].shape[-1], self.ifeat)
-            ]
-    
+        ]
+
     def torch(self) -> Callable[..., torch.Tensor]:
         return torch.nn.Linear(in_features=self.ifeat, out_features=self.ofeat)
-    
+
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
         return [(out_shape_var[0].ndims, DType.float32)]
 
@@ -2041,9 +2049,10 @@ class Gemm(TernaryOpBase):
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
         dtype = out_shape_var[0].dtype
         return [
-            (-1, dtype), 
-            (2, dtype), 
+            (-1, dtype),
+            (2, dtype),
             (2, dtype)]
+
 
 def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
     ret = []
