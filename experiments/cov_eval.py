@@ -22,6 +22,8 @@ from tqdm import tqdm
 
 # CMD EXAMPLE: 
 # python experiments/cov_eval.py --model_dir lemon --report_folder test-cov --backend tvm --lib ../tvm/build/libtvm.so --llvm-version 14
+# python experiments/cov_eval.py --model_dir test-onnx --report_folder test-cov-q --backend ort \
+#  --lib '../onnxruntime/build/Linux/RelWithDebInfo/libonnxruntime_providers_shared.so ../onnxruntime/build/Linux/RelWithDebInfo/libonnxruntime.so'  --llvm-version 14
 
 # Coverage lcov:          {i}.lcov
 # Timing / # model:       stats.csv
@@ -38,6 +40,7 @@ if __name__ == '__main__':
     parser.add_argument('--backend', type=str, default='tvm', help='One of ort, trt, tvm, and xla')
     parser.add_argument('--dp', type=int, default=100, help='# data point you want.')
     parser.add_argument('--dev', type=str, default='cpu', help='cpu/gpu')
+    parser.add_argument('--sum', action='store_true', help='Use summary.')
     parser.add_argument('--seed', type=int, default=233, help='to generate random input data')
     parser.add_argument('--lib', type=str, required=True, help='path to instrumented library')
     parser.add_argument('--max_time', type=int, default=60*60*24, help='max time in seconds for coverage evaluation')
@@ -54,7 +57,10 @@ if __name__ == '__main__':
         print('==> lz4 not found. Storing lcov w/o compression is disk-killing. Please install lz4!')
         exit(1)
 
-    assert os.path.exists(args.lib), f'{args.lib} does not exist!'
+    lib_expr = ''
+    for lib in args.lib.split():
+        assert os.path.exists(lib), f'{lib} does not exist!'
+        lib_expr += f' -object {os.path.realpath(lib)} '
 
     if os.path.exists(args.report_folder):
         # TODO: Allow continous fuzzing...
@@ -133,11 +139,12 @@ if __name__ == '__main__':
 
             profdata_path = os.path.join(args.report_folder, f'{i}.profdata')
             # summary might be useless as it does not consider prior runs.
-            # 0 != os.system(f'{llvm_cov} report {args.lib} -instr-profile={profdata_path} > {sum_path}')
             if 0 != os.system(f'{llvm_profdata} merge -sparse {profraw_path} -o {profdata_path}') or \
-                0 != os.system(f'{llvm_cov} export {args.lib} -instr-profile={profdata_path} -format=lcov > {lcov_path}'):
+                0 != os.system(f'{llvm_cov} export -instr-profile={profdata_path} -format=lcov {lib_expr} > {lcov_path}'):
                 print(f'Getting coverage failed!!', file=sys.stderr)
             else: # clean temporary files
+                if args.sum:
+                    os.system(f'{llvm_cov} report -instr-profile={profdata_path} {lib_expr} > {sum_path}')
                 if 0 == os.system(f'lz4 {lcov_path}'):
                     os.remove(lcov_path)
                 os.remove(profraw_path)
@@ -150,7 +157,7 @@ if __name__ == '__main__':
         # Write stderr
         stderr_file.write(f'iter {i}: {model_batch} ~ exit_code={exit_code}\n')
         if errs:
-            stderr_file.write(errs)
+            stderr_file.write(errs.decode())
         stderr_file.flush()
 
         if time() - process_start_time > args.max_time:
