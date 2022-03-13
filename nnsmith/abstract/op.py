@@ -1191,6 +1191,7 @@ class Expand(UnaryOpBase, ABC):
                         input_shape[-self.expand_last_dim], self.expand_n),
                     nnsmith_ge(self.expand_n, 1))]
                 return cons
+            return [nnsmith_ge(self.expand_n, 1)]
         else:
             # It is also valid to expand to 0. But just too tricky...
             ConstraintCheck.ge(self.expand_n, 1)
@@ -1362,6 +1363,11 @@ class Reshape(UnaryOpBase, ABC):
         self.target_shape: List[Union[int, z3.ExprRef]]
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        __MAX_SOLVE_SYMBOL__ = 6
+        # otherwise OOM.
+        SanityCheck.le(input_shapes[0].ndims +
+                       len(self.target_shape), __MAX_SOLVE_SYMBOL__)
+
         if -1 not in self.target_shape:
             return [ShapeVar(self.target_shape, dtype=input_shapes[0].dtype)]
         # else
@@ -1477,21 +1483,6 @@ class Reshape4D(Reshape):
         self.dim3 = dim3
         self.target_shape = [dim0, dim1, dim2, dim3]
         self.out_ranks = [4]
-
-# FIXME: Constraint too complex.
-
-
-class Reshape5D(Reshape):
-    def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef],
-                 dim3: Union[int, z3.ExprRef], dim4: Union[int, z3.ExprRef]):
-        super().__init__()
-        self.dim0 = dim0
-        self.dim1 = dim1
-        self.dim2 = dim2
-        self.dim3 = dim3
-        self.dim4 = dim4
-        self.target_shape = [dim0, dim1, dim2, dim3, dim4]
-        self.out_ranks = [5]
 
 
 class Transpose(UnaryOpBase, ABC):
@@ -1876,8 +1867,6 @@ def partialclass(cls, name, *args, **kwds) -> Type[AbsOpBase]:
 class Concat(AbsOpBase):
     MAX_ARITY = 5
     MAX_RANK = 5
-    in_dtypes = [tuple(i for _ in range(5))
-                 for i in DTYPE_ALL]  # suport max concat 5 tensors
     out_dtypes = [(i,) for i in DTYPE_ALL]
 
     def __str__(self) -> str:
@@ -1925,16 +1914,41 @@ class Concat(AbsOpBase):
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
         return [(out_shape_var[0].ndims, out_shape_var[0].dtype) for _ in range(self.arity)]
 
-# NOTE(JK) This is ugly. I think the root cause is we are using a class to represent a node type that we want to insert.
-# A more flexible approach is to use an instance. For example, to represent Expand node types, instead of classes [ExpandLast1, ExpandLast2, ...],
-# use instances [Expand(expand_last_dim=1, expand_n=Placeholder), Expand(2, Placeholder), ...], where the Placeholder represents the params needing z3 to model.
+
+# the semantic of `in_dtypes` is not possible dtypes in "max rank". but simply in "rank". don't mess up the definition.
+class Concat1(Concat):
+    in_dtypes = [(i,) for i in DTYPE_ALL]
+
+    def __init__(self):
+        super().__init__(1)
 
 
-Concat1 = partialclass(Concat, 'Concat1', 1)
-Concat2 = partialclass(Concat, 'Concat2', 2)
-Concat3 = partialclass(Concat, 'Concat3', 3)
-Concat4 = partialclass(Concat, 'Concat4', 4)
-Concat5 = partialclass(Concat, 'Concat5', 5)
+class Concat2(Concat):
+    in_dtypes = [(i, i) for i in DTYPE_ALL]
+
+    def __init__(self):
+        super().__init__(2)
+
+
+class Concat3(Concat):
+    in_dtypes = [(i, i, i) for i in DTYPE_ALL]
+
+    def __init__(self):
+        super().__init__(3)
+
+
+class Concat4(Concat):
+    in_dtypes = [(i, i, i, i) for i in DTYPE_ALL]
+
+    def __init__(self):
+        super().__init__(4)
+
+
+class Concat5(Concat):
+    in_dtypes = [(i, i, i, i, i) for i in DTYPE_ALL]
+
+    def __init__(self):
+        super().__init__(5)
 
 
 class Cast(ElementWiseUnaryOp, ABC):
