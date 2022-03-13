@@ -62,7 +62,7 @@ class Reporter:  # From Tzer.
                     f'{self.report_folder} already exist... We want an empty folder to report...')
             else:
                 for f in Path(self.report_folder).glob('*'):
-                    if str(f.name) not in ['stdout.log', 'stderr.log']:
+                    if str(f.name) not in ['stdout.log', 'stderr.log'] and not f.name.endswith('.profraw'):
                         os.system(f'rm -rf {f}')
 
         Path(self.report_folder).mkdir(parents=True, exist_ok=True)
