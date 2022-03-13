@@ -1194,7 +1194,7 @@ class Bin:
         return lb, ub
 
 
-PARAM_CONFIG0 = {
+PARAM_CONFIG0 = {  # deprecated
     'NCHWConv2d': {
         'kernel_h_size': [Bin(i, i + 1, scale='log', base=2) for i in range(8)],
         'kernel_w_size': [Bin(i, i + 1, scale='log', base=2) for i in range(8)],
@@ -1259,13 +1259,24 @@ PARAM_CONFIG1 = {
     'Reshape': defaultdict(lambda: [Bin(i, i + 1, scale='log', base=2) for i in range(8)] + [Bin(None, None)]),
     'Slice': __SLICE_CONSTRAINTS,
 }
+PARAM_CONFIG1['Linear'] = {
+    'ifeat': [],
+    'ofeat': PARAM_CONFIG1['NCHWConv2d']['out_channels']
+}
+PARAM_CONFIG1['AvgPool2d'] = {
+    'kernel_h_size': PARAM_CONFIG1['NCHWConv2d']['kernel_h_size'],
+    'kernel_w_size': PARAM_CONFIG1['NCHWConv2d']['kernel_w_size'],
+    'stride': PARAM_CONFIG1['NCHWConv2d']['stride'],
+    'padding': PARAM_CONFIG1['NCHWConv2d']['padding'],
+}
+PARAM_CONFIG1['MaxPool2d'] = PARAM_CONFIG1['AvgPool2d']
 PARAM_CONFIG1['Reshape1D'] = PARAM_CONFIG1['Reshape']
 PARAM_CONFIG1['Reshape2D'] = PARAM_CONFIG1['Reshape']
 PARAM_CONFIG1['Reshape3D'] = PARAM_CONFIG1['Reshape']
 PARAM_CONFIG1['Reshape4D'] = PARAM_CONFIG1['Reshape']
 PARAM_CONFIG1['Reshape5D'] = PARAM_CONFIG1['Reshape']
 PARAM_CONFIG1['Reshape6D'] = PARAM_CONFIG1['Reshape']
-PARAM_CONFIG2 = {
+PARAM_CONFIG2 = {  # deprecated
     'NCHWConv2d': {
         'kernel_h_size': [Bin(1, 256, scale='linear')],
         'kernel_w_size': [Bin(1, 256, scale='linear')],
