@@ -2,6 +2,7 @@ import os
 import multiprocessing
 import pickle
 from pathlib import Path
+from copy import deepcopy
 
 import lz4.frame
 
@@ -73,11 +74,7 @@ def analyze_lcov(path):
                     functions.add(func_name_to_line[func_name])
             elif cov_line.startswith('BRDA:'):
                 # BRDA: <line number>,<block number>,<branch number>,<taken>
-                try:
-                    line_number, block_number, branch_number, taken = cov_line[5:].split(',')
-                except ValueError as e:
-                    print(cov_line[5:].split(','))
-                    raise e
+                line_number, block_number, branch_number, taken = cov_line[5:].split(',')
                 if taken != '-' and taken != '0':
                     branches.add(line_number + ':' + block_number + ':' + branch_number)
                 n_branch_total += 1
@@ -157,16 +154,16 @@ def analyze_folder(folder, redo=False):
         #     'bf': n_branch_total,
         # }
 
-        for k in set(current.keys()) | set(rhs.keys()):
+        for k in set(current.keys()).union(set(rhs.keys())):
             if k not in current:
                 current[k] = rhs[k]
                 continue
             elif k not in rhs:
                 continue
             else:
-                current[k]['lines'] = current[k]['lines'] | rhs[k]['lines']
-                current[k]['functions'] = current[k]['functions'] | rhs[k]['functions']
-                current[k]['branches'] = current[k]['branches'] | rhs[k]['branches']
+                current[k]['lines'] = current[k]['lines'].union(rhs[k]['lines'])
+                current[k]['functions'] = current[k]['functions'].union(rhs[k]['functions'])
+                current[k]['branches'] = current[k]['branches'].union(rhs[k]['branches'])
 
                 if current[k]['lf'] != rhs[k]['lf']:
                     print(f'[WARNING] total line {current[k]["lf"]} != {rhs[k]["lf"]} in {k} ' + hint)
@@ -190,7 +187,7 @@ def analyze_folder(folder, redo=False):
         ret[current_time] = {}
         ret[current_time]['n_model'] = int(n_model)
         current_cov = merge_cov(current_cov, r, f'merging {file_list[i]}')
-        ret[current_time]['merged_cov'] = current_cov
+        ret[current_time]['merged_cov'] = deepcopy(current_cov)
 
     with open(return_write_name, 'wb') as fp:
         pickle.dump(ret, fp)
