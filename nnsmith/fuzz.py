@@ -43,7 +43,7 @@ _COV_BY_TIME_NAME_ = 'cov_by_time.csv'
 
 
 class Reporter:  # From Tzer.
-    def __init__(self, report_folder=None, name_hint='', yes=False) -> None:
+    def __init__(self, report_folder=None, name_hint='', yes=False, flush_freq=None) -> None:
         # Checks
         self.start_time = time.perf_counter()
         self.report_folder = report_folder
@@ -66,6 +66,8 @@ class Reporter:  # From Tzer.
                         os.system(f'rm -rf {f}')
 
         Path(self.report_folder).mkdir(parents=True, exist_ok=True)
+        Path(self.report_folder).joinpath('src_cov_history').mkdir(
+            parents=True, exist_ok=True)
         print(f'Create report folder: {self.report_folder}')
 
         print(f'Using `{self.report_folder}` as the fuzzing report folder')
@@ -95,6 +97,7 @@ class Reporter:  # From Tzer.
 
         self.n_bug = 0
         self.record_coverage_cnt = 0
+        self.flush_freq = flush_freq or 1000
 
     def report_bug(self, err_type: Exception, buggy_onnx_path: str, buggy_torch_path: str, message: str, stdout: str, stderr: str, graph_path: str, sat_inputs=None):
         dir = f'{type(err_type).__name__}__{self.n_bug}'
@@ -143,8 +146,17 @@ class Reporter:  # From Tzer.
         for i in fuzz.summaries:
             i.dump(os.path.join(self.report_folder, f'{i}.pkl'))
 
+        # flush source coverage
+        if fuzz.src_cov_flush:
+            profraw = __COV_DRIVER__.get_src_coverage_filename()
+            folder = Path(self.report_folder)
+            os.remove(f'{profraw}')  # remove old to avoid clogging
+            __COV_DRIVER__.write_src_coverage()
+            shutil.copy(f'{profraw}', folder /
+                        f'src_cov_history/{profraw}-{self.record_coverage_cnt}')
+
     def record_coverage(self, fuzz):
-        if self.record_coverage_cnt % 10 == 0:
+        if self.record_coverage_cnt % self.flush_freq == 0:
             self.flush(fuzz)
         self.record_coverage_cnt += 1
         with open(os.path.join(self.report_folder, _COV_BY_TIME_NAME_), 'a') as f:
@@ -168,10 +180,10 @@ class CustomProgress(Progress):
 class FuzzingLoop:  # TODO: Support multiple backends.
     def __init__(self, backends: Dict[str, DiffTestBackend], mode='table', root=None, time_budget=60 * 60 * 4, max_nodes=None, fix_nodes=10, inp_gen='random',
                  summaries: List[SummaryBase] = None, fork_bkn=False, _PER_MODEL_TIMEOUT_=1000, use_bitvec=False, no_progress=False, merge_op_v=None,
-                 limnf=True, use_cuda=False, warmup=False, yes=False):
+                 limnf=True, use_cuda=False, warmup=False, yes=False, flush_freq=None):
         self.root = root
         self.reporter = Reporter(
-            report_folder=root, name_hint=list(backends.keys())[0], yes=yes)
+            report_folder=root, name_hint=list(backends.keys())[0], yes=yes, flush_freq=flush_freq)
         self.mode = mode  # `random` or `table`
         self.inp_gen = inp_gen  # `random` or `grad`
         self.table = GenerationTable() if mode == 'table' else None
@@ -211,6 +223,15 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         self.limnf = limnf
         self.use_cuda = use_cuda
         self.warmup = warmup
+        try:
+            __COV_DRIVER__.init_src_coverage()
+            self.src_cov_flush = True
+        except Exception as e:
+            rich.print('[bold yellow]Warning: [reset]\n'
+                       f'\tTurning source coverage flush off due to `{e}`\n'
+                       f'\tIf you see undefined symbol error, you may install patch'
+                       f'https://github.com/lazycal/tvm/commit/fdbb6b4369dc1df850836a02f069e72681ae7be4 to enable coverage flush')
+            self.src_cov_flush = False
 
         rich.print(
             f'[bold yellow]To exit the program: `kill {os.getpid()}`[/bold yellow]')
@@ -306,20 +327,19 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                             self.stage = 'gen model'
                             progress.refresh()
                             forked_exe_t_s = time.time()
-                            sat_inputs, state, edge_set, seed, ret_profile = \
-                                forked_execution(self.mode,
-                                                 _TMP_ONNX_FILE_,
-                                                 table=self.table,
-                                                 max_nodes=self.cur_node_size,
-                                                 max_gen_millisec=self._PER_MODEL_TIMEOUT_,
-                                                 inp_gen=self.inp_gen,
-                                                 save_torch=use_torch,
-                                                 summaries=self.summaries,
-                                                 seed=seed,
-                                                 use_bitvec=self.use_bitvec,
-                                                 merge_op_v=self.merge_op_v,
-                                                 limnf=self.limnf,
-                                                 use_cuda=self.use_cuda)
+                            sat_inputs, state, edge_set, seed, ret_profile = forked_execution(self.mode,
+                                                                                              _TMP_ONNX_FILE_,
+                                                                                              table=self.table,
+                                                                                              max_nodes=self.cur_node_size,
+                                                                                              max_gen_millisec=self._PER_MODEL_TIMEOUT_,
+                                                                                              inp_gen=self.inp_gen,
+                                                                                              save_torch=use_torch,
+                                                                                              summaries=self.summaries,
+                                                                                              seed=seed,
+                                                                                              use_bitvec=self.use_bitvec,
+                                                                                              merge_op_v=self.merge_op_v,
+                                                                                              limnf=self.limnf,
+                                                                                              use_cuda=self.use_cuda)
                             gen_info.update(ret_profile)
                             gen_info['forked_exe_time'] = time.time() - \
                                 forked_exe_t_s
@@ -492,6 +512,7 @@ if __name__ == '__main__':
     parser.add_argument('-y', action='store_true', help='Yes to all')
     parser.add_argument('--max_nodes', type=int)
     parser.add_argument('--fix_nodes', type=int)
+    parser.add_argument('--flush_freq', type=int)
     args = parser.parse_args()
     assert int(args.fix_nodes is not None) + \
         int(args.max_nodes is not None) <= 1, '--fix_nodes and --max_nodes cannot be specified together'
@@ -547,5 +568,6 @@ if __name__ == '__main__':
         yes=args.y,
         max_nodes=args.max_nodes,
         fix_nodes=args.fix_nodes,
+        flush_freq=args.flush_freq,
     )
     fuzzing_loop.fuzz()

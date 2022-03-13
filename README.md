@@ -98,6 +98,10 @@ python experiments/tvm_blocklist_gen.py --tvm_home /PATH/TO/tvm --src_cov_report
 # you got `tvm-blocklist.txt`
 ```
 
+#### Flush LLVM profile data periodically
+
+By default the profile is only generated at normal exit. If you want periodical flushing, install [this patch](https://github.com/lazycal/tvm/commit/fdbb6b4369dc1df850836a02f069e72681ae7be4) and it will be periodically flushed into `/path/to/report/folder/src_cov_history/<LLVM_PROFILE_FILE>-<iter>`. The frequency can be specified with `--flush_freq`.
+
 ## Notes
 
 <details><summary><b>Minor Coding Spec</b> <i>[click to expand]</i></summary>

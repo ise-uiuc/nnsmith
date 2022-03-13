@@ -58,6 +58,18 @@ class DiffTestBackend(ABC):
 
             class FallbackCoverage:
                 @staticmethod
+                def init_src_coverage():
+                    raise NotImplementedError
+
+                @staticmethod
+                def write_src_coverage():
+                    raise NotImplementedError
+
+                @staticmethod
+                def get_src_coverage_filename():
+                    raise NotImplementedError
+
+                @staticmethod
                 def get_now():
                     return 0
 
