@@ -148,10 +148,10 @@ class SymbolNet(nn.Module):
                 print(f"op: {op} nfloats: {op_nfl}")
             n_floats += op_nfl
             assert n_floats * 8 <= megabyte_lim * 1024 * \
-                1024, f'Current number of elements ({n_floats/1024/1024}m) exceeded memory limit ({megabyte_lim} MB)'
+                1024, f'Current number of elements ({n_floats/1024/1024}m) exceeded memory limit ({megabyte_lim} MB) Current op: {op}'
             if FLOPS_LIM is not None:
                 assert op.flops(
-                    tmp_inp) < FLOPS_LIM, f'Current number of flops ({op.flops(tmp_inp)}m) exceeded limit ({FLOPS_LIM} m)'
+                    tmp_inp) < FLOPS_LIM, f'Current number of flops ({op.flops(tmp_inp)}m) exceeded limit ({FLOPS_LIM} m). Current op: {op}'
 
         if self.verbose:
             print('input_info=', self.input_info)
