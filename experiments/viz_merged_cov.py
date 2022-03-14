@@ -21,7 +21,7 @@ class Ploter:
         self.axs[2].plot(df[:, 0], df[:, 1])  # iter / time
 
         self.cov_max = max(self.cov_max, df[:, 2].max())
-        self.cov_min = max(self.cov_min, df[:, 2].max())
+        self.cov_min = min(self.cov_min, df[:, 2].max())
 
         if name:
             self.legends.append(name)
@@ -138,7 +138,7 @@ if '__main__' == __name__:
         branch_cov_sets.append(branch_set)
 
     import matplotlib.pyplot as plt
-    from matplotlib_venn import venn2, venn2_circles
+    from matplotlib_venn import venn2
 
     plt.clf()
     vg = venn2(subsets=branch_cov_sets, set_labels=[f'$\\bf{{{t}}}$' for t in args.tags], alpha=0.3)
