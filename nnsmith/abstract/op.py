@@ -1363,10 +1363,10 @@ class Reshape(UnaryOpBase, ABC):
         self.target_shape: List[Union[int, z3.ExprRef]]
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        __MAX_SOLVE_SYMBOL__ = 6
+        __MAX_SOLVE_SYMBOL__ = 8
         # otherwise OOM.
-        SanityCheck.le(input_shapes[0].ndims +
-                       len(self.target_shape), __MAX_SOLVE_SYMBOL__)
+        ConstraintCheck.le(input_shapes[0].ndims +
+                           len(self.target_shape), __MAX_SOLVE_SYMBOL__)
 
         if -1 not in self.target_shape:
             return [ShapeVar(self.target_shape, dtype=input_shapes[0].dtype)]
