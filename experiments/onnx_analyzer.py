@@ -111,14 +111,14 @@ if __name__ == '__main__':
         node_list.append(nodes)
         edge_list.append(edges)
 
-    venn2(subsets=node_list, set_labels=args.tags)
+    venn2(subsets=node_list, set_labels=[f'$\\bf{{{t}}}$' for t in args.tags])
     venn2_circles(subsets=node_list, linestyle='dashed')
     plt.title("Venn Diagram of Covered ONNX Operators")
     plt.savefig(f'{os.path.join(args.output, "onnx_node_venn")}.png', bbox_inches='tight')
     plt.savefig(f'{os.path.join(args.output, "onnx_node_venn")}.pdf', bbox_inches='tight')
     plt.close()
 
-    venn2(subsets=edge_list, set_labels=args.tags)
+    venn2(subsets=edge_list, set_labels=[f'$\\bf{{{t}}}$' for t in args.tags])
     venn2_circles(subsets=edge_list, linestyle='dashed')
     plt.title("Venn Diagram of Covered ONNX Operators Edges")
     plt.savefig(f'{os.path.join(args.output, "onnx_edge_venn")}.png', bbox_inches='tight')

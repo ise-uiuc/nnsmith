@@ -15,8 +15,6 @@ class Ploter:
 
     def add(self, data, name=None):
         df = np.array(data)
-        # print(df.shape)
-        # print(df)
         
         self.axs[0].plot(df[:, 0], df[:, 2])  # cov / time
         self.axs[1].plot(df[:, 1], df[:, 2])  # cov / iteration
@@ -95,9 +93,15 @@ if '__main__' == __name__:
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-f', '--folders', type=str, nargs='+', help='bug report folder')
+    parser.add_argument('--tags', type=str, nargs='+', help='tags')
     parser.add_argument('-o', '--output', type=str, default='results', help='results folder')
     parser.add_argument('-t', '--tlimit', type=int, default=4 * 3600, help='time limit')
     args = parser.parse_args()
+
+    if args.tags is None:
+        args.tags = [os.path.split(f)[-1] for f in args.folders]
+    else:
+        assert len(args.tags) == len(args.folders)
 
     if not os.path.exists(args.output):
         os.mkdir(args.output)
@@ -121,4 +125,25 @@ if '__main__' == __name__:
     line_ploter.plot(save=os.path.join(args.output, 'line_cov'), cov_type='Line')
     branch_ploter.plot(save=os.path.join(args.output, 'branch_cov'), cov_type='Branch')
     func_ploter.plot(save=os.path.join(args.output, 'func_cov'), cov_type='Function')
-        
+    
+    # venn graph plot
+    branch_cov_sets = []
+    for _, v in data.items():
+        last_key = sorted(list(v.keys()))[-1]
+        final_cov = v[last_key]['merged_cov'] # file -> {lines, branches, functions}
+        branch_set = set()
+        for fname in final_cov:
+            brset = set([fname + br for br in final_cov[fname]['branches']])
+            branch_set.update(brset)
+        branch_cov_sets.append(branch_set)
+
+    import matplotlib.pyplot as plt
+    from matplotlib_venn import venn2, venn2_circles
+
+    plt.clf()
+    vg = venn2(subsets=branch_cov_sets, set_labels=[f'$\\bf{{{t}}}$' for t in args.tags], alpha=0.3)
+    plt.title("Venn Diagram of Branch Coverage")
+    plt.savefig(f'{os.path.join(args.output, "br_cov_venn")}.png', bbox_inches='tight')
+    plt.savefig(f'{os.path.join(args.output, "br_cov_venn")}.pdf', bbox_inches='tight')
+    plt.close()
+
