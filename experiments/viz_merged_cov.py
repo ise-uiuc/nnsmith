@@ -99,7 +99,7 @@ def cov_summerize(data, pass_filter=None, tlimit=None):
         branch_cov = 0
         func_cov = 0
         for fname in cov:
-            if pass_filter is not None and pass_filter(fname):
+            if pass_filter is not None and not pass_filter(fname):
                 continue
             line_cov += len(cov[fname]['lines'])
             branch_cov += len(cov[fname]['branches'])
@@ -176,7 +176,7 @@ def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag=''
         final_cov = v[last_key]['merged_cov']
         branch_set = set()
         for fname in final_cov:
-            if pass_filter is not None and pass_filter(fname):
+            if pass_filter is not None and not pass_filter(fname):
                 continue
             brset = set([fname + br for br in final_cov[fname]['branches']])
             branch_set.update(brset)
@@ -191,9 +191,9 @@ def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag=''
             v = venn3(subsets=branch_cov_sets, set_labels=[
                 f'$\\bf{{{t}}}$' for t in fuzz_tags], alpha=0.3)
 
-            v.get_label_by_id('110').set_text('')
-            v.get_label_by_id('011').set_text('')
-            v.get_label_by_id('101').set_text('')
+            for id in ['110', '101', '011']:
+                if v.get_label_by_id(id):
+                    v.get_label_by_id(id).set_text('')
 
             # v.get_label_by_id("100").set_x(v.get_label_by_id('100').get_position()[0] * 1.05)
             # v.get_label_by_id("010").set_x(v.get_label_by_id('010').get_position()[0] * 1.3)
@@ -203,6 +203,8 @@ def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag=''
             hatches = ['\\', '.', '*']
             circles = ['MediumVioletRed', 'SeaGreen', 'Lavender']
             for idx, id in enumerate(['100', '010', '001', '111']):
+                if v.get_label_by_id(id) is None:
+                    continue
                 cnt = int(v.get_label_by_id(id).get_text())
                 v.get_label_by_id(id).set_text('')
                 if id != '111':
