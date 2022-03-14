@@ -92,7 +92,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.tags is None:
-        args.tags = [os.path.split(f)[-1] for f in args.folders]
+        args.tags = [os.path.split(f)[-1].split('-')[0] for f in args.folders]
     else:
         assert len(args.tags) == len(args.folders)
 
@@ -102,7 +102,7 @@ if __name__ == '__main__':
         print(f'{tag}:\t nodes: {len(nodes)};\t edges: {len(edges)}')
 
     import matplotlib.pyplot as plt
-    from matplotlib_venn import venn2, venn2_circles
+    from matplotlib_venn import venn2, venn2_circles, venn3, venn3_circles
 
     node_list = []
     edge_list = []
@@ -111,16 +111,55 @@ if __name__ == '__main__':
         node_list.append(nodes)
         edge_list.append(edges)
 
-    venn2(subsets=node_list, set_labels=[f'$\\bf{{{t}}}$' for t in args.tags])
-    venn2_circles(subsets=node_list, linestyle='dashed')
+    if len(node_list) == 2:
+        venn2(subsets=node_list, set_labels=[f'$\\bf{{{t}}}$' for t in args.tags])
+        venn2_circles(subsets=node_list, linestyle='dashed')
+    elif len(node_list) == 3:
+        v = venn3(subsets=node_list, set_labels=[f'$\\bf{{{t}}}$' for t in args.tags])
+        hatches = ['\\', '.', '*']
+        circles = ['MediumVioletRed', 'SeaGreen', 'Lavender']
+        for idx, id in enumerate(['100', '010', '001', '111']):
+            if v.get_label_by_id(id) is None:
+                continue
+
+            cnt = int(v.get_label_by_id(id).get_text())
+
+            if id != '111':
+                v.get_patch_by_id(id).set_alpha(0.5)
+                v.get_patch_by_id(id).set_hatch(hatches[idx])
+                v.get_patch_by_id(id).set_edgecolor(circles[idx])
+                v.get_patch_by_id(id).set_linewidth(2)
+                v.get_patch_by_id(id).set_linestyle('--')
+
     plt.title("Venn Diagram of Covered ONNX Operators")
-    plt.savefig(f'{os.path.join(args.output, "onnx_node_venn")}.png', bbox_inches='tight')
-    plt.savefig(f'{os.path.join(args.output, "onnx_node_venn")}.pdf', bbox_inches='tight')
+    plt.savefig(
+        f'{os.path.join(args.output, "onnx_node_venn")}.png', bbox_inches='tight')
+    plt.savefig(
+        f'{os.path.join(args.output, "onnx_node_venn")}.pdf', bbox_inches='tight')
     plt.close()
 
-    venn2(subsets=edge_list, set_labels=[f'$\\bf{{{t}}}$' for t in args.tags])
-    venn2_circles(subsets=edge_list, linestyle='dashed')
+    if len(node_list) == 2:
+        venn2(subsets=edge_list, set_labels=[f'$\\bf{{{t}}}$' for t in args.tags])
+        venn2_circles(subsets=edge_list, linestyle='dashed')
+    elif len(node_list) == 3:
+        v = venn3(subsets=edge_list, set_labels=[f'$\\bf{{{t}}}$' for t in args.tags])
+        hatches = ['\\', '.', '*']
+        circles = ['MediumVioletRed', 'SeaGreen', 'Lavender']
+        for idx, id in enumerate(['100', '010', '001', '111']):
+            if v.get_label_by_id(id) is None:
+                continue
+
+            cnt = int(v.get_label_by_id(id).get_text())
+
+            if id != '111':
+                v.get_patch_by_id(id).set_alpha(0.5)
+                v.get_patch_by_id(id).set_hatch(hatches[idx])
+                v.get_patch_by_id(id).set_edgecolor(circles[idx])
+                v.get_patch_by_id(id).set_linewidth(2)
+                v.get_patch_by_id(id).set_linestyle('--')
     plt.title("Venn Diagram of Covered ONNX Operators Edges")
-    plt.savefig(f'{os.path.join(args.output, "onnx_edge_venn")}.png', bbox_inches='tight')
-    plt.savefig(f'{os.path.join(args.output, "onnx_edge_venn")}.pdf', bbox_inches='tight')
+    plt.savefig(
+        f'{os.path.join(args.output, "onnx_edge_venn")}.png', bbox_inches='tight')
+    plt.savefig(
+        f'{os.path.join(args.output, "onnx_edge_venn")}.pdf', bbox_inches='tight')
     plt.close()

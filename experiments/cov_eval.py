@@ -44,7 +44,7 @@ if __name__ == '__main__':
     parser.add_argument('--sum', action='store_true', help='Use summary.')
     parser.add_argument('--seed', type=int, default=233, help='to generate random input data')
     parser.add_argument('--lib', type=str, required=True, help='path to instrumented library')
-    parser.add_argument('--max_time', type=int, default=60*60*24, help='max time in seconds for coverage evaluation')
+    parser.add_argument('--max_time', type=int, default=60*60*4, help='max time in seconds for coverage evaluation')
     parser.add_argument('--llvm-version', type=str, default='', help='version of llvm during coverage stuff. must align w/ tvm.')
     args = parser.parse_args()
 
