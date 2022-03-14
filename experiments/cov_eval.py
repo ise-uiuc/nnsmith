@@ -81,10 +81,11 @@ if __name__ == '__main__':
 
     print(f'==> Setting batch size: {batch_size}')
     batch_list = list(batched(lines, n=batch_size))
-    process_start_time = time()
+
+    process_time_sum = 0 # sum of all btime
 
     for i in tqdm(range(len(batch_list))):
-        if time() - process_start_time > args.max_time:
+        if process_time_sum > args.max_time:
             print(f'==> Timeout!')
             break
 
@@ -132,6 +133,7 @@ if __name__ == '__main__':
             continue
 
         btime += time() - tstart # <=== ENDING
+        process_time_sum += btime
 
         # Wrap up this batch.
 
