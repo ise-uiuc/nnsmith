@@ -1,5 +1,7 @@
 import os
 import sys
+import shutil
+
 from contextlib import contextmanager
 
 
@@ -36,3 +38,18 @@ def stdout_redirected(to=os.devnull, stdout=None):
 
 def merged_stderr_stdout():  # $ exec 2>&1
     return stdout_redirected(to=sys.stdout, stdout=sys.stderr)
+
+
+def mkdir(dir):
+    if os.path.exists(dir):
+        decision = ''
+        while decision.lower() not in ['y', 'n']:
+            decision = input(
+                'Report folder already exists. Press [Y/N] to continue or exit...')
+        if decision.lower() == 'n':
+            raise RuntimeError(
+                f'{dir} already exist... We want an empty folder to report...')
+        else:
+            shutil.rmtree(dir)
+
+    os.mkdir(dir)

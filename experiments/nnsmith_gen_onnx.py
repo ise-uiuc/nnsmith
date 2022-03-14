@@ -2,9 +2,9 @@ from nnsmith.graph_gen import random_model_gen, SymbolNet
 from nnsmith.export import torch2onnx
 from nnsmith.dtype_test import rewrite_op_dtype
 from nnsmith.abstract.op import ALL_OP_TYPES
+from nnsmith.util import mkdir
 
 import os
-import shutil
 import random
 import argparse
 import time
@@ -31,23 +31,10 @@ if __name__ == '__main__':
     parser.add_argument('--onnx_dir', type=str, required=True)
     parser.add_argument('--time_budget', type=int, default=60 * 60 * 4)
     parser.add_argument('--max_nodes', type=int, default=10)
-    parser.add_argument('--ort_cache', type=str,
-                        default='config/ort_cpu_dtype.pkl')
+    parser.add_argument('--ort_cache', type=str, default=None)
     args = parser.parse_args()
 
-    if os.path.exists(args.onnx_dir):
-        # TODO: Allow continous fuzzing...
-        decision = ''
-        while decision.lower() not in ['y', 'n']:
-            decision = input(
-                'Report folder already exists. Press [Y/N] to continue or exit...')
-        if decision.lower() == 'n':
-            raise RuntimeError(
-                f'{args.onnx_dir} already exist... We want an empty folder to report...')
-        else:
-            shutil.rmtree(args.onnx_dir)
-
-    os.mkdir(args.onnx_dir)
+    mkdir(args.onnx_dir)
 
     if args.ort_cache:
         if not os.path.exists(args.ort_cache):

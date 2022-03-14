@@ -1,5 +1,4 @@
 import os
-import shutil
 from pathlib import Path
 from tqdm import tqdm
 import numpy as np
@@ -10,6 +9,8 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.python.framework.convert_to_constants import convert_variables_to_constants_v2
 import tf2onnx
+
+from nnsmith.util import mkdir
 
 tf.get_logger().setLevel('WARNING') # Tensorflow made quiet.
 
@@ -90,19 +91,7 @@ if __name__ == '__main__':
     parser.add_argument('--onnx_dir', type=str, required=True)
     args = parser.parse_args()
 
-    if os.path.exists(args.onnx_dir):
-        # TODO: Allow continous fuzzing...
-        decision = ''
-        while decision.lower() not in ['y', 'n']:
-            decision = input(
-                'Report folder already exists. Press [Y/N] to continue or exit...')
-        if decision.lower() == 'n':
-            raise RuntimeError(
-                f'{args.onnx_dir} already exist... We want an empty folder to report...')
-        else:
-            shutil.rmtree(args.onnx_dir)
-
-    os.mkdir(args.onnx_dir)
+    mkdir(args.onnx_dir)
 
     # FORMAT: {generation time cost in seconds}, {model relative path}
     # MUST RANK by GENERATION ORDER.

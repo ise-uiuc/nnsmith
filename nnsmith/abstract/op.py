@@ -216,6 +216,18 @@ class DType(Enum):
             'int64': DType.int64,
             'bool': DType.bool,
         }[s]
+    
+    @staticmethod
+    def torch(s):
+        if not isinstance(s, str):
+            s = str(s)
+        return {
+            'float32': torch.float32,
+            'float64': torch.float64,
+            'int32': torch.int32,
+            'int64': torch.int64,
+            'bool': torch.bool,
+        }[s]
 
 
 DTypeComb = Tuple[DType, ...]

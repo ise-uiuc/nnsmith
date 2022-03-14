@@ -11,7 +11,6 @@
 
 import os
 import sys
-import shutil
 import random
 from time import time
 import numpy as np
@@ -19,6 +18,8 @@ import argparse
 import subprocess
 
 from tqdm import tqdm
+
+from nnsmith.util import mkdir
 
 # CMD EXAMPLE: 
 # python experiments/cov_eval.py --model_dir lemon --report_folder test-cov --backend tvm --lib ../tvm/build/libtvm.so --llvm-version 14
@@ -62,19 +63,7 @@ if __name__ == '__main__':
         assert os.path.exists(lib), f'{lib} does not exist!'
         lib_expr += f' -object {os.path.realpath(lib)} '
 
-    if os.path.exists(args.report_folder):
-        # TODO: Allow continous fuzzing...
-        decision = ''
-        while decision.lower() not in ['y', 'n']:
-            decision = input(
-                'Report folder already exists. Press [Y/N] to continue or exit...')
-        if decision.lower() == 'n':
-            raise RuntimeError(
-                f'{args.report_folder} already exist... We want an empty folder to report...')
-        else:
-            shutil.rmtree(args.report_folder)
-
-    os.mkdir(args.report_folder)
+    mkdir(args.report_folder)
 
     # FORMAT:
     #   batch time (gen time + eval time)
