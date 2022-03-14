@@ -207,7 +207,7 @@ class GraphFuzz:
         ops, ishape = self.create_random_schedule()
         model = GraphFuzzNet(ops)
         with torch.no_grad():
-            torch.onnx.export(model, torch.randn(ishape), save_path)
+            torch.onnx.export(model, torch.randn(ishape), save_path, opset_version=14)
 
 if __name__ == "__main__":
     import argparse
@@ -216,6 +216,7 @@ if __name__ == "__main__":
     parser.add_argument("--dim_limit", type=int, nargs="+", default=[5, 5, 224, 224])
     parser.add_argument('--time_budget', type=int, default=60 * 60 * 4)
     parser.add_argument("--onnx_dir", type=str, default=None)
+    parser.add_argument('--ort_cache', type=str, default=None)
     parser.add_argument("--seed", type=int, default=233)
     args = parser.parse_args()
 
