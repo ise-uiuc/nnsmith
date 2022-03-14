@@ -228,3 +228,4 @@ pip install onnxruntime-gpu # the order matters; and you have to split the insta
     - [ ] graph-fuzz
 - [ ] Implement baseline [graph-fuzz](https://dl.acm.org/doi/abs/10.1109/ICSE43902.2021.00037)
 - [x] Migrate to source-level coverage (more information)
+- [x] Inference in/out detailed data type by direct backend execution.
