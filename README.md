@@ -25,7 +25,35 @@ python ./nnsmith/run_batch_model.py --root $root --gen_input 10 --backend xla # 
 python -m nnsmith.difftest --root $root
 ```
 
-### Fuzz a single backend
+### Coverage Evaluation
+
+#### LEMON
+
+Please prepare ~ 50GB disk space to store LEMON.
+
+```shell
+# step 1: Run LEMON to generate models (https://github.com/ganler/LEMON);
+# step 2:
+python experiments/lemon_tf2onnx.py --lemon_output_dir /PATH/TO/LEMON/lemon_outputs/ --onnx_dir lemon-onnx
+python experiments/cov_eval.py --model_dir lemon-onnx    \
+                               --report_folder lemon-cov \
+                               --backend tvm --lib ../tvm/build/libtvm.so \
+                               --llvm-version 14 # if you compile tvm w/ llvm 14 instrumented on ubuntu.
+python experiments/cov_merge.py -f lemon-cov     # generate merged_cov.pkl
+```
+
+#### nnsmith
+
+```shell
+python experiments/nnsmith_gen_onnx.py --onnx_dir nnsmith-onnx
+python experiments/cov_eval.py --model_dir nnsmith-onnx    \
+                               --report_folder nnsmith-cov \
+                               --backend tvm --lib ../tvm/build/libtvm.so \
+                               --llvm-version 14 # if you compile tvm w/ llvm 14 instrumented on ubuntu.
+python experiments/cov_merge.py -f nnsmith-cov     # generate merged_cov.pkl
+```
+
+### Fuzz a single backend (Not for evaluation)
 
 ```shell
 # fuzzing
@@ -198,3 +226,10 @@ pip install onnxruntime-gpu # the order matters; and you have to split the insta
 - [x] LEMON coverage evaluation ([modified](https://github.com/ganler/LEMON) to make it work) @jiawei
 - [x] Coverage normalization. @jiawei
 - [x] **Op Batch 3**: Softmax, BatchNorm, Linear, Flatten, *Pool2d. @jiawei
+- [ ] 2-phase evaluation: first generate model quickly; then evaluate them with instrumentation.
+    - [x] LEMON
+    - [x] nnsmith
+    - [x] graph-fuzz
+- [x] Implement baseline [graph-fuzz](https://dl.acm.org/doi/abs/10.1109/ICSE43902.2021.00037)
+- [x] Migrate to source-level coverage (more information)
+- [x] Inference in/out detailed data type by direct backend execution.

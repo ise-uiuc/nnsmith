@@ -1,6 +1,8 @@
 import multiprocessing
 import os
 import sys
+import shutil
+
 from contextlib import contextmanager
 from multiprocessing import Pool, Queue, Process
 import multiprocessing.pool
@@ -76,3 +78,16 @@ def forkpool_execution(func):
 
     wrapper.terminate = terminate
     return wrapper
+def mkdir(dir):
+    if os.path.exists(dir):
+        decision = ''
+        while decision.lower() not in ['y', 'n']:
+            decision = input(
+                'Report folder already exists. Press [Y/N] to continue or exit...')
+        if decision.lower() == 'n':
+            raise RuntimeError(
+                f'{dir} already exist... We want an empty folder to report...')
+        else:
+            shutil.rmtree(dir)
+
+    os.mkdir(dir)
