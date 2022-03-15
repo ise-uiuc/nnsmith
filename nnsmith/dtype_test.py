@@ -137,7 +137,7 @@ def rewrite_op_dtype(ops: List[AbsOpBase], backend=None, verbose=False, cache=No
         success_odtypes = list(success_odtypes)
         if verbose:
             print(
-                f'ORT Inferred: {node_t}\t{success_idtypes} -> {success_odtypes}')
+                f'{backend.__class__.__name__} Inferred: {node_t}\t{success_idtypes} -> {success_odtypes}')
 
         node_t.in_dtypes = success_idtypes
         node_t.out_dtypes = success_odtypes

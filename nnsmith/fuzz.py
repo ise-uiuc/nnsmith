@@ -32,6 +32,7 @@ from nnsmith.graph_input_gen import forked_execution
 import networkx as nx
 import onnx
 from summary import GraphSummary, ParamShapeSummary, SummaryBase
+from nnsmith.dtype_test import rewrite_op_dtype
 
 __COV_DRIVER__ = None
 
@@ -509,7 +510,10 @@ if __name__ == '__main__':
     skip = 'backend:' + args.backend
     if args.skip is not None:
         skip += ',' + args.skip
-    auto_infer_in_dtypes()
+    auto_infer_in_dtypes()  # TODO: remove this someday
+    print('Inferring op dtype...')
+    # TODO(JK): when using the "pool"-mode forkserver, make sure we fork first before running backends.
+    rewrite_op_dtype(ALL_OP_TYPES, backend=list(backends.values())[0])
     config_skip_op(skip)
     fuzzing_loop = FuzzingLoop(
         root=args.root,
