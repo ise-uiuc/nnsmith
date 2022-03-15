@@ -1,3 +1,4 @@
+from multiprocessing import Process
 from pathlib import Path
 import pickle
 import sys
@@ -512,18 +513,21 @@ if __name__ == '__main__':
         skip += ',' + args.skip
     auto_infer_in_dtypes()  # TODO: remove this someday
     cache_file = f'config/fuzz_{list(backends.keys())[0]}_op_dtype.json'
+
+    def run():
+        rewrite_op_dtype(
+            ALL_OP_TYPES,
+            backend=list(backends.values())[0],
+            cache=cache_file)
     if not Path(cache_file).exists():
         Path('config').mkdir(exist_ok=True)
         print('Warning: Op dtypes config file does not exist. '
-              'Inferring op dtype for the first run...\n'
-              'NOTE: It is recommended to run this script again after the first run'
-              ' to avoid the interference of inferring before fuzzing.')
-    else:
-        print('Reading cache config file:', cache_file)
-    rewrite_op_dtype(
-        ALL_OP_TYPES,
-        backend=list(backends.values())[0],
-        cache=cache_file)
+              'Inferring op dtype for the first run...')
+        p = Process(target=run)
+        p.start()
+        p.join()
+    print('Reading cache config file:', cache_file)
+    run()
     config_skip_op(skip)
     fuzzing_loop = FuzzingLoop(
         root=args.root,
