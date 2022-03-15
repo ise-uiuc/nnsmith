@@ -216,7 +216,7 @@ class DType(Enum):
             'int64': DType.int64,
             'bool': DType.bool,
         }[s]
-    
+
     @staticmethod
     def torch(s):
         if not isinstance(s, str):
@@ -1775,6 +1775,9 @@ class ArgMin(ReduceBase, ABC):
     def torch(self):
         return lambda x: x.argmin(self.extra_attrs['reduce_dim'])
 
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        return [(self.inp_ranks[0], random.choice(self.in_dtypes)[0])]
+
 
 class ArgMin2D(ArgMin):
     def __init__(self):
@@ -1813,6 +1816,9 @@ class ArgMax(ReduceBase, ABC):
 
     def torch(self):
         return lambda x: x.argmax(self.extra_attrs['reduce_dim'])
+
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        return [(self.inp_ranks[0], random.choice(self.in_dtypes)[0])]
 
 
 class ArgMax2D(ArgMax):
