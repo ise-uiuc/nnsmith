@@ -33,6 +33,7 @@ import networkx as nx
 import onnx
 from summary import GraphSummary, ParamShapeSummary, SummaryBase
 import socket
+import tarfile
 
 __COV_DRIVER__ = None
 
@@ -180,7 +181,7 @@ class CustomProgress(Progress):
 class FuzzingLoop:  # TODO: Support multiple backends.
     def __init__(self, backends: Dict[str, DiffTestBackend], mode='table', root=None, time_budget=60 * 60 * 4, max_nodes=None, fix_nodes=10, inp_gen='random',
                  summaries: List[SummaryBase] = None, fork_bkn=False, _PER_MODEL_TIMEOUT_=1000, use_bitvec=False, no_progress=False, merge_op_v=None,
-                 limnf=True, use_cuda=False, warmup=False, yes=False, flush_freq=None):
+                 limnf=True, use_cuda=False, warmup=False, yes=False, flush_freq=None, record_model=False):
         self.root = root
         self.reporter = Reporter(
             report_folder=root, name_hint=list(backends.keys())[0], yes=yes, flush_freq=flush_freq)
@@ -232,6 +233,9 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                        f'\tIf you see undefined symbol error, you may install patch'
                        f'https://github.com/lazycal/tvm/commit/fdbb6b4369dc1df850836a02f069e72681ae7be4 to enable coverage flush')
             self.src_cov_flush = False
+        self.record_model = record_model
+        if self.record_model:
+            self.tar = tarfile.open(Path(self.root) / 'models.tar', 'w')
 
         rich.print(
             f'[bold yellow]To exit the program: `kill {os.getpid()}`[/bold yellow]')
@@ -369,6 +373,9 @@ class FuzzingLoop:  # TODO: Support multiple backends.
 
                         self.gen_profile = self.gen_profile.append(
                             gen_info, ignore_index=True)
+                    if self.record_model:
+                        self.tar.add(_TMP_ONNX_FILE_,
+                                     arcname=f'models/{len(self.profile)}.onnx')
 
                     if len(self.profile) == 0 and self.warmup:  # warmup done
                         if NNSMITH_FORK_OLD is None:
@@ -513,6 +520,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_nodes', type=int)
     parser.add_argument('--fix_nodes', type=int)
     parser.add_argument('--flush_freq', type=int)
+    parser.add_argument('--record_model', action='store_true')
     args = parser.parse_args()
     assert int(args.fix_nodes is not None) + \
         int(args.max_nodes is not None) <= 1, '--fix_nodes and --max_nodes cannot be specified together'
@@ -569,5 +577,6 @@ if __name__ == '__main__':
         max_nodes=args.max_nodes,
         fix_nodes=args.fix_nodes,
         flush_freq=args.flush_freq,
+        record_model=args.record_model,
     )
     fuzzing_loop.fuzz()
