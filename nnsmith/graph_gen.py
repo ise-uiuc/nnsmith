@@ -1,4 +1,5 @@
 # See https://github.com/Z3Prover/z3/issues/5656
+from matplotlib.pyplot import phase_spectrum
 import z3  # Always import z3 first to avoid incompatibility issue.
 from collections import defaultdict
 import math
@@ -404,12 +405,11 @@ class SimpleGenerator:
         self.is_viz_sbs = viz_sbs
 
         self.use_bitvec = use_bitvec
-        # self.input_shape = self.insert_placeholder_node(min_dims)
         self.min_dims = min_dims
         self.n_floats = 0
         self.monotonic_placeholder_id = 0
         self.monotonic_nx_node_idx = 0
-        self.reusable_placeholder_nx_indices = []
+        # self.reusable_placeholder_nx_indices = []
         self.last_soln = None
         self.wts = None
         self.merge_op_v = merge_op_v or 'v0'  # v0 as default version
@@ -418,7 +418,11 @@ class SimpleGenerator:
 
         # <op idx>
         self.placeholders: List[int] = []
-        self.insert_placeholder_node(min_dims)
+        # placeholder constraints matching self.placeholders
+        self.ph_cons: List[z3.ExprRef] = []
+        # for all (including newly created tmp) placeholders
+        self.all_ph_cons = {}
+        self.insert_init_ph_node(self.create_placeholder(len(min_dims)))
         self.init_ph_alive = True
         self.forward_prob = 0.5 if forward_prob is None else forward_prob
 
@@ -429,7 +433,21 @@ class SimpleGenerator:
             shape=syms,
             dtype=dtype if dtype is not None else random.choice(DTYPE_ALL))
         self.monotonic_placeholder_id += 1
-        return Placeholder(shapevar)
+        ph = Placeholder(shapevar)
+        self.all_ph_cons[ph] = []
+        self.gen_ph_cons(ph)
+        return ph
+
+    def gen_ph_cons(self, ph: Placeholder):  # default to no input constraints
+        pass
+        # if not self.use_bitvec:  # bit vector is randomizable
+        #     # The batch size should not have a big min size (avoid unnecessary computation);
+        #     # FIXME: input constraints will make SMT solving costly.
+        #     for i in range(len(ph.out_shape.shape)):
+        #         self.all_ph_cons[ph].append(
+        #             nnsmith_ge(
+        #                 ph.out_shape.shape[i], self.min_dims[i])
+        #         ))
 
     def new_sym(self, name, bv_size=None):
         if self.use_bitvec:
@@ -454,11 +472,11 @@ class SimpleGenerator:
             return [self.new_sym(name) for name in names]
 
     @ abstractmethod
-    def insert_placeholder_node(self, min_dims, shape=None, dtype=DType.float32) -> ShapeVar:
+    def insert_init_ph_node(self, min_dims, shape=None, dtype=DType.float32) -> ShapeVar:
         raise NotImplementedError
 
     @ abstractmethod
-    def try_insert_node(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
+    def try_forward_insert_at(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
         raise NotImplementedError
 
     @ abstractmethod
@@ -526,7 +544,9 @@ class SimpleGenerator:
         if self.use_bitvec:
             for assump in assumptions:
                 self.check_arith_ref(assump)
-        cres = self.solver.check(*assumptions)
+        ph_cons = sum(self.ph_cons, [])
+        print('[INFO]: ph_cons:', ph_cons)
+        cres = self.solver.check(*assumptions, *ph_cons)
 
         checking_time = int((time.time() - start) * 1000)
         if checking_time > 3000 and self.cur_node:  # 3s
@@ -573,6 +593,7 @@ class SimpleGenerator:
         succ_nid = self.get_new_node_id()
         if isinstance(node, Placeholder):
             self.placeholders.append(succ_nid)
+            self.ph_cons.append(self.all_ph_cons[node])
 
         shape_indices = []
         if force_shape_indices is None:
@@ -652,6 +673,7 @@ class SimpleGenerator:
                 )
                 ishape_indices.append(shape_idx)
                 self.placeholders.append(nid)
+                self.ph_cons.append(self.all_ph_cons[input_node])
             else:
                 ishape_indices.append(input_node)
 
@@ -703,44 +725,12 @@ class SimpleGenerator:
 
             # remove placeholders
             self.abstract_graph.remove_node(nx_idx)
-            self.reusable_placeholder_nx_indices.append(nx_idx)
+            # self.reusable_placeholder_nx_indices.append(nx_idx)
+            self.ph_cons.remove(self.ph_cons[self.placeholders.index(nx_idx)])
             self.placeholders.remove(nx_idx)
 
         if self.is_viz_sbs:
             self.viz()
-
-    def try_insert_node_type_at(self, node_t, ishape_indices: List[int]) -> bool:
-        if self.verbose:
-            print(f'Inserting node #{len(self.abstract_graph.nodes)}: '
-                  f'trying to insert node type {node_t.__name__}')
-        if issubclass(node_t, Input):
-            raise NotImplementedError
-            try:
-                self.insert_placeholder_node(self.min_dims)
-            # TODO: check the exception type (ideally only z3 check_failure), don't drop internal errors
-            except:
-                return False
-            return True
-        op_param_n = signature(node_t).parameters
-        op_id = len(self.abstract_graph.nodes)
-        op_params = [self.new_sym('op%s_%s' % (op_id, k))
-                     for k in range(len(op_param_n))]
-
-        op: AbsOpBase = node_t(*op_params)
-
-        try:
-            if self.try_insert_node(op, ishape_indices):
-                return True
-        except RequiredDimNotFound:
-            if self.verbose:
-                traceback.print_exc()
-            return False
-        except ConstraintError:
-            if self.verbose:
-                traceback.print_exc()
-            return False
-
-        return False
 
     def try_forward_insert(self, op: AbsOpBase):
         n_inp = len(op.inp_ranks)
@@ -763,7 +753,7 @@ class SimpleGenerator:
         ishape_indices = self.pick_shape_var_idx(
             type(op), dim_spec_list, op.in_dtypes, candidate_shapes=[s[1] for s in self.alive_shapes])
 
-        if self.try_insert_node(op, ishape_indices):
+        if self.try_forward_insert_at(op, ishape_indices):
             return True
 
         return False
@@ -882,38 +872,27 @@ class SimpleGenerator:
 
 
 class PureSymbolGen(SimpleGenerator):
-    def insert_placeholder_node(self, min_dims, dtype=DType.float32, constrain_min=True) -> Placeholder:
-        init_placeholder = self.create_placeholder(len(min_dims), dtype)
-        self.forward_insert_node(init_placeholder, [], oshapes=[
-                                 init_placeholder.out_shape])
+    def insert_init_ph_node(self, ph: Placeholder) -> Placeholder:
+        self.forward_insert_node(ph, [], oshapes=[
+                                 ph.out_shape])
 
-        for c in init_placeholder.out_shape.gt_zero():
+        for c in ph.out_shape.gt_zero():
             self.solver.add(c)
 
-        if not self.use_bitvec and constrain_min:  # bit vector is randomizable
-            # The batch size should not have a big min size (avoid unnecessary computation);
-            # FIXME: input constraints will make SMT solving costly.
-            for i in range(len(init_placeholder.out_shape.shape)):
-                self.solver.add(nnsmith_ge(
-                    init_placeholder.out_shape.shape[i], min_dims[i]))
-        check_res = self.check_sat()
-        # FIXME sometimes the constraints are too complicated to return stable result.
-        SanityCheck.eq(check_res, z3.sat,
-                       msg=f'Constraints not sat but {check_res}.')
         if self.limnf:
             if NNSMITH_LIMNF_V == '0':
                 self.n_floats = nnsmith_add(
-                    self.n_floats, init_placeholder.out_shape.nelement())
+                    self.n_floats, ph.out_shape.nelement())
             elif NNSMITH_LIMNF_V == '1':
                 self.n_floats_cons.append(nnsmith_le(
-                    init_placeholder.out_shape.nelement(), self.limit_float // 16))
-        return init_placeholder
+                    ph.out_shape.nelement(), self.limit_float // 16))
+        return ph
 
     # subclasses may override this
     def extra_constraints(self, node: AbsOpBase, input_shapes: List[ShapeVar]):
         return []
 
-    def try_insert_node(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
+    def try_forward_insert_at(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
         input_shapes = [self.alive_shapes[idx][1] for idx in ishape_indices]
         constraints = node.requires(input_shapes)
 
@@ -1013,11 +992,14 @@ class PureSymbolGen(SimpleGenerator):
             constraints.extend(shape.gt_zero())
 
         self.cur_node = node
-        # TODO(JK): remove the extra_constraints of placeholder once it's occupied.
-        # TODO(JK): add the extra_constraints for new placeholders
         constraints.extend(self.extra_constraints(node, input_shapes))
+
+        mem = list(self.ph_cons)
+        for i in occ_holder_indices:
+            self.ph_cons.remove(mem[i])  # temporarily remove occupy
         # TODO: consider nfloats.
         check_res = self.check_sat(*constraints)
+        self.ph_cons = mem  # revert
 
         if check_res != z3.sat:
             return False
@@ -1196,17 +1178,7 @@ class Bin:
         return lb, ub
 
 
-PARAM_CONFIG0 = {  # deprecated
-    'NCHWConv2d': {
-        'kernel_h_size': [Bin(i, i + 1, scale='log', base=2) for i in range(8)],
-        'kernel_w_size': [Bin(i, i + 1, scale='log', base=2) for i in range(8)],
-        'stride': [Bin(i, i + 1, scale='log', base=2) for i in range(8)],
-        'padding': [Bin(i, i + 1, scale='log', base=2) for i in range(8)] + [Bin(0, 1)],
-        # 'in_channels': [Bin(i, i + 1, scale='log', base=2) for i in range(8)] +
-        # [Bin(8, None, scale='log', base=2)],
-        'in_channels': [],
-        'out_channels': [],  # skip
-    },
+PARAM_CONFIG0 = {  # no guidance. not even input shape lower bound.
 }
 
 
@@ -1354,18 +1326,18 @@ class GuidedGen(PureSymbolGen):
         # self.inp
         super(GuidedGen, self).__init__(**kwargs)
 
-    # def insert_placeholder_node(self, min_dims, dtype=DType.float32) -> ShapeVar:
-    #     ish = super().insert_placeholder_node(min_dims, dtype, constrain_min=False)
-    #     constraints = []
-    #     for i in ish.out_shape.shape:
-    #         bins = self.default_config[0]
-    #         lb, ub = bins[random.randint(0, len(bins) - 1)].sample_range()
-    #         constraints.extend(range_constrain(i, lb, ub))
-    #     # throw exception for now since this is unlikely to happen
-    #     assert self.check_sat(
-    #         *constraints, nnsmith_le(self.n_floats, self.limit_float)) == z3.sat, 'Input constraints too tight'
-    #     self.solver.add(*constraints)
-    #     return ish
+    def insert_init_ph_node(self, min_dims, dtype=DType.float32) -> ShapeVar:
+        ish = super().insert_init_ph_node(min_dims, dtype, constrain_min=False)
+        constraints = []
+        for i in ish.out_shape.shape:
+            bins = self.default_config[0]
+            lb, ub = bins[random.randint(0, len(bins) - 1)].sample_range()
+            constraints.extend(range_constrain(i, lb, ub))
+        # throw exception for now since this is unlikely to happen
+        assert self.check_sat(
+            *constraints, nnsmith_le(self.n_floats, self.limit_float)) == z3.sat, 'Input constraints too tight'
+        self.solver.add(*constraints)
+        return ish
 
     def extra_constraints(self, node: AbsOpBase, input_shapes: List[ShapeVar]):
         if random.uniform(0, 1) > self.constrain_prob:
