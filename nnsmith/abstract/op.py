@@ -1639,7 +1639,7 @@ class ReduceBase(UnaryOpBase, ABC):
     def __init__(self):
         super().__init__()
         self.inp_ranks = [int_from(1)]
-        self.out_ranks = [int_from(1)]
+        self.out_ranks = [int_range(1, __MAX_RANK__ - 1)]
 
     def _init_reduce_dim(self, input_shape: List[Union[int, z3.ExprRef]]):
         if 'reduce_dim' not in self.extra_attrs:
@@ -1662,7 +1662,7 @@ class ReduceBase(UnaryOpBase, ABC):
         return []
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
-        return [(random.choice(self.inp_ranks[0]), out_shape_var[0].dtype)]
+        return [(random.choice([s for s in self.inp_ranks[0] if s > out_shape_var[0].ndims]), out_shape_var[0].dtype)]
 
 
 class SqueezeBase(ReduceBase, ABC):
@@ -1720,7 +1720,7 @@ class ArgMin(ReduceBase, ABC):
         return lambda x: x.argmin(self.extra_attrs['reduce_dim'])
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
-        return [(self.inp_ranks[0], random.choice(self.in_dtypes)[0])]
+        return [(random.choice(self.inp_ranks[0]), random.choice(self.in_dtypes)[0])]
 
 
 class ArgMax(ReduceBase, ABC):
@@ -1734,7 +1734,7 @@ class ArgMax(ReduceBase, ABC):
         return lambda x: x.argmax(self.extra_attrs['reduce_dim'])
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
-        return [(self.inp_ranks[0], random.choice(self.in_dtypes)[0])]
+        return [(random.choice(self.inp_ranks[0]), random.choice(self.in_dtypes)[0])]
 
 
 class Linear(UnaryOpBase):
@@ -1781,18 +1781,21 @@ class Concat(AbsOpBase):
 
     def __init__(self, arity):
         super().__init__()
-        SanityCheck.le(arity, self.MAX_ARITY)
+        SanityCheck.le(arity, Concat.MAX_ARITY)
         self.arity = arity
-        self.concat_rank = random.randint(1, 5)
-        self.extra_attrs['axis'] = random.randint(0, self.concat_rank - 1)
-        self.inp_ranks = [(self.concat_rank,)] * arity
-        self.out_ranks = [(self.concat_rank,)]
+        self.inp_ranks = [(int_from(1))] * arity
+        self.out_ranks = [(int_from(1))]
         self.same_inp_dims = True
+
+    def _init_concat_axis(self, input_shapes: List[ShapeVar]) -> int:
+        if 'axis' not in self.extra_attrs:
+            self.extra_attrs['axis'] = random.randint(
+                0, input_shapes[0].ndims - 1)
+        return self.extra_attrs['axis']
 
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
         ndims = input_shapes[0].ndims
-        SanityCheck.gt(ndims, 0)
-        axis = self.extra_attrs['axis']
+        axis = self._init_concat_axis(input_shapes)
         SanityCheck.gt(ndims, axis)
 
         for s in input_shapes:
@@ -1808,7 +1811,7 @@ class Concat(AbsOpBase):
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         ndims = input_shapes[0].ndims
         SanityCheck.true(ndims > 0)
-        axis = self.extra_attrs['axis']
+        axis = self._init_concat_axis(input_shapes)
         os = ShapeVar(input_shapes[0].shape, input_shapes[0].dtype)
         os.shape[axis] = reduce(
             nnsmith_add, [s.shape[axis] for s in input_shapes])
@@ -1816,7 +1819,7 @@ class Concat(AbsOpBase):
 
     def torch(self):
         axis = self.extra_attrs['axis']
-        return lambda *args: torch.cat(args, axis)
+        return lambda *args: torch.cat(args, dim=axis)
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
         return [(out_shape_var[0].ndims, out_shape_var[0].dtype) for _ in range(self.arity)]

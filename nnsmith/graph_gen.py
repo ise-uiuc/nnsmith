@@ -796,14 +796,14 @@ class SimpleGenerator:
             lambda sid: candidate_shapes[sid].ndims in ndims, cans))
         if len(cans) == 0:
             raise RequiredDimNotFound(
-                'Cannot find a shape variable with #dimensions %s.' % ndims)
+                f'Cannot find a shape variable with #dimensions {ndims}.')
 
         if dtype is not None:
             cans = list(filter(  # filter with dtype
                 lambda sid: candidate_shapes[sid].dtype == dtype, cans))
             if len(cans) == 0:
                 raise RequiredDimNotFound(
-                    'Cannot find a shape variable with #dimensions %s and dtype %s.' % (ndims, dtype))
+                    f'Cannot find a shape variable with #dimensions {ndims} and dtype {dtype}.')
 
         return cans
 
@@ -949,7 +949,9 @@ class PureSymbolGen(SimpleGenerator):
         # S2.2: reusing outputs failed. as a fallback, promote all free vars to placeholders.
         new_inp_placeholders = []
         constraints = []
+        print(f'---> {node}')
         for rank, dtype in node.deduct_inp_ranks_and_dtype(occupied_holder_shapes):
+            print(rank)
             ph = self.create_placeholder(
                 rank if rank != -1 else random.randint(0, 4), dtype=dtype)
             new_inp_placeholders.append(ph)
