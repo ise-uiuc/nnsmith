@@ -763,15 +763,15 @@ class SimpleGenerator:
             print(f'Inserting node #{len(self.abstract_graph.nodes)}: '
                   f'trying to insert node type {node_t.__name__}')
 
-        op_param_n = node_t.get_num_var_param()
         op_id = len(self.abstract_graph.nodes)
-        op_params = [self.new_sym('op%s_%s' % (op_id, k))
-                     for k in range(op_param_n)]
-
-        op: AbsOpBase = node_t(*op_params)
 
         try:
             for _ in range(max_shape_var_pick_time):
+                op_param_n = node_t.get_num_var_param()
+                op_params = [self.new_sym('op%s_%s' % (op_id, k))
+                             for k in range(op_param_n)]
+                op: AbsOpBase = node_t(*op_params)
+
                 if random.randint(0, 1):
                     if self.try_forward_insert(op):
                         return True
@@ -949,9 +949,7 @@ class PureSymbolGen(SimpleGenerator):
         # S2.2: reusing outputs failed. as a fallback, promote all free vars to placeholders.
         new_inp_placeholders = []
         constraints = []
-        print(f'---> {node}')
         for rank, dtype in node.deduct_inp_ranks_and_dtype(occupied_holder_shapes):
-            print(rank)
             ph = self.create_placeholder(
                 rank if rank != -1 else random.randint(0, 4), dtype=dtype)
             new_inp_placeholders.append(ph)

@@ -1264,11 +1264,6 @@ class Pad(UnaryOpBase):
         if self.extra_attrs['type'] == 'constant':
             return lambda x: torch.nn.functional.pad(x, self.padding_list, 'constant', value=0)
         elif self.extra_attrs['type'] == 'replicate' or self.extra_attrs['type'] == 'reflect':
-            def f(x):
-                print(x.shape)
-                print(self.padding_list)
-                return torch.nn.functional.pad(x, self.padding_list, self.extra_attrs['type'])
-            return f
             return lambda x: torch.nn.functional.pad(x, self.padding_list, self.extra_attrs['type'])
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
@@ -1586,7 +1581,8 @@ class Flatten(Reshape):
         self.dim0 = dim0
 
     def torch(self):
-        return lambda x: x.flatten()
+        # See https://github.com/pytorch/pytorch/issues/74142
+        return lambda x: x.flatten().unsqueeze(0)
 
 
 class Transpose(UnaryOpBase, ABC):
@@ -1662,7 +1658,7 @@ class ReduceBase(UnaryOpBase, ABC):
         return []
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
-        return [(random.choice([s for s in self.inp_ranks[0] if s > out_shape_var[0].ndims]), out_shape_var[0].dtype)]
+        return [(1 + out_shape_var[0].ndims, out_shape_var[0].dtype)]
 
 
 class SqueezeBase(ReduceBase, ABC):
@@ -1720,7 +1716,7 @@ class ArgMin(ReduceBase, ABC):
         return lambda x: x.argmin(self.extra_attrs['reduce_dim'])
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
-        return [(random.choice(self.inp_ranks[0]), random.choice(self.in_dtypes)[0])]
+        return [(out_shape_var[0].ndims + 1, random.choice(self.in_dtypes)[0])]
 
 
 class ArgMax(ReduceBase, ABC):
@@ -1734,7 +1730,7 @@ class ArgMax(ReduceBase, ABC):
         return lambda x: x.argmax(self.extra_attrs['reduce_dim'])
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
-        return [(random.choice(self.inp_ranks[0]), random.choice(self.in_dtypes)[0])]
+        return [(out_shape_var[0].ndims + 1, random.choice(self.in_dtypes)[0])]
 
 
 class Linear(UnaryOpBase):
@@ -2092,8 +2088,8 @@ def auto_infer_in_dtypes(verbose=False):
             print(f'Try auto inferring input dtype spec for `{op_t.__name__}`')
         valid_combs = None
         op = create_op(op_t)
-        in_dtype_combs: List[DTypeComb] = \
-            itertools.product(DTYPE_ALL, repeat=len(op.inp_ranks))
+        in_dtype_combs: List[DTypeComb] = itertools.product(
+            DTYPE_ALL, repeat=len(op.inp_ranks))
         valid_combs = [
             comb for comb in in_dtype_combs if _check_comb(comb, op)]
         if len(valid_combs) == 0:

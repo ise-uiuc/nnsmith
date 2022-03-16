@@ -33,11 +33,15 @@ if __name__ == '__main__':
     parser.add_argument('--onnx_dir', type=str, required=True)
     parser.add_argument('--time_budget', type=int, default=60 * 60 * 4)
     parser.add_argument('--max_nodes', type=int, default=10)
-    parser.add_argument('--graphfuzz_ops', action='store_true') 
+    parser.add_argument('--graphfuzz_ops', action='store_true')
     parser.add_argument('--ort_cache', type=str, default=None)
+    parser.add_argument('--seed', type=int, default=233)
     args = parser.parse_args()
 
     mkdir(args.onnx_dir)
+
+    random.seed(args.seed)
+    torch.manual_seed(args.seed)
 
     if args.ort_cache:
         if not os.path.exists(args.ort_cache):
@@ -76,8 +80,7 @@ if __name__ == '__main__':
                 valid_cnt += 1
             except Exception as e:
                 print(f'Fail when seed={seed}')
-                print(e)
-                raise e
+                print(e)  # Skip a few errors.
                 label = 'FAILURE'
 
             time_diff = time.time() - tstart
