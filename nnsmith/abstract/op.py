@@ -732,7 +732,7 @@ class Input(AbsOpBase):
     def __init__(self, dim: int):
         super().__init__()
         self.inp_ranks = []
-        self.out_ranks = [dim]
+        self.out_ranks = [(dim,)]
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         SanityCheck.eq(len(input_shapes), 0)
@@ -757,7 +757,7 @@ class Constant(AbsOpBase):
         super().__init__()
         self.dim = dim
         self.inp_ranks = []
-        self.out_ranks = [dim]
+        self.out_ranks = [(dim,)]
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         SanityCheck.eq(len(input_shapes), 0)
@@ -777,7 +777,7 @@ class Placeholder:
     def __init__(self, out_shape: ShapeVar):
         self.out_shape = out_shape
         self.inp_ranks = []
-        self.out_ranks = [out_shape.ndims]
+        self.out_ranks = [(out_shape.ndims,)]
 
     def __repr__(self):
         return f'Placeholder({self.out_shape})'
@@ -1786,7 +1786,7 @@ class Concat(AbsOpBase):
         self.concat_rank = random.randint(1, 5)
         self.extra_attrs['axis'] = random.randint(0, self.concat_rank - 1)
         self.inp_ranks = [(self.concat_rank,)] * arity
-        self.out_ranks = [(self.concat_rank)]
+        self.out_ranks = [(self.concat_rank,)]
         self.same_inp_dims = True
 
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:

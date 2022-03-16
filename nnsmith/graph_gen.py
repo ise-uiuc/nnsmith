@@ -727,7 +727,7 @@ class SimpleGenerator:
 
             SanityCheck.ge(len(rank_set), 1)
 
-            final_dim = random.choice(rank_set)
+            final_dim = random.choice(list(rank_set))
             dim_spec_list = [(final_dim,)] * n_inp
         else:  # inputs have different dimension sizes.
             dim_spec_list = op.inp_ranks
@@ -766,7 +766,7 @@ class SimpleGenerator:
         op_param_n = node_t.get_num_var_param()
         op_id = len(self.abstract_graph.nodes)
         op_params = [self.new_sym('op%s_%s' % (op_id, k))
-                     for k in range(len(op_param_n))]
+                     for k in range(op_param_n)]
 
         op: AbsOpBase = node_t(*op_params)
 
