@@ -362,7 +362,7 @@ class SymbolNet(nn.Module):
 class SimpleGenerator:
 
     def __init__(self, min_dims=[1, 3, 48, 48], skip=[Input], viz_sbs=False, megabyte_lim=__MB_LIM__, seed=None, verbose=False, use_bitvec=False,
-                 viz_verbose=False, merge_op_v=None, limnf=True):
+                 viz_verbose=False, merge_op_v=None, limnf=True, candidates_overwrite=None):
         if seed is not None:
             np.random.seed(seed)
             random.seed(seed)
@@ -370,8 +370,12 @@ class SimpleGenerator:
         self.viz_verbose = viz_verbose
         auto_infer_in_dtypes(self.verbose)
 
-        self.op_candidates = [
-            op for op in ALL_OP_TYPES if op not in skip and not op._skip]
+        if candidates_overwrite is None:
+            self.op_candidates = [
+                op for op in ALL_OP_TYPES if op not in skip and not op._skip]
+        else:
+            self.op_candidates = candidates_overwrite
+
         if use_bitvec:
             self.solver = z3.SolverFor("QF_UFBV")
         else:
@@ -1279,14 +1283,16 @@ def random_model_gen(
         verbose=False,
         mode='random',
         merge_op_v=None,
-        limnf=True,):
+        limnf=True,
+        candidates_overwrite=None):
 
     GenCls = {
         'random': PureSymbolGen,
         'guided': GuidedGen,
     }[mode]
     gen = GenCls(min_dims=min_dims,
-                 viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec, merge_op_v=merge_op_v, limnf=limnf)
+                 viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec, 
+                 merge_op_v=merge_op_v, limnf=limnf, candidates_overwrite=candidates_overwrite)
     gen.abstract_gen(max_node_size=max_nodes,
                      max_gen_millisec=timeout)
     solution = gen.get_symbol_solutions()
