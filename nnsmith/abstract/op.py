@@ -1332,7 +1332,7 @@ class Expand(UnaryOpBase, ABC):
             if self.expand_last_dim <= len(input_shape):  # index valid
                 cons = [z3.And(
                     nnsmith_eq(
-                        input_shape[-self.expand_last_dim], self.expand_n),
+                        input_shape[-self.expand_last_dim], 1),
                     nnsmith_ge(self.expand_n, 1))]
                 return cons
             return [nnsmith_ge(self.expand_n, 1)]
