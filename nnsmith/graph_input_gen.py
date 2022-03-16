@@ -19,7 +19,7 @@ import torch
 from nnsmith.abstract.op import ALL_OP_STR2TYPE, ALL_OP_TYPES, _op_set_use_cuda
 from nnsmith.backends import DiffTestBackend
 from nnsmith.error import SanityCheck
-from nnsmith.graph_gen import SymbolNet, random_model_gen, table_model_gen
+from nnsmith.graph_gen import SymbolNet, random_model_gen
 from nnsmith.export import torch2onnx
 
 
@@ -50,18 +50,6 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
     if gen_method == 'random':
         gen, solution = random_model_gen(
             max_nodes=max_nodes, timeout=max_gen_millisec, use_bitvec=use_bitvec, merge_op_v=merge_op_v, limnf=limnf, seed=seed)
-    elif gen_method == 'table':
-        gen, solution = table_model_gen(
-            table=ipc_dict['table'],
-            state=ipc_dict['state'],
-            max_nodes=max_nodes, timeout=max_gen_millisec, use_bitvec=use_bitvec, merge_op_v=merge_op_v, limnf=limnf, seed=seed)
-        abs_graph = gen.abstract_graph
-        unique_set = set()
-        for src, dst in abs_graph.edges():
-            pair = (ALL_OP_TYPES.index(type(abs_graph.nodes[src]['op'])), ALL_OP_TYPES.index(
-                type(abs_graph.nodes[dst]['op'])) - 1)
-            unique_set.add(pair)
-        ipc_dict['edges'] = unique_set
     elif gen_method == 'guided':
         from nnsmith.graph_gen import GuidedGen
         gen = GuidedGen(
@@ -112,7 +100,7 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
 
 # @safe_wrapper
 def forked_execution(
-        gen_method, output_path, seed=None, max_nodes=10, max_gen_millisec=2000, table=None, save_torch=False, inp_gen='random',
+        gen_method, output_path, seed=None, max_nodes=10, max_gen_millisec=2000, save_torch=False, inp_gen='random',
         use_bitvec=False, summaries=None, merge_op_v=None, limnf=True, use_cuda=False):
     if seed is None:
         seed = random.getrandbits(32)
@@ -129,7 +117,6 @@ def forked_execution(
         ipc_dict['state']['unsolvable'] = manager.list()
         ipc_dict['state']['summaries'] = summaries
         ipc_dict['edges'] = set()
-        ipc_dict['table'] = table
         ipc_dict['profile'] = manager.dict()
         nnsmith_fork = os.environ.get(
             'NNSMITH_FORK', 'fork')  # specify the fork method.
@@ -165,10 +152,6 @@ def forked_execution(
                         raise ModelGenSubProcesssError(
                             f'process hang {process_time_tolerance}')
 
-                for src, dst in ipc_dict['state']['unsolvable']:
-                    table.on_unsolvable(
-                        ALL_OP_STR2TYPE[src], ALL_OP_STR2TYPE[dst])
-
             SanityCheck.false(
                 p.is_alive(), 'Process should be terminated but still alive.')
 
@@ -180,8 +163,6 @@ def forked_execution(
         else:
             subprocess_call(gen_method, seed, max_nodes,
                             max_gen_millisec, inp_gen, output_path, use_bitvec, merge_op_v, limnf, use_cuda, ipc_dict)
-            for src, dst in ipc_dict['state']['unsolvable']:
-                table.on_unsolvable(ALL_OP_STR2TYPE[src], ALL_OP_STR2TYPE[dst])
 
         return ipc_dict['sat_inputs'], ipc_dict['state'], ipc_dict['edges'], ipc_dict['seed'], dict(ipc_dict['profile'])
 
