@@ -12,7 +12,7 @@ import uuid
 
 import pickle
 import cloudpickle
-from typing import Dict, NamedTuple, Tuple, List, Optional
+from typing import Dict, NamedTuple, Tuple, List, Optional, Set
 from inspect import signature
 import traceback
 import random
@@ -20,7 +20,7 @@ import time
 import os
 import copy
 
-from nnsmith.error import NNSmithInternalError, SanityCheck, ConstraintCheck, ConstraintError
+from nnsmith.error import SanityCheck, ConstraintCheck, ConstraintError
 from nnsmith.export import torch2onnx
 from nnsmith.abstract.op import *
 
@@ -553,11 +553,9 @@ class SimpleGenerator:
         shape_indices = []
         if force_shape_indices is None:
             for i, shape_var in enumerate(oshapes):
-                if node.out_ranks[i] == -1:
-                    node.out_ranks[i] = len(shape_var.shape)
-                else:
-                    SanityCheck.eq(node.out_ranks[i], len(shape_var.shape), "{}'s dimension size is not {} in {}".format(
-                        shape_var.shape, node.out_ranks[i], node.__class__.__name__))
+                SanityCheck.true(len(shape_var.shape) in node.out_ranks[i], "{}'s dimension size is not {} in {}".format(
+                    shape_var.shape, node.out_ranks[i], node.__class__.__name__))
+                node.out_ranks[i] = (len(shape_var.shape),)
                 shape_idx = len(self.alive_shapes)
                 shape_indices.append(shape_idx)
                 self.alive_shapes.append((succ_nid, shape_var, i))
@@ -696,7 +694,7 @@ class SimpleGenerator:
             except:
                 return False
             return True
-        op_param_n = signature(node_t).parameters
+        op_param_n = node_t.get_num_var_param()
         op_id = len(self.abstract_graph.nodes)
         op_params = [self.new_sym('op%s_%s' % (op_id, k))
                      for k in range(len(op_param_n))]
@@ -722,16 +720,15 @@ class SimpleGenerator:
         dim_spec_list = []
 
         if op.same_inp_dims:  # find `n_inp` under the same input shapes.
-            final_dim = -1
-            for dim in op.inp_ranks:
-                if dim != -1:
-                    if final_dim == -1:
-                        final_dim = dim
-                    else:
-                        SanityCheck.eq(final_dim, dim)
-            if final_dim == -1:
-                final_dim = random.choice(list(self.dim2shape_idx.keys()))
-            dim_spec_list = [final_dim] * n_inp
+            rank_set = set(op.inp_ranks[0])
+
+            for ranks in op.inp_ranks[1:]:
+                rank_set.intersection_update(set(ranks))
+
+            SanityCheck.ge(len(rank_set), 1)
+
+            final_dim = random.choice(rank_set)
+            dim_spec_list = [(final_dim,)] * n_inp
         else:  # inputs have different dimension sizes.
             dim_spec_list = op.inp_ranks
 
@@ -766,7 +763,7 @@ class SimpleGenerator:
             print(f'Inserting node #{len(self.abstract_graph.nodes)}: '
                   f'trying to insert node type {node_t.__name__}')
 
-        op_param_n = signature(node_t).parameters
+        op_param_n = node_t.get_num_var_param()
         op_id = len(self.abstract_graph.nodes)
         op_params = [self.new_sym('op%s_%s' % (op_id, k))
                      for k in range(len(op_param_n))]
@@ -792,32 +789,32 @@ class SimpleGenerator:
 
         return False
 
-    def filter_shapes(self, ndim, dtype, candidate_shapes: List[ShapeVar]):
+    def filter_shapes(self, ndims, dtype, candidate_shapes: List[ShapeVar]):
         cans = range(len(candidate_shapes))
 
         cans = list(filter(  # filter with ndim
-            lambda sid: candidate_shapes[sid].ndims == ndim or ndim == -1, cans))
+            lambda sid: candidate_shapes[sid].ndims in ndims, cans))
         if len(cans) == 0:
             raise RequiredDimNotFound(
-                'Cannot find a shape variable with #dimensions %s.' % ndim)
+                'Cannot find a shape variable with #dimensions %s.' % ndims)
 
         if dtype is not None:
             cans = list(filter(  # filter with dtype
                 lambda sid: candidate_shapes[sid].dtype == dtype, cans))
             if len(cans) == 0:
                 raise RequiredDimNotFound(
-                    'Cannot find a shape variable with #dimensions %s and dtype %s.' % (ndim, dtype))
+                    'Cannot find a shape variable with #dimensions %s and dtype %s.' % (ndims, dtype))
 
         return cans
 
     def pick_shape(self, node_t, candidates):
         return random.choice(candidates)
 
-    def pick_shape_var_idx(self, node_t, ndim_list: List[int], dtype_combs: List[DTypeComb], candidate_shapes: List[ShapeVar]) -> List[int]:
+    def pick_shape_var_idx(self, node_t, ndim_list: List[Set[int]], dtype_combs: List[DTypeComb], candidate_shapes: List[ShapeVar]) -> List[int]:
         """Randomly pick indices to shape variables from the output pool.
 
         Args:
-            ndim_list (List[int]): required dimension sizes of the shape variables.
+            ndim_list (List[Set]): duable dims for each input.
 
         Returns:
             List[int]: indices to applicable shape variables.
@@ -828,9 +825,9 @@ class SimpleGenerator:
             print('dtype_combs:', dtype_combs)
 
         all_can_dtypes = []
-        for i, ndim in enumerate(ndim_list):
+        for i, ndims in enumerate(ndim_list):
             all_can_dtypes.extend([candidate_shapes[i].dtype for i in self.filter_shapes(
-                ndim=ndim, dtype=None, candidate_shapes=candidate_shapes)])
+                ndims=ndims, dtype=None, candidate_shapes=candidate_shapes)])
         # only use dtypes currently available after ndim filtering
         dtype_combs = [comb for comb in dtype_combs if all(
             i in all_can_dtypes for i in comb)]
@@ -838,9 +835,9 @@ class SimpleGenerator:
             raise RequiredDimNotFound('Op %s: Cannot find a shape variable with dim_spec %s and dtype combinations %s.' % (
                 node_t, ndim_list, dtype_combs))
         dtype_comb = random.choice(dtype_combs)
-        for i, ndim in enumerate(ndim_list):
+        for i, ndims in enumerate(ndim_list):
             candidates = self.filter_shapes(
-                ndim=ndim, dtype=dtype_comb[i], candidate_shapes=candidate_shapes)
+                ndims=ndims, dtype=dtype_comb[i], candidate_shapes=candidate_shapes)
             shape_var_candidates.append(
                 self.pick_shape(node_t, candidates))
 
