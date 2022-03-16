@@ -1086,7 +1086,7 @@ class Softmax(ElementWiseUnaryOp):
         return torch.nn.Softmax(dim=self.dim)
 
 
-class Pool2d(AbsOpBase):
+class Pool2d(UnaryOpBase):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
@@ -1164,6 +1164,96 @@ class MaxPool2d(Pool2d):
 class AvgPool2d(Pool2d):
     def torch(self) -> Callable[..., torch.Tensor]:
         return torch.nn.AvgPool2d(kernel_size=(self.kernel_h_size, self.kernel_w_size), stride=self.stride, padding=self.padding)
+
+
+class RdPad(UnaryOpBase):
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
+
+    def __init__(self, padding_list, force_const=False):
+        super().__init__()
+        self.padding_list = padding_list
+        if force_const:
+            self.extra_attrs['type'] = 'constant'
+        else:
+            self.extra_attrs['type'] = random.choice(
+                ['constant', 'reflect', 'replicate'])
+        self.inp_ranks = [-1]
+        self.out_ranks = [-1]
+        assert len(self.padding_list) % 2 == 0
+
+    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+        if self.extra_attrs['type'] == 'constant':
+            ConstraintCheck.le(len(self.padding_list),
+                               input_shapes[0].ndims * 2)
+        else:
+            # https://github.com/pytorch/pytorch/issues/74310
+            ConstraintCheck.le(len(self.padding_list),
+                               input_shapes[0].ndims * 2 - 2)
+
+        cons = []
+        for i in self.padding_list:
+            cons.append(nnsmith_ge(i, 0))
+        return cons
+
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        if self.extra_attrs['type'] == 'constant':
+            ConstraintCheck.le(len(self.padding_list),
+                               input_shapes[0].ndims * 2)
+        else:
+            # https://github.com/pytorch/pytorch/issues/74310
+            ConstraintCheck.le(len(self.padding_list),
+                               input_shapes[0].ndims * 2 - 2)
+
+        new_shape = []
+        last_n = len(self.padding_list) // 2
+        pad_init_dim = input_shapes[0].ndims - last_n
+        for i in range(input_shapes[0].ndims):
+            s = input_shapes[0].shape[i]
+            if i >= pad_init_dim:
+                s += self.padding_list[(i - pad_init_dim) // 2] + \
+                    self.padding_list[(i - pad_init_dim) // 2 + 1]
+            new_shape.append(s)
+
+        return [ShapeVar(new_shape, dtype=input_shapes[0].dtype)]
+
+    def torch(self) -> Callable[..., torch.Tensor]:
+        if self.extra_attrs['type'] == 'constant':
+            return lambda x: torch.nn.functional.pad(x, self.padding_list, 'constant', value=0)
+        elif self.extra_attrs['type'] == 'replicate':
+            return lambda x: torch.nn.functional.pad(x, self.padding_list, self.extra_attrs['type'])
+
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        return [(out_shape_var[0].ndims, out_shape_var[0].dtype)]
+
+
+class RdPad1D(RdPad):
+    def __init__(self, p0w: Union[int, z3.ExprRef], p0h: Union[int, z3.ExprRef]):
+        self.p0w, self.p0h = p0w, p0h
+        super().__init__([p0w, p0h], force_const=True)
+
+
+class RdPad2D(RdPad):
+    def __init__(self, p0w: Union[int, z3.ExprRef], p0h: Union[int, z3.ExprRef], p1w: Union[int, z3.ExprRef], p1h: Union[int, z3.ExprRef]):
+        self.p0w, self.p0h, self.p1w, self.p1h = p0w, p0h, p1w, p1h
+        super().__init__([p0w, p0h, p1w, p1h])
+
+
+class RdPad3D(RdPad):
+    def __init__(self, p0w: Union[int, z3.ExprRef], p0h: Union[int, z3.ExprRef],
+                 p1w: Union[int, z3.ExprRef], p1h: Union[int, z3.ExprRef],
+                 p2w: Union[int, z3.ExprRef], p2h: Union[int, z3.ExprRef]):
+        self.p0w, self.p0h, self.p1w, self.p1h, self.p2w, self.p2h = p0w, p0h, p1w, p1h, p2w, p2h
+        super().__init__([p0w, p0h, p1w, p1h, p2w, p2h])
+
+
+class RdPad4D(RdPad):
+    def __init__(self, p0w: Union[int, z3.ExprRef], p0h: Union[int, z3.ExprRef],
+                 p1w: Union[int, z3.ExprRef], p1h: Union[int, z3.ExprRef],
+                 p2w: Union[int, z3.ExprRef], p2h: Union[int, z3.ExprRef],
+                 p3w: Union[int, z3.ExprRef], p3h: Union[int, z3.ExprRef]):
+        self.p0w, self.p0h, self.p1w, self.p1h, self.p2w, self.p2h, self.p3w, self.p3h = p0w, p0h, p1w, p1h, p2w, p2h, p3w, p3h
+        super().__init__([p0w, p0h, p1w, p1h, p2w, p2h, p3w, p3h])
 
 
 class Expand(UnaryOpBase, ABC):
