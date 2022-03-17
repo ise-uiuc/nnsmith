@@ -67,7 +67,10 @@ def rewrite_op_dtype(ops: List[AbsOpBase], backend=None, verbose=False, cache=No
 
         inputs = []
         for i, ranks in enumerate(op.inp_ranks):
-            rank = random.choice(ranks)
+            if op.same_inp_dims and inputs:
+                rank = inputs[0].ndims
+            else:
+                rank = random.choice(ranks)
             shape = ShapeVar(shape=[z3.Int('s%s' % (k))
                              for k in range(rank)], dtype=available_idtypes[0][i])
             inputs.append(shape)
@@ -157,6 +160,9 @@ if __name__ == '__main__':
     parser.add_argument('--cache', default='config/ort_cpu_dtype.pkl')
     parser.add_argument('--seed', default=233, type=int)
     args = parser.parse_args()
+
+    if args.cache == 'None':
+        args.cache = None
 
     random.seed(args.seed)
     np.random.seed(args.seed)
