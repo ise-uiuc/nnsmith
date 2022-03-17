@@ -1630,6 +1630,54 @@ class Transpose(UnaryOpBase, ABC):
 
 # Sum, Min, Max, Mean, ArgMin, ArgMax, Squeeze, Size
 
+class InterpBase(UnaryOpBase):
+    num_var_param = int_range(1, 3)
+    
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
+
+    def __init__(self, *size):
+        super().__init__()
+        self.size = size
+        self.inp_ranks = [(len(size) + 2,)]
+        self.out_ranks = [(len(size) + 2,)]
+    
+    def _requires(self, input_shapes: List[ShapeVar]):
+        return [nnsmith_gt(v, 0) for v in self.size]
+    
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        shape = input_shapes[0].shape
+        for i in range(len(self.size)):
+            shape[-(1+i)] = self.size[-(1+i)]
+        return [ShapeVar(shape, input_shapes[0].dtype)]
+
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        return [(out_shape_var[0].ndims, out_shape_var[0].dtype)]
+
+
+class NearestInterp(InterpBase):
+    def torch(self) -> Callable[..., torch.Tensor]:
+        return lambda x : torch.nn.functional.interpolate(x, size=self.size, mode='nearest')
+
+class LinearInterp(InterpBase):
+    num_var_param = [1]
+    def torch(self) -> Callable[..., torch.Tensor]:
+        return lambda x : torch.nn.functional.interpolate(x, size=self.size, mode='linear')
+
+class BilinearInterp(InterpBase):
+    num_var_param = [2]
+    def torch(self) -> Callable[..., torch.Tensor]:
+        return lambda x : torch.nn.functional.interpolate(x, size=self.size, mode='bilinear')
+
+class BicubicInterp(InterpBase):
+    num_var_param = [2]
+    def torch(self) -> Callable[..., torch.Tensor]:
+        return lambda x : torch.nn.functional.interpolate(x, size=self.size, mode='bicubic')
+
+class TrilinearInterp(InterpBase):
+    num_var_param = [3]
+    def torch(self) -> Callable[..., torch.Tensor]:
+        return lambda x : torch.nn.functional.interpolate(x, size=self.size, mode='trilinear')
 
 class ReduceBase(UnaryOpBase, ABC):
     _reduce_out_dtype = None  # None means same as input dtype
