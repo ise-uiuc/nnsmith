@@ -1190,7 +1190,7 @@ class Bin:
         return lb, ub
 
 
-PARAM_CONFIG0 = {  # no guidance.
+PARAM_CONFIG0 = {  # no guidance on param, only on inputs.
 }
 
 
@@ -1256,23 +1256,6 @@ PARAM_CONFIG1['AvgPool2d'] = {
     'padding': PARAM_CONFIG1['NCHWConv2d']['padding'],
 }
 PARAM_CONFIG1['MaxPool2d'] = PARAM_CONFIG1['AvgPool2d']
-PARAM_CONFIG1['Reshape1D'] = PARAM_CONFIG1['Reshape']
-PARAM_CONFIG1['Reshape2D'] = PARAM_CONFIG1['Reshape']
-PARAM_CONFIG1['Reshape3D'] = PARAM_CONFIG1['Reshape']
-PARAM_CONFIG1['Reshape4D'] = PARAM_CONFIG1['Reshape']
-PARAM_CONFIG1['Reshape5D'] = PARAM_CONFIG1['Reshape']
-PARAM_CONFIG1['Reshape6D'] = PARAM_CONFIG1['Reshape']
-PARAM_CONFIG2 = {  # deprecated
-    'NCHWConv2d': {
-        'kernel_h_size': [Bin(1, 256, scale='linear')],
-        'kernel_w_size': [Bin(1, 256, scale='linear')],
-        'stride': [Bin(1, 256, scale='linear')],
-        'padding': [Bin(1, 256, scale='linear')] + [Bin(0, 1)],
-        'out_channels': [Bin(1, 256, scale='linear')] +
-        [Bin(256, None, scale='linear')],
-        'in_channels': [],  # skip
-    },
-}
 
 
 def __GROUP_RESHAPE(node, inp_shps, construct_param_dict, bin=True):
@@ -1306,26 +1289,22 @@ def __GROUP_RESHAPE(node, inp_shps, construct_param_dict, bin=True):
     return ret
 
 
-PARAM_CONFIG3 = copy.deepcopy(PARAM_CONFIG1)
-PARAM_CONFIG3['Reshape'] = __GROUP_RESHAPE
-PARAM_CONFIG3['Reshape1D'] = __GROUP_RESHAPE
-PARAM_CONFIG3['Reshape2D'] = __GROUP_RESHAPE
-PARAM_CONFIG3['Reshape3D'] = __GROUP_RESHAPE
-PARAM_CONFIG3['Reshape4D'] = __GROUP_RESHAPE
-PARAM_CONFIG3['Reshape5D'] = __GROUP_RESHAPE
-PARAM_CONFIG3['Reshape6D'] = __GROUP_RESHAPE
-
-PARAM_CONFIG4 = copy.deepcopy(PARAM_CONFIG3)
-
-PARAM_CONFIG5 = copy.deepcopy(PARAM_CONFIG3)
+PARAM_CONFIG1['Reshape'] = __GROUP_RESHAPE
+PARAM_CONFIG1['Reshape1D'] = __GROUP_RESHAPE
+PARAM_CONFIG1['Reshape2D'] = __GROUP_RESHAPE
+PARAM_CONFIG1['Reshape3D'] = __GROUP_RESHAPE
+PARAM_CONFIG1['Reshape4D'] = __GROUP_RESHAPE
+PARAM_CONFIG1['Reshape5D'] = __GROUP_RESHAPE
+PARAM_CONFIG1['Reshape6D'] = __GROUP_RESHAPE
 
 
 class GuidedGen(PureSymbolGen):
     def __init__(self, summaries=None, scale='log', base=2, default_bins=7, constrain_prob=1, **kwargs):
         self.constrain_prob = constrain_prob
         self.base = 2
-        self.param_config = [PARAM_CONFIG0, PARAM_CONFIG1,
-                             PARAM_CONFIG2, PARAM_CONFIG3, PARAM_CONFIG4, PARAM_CONFIG5][int(os.getenv('NNSMITH_G_CONFIG', 1))]
+        self.param_config = {
+            '0': PARAM_CONFIG0, '1': PARAM_CONFIG1
+        }[os.getenv('NNSMITH_G_CONFIG', '1')]
         if scale == 'log':
             self.default_config = defaultdict(
                 lambda: [Bin(i, i + 1, scale=scale, base=base) for i in range(default_bins)] +

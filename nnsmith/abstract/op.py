@@ -1578,7 +1578,7 @@ class Reshape(UnaryOpBase, ABC):
         return [shape_var]
 
     def _requires(self, input_shapes):
-        # if int(os.getenv('NNSMITH_G_CONFIG', 1)) >= 3:  # TODO(JK): remove this once stablized
+        # if int(os.getenv('NNSMITH_GRES', 1)) >= 3:  # TODO(JK): remove this once stablized
         #     return []
         # # TODO: How to handle -1 with input shapes?
         # # If your target shape is concrete, then your output shape's total pixels must be the same as the input shape's.
@@ -1621,7 +1621,7 @@ class Reshape(UnaryOpBase, ABC):
                                 weights=[2**i for i in range(ub)])[0]
         else:
             raise ValueError(
-                f'NNSMITH_G_CONFIG={gres_config} is not recognized')
+                f'NNSMITH_GRES={gres_config} is not recognized')
         src_group = random_group(src_len, ng)
         dst_group = random_group(dst_len, ng)
         self.ng = ng
