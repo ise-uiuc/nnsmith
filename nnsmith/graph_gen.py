@@ -1,5 +1,4 @@
 # See https://github.com/Z3Prover/z3/issues/5656
-from matplotlib.pyplot import phase_spectrum
 import z3  # Always import z3 first to avoid incompatibility issue.
 from collections import defaultdict
 import math
