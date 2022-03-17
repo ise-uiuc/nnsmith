@@ -1610,7 +1610,7 @@ class Reshape(UnaryOpBase, ABC):
             src_len = 1  # special handling for scalar
         if dst_len == 0:
             dst_len = 1  # special handling for scalar
-        gres_config = os.getenv('NNSMITH_G_CONFIG', '4')
+        gres_config = os.getenv('NNSMITH_GRES', '4')
         if gres_config == '5':
             ng = 1
         elif gres_config == '3':
