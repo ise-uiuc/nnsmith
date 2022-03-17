@@ -78,14 +78,9 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
     profile['model_gen_t'] = symnet_st - gen_model_st
     net = SymbolNet(gen.abstract_graph, solution, verbose=False,
                     alive_shapes=gen.alive_shapes)
-    export_t_s = time.time()
-    profile['symnet_init_t'] = export_t_s - symnet_st
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        torch2onnx(net, output_path, use_cuda=use_cuda)
 
     gen_input_st = time.time()
-    profile['export_t'] = gen_input_st - export_t_s
+    profile['symnet_init_t'] = gen_input_st - symnet_st
     sat_inputs = None
     if inp_gen == 'random':
         with torch.no_grad():
@@ -105,8 +100,14 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
         ipc_dict['sat_inputs'] = ret_inputs
     else:
         ipc_dict['sat_inputs'] = None
+    export_t_s = time.time()
+    profile['input_gen_t'] = export_t_s - gen_input_st
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        torch2onnx(net, output_path, use_cuda=use_cuda,
+                   dummy_inputs=sat_inputs)
     dump_t_s = time.time()
-    profile['input_gen_t'] = dump_t_s - gen_input_st
+    profile['export_t'] = dump_t_s - export_t_s
 
     cloudpickle.dump(net.concrete_graph, open(
         output_path + '-graph.pkl', 'wb'), protocol=4)

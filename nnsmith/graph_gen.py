@@ -426,20 +426,32 @@ class SimpleGenerator:
         self.init_ph_alive = True
         self.forward_prob = 0.5 if forward_prob is None else forward_prob
 
+    def random_rank(self):
+        return random.choices(range(MAX_RANK + 1),
+                              weights=[1, 1, 1, 1, 2, 1, 0.5])[0]
+
+    def random_dtype(self):
+        wts = [1] * len(DTYPE_ALL)
+        for i in DTYPE_FLOATS:
+            wts[DTYPE_ALL.index(i)] = 8
+        for i in DTYPE_INTS:
+            wts[DTYPE_ALL.index(i)] = 2
+        return random.choices(DTYPE_ALL, weights=wts)[0]
+
     def create_placeholder(self, dim, dtype=None):
         syms = self.new_syms(['v%s_%s' % (
             self.monotonic_placeholder_id, k) for k in range(dim)])
         shapevar = ShapeVar(
             shape=syms,
-            dtype=dtype if dtype is not None else random.choice(DTYPE_ALL))
+            dtype=dtype if dtype is not None else self.random_dtype())
         self.monotonic_placeholder_id += 1
         ph = Placeholder(shapevar)
-        self.all_ph_cons[ph] = []
-        self.gen_ph_cons(ph)
+        self.all_ph_cons[ph] = self.gen_ph_cons(ph)
         return ph
 
-    def gen_ph_cons(self, ph: Placeholder):  # default to no input constraints
-        pass
+    # default to no input constraints
+    def gen_ph_cons(self, ph: Placeholder) -> List[z3.ExprRef]:
+        return []
         # if not self.use_bitvec:  # bit vector is randomizable
         #     # The batch size should not have a big min size (avoid unnecessary computation);
         #     # FIXME: input constraints will make SMT solving costly.
@@ -545,8 +557,8 @@ class SimpleGenerator:
             for assump in assumptions:
                 self.check_arith_ref(assump)
         ph_cons = sum(self.ph_cons, [])
-        print('[INFO]: ph_cons:', ph_cons)
-        cres = self.solver.check(*assumptions, *ph_cons)
+        assumptions = list(assumptions) + ph_cons
+        cres = self.solver.check(*assumptions)
 
         checking_time = int((time.time() - start) * 1000)
         if checking_time > 3000 and self.cur_node:  # 3s
@@ -555,8 +567,8 @@ class SimpleGenerator:
 
         if self.verbose:
             print('---> total constraints: \n',
-                  '\n'.join(sorted(map(str, set(
-                      list(self.solver.assertions()) + list(assumptions))))))
+                  '\n'.join(sorted(map(str,
+                                       list(self.solver.assertions()) + list(assumptions)))))
             print(cres, '<-- checking time:', checking_time, 'ms')
 
             if cres == z3.unsat:
@@ -829,7 +841,7 @@ class SimpleGenerator:
     def pick_shape(self, node_t, candidates):
         return random.choice(candidates)
 
-    def pick_shape_var_idx(self, node_t, ndim_list: List[int], dtype_combs: List[DTypeComb], candidate_shapes: List[ShapeVar]) -> List[int]:
+    def pick_shape_var_idx(self, node_t, ndim_list: List[int], dtype_combs_spec: List[DTypeComb], candidate_shapes: List[ShapeVar]) -> List[int]:
         """Randomly pick indices to shape variables from the output pool.
 
         Args:
@@ -841,18 +853,18 @@ class SimpleGenerator:
 
         shape_var_candidates = []
         if self.verbose:
-            print('dtype_combs:', dtype_combs)
+            print('dtype_combs_spec:', dtype_combs_spec)
 
         all_can_dtypes = []
         for i, ndim in enumerate(ndim_list):
             all_can_dtypes.extend([candidate_shapes[i].dtype for i in self.filter_shapes(
                 ndim=ndim, dtype=None, candidate_shapes=candidate_shapes)])
         # only use dtypes currently available after ndim filtering
-        dtype_combs = [comb for comb in dtype_combs if all(
+        dtype_combs = [comb for comb in dtype_combs_spec if all(
             i in all_can_dtypes for i in comb)]
         if len(dtype_combs) == 0:
             raise RequiredDimNotFound('Op %s: Cannot find a shape variable with dim_spec %s and dtype combinations %s.' % (
-                node_t, ndim_list, dtype_combs))
+                node_t, ndim_list, dtype_combs_spec))
         dtype_comb = random.choice(dtype_combs)
         for i, ndim in enumerate(ndim_list):
             candidates = self.filter_shapes(
@@ -977,8 +989,7 @@ class PureSymbolGen(SimpleGenerator):
             # oversample rank 4 tensors as they may be more important
             ph = self.create_placeholder(
                 rank if rank != -1 else
-                random.choices(range(MAX_RANK + 1),
-                               weights=[1, 1, 1, 1, 2, 1, 0.5])[0],
+                self.random_rank(),
                 dtype=dtype)
             new_inp_placeholders.append(ph)
             constraints.extend(ph.out_shape.gt_zero())
@@ -997,6 +1008,8 @@ class PureSymbolGen(SimpleGenerator):
         mem = list(self.ph_cons)
         for i in occ_holder_indices:
             self.ph_cons.remove(mem[i])  # temporarily remove occupy
+        for ph in new_inp_placeholders:
+            self.ph_cons.append(self.all_ph_cons[ph])
         # TODO: consider nfloats.
         check_res = self.check_sat(*constraints)
         self.ph_cons = mem  # revert
@@ -1178,7 +1191,7 @@ class Bin:
         return lb, ub
 
 
-PARAM_CONFIG0 = {  # no guidance. not even input shape lower bound.
+PARAM_CONFIG0 = {  # no guidance.
 }
 
 
@@ -1326,18 +1339,16 @@ class GuidedGen(PureSymbolGen):
         # self.inp
         super(GuidedGen, self).__init__(**kwargs)
 
-    def insert_init_ph_node(self, min_dims, dtype=DType.float32) -> ShapeVar:
-        ish = super().insert_init_ph_node(min_dims, dtype, constrain_min=False)
+    def gen_ph_cons(self, ph: Placeholder):
         constraints = []
-        for i in ish.out_shape.shape:
+        for i in ph.out_shape.shape:
             bins = self.default_config[0]
             lb, ub = bins[random.randint(0, len(bins) - 1)].sample_range()
             constraints.extend(range_constrain(i, lb, ub))
         # throw exception for now since this is unlikely to happen
-        assert self.check_sat(
-            *constraints, nnsmith_le(self.n_floats, self.limit_float)) == z3.sat, 'Input constraints too tight'
-        self.solver.add(*constraints)
-        return ish
+        # assert self.check_sat(
+        #     *constraints, nnsmith_le(self.n_floats, self.limit_float)) == z3.sat, 'Input constraints too tight'
+        return constraints
 
     def extra_constraints(self, node: AbsOpBase, input_shapes: List[ShapeVar]):
         if random.uniform(0, 1) > self.constrain_prob:
@@ -1514,7 +1525,7 @@ if __name__ == '__main__':
     print('Time to generate inputs: {:.3f}s'.format(ed_time - input_st))
 
     torch2onnx(net, args.output_path, verbose=args.verbose,
-               use_cuda=args.use_cuda)
+               use_cuda=args.use_cuda, dummy_inputs=sat_inputs)
 
     stats = {
         'gen_succ': True,
