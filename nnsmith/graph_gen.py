@@ -1199,7 +1199,7 @@ def range_constrain(param, lb, ub):
     ret = []
     if lb is not None:
         ret.append(nnsmith_ge(param, lb))
-    if ub is not None:
+    if ub is not None and os.getenv('NNSMITH_LB', 'off') == 'off':  # HACK
         ret.append(nnsmith_lt(param, ub))
     return ret
 
