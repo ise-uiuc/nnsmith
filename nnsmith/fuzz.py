@@ -516,6 +516,8 @@ if __name__ == '__main__':
     parser.set_defaults(limnf=False)
     parser.add_argument('--no_limnf', dest='limnf', action='store_false',
                         help='Disable the limit on the number of floats')
+    parser.add_argument('--limnf', dest='limnf', action='store_true',
+                        help='Enable the limit on the number of floats')
     parser.add_argument('--use_cuda', action='store_true')
     parser.add_argument('--warmup', action='store_true')
     parser.add_argument('-y', action='store_true', help='Yes to all')

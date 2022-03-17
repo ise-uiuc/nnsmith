@@ -1322,7 +1322,7 @@ PARAM_CONFIG5 = copy.deepcopy(PARAM_CONFIG3)
 
 
 class GuidedGen(PureSymbolGen):
-    def __init__(self, summaries=None, scale='log', base=2, default_bins=8, constrain_prob=1, **kwargs):
+    def __init__(self, summaries=None, scale='log', base=2, default_bins=7, constrain_prob=1, **kwargs):
         self.constrain_prob = constrain_prob
         self.base = 2
         self.param_config = [PARAM_CONFIG0, PARAM_CONFIG1,
@@ -1400,6 +1400,8 @@ def parse_args():
     parser.set_defaults(limnf=False)
     parser.add_argument('--no_limnf', dest='limnf', action='store_false',
                         help='Disable the limit on the number of floats')
+    parser.add_argument('--limnf', dest='limnf', action='store_true',
+                        help='Enable the limit on the number of floats')
     parser.add_argument('--use_cuda', action='store_true')
     parser.add_argument('--no_export', action='store_true')
     parser.add_argument('--forward_prob', type=float)
