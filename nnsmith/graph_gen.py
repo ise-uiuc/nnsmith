@@ -557,17 +557,18 @@ class SimpleGenerator:
                 self.check_arith_ref(assump)
         ph_cons = sum(self.ph_cons, [])
         assumptions = list(assumptions) + ph_cons
+
+        if self.verbose:
+            print('---> total constraints: \n',
+                  '\n'.join(sorted(map(str,
+                                       list(self.solver.assertions()) + list(assumptions)))))
         cres = self.solver.check(*assumptions)
 
         checking_time = int((time.time() - start) * 1000)
         if checking_time > 3000 and self.cur_node:  # 3s
             warnings.warn(
                 f'[WARNING] check {self.cur_node} {checking_time} ms')
-
         if self.verbose:
-            print('---> total constraints: \n',
-                  '\n'.join(sorted(map(str,
-                                       list(self.solver.assertions()) + list(assumptions)))))
             print(cres, '<-- checking time:', checking_time, 'ms')
 
             if cres == z3.unsat:
@@ -1297,13 +1298,22 @@ PARAM_CONFIG1['Reshape4D'] = __GROUP_RESHAPE
 PARAM_CONFIG1['Reshape5D'] = __GROUP_RESHAPE
 PARAM_CONFIG1['Reshape6D'] = __GROUP_RESHAPE
 
+PARAM_CONFIG2 = copy.deepcopy(PARAM_CONFIG1)
+del PARAM_CONFIG2['Reshape']
+del PARAM_CONFIG2['Reshape1D']
+del PARAM_CONFIG2['Reshape2D']
+del PARAM_CONFIG2['Reshape3D']
+del PARAM_CONFIG2['Reshape4D']
+del PARAM_CONFIG2['Reshape5D']
+del PARAM_CONFIG2['Reshape6D']
+
 
 class GuidedGen(PureSymbolGen):
     def __init__(self, summaries=None, scale='log', base=2, default_bins=7, constrain_prob=1, **kwargs):
         self.constrain_prob = constrain_prob
         self.base = 2
         self.param_config = {
-            '0': PARAM_CONFIG0, '1': PARAM_CONFIG1
+            '0': PARAM_CONFIG0, '1': PARAM_CONFIG1, '2': PARAM_CONFIG2
         }[os.getenv('NNSMITH_G_CONFIG', '1')]
         if scale == 'log':
             self.default_config = defaultdict(
