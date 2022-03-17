@@ -41,7 +41,7 @@ else:
     FLOPS_LIM = float(FLOPS_LIM)
 
 # control wheter to model FLOPS in z3 too. If not, we will check it after model is concretized.
-Z3_CONS_FLOPS = os.getenv("NNSMITH_Z3_CONS_FLOPS", 'off')
+Z3_CONS_FLOPS = os.getenv("NNSMITH_Z3_CONS_FLOPS", 'on')
 assert Z3_CONS_FLOPS in [
     'on', 'off'], "NNSMITH_Z3_CONS_FLOPS must be either 'on' or 'off'"
 Z3_CONS_FLOPS = Z3_CONS_FLOPS == 'on'
