@@ -77,15 +77,14 @@ class Ploter:
         self.fig.savefig(save + '.png')
 
 
-def cov_summerize(data, pass_filter=None, tlimit=None):
-    line_by_time = [[0, 0, 0]]
-    branch_by_time = [[0, 0, 0]]
-    func_by_time = [[0, 0, 0]]
+def cov_summerize(data, pass_filter=None, tlimit=None, branch_only=True):
     model_total = 0
 
-    final_lf = 0
+    branch_by_time = [[0, 0, 0]]
     final_bf = 0
-    final_ff = 0
+
+    line_by_time = [[0, 0, 0]]
+    final_lf = 0
 
     for time, value in data.items():
         lf = 0
@@ -97,28 +96,29 @@ def cov_summerize(data, pass_filter=None, tlimit=None):
         model_total += n_model
         line_cov = 0
         branch_cov = 0
-        func_cov = 0
         for fname in cov:
             if pass_filter is not None and not pass_filter(fname):
                 continue
-            line_cov += len(cov[fname]['lines'])
-            branch_cov += len(cov[fname]['branches'])
-            func_cov += len(cov[fname]['functions'])
 
-            lf += cov[fname]['lf']
-            ff += cov[fname]['ff']
+            branch_cov += len(cov[fname]['branches'])
             bf += cov[fname]['bf']
-        line_by_time.append([time, model_total, line_cov])
+
+            if not branch_only:
+                line_cov += len(cov[fname]['lines'])
+                lf += cov[fname]['lf']
+
+
+        if not branch_only:
+            line_by_time.append([time, model_total, line_cov])
+
         branch_by_time.append([time, model_total, branch_cov])
-        func_by_time.append([time, model_total, func_cov])
 
         final_lf = max(final_lf, lf)
         final_bf = max(final_bf, bf)
-        final_ff = max(final_ff, ff)
 
         if tlimit is not None and time > tlimit:
             break
-    return line_by_time, branch_by_time, func_by_time, (final_lf, final_bf, final_ff)
+    return line_by_time, branch_by_time, (final_lf, final_bf)
 
 
 def tvm_pass_filter(fname):
@@ -137,9 +137,7 @@ def ort_pass_filter(fname):
 
 
 def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag='', tlimit=None, pdf=False):
-    line_ploter = Ploter(use_pdf=pdf)
     branch_ploter = Ploter(use_pdf=pdf)
-    func_ploter = Ploter(use_pdf=pdf)
 
     assert fuzz_tags is not None
     pass_tag = 'opt_' if pass_filter is not None else ''
@@ -148,31 +146,23 @@ def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag=''
     # We took the max.
     lf = 0
     bf = 0
-    ff = 0
 
     for idx, (k, v) in enumerate(data.items()):
-        line_by_time, branch_by_time, func_by_time, (lf_, bf_, ff_) = cov_summerize(
+        _, branch_by_time, (lf_, bf_) = cov_summerize(
             v, tlimit=tlimit, pass_filter=pass_filter)
-        line_ploter.add(data=line_by_time, name=fuzz_tags[idx])
         branch_ploter.add(data=branch_by_time, name=fuzz_tags[idx])
-        func_ploter.add(data=func_by_time, name=fuzz_tags[idx])
 
         lf = max(lf, lf_)
         bf = max(bf, bf_)
-        ff = max(ff, ff_)
 
-    line_ploter.plot(save=os.path.join(
-        folder, target_tag + pass_tag + 'line_cov'), cov_type='Line', cov_lim=lf)
     branch_ploter.plot(save=os.path.join(
         folder, target_tag + pass_tag + 'branch_cov'), cov_type='Branch', cov_lim=bf)
-    func_ploter.plot(save=os.path.join(
-        folder, target_tag + pass_tag + 'func_cov'), cov_type='Function', cov_lim=ff)
 
     # venn graph plot
     branch_cov_sets = []
     for _, v in data.items():
         last_key = sorted(list(v.keys()))[-1]
-        # file -> {lines, branches, functions}
+        # file -> {lines, branches}
         final_cov = v[last_key]['merged_cov']
         branch_set = set()
         for fname in final_cov:
