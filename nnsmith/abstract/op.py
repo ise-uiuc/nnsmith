@@ -1309,8 +1309,10 @@ class Expand(UnaryOpBase, ABC):
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         if self.expand_last_dim <= len(input_shapes[0].shape):
-            input_shapes[0].shape[-self.expand_last_dim] = self.expand_n
-            return input_shapes
+            # NOTE: Werid, deepcopy is useless here.
+            shape = ShapeVar(shape=[*input_shapes[0].shape], dtype=input_shapes[0].dtype)
+            shape.shape[-self.expand_last_dim] = self.expand_n
+            return [shape]
         else:  # expand it;
             # for example. we have:
             #       input shape [u, v]
@@ -1325,10 +1327,10 @@ class Expand(UnaryOpBase, ABC):
         input_shape = input_shapes[0].shape
         if isinstance(self.expand_n, z3.ExprRef):
             if self.expand_last_dim <= len(input_shape):  # index valid
-                cons = [z3.And(
+                cons = [
                     nnsmith_eq(
                         input_shape[-self.expand_last_dim], 1),
-                    nnsmith_ge(self.expand_n, 1))]
+                    nnsmith_ge(self.expand_n, 1)]
                 return cons
             return [nnsmith_ge(self.expand_n, 1)]
         else:
