@@ -1515,7 +1515,7 @@ if __name__ == '__main__':
     print('Time to generate inputs: {:.3f}s'.format(ed_time - input_st))
 
     torch2onnx(net, args.output_path, verbose=args.verbose,
-               use_cuda=args.use_cuda, dummy_inputs=sat_inputs)
+               use_cuda=args.use_cuda)
 
     stats = {
         'gen_succ': True,

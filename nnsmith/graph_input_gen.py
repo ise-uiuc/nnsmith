@@ -104,8 +104,7 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
     profile['input_gen_t'] = export_t_s - gen_input_st
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        torch2onnx(net, output_path, use_cuda=use_cuda,
-                   dummy_inputs=sat_inputs)
+        torch2onnx(net, output_path, use_cuda=use_cuda)
     dump_t_s = time.time()
     profile['export_t'] = dump_t_s - export_t_s
 
