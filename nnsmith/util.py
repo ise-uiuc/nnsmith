@@ -78,9 +78,13 @@ def forkpool_execution(func):
 
     wrapper.terminate = terminate
     return wrapper
-def mkdir(dir):
+
+
+def mkdir(dir, yes=False):
     if os.path.exists(dir):
         decision = ''
+        if yes:
+            decision = 'y'
         while decision.lower() not in ['y', 'n']:
             decision = input(
                 'Report folder already exists. Press [Y/N] to continue or exit...')

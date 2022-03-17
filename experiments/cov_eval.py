@@ -21,7 +21,7 @@ from tqdm import tqdm
 
 from nnsmith.util import mkdir
 
-# CMD EXAMPLE: 
+# CMD EXAMPLE:
 # python experiments/cov_eval.py --model_dir lemon --report_folder test-cov --backend tvm --lib ../tvm/build/libtvm.so --llvm-version 14
 # python experiments/cov_eval.py --model_dir test-onnx --report_folder test-cov-q --backend ort \
 #  --lib '../onnxruntime/build/Linux/RelWithDebInfo/libonnxruntime_providers_shared.so ../onnxruntime/build/Linux/RelWithDebInfo/libonnxruntime.so'  --llvm-version 14
@@ -29,23 +29,34 @@ from nnsmith.util import mkdir
 # Coverage lcov:          {i}.lcov
 # Timing / # model:       stats.csv
 
+
 def batched(iterable, n=1):
     l = len(iterable)
     for ndx in range(0, l, n):
         yield iterable[ndx:min(ndx + n, l)]
 
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_dir', type=str, required=True, help='Folder to the onnx models.')
+    parser.add_argument('--model_dir', type=str, required=True,
+                        help='Folder to the onnx models.')
     parser.add_argument('--report_folder', type=str, required=True)
-    parser.add_argument('--backend', type=str, default='tvm', help='One of ort, trt, tvm, and xla')
-    parser.add_argument('--dp', type=int, default=100, help='# data point you want.')
+    parser.add_argument('--backend', type=str, default='tvm',
+                        help='One of ort, trt, tvm, and xla')
+    parser.add_argument('--dp', type=int, default=100,
+                        help='# data point you want.')
     parser.add_argument('--dev', type=str, default='cpu', help='cpu/gpu')
     parser.add_argument('--sum', action='store_true', help='Use summary.')
-    parser.add_argument('--seed', type=int, default=233, help='to generate random input data')
-    parser.add_argument('--lib', type=str, required=True, help='path to instrumented library')
-    parser.add_argument('--max_time', type=int, default=60*60*4, help='max time in seconds for coverage evaluation')
-    parser.add_argument('--llvm-version', type=str, default='', help='version of llvm during coverage stuff. must align w/ tvm.')
+    parser.add_argument('--seed', type=int, default=233,
+                        help='to generate random input data')
+    parser.add_argument('--lib', type=str, nargs='+', required=True,
+                        help='path to instrumented library')
+    parser.add_argument('--max_time', type=int, default=60 *
+                        60 * 4, help='max time in seconds for coverage evaluation')
+    parser.add_argument('--llvm-version', type=str, default='',
+                        help='version of llvm during coverage stuff. must align w/ tvm.')
+    parser.add_argument('-y', action='store_true')
+    parser.add_argument('--keep_raw', action='store_true')
     args = parser.parse_args()
 
     # Set global seed
@@ -59,11 +70,11 @@ if __name__ == '__main__':
         exit(1)
 
     lib_expr = ''
-    for lib in args.lib.split():
+    for lib in args.lib:
         assert os.path.exists(lib), f'{lib} does not exist!'
         lib_expr += f' -object {os.path.realpath(lib)} '
 
-    mkdir(args.report_folder)
+    mkdir(args.report_folder, yes=args.y)
 
     # FORMAT:
     #   batch time (gen time + eval time)
@@ -82,7 +93,7 @@ if __name__ == '__main__':
     print(f'==> Setting batch size: {batch_size}')
     batch_list = list(batched(lines, n=batch_size))
 
-    process_time_sum = 0 # sum of all btime
+    process_time_sum = 0  # sum of all btime
 
     for i in tqdm(range(len(batch_list))):
         if process_time_sum > args.max_time:
@@ -98,7 +109,7 @@ if __name__ == '__main__':
         model_batch = []
         for line in batch:
             tstr, mstr = line.rstrip('\n').split(',')
-            btime += float(tstr) # Generation time
+            btime += float(tstr)  # Generation time
             if mstr != 'FAILURE':
                 model_batch.append(os.path.join(args.model_dir, mstr))
 
@@ -111,8 +122,8 @@ if __name__ == '__main__':
 
         tstart = time()          # <=== START
         p = subprocess.Popen([
-            'python', 'experiments/batch_eval.py', 
-            '--models', *model_batch, 
+            'python', 'experiments/batch_eval.py',
+            '--models', *model_batch,
             '--backend', args.backend,
             '--dev', args.dev,
             '--seed', str(seed),
@@ -127,12 +138,12 @@ if __name__ == '__main__':
             stderr_file.write(errs)
         stderr_file.flush()
 
-        if '$ORT.SKIP$' in errs: # all models are unsupported by ort. skip it.
+        if '$ORT.SKIP$' in errs:  # all models are unsupported by ort. skip it.
             if os.path.exists(profraw_path):
                 os.remove(profraw_path)
             continue
 
-        btime += time() - tstart # <=== ENDING
+        btime += time() - tstart  # <=== ENDING
         process_time_sum += btime
 
         # Wrap up this batch.
@@ -148,15 +159,17 @@ if __name__ == '__main__':
             profdata_path = os.path.join(args.report_folder, f'{i}.profdata')
             # summary might be useless as it does not consider prior runs.
             if 0 != os.system(f'{llvm_profdata} merge -sparse {profraw_path} -o {profdata_path}') or \
-                0 != os.system(f'{llvm_cov} export -instr-profile={profdata_path} -format=lcov {lib_expr} > {lcov_path}'):
+                    0 != os.system(f'{llvm_cov} export -instr-profile={profdata_path} -format=lcov {lib_expr} > {lcov_path}'):
                 print(f'Getting coverage failed!!', file=sys.stderr)
-            else: # clean temporary files
+            else:  # clean temporary files
                 if args.sum:
-                    os.system(f'{llvm_cov} report -instr-profile={profdata_path} {lib_expr} > {sum_path}')
+                    os.system(
+                        f'{llvm_cov} report -instr-profile={profdata_path} {lib_expr} > {sum_path}')
                 if 0 == os.system(f'lz4 {lcov_path}'):
                     os.remove(lcov_path)
-                os.remove(profraw_path)
-                os.remove(profdata_path)
+                if not args.keep_raw:
+                    os.remove(profraw_path)
+                    os.remove(profdata_path)
         else:
             print(f'{profraw_path} does not exist...', file=sys.stderr)
 
