@@ -37,7 +37,7 @@ import torch
 from tqdm import tqdm
 
 from nnsmith.util import mkdir
-from nnsmith.abstract.op import ALL_OP_TYPES, AbsOpBase, \
+from nnsmith.abstract.op import ALL_OP_TYPES, AbsOpBase, Softmax, BatchNorm2d, \
     Concat, Input, Constant, NCHWConv2d, Pool2d, DType, Div, ElementWiseUnaryOp, BcastBinaryOp
 from nnsmith.dtype_test import rewrite_op_dtype
 
@@ -228,9 +228,13 @@ class GraphFuzz:
             elif issubclass(op_t, Pool2d):
                 kw, kh, s, pad = self.get_pool2d_params(input_shape)
                 ops.append(op_t(kh, kw, s, pad))
+            elif op_t is Softmax:
+                ops.append(op_t(random.randint(1, len(input_shape) - 1)))
+            elif op_t is BatchNorm2d:
+                ops.append(op_t(input_shape[1]))
             elif issubclass(op_t, Concat):
                 op = op_t()
-                op.extra_attrs['axis'] = min(3, op.extra_attrs['axis'])
+                op.extra_attrs['axis'] = random.randint(0, 3)
                 ops.append(op)
             else:
                 ops.append(op_t(*[random.randint(0, 10)
