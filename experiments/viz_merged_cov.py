@@ -136,13 +136,18 @@ def ort_pass_filter(fname):
     return 'onnxruntime/core/optimizer/' in fname
 
 
-def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag='', tlimit=None, pdf=False):
+def tvm_arith_filter(fname):
+    return 'arith' in fname
+
+
+def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag='', tlimit=None, pdf=False, pass_tag=''):
     line_ploter = Ploter(use_pdf=pdf)
     branch_ploter = Ploter(use_pdf=pdf)
     func_ploter = Ploter(use_pdf=pdf)
 
     assert fuzz_tags is not None
-    pass_tag = 'opt_' if pass_filter is not None else ''
+    if pass_filter is not None:
+        assert pass_tag != ''
 
     # Due to lcov, diff lcov's total cov might be slightly different.
     # We took the max.
@@ -199,7 +204,7 @@ def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag=''
             # v.get_label_by_id("010").set_x(v.get_label_by_id('010').get_position()[0] * 1.3)
             # v.get_label_by_id("001").set_x(v.get_label_by_id('001').get_position()[0] * 1.2)
 
-            h, l = [],[]
+            h, l = [], []
             hatches = ['\\', '.', '*']
             circles = ['MediumVioletRed', 'SeaGreen', 'Lavender']
             for idx, id in enumerate(['100', '010', '001', '111']):
@@ -263,6 +268,14 @@ if '__main__' == __name__:
     else:
         print(f'[WARNING] No pass filter is used (use --tvm or --ort)')
 
+    arith_filter = None
+    if args.tvm:
+        arith_filter = tvm_arith_filter
+    elif args.ort:
+        raise NotImplementedError
+    else:
+        print(f'[WARNING] No pass filter is used (use --tvm or --ort)')
+
     data = {}
     for f in args.folders:
         with open(os.path.join(f, 'merged_cov.pkl'), 'rb') as fp:
@@ -270,6 +283,9 @@ if '__main__' == __name__:
 
     if pass_filter is not None:
         plot_one_round(folder=args.output, data=data,
-                       pass_filter=pass_filter, tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf)
+                       pass_filter=pass_filter, pass_tag='opt_', tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf)
+    if arith_filter is not None:
+        plot_one_round(folder=args.output, data=data,
+                       pass_filter=arith_filter, pass_tag='arith_', tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf)
     plot_one_round(folder=args.output, data=data,
                    pass_filter=None, tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf)  # no pass

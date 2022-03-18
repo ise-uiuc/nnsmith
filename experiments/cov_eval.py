@@ -165,7 +165,7 @@ if __name__ == '__main__':
                 if args.sum:
                     os.system(
                         f'{llvm_cov} report -instr-profile={profdata_path} {lib_expr} > {sum_path}')
-                if 0 == os.system(f'lz4 {lcov_path}'):
+                if 0 == os.system(f'lz4 {lcov_path}  {lcov_path}.lz4 -f'):
                     os.remove(lcov_path)
                 if not args.keep_raw:
                     os.remove(profraw_path)

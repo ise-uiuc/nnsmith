@@ -33,7 +33,7 @@ class PrintIR:
         self.pass_cnt += 1
 
 
-def from_onnx(model_path, select=None, target="llvm", viz_out=None, print_pass=False):
+def from_onnx(model_path, select=None, target="llvm", viz_out=None, print_pass=False, cmp=True, opt_level=4, executor='graph'):
     """Load onnx model and convert it to Relay module."""
     onnx_model = DiffTestBackend.get_onnx_proto(model_path)
     inp_spec, onames = DiffTestBackend.analyze_onnx_io(onnx_model)
@@ -45,12 +45,6 @@ def from_onnx(model_path, select=None, target="llvm", viz_out=None, print_pass=F
     # inp = np.random.uniform(size=(1, 3, 48, 48)).astype(np.float32)
     inp = {name: np.random.uniform(size=shape_dict[name]).astype(
         inp_spec[name].dtype) for name in shape_dict}
-    print('-' * 50, 'running debug')
-    with tvm.transform.PassContext(opt_level=0):
-        if viz_out:
-            onnx_viz.visualize(mod, viz_out + '.debug.png')
-        res1 = relay.build_module.create_executor(
-            'debug', mod, target='llvm', device=tvm.cpu()).evaluate()(**inp)
     print('-' * 50, 'running opt')
     with tvm.transform.PassContext(opt_level=4, instruments=[PrintIR()] if print_pass else []):
         mod, _ = relay.optimize(mod, target=target)
@@ -58,9 +52,16 @@ def from_onnx(model_path, select=None, target="llvm", viz_out=None, print_pass=F
             onnx_viz.visualize(mod, viz_out)
         res = relay.build_module.create_executor(
             'graph', mod, target=target, device=tvm.cuda() if target == 'cuda' else tvm.cpu()).evaluate()(**inp)
-    assert len(res) == len(res1)
-    for i in range(len(res)):
-        np.testing.assert_allclose(res[i].numpy(), res1[i].numpy())
+    if cmp:
+        print('-' * 50, 'running debug')
+        with tvm.transform.PassContext(opt_level=0):
+            if viz_out:
+                onnx_viz.visualize(mod, viz_out + '.debug.png')
+            res1 = relay.build_module.create_executor(
+                'debug', mod, target='llvm', device=tvm.cpu()).evaluate()(**inp)
+        assert len(res) == len(res1)
+        for i in range(len(res)):
+            np.testing.assert_allclose(res[i].numpy(), res1[i].numpy())
 
     return mod, params
 
@@ -71,7 +72,12 @@ parser.add_argument('model', type=str)
 parser.add_argument('--select', type=str, nargs='+', default=None)
 parser.add_argument('--viz_out', type=str)
 parser.add_argument('--print_pass', action='store_true')
+parser.set_defaults(cmp=True)
+parser.add_argument('--no_cmp', action='store_false', dest='cmp')
+parser.add_argument('-O', '--opt_level', type=int, default=4)
+parser.add_argument('-e', '--executor', type=str, default='graph')
 args = parser.parse_args()
 from_onnx(args.model, select=args.select,
-          viz_out=args.viz_out, print_pass=args.print_pass)
+          viz_out=args.viz_out, print_pass=args.print_pass, cmp=args.cmp,
+          opt_level=args.opt_level, executor=args.executor)
 print('passed')

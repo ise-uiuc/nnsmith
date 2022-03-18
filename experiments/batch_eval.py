@@ -5,6 +5,7 @@ import numpy as np
 
 from nnsmith.backends import DiffTestBackend
 from nnsmith.input_gen import gen_one_input
+import traceback
 
 if __name__ == '__main__':
     import argparse
@@ -53,7 +54,7 @@ if __name__ == '__main__':
                 continue
             print("==============================================================", file=sys.stderr)
             print(f"Failed execution at {path}", file=sys.stderr)
-            print(e, file=sys.stderr)
+            traceback.print_exc()
             # Done!
 
     if n_unsupported == len(args.models):
