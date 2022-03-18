@@ -39,7 +39,7 @@ if __name__ == '__main__':
     parser.add_argument('--model_dir', type=str, required=True, help='Folder to the onnx models.')
     parser.add_argument('--report_folder', type=str, required=True)
     parser.add_argument('--backend', type=str, default='tvm', help='One of ort, trt, tvm, and xla')
-    parser.add_argument('--dp', type=int, default=100, help='# data point you want.')
+    parser.add_argument('--dp', type=int, default=250, help='# data point you want.')
     parser.add_argument('--dev', type=str, default='cpu', help='cpu/gpu')
     parser.add_argument('--sum', action='store_true', help='Use summary.')
     parser.add_argument('--seed', type=int, default=233, help='to generate random input data')
@@ -127,7 +127,7 @@ if __name__ == '__main__':
         exit_code = p.returncode
 
         # Write stderr
-        stderr_file.write(f'iter {i}: {model_batch} ~ exit_code={exit_code}\n')
+        stderr_file.write(f'iter {i}: {[os.path.split(path)[-1] for path in model_batch]} ~ exit_code={exit_code}\n')
         if errs:
             stderr_file.write(errs)
         stderr_file.flush()
