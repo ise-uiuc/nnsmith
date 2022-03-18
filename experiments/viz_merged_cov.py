@@ -16,7 +16,7 @@ class Ploter:
         self.cov_lim = cov_lim
         self.cov_max = 0
         self.cov_min = 1000000000000000000
-        self.xspan = None
+        self.xspan = 0
         self.use_pdf = use_pdf
 
     def add(self, data, name=None):
@@ -26,7 +26,7 @@ class Ploter:
         self.axs[1].plot(df[:, 1], df[:, 2])  # cov / iteration
         self.axs[2].plot(df[:, 0], df[:, 1])  # iter / time
 
-        self.xspan = df[-1, 0]
+        self.xspan = max(self.xspan, df[-1, 0])
 
         self.cov_max = max(self.cov_max, df[:, 2].max())
         self.cov_min = min(self.cov_min, df[:, 2].max())

@@ -88,7 +88,7 @@ def analyze_lcov(path):
     return ret
 
 
-def analyze_folder(folder, redo=False):
+def analyze_folder(folder, redo=False, max_time=None):
     return_write_name = os.path.join(folder, 'merged_cov.pkl')
 
     if os.path.exists(return_write_name) and not redo:
@@ -154,6 +154,8 @@ def analyze_folder(folder, redo=False):
         t = tokens[0]
         n_model = tokens[2]
         current_time += float(t)
+        if max_time is not None and current_time > max_time:
+            break
         ret[current_time] = {}
         ret[current_time]['n_model'] = int(n_model)
         current_cov = merge_cov(current_cov, r, f'merging {file_list[i]}')
@@ -168,7 +170,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Analyze coverage and plot visualizations.')
     parser.add_argument('-f', '--folders', type=str, nargs='+', help='bug report folder')
     parser.add_argument('--redo', action='store_true', help='redo analysis')
+    parser.add_argument('--max_time', type=int, default=60*60*4, help='max time in seconds for coverage evaluation')
     args = parser.parse_args()
 
     for folder in args.folders:
-        analyze_folder(folder, redo=args.redo)
+        analyze_folder(folder, redo=args.redo, max_time=args.max_time)
