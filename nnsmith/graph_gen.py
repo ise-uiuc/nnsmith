@@ -1487,7 +1487,8 @@ if __name__ == '__main__':
     net = SymbolNet(gen.abstract_graph, solution, verbose=args.verbose,
                     alive_shapes=gen.alive_shapes)
     print('Initializing SymbolNet time: {}s'.format(time.time() - srt_time))
-    # turn this on so that nan in the intermediate tensors can be detected too
+    torch2onnx(net, args.output_path, verbose=args.verbose,
+               use_cuda=args.use_cuda)
     input_st = time.time()
 
     sat_inputs = None
@@ -1513,9 +1514,6 @@ if __name__ == '__main__':
 
     ed_time = time.time()
     print('Time to generate inputs: {:.3f}s'.format(ed_time - input_st))
-
-    torch2onnx(net, args.output_path, verbose=args.verbose,
-               use_cuda=args.use_cuda)
 
     stats = {
         'gen_succ': True,
