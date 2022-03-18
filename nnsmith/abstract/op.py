@@ -1236,8 +1236,7 @@ class Pad(UnaryOpBase):
         for i in self.padding_list:
             cons.append(nnsmith_ge(i, 0))
 
-        last_n = len(self.padding_list) // 2
-        pad_init_dim = input_shapes[0].ndims - last_n
+        pad_init_dim = input_shapes[0].ndims - len(self.padding_list) // 2
 
         for i in range(pad_init_dim, input_shapes[0].ndims):
             cons.append(nnsmith_le(
@@ -1249,8 +1248,7 @@ class Pad(UnaryOpBase):
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         new_shape = []
-        last_n = len(self.padding_list) // 2
-        pad_init_dim = input_shapes[0].ndims - last_n
+        pad_init_dim = input_shapes[0].ndims - len(self.padding_list) // 2
         for i in range(input_shapes[0].ndims):
             s = input_shapes[0].shape[i]
             if i >= pad_init_dim:
@@ -1426,10 +1424,7 @@ class NCHWConv2d(UnaryOpBase):
         is_symbolic_inp = input_shapes[0].constains_symbol() or isinstance(self.kernel_w_size, z3.ExprRef) or isinstance(
             self.kernel_h_size, z3.ExprRef) or isinstance(self.stride, z3.ExprRef) or isinstance(self.padding, z3.ExprRef)
 
-        shape_var = ShapeVar([], dtype=input_shapes[0].dtype)
-        # Batch dim: just copy
-        shape_var.shape.append(input_shapes[0].shape[0])
-        shape_var.shape.append(self.out_channels)        # Output channels
+        shape_var = ShapeVar([input_shapes[0].shape[0], self.out_channels], dtype=input_shapes[0].dtype)
         if not is_symbolic_inp:
             shape_var.shape.append(
                 (input_shapes[0].shape[2] - self.kernel_h_size + 2 * self.padding) // self.stride + 1)
@@ -1520,19 +1515,13 @@ class Reshape(UnaryOpBase, ABC):
         for i, v in enumerate(self.target_shape):
             # TODO: What to do about bitvectors here?
             if v == -1:
-                if auto_dim != -1:
-                    raise ValueError(
-                        "Only one auto-dim is allowed! "
-                        "See https://pytorch.org/docs/stable/generated/torch.reshape.html")
+                SanityCheck.eq(auto_dim, -1)
                 auto_dim = i
             else:
                 accum = nnsmith_mul(accum, v)
 
         # First see if there's any symbols in the expression
-        symbol_indices = []
-        for v in input_shapes[0].shape:
-            if isinstance(v, z3.ExprRef):
-                symbol_indices.append(i)
+        symbol_indices = [v for v in input_shapes[0].shape if isinstance(v, z3.ExprRef)]
         if len(symbol_indices) == 0:
             shape_var.shape[auto_dim] = reduce(
                 lambda x, y: x * y, input_shapes[0].shape, 1) // accum
@@ -1694,14 +1683,11 @@ class ReduceBase(UnaryOpBase, ABC):
         return self.extra_attrs['reduce_dim']
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        shape_var = input_shapes[0]
         svar_list = []
-        reduce_dim = self._init_reduce_dim(input_shapes[0].shape)
-        for i, v in enumerate(shape_var.shape):
-            if i != reduce_dim:
+        for i, v in enumerate(input_shapes[0].shape):
+            if i != self._init_reduce_dim(input_shapes[0].shape):
                 svar_list.append(v)
-        return [ShapeVar(svar_list,
-                         input_shapes[0].dtype if self._reduce_out_dtype is None else self._reduce_out_dtype)]
+        return [ShapeVar(svar_list, input_shapes[0].dtype if self._reduce_out_dtype is None else self._reduce_out_dtype)]
 
     def _requires(self, input_shapes: List[ShapeVar]):
         reduce_dim = self._init_reduce_dim(input_shapes[0].shape)
@@ -1841,22 +1827,18 @@ class Concat(AbsOpBase):
 
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
         ndims = input_shapes[0].ndims
-        axis = self._init_concat_axis(input_shapes)
-        SanityCheck.gt(ndims, axis)
-
+        SanityCheck.gt(ndims, self._init_concat_axis(input_shapes))
         for s in input_shapes:
             SanityCheck.eq(s.ndims, ndims)
-        assert len(input_shapes) == self.arity
         cons = []
         for d in range(ndims):
-            if d != axis:
+            if d != self._init_concat_axis(input_shapes):
                 cons.extend(nnsmith_eq(s.shape[d], input_shapes[0].shape[d])
                             for s in input_shapes)
         return cons
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        ndims = input_shapes[0].ndims
-        SanityCheck.true(ndims > 0)
+        SanityCheck.true(input_shapes[0].ndims > 0)
         axis = self._init_concat_axis(input_shapes)
         os = ShapeVar(input_shapes[0].shape, input_shapes[0].dtype)
         os.shape[axis] = reduce(
