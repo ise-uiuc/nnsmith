@@ -38,7 +38,7 @@ from tqdm import tqdm
 
 from nnsmith.util import mkdir
 from nnsmith.abstract.op import ALL_OP_TYPES, AbsOpBase, \
-    Concat, Input, Constant, NCHWConv2d, Pool2d, DType
+    Concat, Input, Constant, NCHWConv2d, Pool2d, DType, Div, ElementWiseUnaryOp, BcastBinaryOp
 from nnsmith.dtype_test import rewrite_op_dtype
 
 
@@ -119,6 +119,10 @@ class GraphFuzzNet(torch.nn.Module):
                         selected[i_st] = selected[i_st][:shape_checker[0],
                                                         :shape_checker[1], :shape_checker[2], :shape_checker[3]]
 
+            if isinstance(op, Div):
+                # avoid float-point errors.
+                selected[1] = selected[1].abs() + 0.1
+
             outs = self.torch_inst[idx](*selected)
 
             if n_out == 1:
@@ -131,10 +135,24 @@ class GraphFuzzNet(torch.nn.Module):
 
 class GraphFuzz:
     @staticmethod
-    def get_available_op_ts():
+    def get_available_op_ts(try_all=False):
+        # Using try all, we allow GraphFuzz to generate all possible operators.
+        # even though most of it gonna fail.
         available_op_ts = []
         for op_t in ALL_OP_TYPES:
             if op_t is Input or op_t is Constant:
+                continue
+            if not try_all:
+                if issubclass(op_t, ElementWiseUnaryOp):
+                    available_op_ts.append(op_t)
+                elif op_t is NCHWConv2d:
+                    available_op_ts.append(op_t)
+                elif issubclass(op_t, Concat):
+                    available_op_ts.append(op_t)
+                elif issubclass(op_t, Pool2d):
+                    available_op_ts.append(op_t)
+                elif issubclass(op_t, BcastBinaryOp):
+                    available_op_ts.append(op_t)
                 continue
             available_op_ts.append(op_t)
         return available_op_ts
@@ -187,8 +205,8 @@ class GraphFuzz:
                 return iC, iC, kh, kw, s, pad
         return [iC, iC, 1, 1, 1, 0]  # simple fallback
 
-    def __init__(self, approx_nop=10, dim_limit=[5, 5, 224, 224]) -> None:
-        self.available_op_ts = self.get_available_op_ts()
+    def __init__(self, approx_nop=10, dim_limit=[5, 5, 224, 224], try_all=False) -> None:
+        self.available_op_ts = self.get_available_op_ts(try_all=try_all)
         self.base_op_n = approx_nop
         self.dim_limit = dim_limit
 
@@ -238,6 +256,7 @@ if __name__ == "__main__":
     parser.add_argument("--onnx_dir", type=str, default=None)
     parser.add_argument('--ort_cache', type=str, default=None)
     parser.add_argument("--seed", type=int, default=233)
+    parser.add_argument("--try_all", action='store_true')
     args = parser.parse_args()
 
     print(f'Using seed {args.seed}')
@@ -255,7 +274,8 @@ if __name__ == "__main__":
         # must pre run this. otherwise using ort will slow down generation.
         rewrite_op_dtype(ALL_OP_TYPES, backend=None, cache=args.ort_cache)
 
-    gf = GraphFuzz(approx_nop=args.approx_nop, dim_limit=args.dim_limit)
+    gf = GraphFuzz(approx_nop=args.approx_nop,
+                   dim_limit=args.dim_limit, try_all=args.try_all)
 
     # FORMAT: {generation time cost in seconds}, {model relative path}
     # MUST RANK by GENERATION ORDER.
