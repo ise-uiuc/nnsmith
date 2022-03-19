@@ -460,6 +460,10 @@ class SimpleGenerator:
         #                 ph.out_shape.shape[i], self.min_dims[i])
         #         ))
 
+    def post_process(self):
+        '''Called after the graph is finalized. May be used to add parameter guidance.'''
+        pass
+
     def new_sym(self, name, bv_size=None):
         if self.use_bitvec:
             bv_size = bv_size or NNSMITH_BV_SIZE
@@ -510,6 +514,7 @@ class SimpleGenerator:
         return len(self.abstract_graph.nodes) - len(self.placeholders)
 
     def abstract_gen(self, max_node_size=10, max_gen_millisec=2000):
+        self.cur_phase = 'abstract_gen'
         z3.set_param(
             "smt.phase_selection",
             5,
@@ -531,6 +536,8 @@ class SimpleGenerator:
         if abs(self.num_op() - max_node_size) >= 3:
             print(
                 f'[WARNING]: graph size: {len(self.abstract_graph.nodes)} < expected size: {max_node_size}')
+        self.cur_phase = 'post_process'
+        self.post_process()  # can be used to add more constraints
         # init graph placeholders
         shuffled_placeholder = self.placeholders
         self.abstract_graph.nodes[shuffled_placeholder[0]
@@ -567,7 +574,7 @@ class SimpleGenerator:
         checking_time = int((time.time() - start) * 1000)
         if checking_time > 3000 and self.cur_node:  # 3s
             warnings.warn(
-                f'[WARNING] check {self.cur_node} {checking_time} ms')
+                f'[WARNING] check {self.cur_node} {checking_time} ms at phase {self.cur_phase}')
         if self.verbose:
             print(cres, '<-- checking time:', checking_time, 'ms')
 
@@ -927,7 +934,7 @@ class PureSymbolGen(SimpleGenerator):
                 constraints.append(c)
 
         self.cur_node = node
-        constraints.extend(self.extra_constraints(node, input_shapes))
+        # constraints.extend(self.extra_constraints(node, input_shapes))
         if self.limnf:
             if NNSMITH_LIMNF_V == '0':
                 check_res = self.check_sat(
@@ -1309,8 +1316,9 @@ del PARAM_CONFIG2['Reshape6D']
 
 
 class GuidedGen(PureSymbolGen):
-    def __init__(self, summaries=None, scale='log', base=2, default_bins=7, constrain_prob=1, **kwargs):
-        self.constrain_prob = constrain_prob
+    def __init__(self, summaries=None, scale='log', base=2, default_bins=7, constrain_prob=None, **kwargs):
+        self.constrain_prob = constrain_prob if constrain_prob is not None else float(
+            os.getenv('NNSMITH_G_PROB', 1))
         self.base = 2
         self.param_config = {
             '0': PARAM_CONFIG0, '1': PARAM_CONFIG1, '2': PARAM_CONFIG2
@@ -1339,8 +1347,6 @@ class GuidedGen(PureSymbolGen):
         return constraints
 
     def extra_constraints(self, node: AbsOpBase, input_shapes: List[ShapeVar]):
-        if random.uniform(0, 1) > self.constrain_prob:
-            return []
         ret = []
         construct_param_dict = signature(node.__init__).parameters
         config = self.param_config.get(
@@ -1365,12 +1371,45 @@ class GuidedGen(PureSymbolGen):
             ret.extend(range_constrain(param, lb, ub))
         return ret
 
+    def recompute_n_floats(self):
+        self.n_floats = 0
+        for i in self.alive_shapes:
+            self.n_floats = nnsmith_add(self.n_floats, i[1].nelement())
+
+    def post_process(self):
+        # self.recompute_n_floats()
+        # if self.limnf:  # add into solver since graph is finalized to avoid repeated solving
+        #     if NNSMITH_LIMNF_V == '0':
+        #         self.solver.add(nnsmith_le(self.n_floats, self.limit_float))
+        #     elif NNSMITH_LIMNF_V == '1':
+        #         self.solver.add(*self.n_floats_cons)
+        #     assert self.check_sat() == z3.sat  # TODO: remove this line
+
+        graph = self.abstract_graph
+        shuffled_nids = list(graph.nodes)
+        random.shuffle(shuffled_nids)
+        for node_id in shuffled_nids:
+            op = graph.nodes[node_id]['op']
+            ishape_indices = graph.nodes[node_id]['ishape_indices']
+            ishape_vars = [self.alive_shapes[i][1] for i in ishape_indices]
+            cons = self.extra_constraints(op, ishape_vars)
+            if random.uniform(0, 1) > self.constrain_prob:
+                continue
+            if self.check_sat(*cons) == z3.sat:
+                self.solver.add(*cons)
+                if self.verbose:
+                    print('guidance for op {} added'.format(op))
+            else:
+                if self.verbose:
+                    print('guidance for op {} not added'.format(op))
+        assert self.check_sat() == z3.sat
+
 
 def parse_args():
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--max_nodes', type=int, default=5)
+    parser.add_argument('--max_nodes', type=int, default=10)
     parser.add_argument('--min_dims', type=list, default=[1, 3, 48, 48])
     parser.add_argument('--timeout', type=int, default=50000)
     parser.add_argument('--viz_sbs', action='store_true',
