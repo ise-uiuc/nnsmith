@@ -245,8 +245,10 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             '[grey]This is because we use z3 written in C++ w/ Python wrappers. Ctrl+C may not stop it.')
 
     def rich(self):
+        keys = [k for k in self.gen_profile.columns if k.endswith(
+            '_t') or k.endswith('_time')]
         breakdown = ', '.join(
-            f'[cyan]{k}[/cyan]: {v:.1f}s' for k, v in self.gen_profile.mean().to_dict().items() if k.endswith('_t') or k.endswith('_time'))
+            f'[cyan]{k}[/cyan]: {v:.1f}s' for k, v in self.gen_profile[keys].mean().to_dict().items())
         return [Columns([
             Panel.fit(
                 f'{datetime.timedelta(seconds=round(time.time()-self.start_time))} ~ '
@@ -330,10 +332,15 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                                     1, self.max_nodes)
                             gen_info['seed'] = seed
                             gen_info['cur_node_size'] = self.cur_node_size
-                            self.stage = 'gen model'
                             progress.refresh()
                             forked_exe_t_s = time.time()
-                            sat_inputs, state, edge_set, seed, ret_profile = forked_execution(self.mode,
+                            if self.mode != 'hybrid':
+                                mode = self.mode
+                            else:
+                                mode = random.choice(['random', 'guided'])
+                            gen_info['mode'] = mode
+                            self.stage = mode + ' gen'
+                            sat_inputs, state, edge_set, seed, ret_profile = forked_execution(mode,
                                                                                               _TMP_ONNX_FILE_,
                                                                                               table=self.table,
                                                                                               max_nodes=self.cur_node_size,
@@ -367,7 +374,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         except Exception as e:
                             traceback.print_exc()
                             print('Seed:', seed, 'cur_node_size:',
-                                  self.cur_node_size, file=sys.stderr)
+                                  self.cur_node_size, 'mode:', mode, file=sys.stderr)
                             print('retrying...', file=sys.stderr)
                         gen_info['gen_succ'] = gen_succ
                         gen_info['time_stamp'] = time.perf_counter() - \
