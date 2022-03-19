@@ -1,4 +1,6 @@
 # See https://github.com/Z3Prover/z3/issues/5656
+from multiprocessing import Process
+import psutil
 import z3  # Always import z3 first to avoid incompatibility issue.
 from collections import defaultdict
 import math
@@ -514,6 +516,7 @@ class SimpleGenerator:
         return len(self.abstract_graph.nodes) - len(self.placeholders)
 
     def abstract_gen(self, max_node_size=10, max_gen_millisec=2000):
+        self.max_gen_millisec = max_gen_millisec
         self.cur_phase = 'abstract_gen'
         z3.set_param(
             "smt.phase_selection",
@@ -557,7 +560,7 @@ class SimpleGenerator:
             for child in var.children():
                 self.check_arith_ref(child)
 
-    def check_sat(self, *assumptions):
+    def check_sat(self, *assumptions, timeout=None):
         start = time.time()
         if self.use_bitvec:
             for assump in assumptions:
@@ -569,7 +572,30 @@ class SimpleGenerator:
             print('---> total constraints: \n',
                   '\n'.join(sorted(map(str,
                                        list(self.solver.assertions()) + list(assumptions)))))
-        cres = self.solver.check(*assumptions)
+        if timeout is None:
+            cres = self.solver.check(*assumptions)
+        else:
+            def _run():
+                cres = self.solver.check(*assumptions)
+                exit({'sat': 0, 'unsat': 1, 'unknown': 2}[str(cres)])
+
+            p = Process(target=_run)
+            p.start()
+            p.join(timeout=timeout / 1000)
+            if p.is_alive():
+                cres = z3.unknown
+                for child in psutil.Process(p.pid).children(recursive=False):
+                    child: psutil.Process  # type: ignore
+                    try:
+                        child.terminate()
+                        child.wait()
+                    except psutil.NoSuchProcess:
+                        pass
+                p.terminate()
+                p.join()
+
+            else:
+                cres = {0: z3.sat, 1: z3.unsat, 2: z3.unknown}[p.exitcode]
 
         checking_time = int((time.time() - start) * 1000)
         if checking_time > 3000 and self.cur_node:  # 3s
@@ -581,6 +607,8 @@ class SimpleGenerator:
             if cres == z3.unsat:
                 print(f'Unsat core: {self.solver.unsat_core()}')
         if cres == z3.sat:
+            if timeout is None:
+                self.solver.check(*assumptions)
             self.last_soln = self.solver.model()
         return cres
 
@@ -1395,7 +1423,7 @@ class GuidedGen(PureSymbolGen):
             cons = self.extra_constraints(op, ishape_vars)
             if random.uniform(0, 1) > self.constrain_prob:
                 continue
-            if self.check_sat(*cons) == z3.sat:
+            if self.check_sat(*cons, timeout=self.max_gen_millisec // len(graph.nodes) / 10) == z3.sat:
                 self.solver.add(*cons)
                 if self.verbose:
                     print('guidance for op {} added'.format(op))
