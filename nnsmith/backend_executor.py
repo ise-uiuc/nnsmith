@@ -37,6 +37,7 @@ class DummyExecutor(DiffTestBackend):
 class BackendCreator:
     NAME_MAP = {
         'ort': 'ORTExecutor',
+        'ort-debug': 'ORTExecutorDebug',
         'tvm-llvm': 'TVMExecutorLLVM',
         'tvm-debug': 'TVMExecutorDebug',
         'tvm-cuda': 'TVMExecutor',
@@ -53,6 +54,9 @@ class BackendCreator:
         if name == 'ort':
             from nnsmith.backends.ort_graph import ORTExecutor
             return ORTExecutor()
+        elif name == 'ort-debug':
+            from nnsmith.backends.ort_graph import ORTExecutor
+            return ORTExecutor(0)
         elif name == 'tvm-debug':
             from nnsmith.backends.tvm_graph import TVMExecutor
             return TVMExecutor(executor='debug', opt_level=0)
