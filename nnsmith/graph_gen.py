@@ -565,8 +565,8 @@ class SimpleGenerator:
         if self.use_bitvec:
             for assump in assumptions:
                 self.check_arith_ref(assump)
-        ph_cons = sum(self.ph_cons, [])
-        assumptions = list(assumptions) + ph_cons
+        # ph_cons = sum(self.ph_cons, [])
+        # assumptions = list(assumptions) + ph_cons
 
         if self.verbose:
             print('---> total constraints: \n',
@@ -1420,8 +1420,12 @@ class GuidedGen(PureSymbolGen):
             op = graph.nodes[node_id]['op']
             ishape_indices = graph.nodes[node_id]['ishape_indices']
             ishape_vars = [self.alive_shapes[i][1] for i in ishape_indices]
-            cons = self.extra_constraints(op, ishape_vars)
-            if random.uniform(0, 1) > self.constrain_prob:
+            if isinstance(op, AbsOpBase):
+                cons = self.extra_constraints(op, ishape_vars)
+            else:
+                assert isinstance(op, Placeholder), op
+                cons = self.gen_ph_cons(op)
+            if len(cons) == 0 or random.uniform(0, 1) > self.constrain_prob:
                 continue
             if self.check_sat(*cons, timeout=self.max_gen_millisec // len(graph.nodes) / 10) == z3.sat:
                 self.solver.add(*cons)
@@ -1429,7 +1433,7 @@ class GuidedGen(PureSymbolGen):
                     print('guidance for op {} added'.format(op))
             else:
                 if self.verbose:
-                    print('guidance for op {} not added'.format(op))
+                    print('guidance for op {} not added. cons: {}'.format(op, cons))
         assert self.check_sat() == z3.sat
 
 

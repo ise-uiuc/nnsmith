@@ -374,7 +374,8 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         except Exception as e:
                             traceback.print_exc()
                             print('Seed:', seed, 'cur_node_size:',
-                                  self.cur_node_size, 'mode:', mode, file=sys.stderr)
+                                  self.cur_node_size, 'mode:', mode,
+                                  'cur succ rate:', self.gen_profile['gen_succ'].mean(), file=sys.stderr)
                             print('retrying...', file=sys.stderr)
                         gen_info['gen_succ'] = gen_succ
                         gen_info['time_stamp'] = time.perf_counter() - \
