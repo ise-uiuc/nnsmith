@@ -1405,13 +1405,13 @@ class GuidedGen(PureSymbolGen):
             self.n_floats = nnsmith_add(self.n_floats, i[1].nelement())
 
     def post_process(self):
-        # self.recompute_n_floats()
-        # if self.limnf:  # add into solver since graph is finalized to avoid repeated solving
-        #     if NNSMITH_LIMNF_V == '0':
-        #         self.solver.add(nnsmith_le(self.n_floats, self.limit_float))
-        #     elif NNSMITH_LIMNF_V == '1':
-        #         self.solver.add(*self.n_floats_cons)
-        #     assert self.check_sat() == z3.sat  # TODO: remove this line
+        self.recompute_n_floats()
+        if self.limnf:  # add into solver since graph is finalized to avoid repeated solving
+            if NNSMITH_LIMNF_V == '0':
+                self.solver.add(nnsmith_le(self.n_floats, self.limit_float))
+            elif NNSMITH_LIMNF_V == '1':
+                self.solver.add(*self.n_floats_cons)
+            assert self.check_sat() == z3.sat  # TODO: remove this line
 
         graph = self.abstract_graph
         shuffled_nids = list(graph.nodes)
