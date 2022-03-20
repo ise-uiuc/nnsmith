@@ -1250,7 +1250,7 @@ def range_constrain(param, lb, ub):
         ret.append(nnsmith_ge(param, lb))
     if ub is not None and os.getenv('NNSMITH_LB', 'off') == 'off':  # HACK
         ret.append(nnsmith_lt(param, ub))
-    return [z3.And(*ret)]
+    return ret
 
 
 def __SLICE_CONSTRAINTS(node, inp_shps: List[ShapeVar], construct_param_dict):
@@ -1284,10 +1284,13 @@ def __SLICE_CONSTRAINTS(node, inp_shps: List[ShapeVar], construct_param_dict):
 _DEFAULT_BINS = 5
 PARAM_CONFIG1 = {
     'NCHWConv2d': {
-        'kernel_h_size': [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)],
+        'kernel_h_size': [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)] +
+        [Bin(_DEFAULT_BINS, None, scale='log', base=2)],
         'kernel_w_size': [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)],
-        'stride': [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)],
-        'padding': [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)] + [Bin(0, 1)],
+        'stride': [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)] +
+        [Bin(_DEFAULT_BINS, None, scale='log', base=2)],
+        'padding': [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)] + [Bin(0, 1)] +
+        [Bin(_DEFAULT_BINS, None, scale='log', base=2)],
         'out_channels': [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)] +
         [Bin(_DEFAULT_BINS, None, scale='log', base=2)],
         'in_channels': [],  # skip
@@ -1438,7 +1441,7 @@ class GuidedGen(PureSymbolGen):
         random.shuffle(shuffled)
         cur_cons = [all_cons[i] for i in shuffled]
         timeout = self.max_gen_millisec / (1 + math.log2(len(cur_cons))) / 3
-        while self.check_sat(*cur_cons, timeout=timeout) != z3.sat:
+        while self.check_sat(*cur_cons) != z3.sat:
             cur_cons = cur_cons[:len(cur_cons) // 2]
             if len(cur_cons) == 0:
                 break
