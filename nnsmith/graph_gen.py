@@ -1436,7 +1436,8 @@ class GuidedGen(PureSymbolGen):
         shuffled = list(range(len(all_cons)))
         random.shuffle(shuffled)
         cur_cons = [all_cons[i] for i in shuffled]
-        while self.check_sat(*cur_cons, timeout=self.max_gen_millisec / (1 + math.log2(len(cur_cons))) / 3) != z3.sat:
+        timeout = self.max_gen_millisec / (1 + math.log2(len(cur_cons))) / 3
+        while self.check_sat(*cur_cons, timeout=timeout) != z3.sat:
             cur_cons = cur_cons[:len(cur_cons) // 2]
             if len(cur_cons) == 0:
                 break
@@ -1474,7 +1475,7 @@ def parse_args():
     parser.add_argument('--merge_op_v', default=None)
     parser.add_argument(
         '--skip', help='Node types to skip. Split by `,`. By default a blacklist for each backend is also appended.', type=str)
-    parser.set_defaults(limnf=False)
+    parser.set_defaults(limnf=True)
     parser.add_argument('--no_limnf', dest='limnf', action='store_false',
                         help='Disable the limit on the number of floats')
     parser.add_argument('--limnf', dest='limnf', action='store_true',
