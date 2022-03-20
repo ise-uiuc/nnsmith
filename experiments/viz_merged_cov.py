@@ -1,21 +1,26 @@
 import matplotlib.pyplot as plt
 from matplotlib_venn import venn2, venn3
-from matplotlib_venn._venn3 import compute_venn3_subsets
 import numpy as np
 
 import os
 
 
 class Ploter:
-    def __init__(self, cov_lim=None, use_pdf=False) -> None:
+    def __init__(self, cov_lim=None, use_pdf=False, one_plot=False) -> None:
         self.legends = []  # type: ignore
         # cov / time, cov / iteration, iteration / time
-        fig, axs = plt.subplots(1, 3, constrained_layout=True, figsize=(13, 5))
+        if not one_plot:
+            fig, axs = plt.subplots(
+                1, 3, constrained_layout=True, figsize=(13, 5))
+        else:
+            fig, axs = plt.subplots(
+                1, 1, constrained_layout=True, figsize=(6, 5))
+            axs = [axs]
+        self.one_plot = one_plot
         self.fig = fig
         self.axs = axs
         self.cov_lim = cov_lim
-        self.cov_max = 0
-        self.cov_min = 1000000000000000000
+        self.cov_maxes = []
         self.xspan = 0
         self.use_pdf = use_pdf
 
@@ -23,13 +28,14 @@ class Ploter:
         df = np.array(data)
 
         self.axs[0].plot(df[:, 0], df[:, 2])  # cov / time
-        self.axs[1].plot(df[:, 1], df[:, 2])  # cov / iteration
-        self.axs[2].plot(df[:, 0], df[:, 1])  # iter / time
+
+        if not self.one_plot:
+            self.axs[1].plot(df[:, 1], df[:, 2])  # cov / iteration
+            self.axs[2].plot(df[:, 0], df[:, 1])  # iter / time
 
         self.xspan = max(self.xspan, df[-1, 0])
 
-        self.cov_max = max(self.cov_max, df[:, 2].max())
-        self.cov_min = min(self.cov_min, df[:, 2].max())
+        self.cov_maxes.append(df[:, 2].max())
 
         if name:
             self.legends.append(name)
@@ -40,8 +46,17 @@ class Ploter:
         for axs in self.axs:
             axs.legend(self.legends, loc='upper left')
 
+        self.cov_maxes = sorted(self.cov_maxes)
+
+        if len(self.cov_maxes) > 1:
+            print(
+                f'==> Best one is {self.cov_maxes[-1] / self.cov_maxes[-2]:.2f}x better than the second best one')
+
+        cov_max = max(self.cov_maxes)
+        cov_min = min(self.cov_maxes)
+
         if cov_lim is not None:
-            self.axs[0].annotate(f"{int(self.cov_max)}/{int(cov_lim)} ~ $\\bf{{{self.cov_max / cov_lim * 100 :.1f}\%}}$", xy=(self.xspan, self.cov_max * 1.02), xycoords="data",
+            self.axs[0].annotate(f"{int(cov_max)}/{int(cov_lim)} ~ $\\bf{{{cov_max / cov_lim * 100 :.1f}\%}}$", xy=(self.xspan, cov_max * 1.02), xycoords="data",
                                  va="center", ha="right", fontsize=11,
                                  bbox=dict(boxstyle="sawtooth", fc="w"))
         #     self.axs[0].axhline(y=cov_lim, color='r', linestyle='dashdot')
@@ -52,25 +67,28 @@ class Ploter:
 
         if self.cov_lim is not None:
             self.axs[0].set_ylim(bottom=self.cov_lim)
-            self.axs[1].set_ylim(bottom=self.cov_lim)
+            if not self.one_plot:
+                self.axs[1].set_ylim(bottom=self.cov_lim)
         else:
-            self.axs[0].set_ylim(bottom=self.cov_min * 0.85)
-            self.axs[1].set_ylim(bottom=self.cov_min * 0.85)
+            self.axs[0].set_ylim(bottom=cov_min * 0.85)
+            if not self.one_plot:
+                self.axs[1].set_ylim(bottom=cov_min * 0.85)
 
         self.axs[0].set(
             xlabel='Time / Second',
             ylabel=f'# {cov_type}Coverage')
         self.axs[0].set_title('Coverage $\\bf{Time}$ Efficiency')
 
-        self.axs[1].set(
-            ylabel=f'# {cov_type}Coverage',
-            xlabel='# Iteration')
-        self.axs[1].set_title('Coverage $\\bf{Iteration}$ Efficiency')
+        if not self.one_plot:
+            self.axs[1].set(
+                ylabel=f'# {cov_type}Coverage',
+                xlabel='# Iteration')
+            self.axs[1].set_title('Coverage $\\bf{Iteration}$ Efficiency')
 
-        self.axs[2].set(
-            xlabel='Time / Second',
-            ylabel='# Iteration')
-        self.axs[2].set_title('Iteration Speed')
+            self.axs[2].set(
+                xlabel='Time / Second',
+                ylabel='# Iteration')
+            self.axs[2].set_title('Iteration Speed')
 
         if self.use_pdf:
             self.fig.savefig(save + '.pdf')
@@ -88,7 +106,6 @@ def cov_summerize(data, pass_filter=None, tlimit=None, branch_only=True):
 
     for time, value in data.items():
         lf = 0
-        ff = 0
         bf = 0
 
         n_model = value['n_model']
@@ -106,7 +123,6 @@ def cov_summerize(data, pass_filter=None, tlimit=None, branch_only=True):
             if not branch_only:
                 line_cov += len(cov[fname]['lines'])
                 lf += cov[fname]['lf']
-
 
         if not branch_only:
             line_by_time.append([time, model_total, line_cov])
@@ -136,8 +152,8 @@ def ort_pass_filter(fname):
     return 'onnxruntime/core/optimizer/' in fname
 
 
-def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag='', tlimit=None, pdf=False):
-    branch_ploter = Ploter(use_pdf=pdf)
+def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag='', tlimit=None, pdf=False, one_plot=False):
+    branch_ploter = Ploter(use_pdf=pdf, one_plot=one_plot)
 
     assert fuzz_tags is not None
     pass_tag = 'opt_' if pass_filter is not None else ''
@@ -189,7 +205,7 @@ def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag=''
             # v.get_label_by_id("010").set_x(v.get_label_by_id('010').get_position()[0] * 1.3)
             # v.get_label_by_id("001").set_x(v.get_label_by_id('001').get_position()[0] * 1.2)
 
-            h, l = [],[]
+            h, l = [], []
             hatches = ['\\', '.', '*']
             circles = ['MediumVioletRed', 'SeaGreen', 'Lavender']
             for idx, id in enumerate(['100', '010', '001', '111']):
@@ -260,6 +276,6 @@ if '__main__' == __name__:
 
     if pass_filter is not None:
         plot_one_round(folder=args.output, data=data,
-                       pass_filter=pass_filter, tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf)
+                       pass_filter=pass_filter, tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, one_plot=True)
     plot_one_round(folder=args.output, data=data,
                    pass_filter=None, tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf)  # no pass
