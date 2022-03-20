@@ -4,6 +4,7 @@ from nnsmith.backends import DiffTestBackend
 import onnx
 import onnxruntime as ort
 import numpy as np
+import os
 
 PROVIDERS = [
     'CUDAExecutionProvider',
@@ -28,6 +29,8 @@ class ORTExecutor(DiffTestBackend):
     def get_sess_opt(self):
         sess_options = ort.SessionOptions()
         sess_options.graph_optimization_level = self._opt_level
+        # https://github.com/microsoft/onnxruntime/issues/8313
+        sess_options.intra_op_num_threads = int(os.getenv('NNSMITH_CORES', 0))
         return sess_options
 
     def load_model(self, model):
