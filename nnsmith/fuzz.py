@@ -516,7 +516,7 @@ if __name__ == '__main__':
         '--skip', help='Node types to skip. Split by `,`. By default a blacklist for each backend is also appended.', type=str)
     parser.add_argument('--inp_gen', type=str, default='random')
     parser.add_argument('--gen_timeout', type=int,
-                        default=30000, help='in milliseconds')
+                        default=1000, help='in milliseconds')
     parser.add_argument('--use_bitvec', action='store_true')
     parser.add_argument('--no_progress', action='store_true')
     parser.add_argument('--merge_op_v', default=None,

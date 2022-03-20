@@ -515,6 +515,11 @@ class SimpleGenerator:
         # exclude placeholders.
         return len(self.abstract_graph.nodes) - len(self.placeholders)
 
+    def recompute_n_floats(self):
+        self.n_floats = 0
+        for i in self.alive_shapes:
+            self.n_floats = nnsmith_add(self.n_floats, i[1].nelement())
+
     def abstract_gen(self, max_node_size=10, max_gen_millisec=2000):
         self.max_gen_millisec = max_gen_millisec
         self.cur_phase = 'abstract_gen'
@@ -540,6 +545,15 @@ class SimpleGenerator:
             print(
                 f'[WARNING]: graph size: {len(self.abstract_graph.nodes)} < expected size: {max_node_size}')
         self.cur_phase = 'post_process'
+
+        self.recompute_n_floats()
+        if self.limnf:  # add into solver since graph is finalized to avoid repeated solving
+            if NNSMITH_LIMNF_V == '0':
+                self.solver.add(nnsmith_le(self.n_floats, self.limit_float))
+            elif NNSMITH_LIMNF_V == '1':
+                self.solver.add(*self.n_floats_cons)
+            assert self.check_sat() == z3.sat
+
         self.post_process()  # can be used to add more constraints
         # init graph placeholders
         shuffled_placeholder = self.placeholders
@@ -1399,23 +1413,12 @@ class GuidedGen(PureSymbolGen):
             ret.extend(range_constrain(param, lb, ub))
         return ret
 
-    def recompute_n_floats(self):
-        self.n_floats = 0
-        for i in self.alive_shapes:
-            self.n_floats = nnsmith_add(self.n_floats, i[1].nelement())
-
     def post_process(self):
-        self.recompute_n_floats()
-        if self.limnf:  # add into solver since graph is finalized to avoid repeated solving
-            if NNSMITH_LIMNF_V == '0':
-                self.solver.add(nnsmith_le(self.n_floats, self.limit_float))
-            elif NNSMITH_LIMNF_V == '1':
-                self.solver.add(*self.n_floats_cons)
-            assert self.check_sat() == z3.sat  # TODO: remove this line
-
+        # collect guidance
         graph = self.abstract_graph
         shuffled_nids = list(graph.nodes)
         random.shuffle(shuffled_nids)
+        all_cons = []
         for node_id in shuffled_nids:
             op = graph.nodes[node_id]['op']
             ishape_indices = graph.nodes[node_id]['ishape_indices']
@@ -1427,13 +1430,28 @@ class GuidedGen(PureSymbolGen):
                 cons = self.gen_ph_cons(op)
             if len(cons) == 0 or random.uniform(0, 1) > self.constrain_prob:
                 continue
-            if self.check_sat(*cons, timeout=self.max_gen_millisec // len(graph.nodes) / 10) == z3.sat:
-                self.solver.add(*cons)
-                if self.verbose:
-                    print('guidance for op {} added'.format(op))
-            else:
-                if self.verbose:
-                    print('guidance for op {} not added. cons: {}'.format(op, cons))
+            all_cons.extend(cons)
+
+        # apply all guidance at once and back off if failed
+        shuffled = list(range(len(all_cons)))
+        random.shuffle(shuffled)
+        cur_cons = [all_cons[i] for i in shuffled]
+        while self.check_sat(*cur_cons, timeout=self.max_gen_millisec / (1 + math.log2(len(cur_cons))) / 3) != z3.sat:
+            cur_cons = cur_cons[:len(cur_cons) // 2]
+            if len(cur_cons) == 0:
+                break
+        self.solver.add(cur_cons)
+        if self.verbose:
+            print(
+                '# guidance applied: {} / {}'.format(len(cur_cons), len(all_cons)))
+
+        # if self.check_sat(*cons, timeout=self.max_gen_millisec // len(graph.nodes) / 10) == z3.sat:
+        #     self.solver.add(*cons)
+        #     if self.verbose:
+        #         print('guidance for op {} added'.format(op))
+        # else:
+        #     if self.verbose:
+        #         print('guidance for op {} not added. cons: {}'.format(op, cons))
         assert self.check_sat() == z3.sat
 
 
