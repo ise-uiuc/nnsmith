@@ -1250,7 +1250,7 @@ def range_constrain(param, lb, ub):
         ret.append(nnsmith_ge(param, lb))
     if ub is not None and os.getenv('NNSMITH_LB', 'off') == 'off':  # HACK
         ret.append(nnsmith_lt(param, ub))
-    return ret
+    return [z3.And(*ret)]
 
 
 def __SLICE_CONSTRAINTS(node, inp_shps: List[ShapeVar], construct_param_dict):
@@ -1281,18 +1281,19 @@ def __SLICE_CONSTRAINTS(node, inp_shps: List[ShapeVar], construct_param_dict):
     return ret
 
 
+_DEFAULT_BINS = 5
 PARAM_CONFIG1 = {
     'NCHWConv2d': {
-        'kernel_h_size': [Bin(i, i + 1, scale='log', base=2) for i in range(8)],
-        'kernel_w_size': [Bin(i, i + 1, scale='log', base=2) for i in range(8)],
-        'stride': [Bin(i, i + 1, scale='log', base=2) for i in range(8)],
-        'padding': [Bin(i, i + 1, scale='log', base=2) for i in range(8)] + [Bin(0, 1)],
-        'out_channels': [Bin(i, i + 1, scale='log', base=2) for i in range(8)] +
-        [Bin(8, None, scale='log', base=2)],
+        'kernel_h_size': [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)],
+        'kernel_w_size': [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)],
+        'stride': [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)],
+        'padding': [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)] + [Bin(0, 1)],
+        'out_channels': [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)] +
+        [Bin(_DEFAULT_BINS, None, scale='log', base=2)],
         'in_channels': [],  # skip
     },
     # last bin is eseentially no constraint, to ensure -1 can be included
-    'Reshape': defaultdict(lambda: [Bin(i, i + 1, scale='log', base=2) for i in range(8)] + [Bin(None, None)]),
+    'Reshape': defaultdict(lambda: [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)] + [Bin(None, None)]),
     'Slice': __SLICE_CONSTRAINTS,
 }
 PARAM_CONFIG1['Linear'] = {
@@ -1310,7 +1311,7 @@ PARAM_CONFIG1['MaxPool2d'] = PARAM_CONFIG1['AvgPool2d']
 
 def __GROUP_RESHAPE(node, inp_shps, construct_param_dict, bin=True):
     bins = [Bin(i, i + 1, scale='log', base=2)
-            for i in range(8)] + [Bin(None, None)]
+            for i in range(_DEFAULT_BINS)] + [Bin(None, None)]
     ret = []
 
     src_group = node.src_group
@@ -1358,7 +1359,7 @@ del PARAM_CONFIG2['Reshape6D']
 
 
 class GuidedGen(PureSymbolGen):
-    def __init__(self, summaries=None, scale='log', base=2, default_bins=7, constrain_prob=None, **kwargs):
+    def __init__(self, summaries=None, scale='log', base=2, default_bins=_DEFAULT_BINS, constrain_prob=None, **kwargs):
         self.constrain_prob = constrain_prob if constrain_prob is not None else float(
             os.getenv('NNSMITH_G_PROB', 1))
         self.base = 2
