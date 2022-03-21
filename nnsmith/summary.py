@@ -37,15 +37,20 @@ class ParamShapeSummary(SummaryBase):
             self.data[op_name] = {}
             for i in range(len(op_t.in_dtypes[0])):  # arity
                 self.data[op_name][f'in_shapes_{i}'] = {}
-            nouts = len(op_t(
-                *[None for _ in signature(op_t).parameters]).out_ranks)
+            nouts = len(op_t.out_dtypes[0])
             for i in range(nouts):  # num_outputs
                 self.data[op_name][f'out_shapes_{i}'] = {}
             if issubclass(op_t, Op.Input):
                 continue
-            construct_param_dict = signature(op_t).parameters
-            for key in construct_param_dict:
-                self.data[op_name]['param_' + key] = {}
+
+            if op_t.num_var_param is not None:
+                # input is a variable list.
+                for i in range(op_t.get_num_var_param()):
+                    self.data[op_name][f'param_var{i}'] = {}
+            else:
+                construct_param_dict = signature(op_t).parameters
+                for key in construct_param_dict:
+                    self.data[op_name]['param_' + key] = {}
 
     def update(self, graph: nx.MultiDiGraph, itr):
         for node_id in graph.nodes:
@@ -62,10 +67,19 @@ class ParamShapeSummary(SummaryBase):
 
             if isinstance(op, Op.Input):
                 continue
+
             construct_param_dict = signature(op.__init__).parameters
-            for key in construct_param_dict:
-                _record(self.data[op_name]['param_' + key],
+            if op.num_var_param is not None:
+                # input is a variable list.
+                key = list(construct_param_dict.keys())[0]
+                vlist = getattr(op, key)
+                for i, value in enumerate(vlist):
+                    _record(self.data[op_name][f'param_var{i}'], value, itr)
+            else:
+                for key in construct_param_dict:
+                    _record(self.data[op_name]['param_' + key],
                         getattr(op, key), itr)
+                
 
     def dump(self, output_path):
         pickle.dump(self.data, open(output_path, 'wb'))

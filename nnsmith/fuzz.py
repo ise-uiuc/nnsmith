@@ -247,8 +247,6 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         use_torch = any(i.__class__.__name__ ==
                         'TchExecutor' for i in self.backends.values())
 
-        last_cov = 0
-
         try:
             with CustomProgress(
                 fuzz_status=self.rich,
@@ -437,9 +435,13 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         break
         finally:  # cleanup
             os.system('rm ' + _TMP_ONNX_FILE_ + '*')
-            last_cov = __COV_DRIVER__.get_now()
         self.reporter.flush(self)
-
+        try:
+            print('Trying to store hitmap (if allowed)')
+            with open(os.path.join(self.reporter.report_folder, 'hitmap.pkl'), 'wb') as f:
+                pickle.dump(__COV_DRIVER__.get_hitmap(), f)
+        except Exception as e:
+            print(f'Failed to store hitmap: {e}')
 
 if __name__ == '__main__':
     import argparse
