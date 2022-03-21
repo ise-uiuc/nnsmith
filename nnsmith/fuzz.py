@@ -533,6 +533,7 @@ if __name__ == '__main__':
     parser.add_argument('--fix_nodes', type=int)
     parser.add_argument('--flush_freq', type=int)
     parser.add_argument('--record_model', action='store_true')
+    parser.add_argument('--no_run_backend', action='store_true')
     args = parser.parse_args()
     assert int(args.fix_nodes is not None) + \
         int(args.max_nodes is not None) <= 1, '--fix_nodes and --max_nodes cannot be specified together'
@@ -587,6 +588,8 @@ if __name__ == '__main__':
     print('Reading cache config file:', cache_file)
     run()
     config_skip_op(skip)
+    if args.no_run_backend:
+        backends = {'dummy': DummyExecutor()}
     fuzzing_loop = FuzzingLoop(
         root=args.root,
         backends=backends,
