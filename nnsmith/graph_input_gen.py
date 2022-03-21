@@ -23,7 +23,9 @@ from nnsmith.graph_gen import SymbolNet, random_model_gen, table_model_gen
 from nnsmith.export import torch2onnx
 import util
 
-_DEFAULT_FORK_METHOD = 'pool'
+# pool should be better when backends are also running.
+# Using fork for consistency with previous setting.
+_DEFAULT_FORK_METHOD = 'fork'
 
 
 class ModelGenSubProcesssError(Exception):
