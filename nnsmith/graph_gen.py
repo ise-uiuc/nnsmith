@@ -1250,7 +1250,7 @@ def range_constrain(param, lb, ub):
         ret.append(nnsmith_ge(param, lb))
     if ub is not None and os.getenv('NNSMITH_LB', 'off') == 'off':  # HACK
         ret.append(nnsmith_lt(param, ub))
-    return ret
+    return [z3.And(*ret)]
 
 
 def __SLICE_CONSTRAINTS(node, inp_shps: List[ShapeVar], construct_param_dict):
@@ -1281,7 +1281,7 @@ def __SLICE_CONSTRAINTS(node, inp_shps: List[ShapeVar], construct_param_dict):
     return ret
 
 
-_DEFAULT_BINS = 5
+_DEFAULT_BINS = 6
 PARAM_CONFIG1 = {
     'NCHWConv2d': {
         'kernel_h_size': [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)] +
