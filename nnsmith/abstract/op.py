@@ -1691,7 +1691,7 @@ class ReduceBase(UnaryOpBase, ABC):
     def __init__(self):
         super().__init__()
         self.inp_ranks = [int_from(1)]
-        self.out_ranks = [int_range(1, __MAX_RANK__ - 1)]
+        self.out_ranks = [int_range(0, __MAX_RANK__ - 1)]
 
     def _init_reduce_dim(self, input_shape: List[Union[int, z3.ExprRef]]):
         if 'reduce_dim' not in self.extra_attrs:
