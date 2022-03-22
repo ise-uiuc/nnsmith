@@ -1232,31 +1232,36 @@ class Pad(UnaryOpBase):
             self.padding_list) % 2 == 0, f'padding_list must be even, got {self.padding_list}'
 
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+        ndims = input_shapes[0].ndims
+        pad = self.padding_list
+        isv = input_shapes[0].shape
+        assert len(pad) % 2 == 0, pad
+        assert len(pad) // 2 <= len(isv), pad
+        if self.extra_attrs['type'] != 'constant':
+            ConstraintCheck.true((len(pad) // 2) in [ndims - 1, ndims - 2])
         cons = []
-        for i in self.padding_list:
-            cons.append(nnsmith_ge(i, 0))
-
-        pad_init_dim = input_shapes[0].ndims - len(self.padding_list) // 2
-
-        for i in range(pad_init_dim, input_shapes[0].ndims):
-            cons.append(nnsmith_le(
-                nnsmith_div(self.padding_list[(i - pad_init_dim) * 2], 2), input_shapes[0].shape[i]))
-            cons.append(nnsmith_le(
-                nnsmith_div(self.padding_list[(i - pad_init_dim) * 2 + 1], 2), input_shapes[0].shape[i]))
-
+        for i in range(len(pad) // 2):
+            j = len(isv) - 1 - i
+            # When using negative padding, neither side should erase more than the original size
+            cons.append(nnsmith_ge(nnsmith_add(pad[i * 2], isv[j]), 0))
+            cons.append(nnsmith_ge(nnsmith_add(
+                pad[i * 2 + 1], isv[j]), 0))
+            # per torch's complaint: Padding size should be less than the corresponding input dimension
+            cons.append(nnsmith_lt(pad[i * 2], isv[j]))
+            cons.append(nnsmith_lt(pad[i * 2 + 1], isv[j]))
         return cons
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        new_shape = []
-        pad_init_dim = input_shapes[0].ndims - len(self.padding_list) // 2
-        for i in range(input_shapes[0].ndims):
-            s = input_shapes[0].shape[i]
-            if i >= pad_init_dim:
-                s += self.padding_list[(i - pad_init_dim) // 2] + \
-                    self.padding_list[(i - pad_init_dim) // 2 + 1]
-            new_shape.append(s)
-
-        return [ShapeVar(new_shape, dtype=input_shapes[0].dtype)]
+        isv = input_shapes[0].shape
+        pad = self.padding_list
+        assert len(pad) % 2 == 0, pad
+        assert len(pad) // 2 <= len(isv), pad
+        s = list(isv)
+        for i in range(len(pad) // 2):
+            j = len(isv) - 1 - i
+            s[j] = nnsmith_add(nnsmith_add(
+                s[j], pad[i * 2]), pad[i * 2 + 1])
+        return [ShapeVar(s, input_shapes[0].dtype)]
 
     def torch(self) -> Callable[..., torch.Tensor]:
         if self.extra_attrs['type'] == 'constant':
@@ -1590,8 +1595,8 @@ class Transpose(UnaryOpBase, ABC):
         """See https://pytorch.org/docs/stable/generated/torch.transpose.html
         """
         super().__init__()
-        self.inp_ranks = [int_from(1)]
-        self.out_ranks = [int_from(1)]
+        self.inp_ranks = [int_from(2)]
+        self.out_ranks = [int_from(2)]
 
     def _init_swap_dims(self, input_shape: List[Union[int, z3.ExprRef]]):
         ConstraintCheck.ge(len(input_shape), 2)
