@@ -1416,6 +1416,8 @@ if __name__ == '__main__':
         f'{len(solution)} symbols and {len(gen.solver.assertions())} constraints.')
     print(
         f'{time.time() - strt_time}s to generate a graph w/ {len(gen.abstract_graph.nodes())} nodes')
+    if args.verbose:
+        print('solution:', solution)
     srt_time = time.time()
     if args.verbose or args.viz_graph:
         gen.viz(args.output_path + '.png')

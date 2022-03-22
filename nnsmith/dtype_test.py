@@ -14,7 +14,7 @@ from nnsmith.backends import DiffTestBackend
 from nnsmith.input_gen import gen_one_input
 
 
-def rewrite_op_dtype(ops: List[AbsOpBase], backend=None, verbose=False, cache=None):
+def rewrite_op_dtype(ops: List[AbsOpBase], backend=None, verbose=False, cache=None, print_failures=False):
     class TestNet(torch.nn.Module):
         def __init__(self, op: AbsOpBase) -> None:
             super().__init__()
@@ -118,8 +118,8 @@ def rewrite_op_dtype(ops: List[AbsOpBase], backend=None, verbose=False, cache=No
                         eval_inputs = gen_one_input(input_spec, 1, 1)
                         backend.predict(onnx_model, eval_inputs)
             except Exception as e:
-                if verbose:
-                    print(f'=====> [Failure] {itypes}')
+                if verbose or print_failures:
+                    print(f'=====> [Failure] {node_t} at {itypes}')
                 if 'onnxruntime.capi.onnxruntime_pybind11_state.NotImplemented' in str(type(e)) or \
                         "Unexpected data type for" in str(e):
                     continue
