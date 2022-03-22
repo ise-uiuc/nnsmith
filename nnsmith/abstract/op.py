@@ -1302,6 +1302,7 @@ class ReflectPad(Pad):
             cons.append(nnsmith_lt(pad[i * 2 + 1], isv[j]))
         return cons
 
+
 class Expand(UnaryOpBase, ABC):
     in_dtypes = [(i,) for i in DTYPE_ALL]
     out_dtypes = [(i,) for i in DTYPE_ALL]
@@ -1575,6 +1576,7 @@ class Reshape(UnaryOpBase):
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
         return [(-1, out_shape_var[0].dtype)]
+
 
 class Flatten(Reshape):
     num_var_param = None
