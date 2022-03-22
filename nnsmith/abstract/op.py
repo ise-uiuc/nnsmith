@@ -1496,7 +1496,7 @@ class NCHWConv2d(UnaryOpBase):
         return [(4, out_shape_var[0].dtype)]
 
 
-class ReshapeBase(UnaryOpBase, ABC):
+class Reshape(UnaryOpBase):
     num_var_param = int_range(1, 4)
     in_dtypes = [(i,) for i in DTYPE_ALL]
     out_dtypes = [(i,) for i in DTYPE_ALL]
@@ -1570,12 +1570,7 @@ class ReshapeBase(UnaryOpBase, ABC):
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
         return [(-1, out_shape_var[0].dtype)]
 
-
-class Reshape(ReshapeBase):
-    pass
-
-
-class Flatten(ReshapeBase):
+class Flatten(Reshape):
     num_var_param = None
     # Inputs are target shape.
 
@@ -1588,7 +1583,7 @@ class Flatten(ReshapeBase):
         return lambda x: x.flatten().unsqueeze(0)
 
 
-class Transpose(UnaryOpBase, ABC):
+class Transpose(UnaryOpBase):
     in_dtypes = [(i,) for i in DTYPE_ALL]
 
     def __init__(self):
@@ -1722,7 +1717,7 @@ class ReduceBase(UnaryOpBase, ABC):
         return [(1 + out_shape_var[0].ndims, out_shape_var[0].dtype)]
 
 
-class SqueezeBase(ReduceBase, ABC):
+class Squeeze(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_ALL]
 
     def _requires(self, input_shapes):
@@ -1733,7 +1728,7 @@ class SqueezeBase(ReduceBase, ABC):
         return lambda x: x.squeeze(self.extra_attrs['reduce_dim'])
 
 
-class ReduceSum(ReduceBase, ABC):
+class ReduceSum(ReduceBase):
     # pytorch exporter doesn't support int32
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS if i != DType.int32]
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS if i != DType.int32]
@@ -1742,7 +1737,7 @@ class ReduceSum(ReduceBase, ABC):
         return lambda x: x.sum(self.extra_attrs['reduce_dim'])
 
 
-class ReduceMin(ReduceBase, ABC):
+class ReduceMin(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
 
@@ -1750,7 +1745,7 @@ class ReduceMin(ReduceBase, ABC):
         return lambda x: x.min(self.extra_attrs['reduce_dim']).values
 
 
-class ReduceMax(ReduceBase, ABC):
+class ReduceMax(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
 
@@ -1758,7 +1753,7 @@ class ReduceMax(ReduceBase, ABC):
         return lambda x: x.max(self.extra_attrs['reduce_dim']).values
 
 
-class ReduceMean(ReduceBase, ABC):
+class ReduceMean(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
@@ -1766,7 +1761,7 @@ class ReduceMean(ReduceBase, ABC):
         return lambda x: x.mean(self.extra_attrs['reduce_dim'])
 
 
-class ArgMin(ReduceBase, ABC):
+class ArgMin(ReduceBase):
     # FIXME(JK): ints are somehow not supported in onnxruntime, which we use to gen inputs.
     # Make it include ints once we use other backends other than onnxruntime.
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -1780,7 +1775,7 @@ class ArgMin(ReduceBase, ABC):
         return [(out_shape_var[0].ndims + 1, random.choice(self.in_dtypes)[0])]
 
 
-class ArgMax(ReduceBase, ABC):
+class ArgMax(ReduceBase):
     # FIXME(JK): ints are somehow not supported in onnxruntime, which we use to gen inputs.
     # Make it include ints once we use other backends other than onnxruntime.
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -2067,7 +2062,7 @@ ALL_OP_TYPES = _glob_leaf_op_classes()
 ALL_OP_STR2TYPE = {c.__name__: c for c in ALL_OP_TYPES}
 EXPANDED_OP_V0 = [Constant, Cast]
 EXPANDED_OP_V1 = [Concat, Constant, Expand, Reshape, ArgMax,
-                  ArgMin, ReduceMax, ReduceMin, ReduceMean, SqueezeBase,
+                  ArgMin, ReduceMax, ReduceMin, ReduceMean, Squeeze,
                   ReduceSum, TrigonometricOp]
 EXPANDED_OP = EXPANDED_OP_V1  # points to latest version
 
