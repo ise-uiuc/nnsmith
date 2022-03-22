@@ -1741,7 +1741,7 @@ class Squeeze(ReduceBase):
 
     def _requires(self, input_shapes):
         reduce_dim = self._init_reduce_dim(input_shapes[0].shape)
-        if input_shapes[0].ndims == 0:
+        if reduce_dim is None:
             return []
         return [nnsmith_eq(input_shapes[0].shape[reduce_dim], 1)]
 
