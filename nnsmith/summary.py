@@ -46,7 +46,8 @@ class ParamShapeSummary(SummaryBase):
             if op_t.num_var_param is not None:
                 # input is a variable list.
                 for i in range(max(op_t.num_var_param)):
-                    self.data[op_name][f'param_var{i}'] = {}
+                    if f'param_var{i}' in self.data[op_name]:
+                        self.data[op_name][f'param_var{i}'] = {}
             else:
                 construct_param_dict = signature(op_t).parameters
                 for key in construct_param_dict:

@@ -1199,7 +1199,7 @@ if __name__ == '__main__':
     print(
         f'{len(solution)} symbols and {len(gen.solver.assertions())} constraints.')
     print(
-        f'{time.time() - strt_time}s to generate a graph w/ {len(gen.abstract_graph.nodes())} nodes')
+        f'{time.time() - strt_time}s to generate a graph w/ {gen.num_op()} operators')
     if args.verbose:
         print('solution:', solution)
     srt_time = time.time()
