@@ -443,6 +443,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         except Exception as e:
             print(f'Failed to store hitmap: {e}')
 
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
@@ -503,7 +504,8 @@ if __name__ == '__main__':
         rewrite_op_dtype(
             ALL_OP_TYPES,
             backend=list(backends.values())[0],
-            cache=cache_file)
+            cache=cache_file,
+            print_failures=True)
     if not Path(cache_file).exists():
         Path('config').mkdir(exist_ok=True)
         print('Warning: Op dtypes config file does not exist. '
@@ -511,6 +513,7 @@ if __name__ == '__main__':
         p = Process(target=run)
         p.start()
         p.join()
+        assert p.exitcode == 0, 'Failed to infer op dtypes'
     print('Reading cache config file:', cache_file)
     run()
     config_skip_op(skip)
