@@ -287,7 +287,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                             self.stage = 'gen model'
                             progress.refresh()
                             forked_exe_t_s = time.time()
-                            sat_inputs, state, edge_set, seed, ret_profile = \
+                            sat_inputs, edge_set, seed, ret_profile = \
                                 forked_execution(self.mode,
                                                  _TMP_ONNX_FILE_,
                                                  max_nodes=self.cur_node_size,
