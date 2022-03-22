@@ -297,6 +297,9 @@ class ShapeVar:
             return 1
         return reduce(lambda x, y: nnsmith_mul(x, y), self.shape, 1)
 
+    def deepcopy(self):
+        return ShapeVar(shape=list(self.shape), dtype=self.dtype)
+
     @staticmethod
     def from_torch(torch_tensor):
         return ShapeVar(list(torch_tensor.shape), torch_tensor.dtype)
@@ -313,7 +316,7 @@ def check_shape_fn(func):
         SanityCheck.eq(len(input_shapes), len(self.inp_ranks), "{} requires {} inputs, but got {}".format(
             self.__class__.__name__,
             len(self.inp_ranks), len(input_shapes)))
-        res = func(self, input_shapes)
+        res = func(self, [s.deepcopy() for s in input_shapes])
         SanityCheck.eq(len(res), len(self.out_ranks), "{} requires {} outputs, but got {}".format(
             self.__class__.__name__,
             len(self.out_ranks), len(res)))
@@ -322,13 +325,13 @@ def check_shape_fn(func):
 
 
 def check_require_fn(func):
-    def wrapper_check_require_fn(self, input_shapes):
+    def wrapper_check_require_fn(self, input_shapes: List[ShapeVar]):
         if not _INFERRED:
             auto_infer_in_dtypes()
         SanityCheck.eq(len(input_shapes), len(self.inp_ranks), "{} requires {} inputs, but got {}".format(
             self.__class__.__name__,
             len(self.inp_ranks), len(input_shapes)))
-        return func(self, deepcopy(input_shapes))
+        return func(self, [s.deepcopy() for s in input_shapes])
     return wrapper_check_require_fn
 
 
@@ -1719,7 +1722,7 @@ class ReduceBase(UnaryOpBase, ABC):
     def _get_irank(self, orank):
         if orank == 0:
             return random.randint(0, 1)
-        return orank - 1
+        return orank + 1
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
         return [(self._get_irank(out_shape_var[0].ndims), out_shape_var[0].dtype)]
