@@ -1243,9 +1243,6 @@ class Pad(UnaryOpBase):
                 pad[i * 2 + 1], isv[j]), 0))
             cons.append(nnsmith_gt(nnsmith_add(
                 pad[i * 2 + 1], nnsmith_add(pad[i * 2], isv[j])), 0))
-            # per torch's complaint: Padding size should be less than the corresponding input dimension
-            cons.append(nnsmith_lt(pad[i * 2], isv[j]))
-            cons.append(nnsmith_lt(pad[i * 2 + 1], isv[j]))
         return cons
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
@@ -1290,6 +1287,17 @@ class ReflectPad(Pad):
         self.inp_ranks = [int_range(len(padding_list) // 2 + 1, 4)]
         self.out_ranks = [int_range(len(padding_list) // 2 + 1, 4)]
 
+    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+        cons = super()._requires(input_shapes)
+        pad = self.padding_list
+        isv = input_shapes[0].shape
+        cons = []
+        for i in range(len(pad) // 2):
+            j = len(isv) - 1 - i
+            # per torch's complaint: Padding size should be less than the corresponding input dimension
+            cons.append(nnsmith_lt(pad[i * 2], isv[j]))
+            cons.append(nnsmith_lt(pad[i * 2 + 1], isv[j]))
+        return cons
 
 class Expand(UnaryOpBase, ABC):
     in_dtypes = [(i,) for i in DTYPE_ALL]
