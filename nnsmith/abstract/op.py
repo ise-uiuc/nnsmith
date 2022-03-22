@@ -1232,13 +1232,8 @@ class Pad(UnaryOpBase):
             self.padding_list) % 2 == 0, f'padding_list must be even, got {self.padding_list}'
 
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
-        ndims = input_shapes[0].ndims
         pad = self.padding_list
         isv = input_shapes[0].shape
-        assert len(pad) % 2 == 0, pad
-        assert len(pad) // 2 <= len(isv), pad
-        if self.extra_attrs['type'] != 'constant':
-            ConstraintCheck.true((len(pad) // 2) in [ndims - 1, ndims - 2])
         cons = []
         for i in range(len(pad) // 2):
             j = len(isv) - 1 - i
@@ -1246,6 +1241,8 @@ class Pad(UnaryOpBase):
             cons.append(nnsmith_ge(nnsmith_add(pad[i * 2], isv[j]), 0))
             cons.append(nnsmith_ge(nnsmith_add(
                 pad[i * 2 + 1], isv[j]), 0))
+            cons.append(nnsmith_gt(nnsmith_add(
+                pad[i * 2 + 1], nnsmith_add(pad[i * 2], isv[j])), 0))
             # per torch's complaint: Padding size should be less than the corresponding input dimension
             cons.append(nnsmith_lt(pad[i * 2], isv[j]))
             cons.append(nnsmith_lt(pad[i * 2 + 1], isv[j]))
@@ -1254,8 +1251,6 @@ class Pad(UnaryOpBase):
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         isv = input_shapes[0].shape
         pad = self.padding_list
-        assert len(pad) % 2 == 0, pad
-        assert len(pad) // 2 <= len(isv), pad
         s = list(isv)
         for i in range(len(pad) // 2):
             j = len(isv) - 1 - i
