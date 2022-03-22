@@ -1705,12 +1705,12 @@ class ReduceBase(UnaryOpBase, ABC):
         self.out_ranks = [int_range(0, __MAX_RANK__ - 1)]
 
     def __str__(self) -> str:
-        return super().__str__() + f'(dim={self.extra_attrs.get("reduce_dim", "uninit")})'
+        return super().__str__() + f'(dim={self.extra_attrs["reduce_dim"] if "reduce_dim" in self.extra_attrs else None})'
 
     def _init_reduce_dim(self, input_shape: List[Union[int, z3.ExprRef]]):
         if 'reduce_dim' not in self.extra_attrs:
             self.extra_attrs['reduce_dim'] = random.randint(
-                0, len(input_shape) - 1)
+                0, max(0, len(input_shape) - 1))
         return self.extra_attrs['reduce_dim']
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
@@ -1725,6 +1725,8 @@ class ReduceBase(UnaryOpBase, ABC):
         return []
 
     def _get_irank(self, orank):
+        if orank == 0:
+            return random.randint(0, 1)
         return orank + 1
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
