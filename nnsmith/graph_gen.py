@@ -430,8 +430,8 @@ class SimpleGenerator:
         self.forward_prob = 0.5 if forward_prob is None else forward_prob
 
     def random_rank(self):
-        return random.choices(range(MAX_RANK + 1),
-                              weights=[1, 1, 1, 1, 2, 1, 0.5])[0]
+        return random.choices(range(__MAX_RANK__ + 1),
+                              weights=[1, 1, 1, 1, 2, 1])[0]
 
     def random_dtype(self):
         wts = [1] * len(DTYPE_ALL)

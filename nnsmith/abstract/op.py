@@ -45,7 +45,6 @@ Z3_CONS_FLOPS = os.getenv("NNSMITH_Z3_CONS_FLOPS", 'on')
 assert Z3_CONS_FLOPS in [
     'on', 'off'], "NNSMITH_Z3_CONS_FLOPS must be either 'on' or 'off'"
 Z3_CONS_FLOPS = Z3_CONS_FLOPS == 'on'
-MAX_RANK = 6
 
 
 def _op_set_use_cuda(use_cuda):
@@ -1256,8 +1255,8 @@ class Slice(UnaryOpBase):
 
     def __init__(self, start, end, step):
         super().__init__()
-        self.inp_ranks = [-1]
-        self.out_ranks = [-1]
+        self.inp_ranks = [int_all()]
+        self.out_ranks = [int_all()]
         self.start = start
         self.end = end
         self.step = step
