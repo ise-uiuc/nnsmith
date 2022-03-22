@@ -1713,8 +1713,13 @@ class ReduceBase(UnaryOpBase, ABC):
         reduce_dim = self._init_reduce_dim(input_shapes[0].shape)
         return []
 
+    def _get_irank(self, orank):
+        if orank == 0:
+            return random.randint(0, 1)
+        return orank - 1
+
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
-        return [(1 + out_shape_var[0].ndims, out_shape_var[0].dtype)]
+        return [(self._get_irank(out_shape_var[0].ndims), out_shape_var[0].dtype)]
 
 
 class Squeeze(ReduceBase):
@@ -1772,7 +1777,7 @@ class ArgMin(ReduceBase):
         return lambda x: x.argmin(self.extra_attrs['reduce_dim'])
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
-        return [(out_shape_var[0].ndims + 1, random.choice(self.in_dtypes)[0])]
+        return [(self._get_irank(out_shape_var[0].ndims), random.choice(self.in_dtypes)[0])]
 
 
 class ArgMax(ReduceBase):
@@ -1786,7 +1791,7 @@ class ArgMax(ReduceBase):
         return lambda x: x.argmax(self.extra_attrs['reduce_dim'])
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
-        return [(out_shape_var[0].ndims + 1, random.choice(self.in_dtypes)[0])]
+        return [(self._get_irank(out_shape_var[0].ndims), random.choice(self.in_dtypes)[0])]
 
 
 class Linear(UnaryOpBase):
