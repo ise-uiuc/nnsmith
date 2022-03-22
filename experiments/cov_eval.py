@@ -49,7 +49,7 @@ if __name__ == '__main__':
     parser.add_argument('--sum', action='store_true', help='Use summary.')
     parser.add_argument('--seed', type=int, default=233,
                         help='to generate random input data')
-    parser.add_argument('--lib', type=str, nargs='+', required=True,
+    parser.add_argument('--lib', type=str, required=True,
                         help='path to instrumented library')
     parser.add_argument('--max_time', type=int, default=60 *
                         60 * 4, help='max time in seconds for coverage evaluation')
@@ -70,7 +70,7 @@ if __name__ == '__main__':
         exit(1)
 
     lib_expr = ''
-    for lib in args.lib:
+    for lib in args.lib.split():
         assert os.path.exists(lib), f'{lib} does not exist!'
         lib_expr += f' -object {os.path.realpath(lib)} '
 
