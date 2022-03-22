@@ -1443,7 +1443,6 @@ class ReflectPad(Pad):
         cons = super()._requires(input_shapes)
         pad = self.padding_list
         isv = input_shapes[0].shape
-        cons = []
         for i in range(len(pad) // 2):
             j = len(isv) - 1 - i
             # per torch's complaint: Padding size should be less than the corresponding input dimension
