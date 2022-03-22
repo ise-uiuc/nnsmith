@@ -1258,8 +1258,8 @@ class Slice(UnaryOpBase):
 
     def __init__(self, start, end, step):
         super().__init__()
-        self.inp_ranks = [int_all()]
-        self.out_ranks = [int_all()]
+        self.inp_ranks = [int_from(1)]
+        self.out_ranks = [int_from(1)]
         self.start = start
         self.end = end
         self.step = step
