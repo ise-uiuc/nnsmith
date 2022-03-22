@@ -53,6 +53,26 @@ def _op_set_use_cuda(use_cuda):
     _DEV = torch.device('cuda' if use_cuda else 'cpu')
 
 
+__MIN_RANK__ = 0
+__MAX_RANK__ = 5
+
+
+def int_from(start):
+    return tuple(range(start, __MAX_RANK__ + 1))
+
+
+def int_range(start, end):
+    return tuple(range(start, end + 1))
+
+
+def int_until(end):
+    return tuple(range(__MIN_RANK__, end + 1))
+
+
+def int_all():
+    return tuple(range(__MIN_RANK__, __MAX_RANK__ + 1))
+
+
 def align_bvs(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef], carry=False, mult=False):
     left_is_arith = isinstance(left, (int, float, z3.ArithRef))
     right_is_arith = isinstance(right, (int, float, z3.ArithRef))
@@ -432,6 +452,8 @@ def broadcast_to_cons(*shapes: List[Union[z3.ExprRef, int]]) -> List[z3.ExprRef]
 
 
 class AbsOpBase(ABC):
+    # number of parameters; None means it's fixed that can be inferred through `signature`.
+    num_var_param = None
     # whether this op is broadcastable or not
     bcastable = False
     # input dtypes: enumerates all possible input dtype combinations. Size of the list is the number of combinations.
@@ -447,6 +469,7 @@ class AbsOpBase(ABC):
         # `[3, 3]` this means this op requires 2 inputs. Where the 1st one has 2 dimensions, and the 2nd one has 3 dimensions.
         # `-1` means arbitrary dimantions; NOTE: but should be concretized during execution.
         # All symbols of correponding operator must be the constructor's parameters.
+        # [ <inp0>(support_dim0, support_dim1, ...), <inp1>(...), ... ]
         self.inp_ranks = []
         # NOTE: the concrete values of out_ranks are not useful. Just make sure the length is correct.
         # NOTE: the output shape of input dimensions should be concretized during the execution.
@@ -455,6 +478,12 @@ class AbsOpBase(ABC):
         self.same_inp_dims = False
         # NOTE: the input of operator constructors are all Union[int, z3.ExprRef].
         self.extra_attrs = {}
+
+    @classmethod
+    def get_num_var_param(cls):
+        if cls.num_var_param is None:
+            return len(signature(cls.__init__).parameters) - 1
+        return random.choice(cls.num_var_param)
 
     @abstractmethod  # Overload me!
     # Exception means rejection.
@@ -508,11 +537,19 @@ def concretize(op: AbsOpBase, model: z3.ModelRef) -> AbsOpBase:
     construct_param_dict = signature(op.__init__).parameters
     values = []
     symbolic_idx = []
-    for idx, key in enumerate(construct_param_dict):
-        param = getattr(op, key)
-        values.append(param)
-        if isinstance(param, z3.ExprRef):
-            symbolic_idx.append(idx)
+
+    if op.num_var_param is not None:
+        # input is a variable list.
+        key = list(construct_param_dict.keys())[0]
+        values = list(getattr(op, key))
+        symbolic_idx = list(range(len(values)))
+    else:
+        for idx, key in enumerate(construct_param_dict):
+            param = getattr(op, key)
+            values.append(param)
+            if isinstance(param, z3.ExprRef):
+                symbolic_idx.append(idx)
+
     for idx in symbolic_idx:
         values[idx] = model.eval(values[idx]).as_long()
 
@@ -531,7 +568,7 @@ class UnaryOpBase(AbsOpBase):
 
     def __init__(self):
         super().__init__()
-        self.out_ranks = [-1]
+        self.out_ranks = [int_all()]
 
 
 class BinaryOpBase(AbsOpBase):
@@ -540,7 +577,7 @@ class BinaryOpBase(AbsOpBase):
 
     def __init__(self):
         super().__init__()
-        self.out_ranks = [-1]
+        self.out_ranks = [int_all()]
 
 
 class TernaryOpBase(AbsOpBase):
@@ -549,14 +586,14 @@ class TernaryOpBase(AbsOpBase):
 
     def __init__(self):
         super().__init__()
-        self.out_ranks = [-1]
+        self.out_ranks = [int_all()]
 
 
 class ElementWiseUnaryOp(UnaryOpBase):
     def __init__(self):
         super().__init__()
-        self.inp_ranks = [-1]
-        self.out_ranks = [-1]
+        self.inp_ranks = [int_all()]
+        self.out_ranks = [int_all()]
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         SanityCheck.eq(len(input_shapes), 1)
@@ -601,7 +638,7 @@ class BcastBinaryOp(BinaryOpBase):
 
     def __init__(self):
         super().__init__()
-        self.inp_ranks = [-1, -1]
+        self.inp_ranks = [int_all(), int_all()]
         self.same_inp_dims = False
         self.bcastable = True
 
@@ -654,7 +691,7 @@ class Where(TernaryOpBase):
 
     def __init__(self):
         super().__init__()
-        self.inp_ranks = [-1, -1, -1]
+        self.inp_ranks = [int_all(), int_all(), int_all()]
         self.same_inp_dims = False
         self.same_inp_dtypes = True
         self.bcastable = True
@@ -726,7 +763,7 @@ class Input(AbsOpBase):
     def __init__(self, dim: int):
         super().__init__()
         self.inp_ranks = []
-        self.out_ranks = [dim]
+        self.out_ranks = [(dim,)]
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         SanityCheck.eq(len(input_shapes), 0)
@@ -751,7 +788,7 @@ class Constant(AbsOpBase):
         super().__init__()
         self.dim = dim
         self.inp_ranks = []
-        self.out_ranks = [dim]
+        self.out_ranks = [(dim,)]
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         SanityCheck.eq(len(input_shapes), 0)
@@ -771,7 +808,7 @@ class Placeholder:
     def __init__(self, out_shape: ShapeVar):
         self.out_shape = out_shape
         self.inp_ranks = []
-        self.out_ranks = [out_shape.ndims]
+        self.out_ranks = [(out_shape.ndims,)]
 
     def __repr__(self):
         return f'Placeholder({self.out_shape})'
@@ -1107,6 +1144,8 @@ class Softmax(ElementWiseUnaryOp):
     def __init__(self, dim: Union[int, z3.ExprRef]):
         super().__init__()
         self.dim = dim
+        self.inp_ranks = [int_from(1)]
+        self.out_ranks = [int_from(1)]
 
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
         return [
@@ -1117,7 +1156,7 @@ class Softmax(ElementWiseUnaryOp):
         return torch.nn.Softmax(dim=self.dim)
 
 
-class Pool2d(AbsOpBase):
+class Pool2d(UnaryOpBase):
     # TODO: distinguish stride_h and stride_w
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -1133,8 +1172,8 @@ class Pool2d(AbsOpBase):
         self.stride = stride
         self.padding = padding
 
-        self.inp_ranks = [4]  # NCHW
-        self.out_ranks = [4]  # NCHW
+        self.inp_ranks = [(4,)]  # NCHW
+        self.out_ranks = [(4,)]  # NCHW
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         is_symbolic_inp = input_shapes[0].constains_symbol() or isinstance(self.kernel_w_size, z3.ExprRef) or isinstance(
@@ -1316,6 +1355,92 @@ class Slice(UnaryOpBase):
         return [(out_shape_var[0].ndims, out_shape_var[0].dtype)]
 
 
+def _pad_num_var_param(rstart=1, max=None):
+    r = rstart  # rank
+    ret = []
+    while r <= __MAX_RANK__:
+        h = r * 2
+        if max is not None and h > max:
+            break
+        ret.append(h)
+        r += 1
+    return ret
+
+
+class Pad(UnaryOpBase):
+    num_var_param = _pad_num_var_param()
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
+
+    def __init__(self, padding_list, pad_t):
+        super().__init__()
+        self.padding_list = padding_list
+        self.extra_attrs['type'] = pad_t
+        self.inp_ranks = [int_from(len(padding_list) // 2)]
+        self.out_ranks = [int_from(len(padding_list) // 2)]
+        assert len(
+            self.padding_list) % 2 == 0, f'padding_list must be even, got {self.padding_list}'
+
+    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+        cons = []
+        for i in self.padding_list:
+            cons.append(nnsmith_ge(i, 0))
+
+        pad_init_dim = input_shapes[0].ndims - len(self.padding_list) // 2
+
+        for i in range(pad_init_dim, input_shapes[0].ndims):
+            cons.append(nnsmith_le(
+                nnsmith_div(self.padding_list[(i - pad_init_dim) * 2], 2), input_shapes[0].shape[i]))
+            cons.append(nnsmith_le(
+                nnsmith_div(self.padding_list[(i - pad_init_dim) * 2 + 1], 2), input_shapes[0].shape[i]))
+
+        return cons
+
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        new_shape = []
+        pad_init_dim = input_shapes[0].ndims - len(self.padding_list) // 2
+        for i in range(input_shapes[0].ndims):
+            s = input_shapes[0].shape[i]
+            if i >= pad_init_dim:
+                s += self.padding_list[(i - pad_init_dim) // 2] + \
+                    self.padding_list[(i - pad_init_dim) // 2 + 1]
+            new_shape.append(s)
+
+        return [ShapeVar(new_shape, dtype=input_shapes[0].dtype)]
+
+    def torch(self) -> Callable[..., torch.Tensor]:
+        if self.extra_attrs['type'] == 'constant':
+            return lambda x: torch.nn.functional.pad(x, self.padding_list, 'constant', value=0)
+        elif self.extra_attrs['type'] == 'replicate' or self.extra_attrs['type'] == 'reflect':
+            return lambda x: torch.nn.functional.pad(x, self.padding_list, self.extra_attrs['type'])
+
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        return [(out_shape_var[0].ndims, out_shape_var[0].dtype)]
+
+
+class ConstPad(Pad):
+    def __init__(self, *padding_list):
+        super().__init__(padding_list, 'constant')
+
+
+class ReplicatePad(Pad):
+    num_var_param = _pad_num_var_param(2, max=6)
+
+    def __init__(self, *padding_list):
+        super().__init__(padding_list, 'replicate')
+        self.inp_ranks = [int_range(len(padding_list) // 2 + 1, 4)]
+        self.out_ranks = [int_range(len(padding_list) // 2 + 1, 4)]
+
+
+class ReflectPad(Pad):
+    num_var_param = _pad_num_var_param(2, max=6)
+
+    def __init__(self, *padding_list):
+        super().__init__(padding_list, 'reflect')
+        self.inp_ranks = [int_range(len(padding_list) // 2 + 1, 4)]
+        self.out_ranks = [int_range(len(padding_list) // 2 + 1, 4)]
+
+
 class Expand(UnaryOpBase, ABC):
     in_dtypes = [(i,) for i in DTYPE_ALL]
     out_dtypes = [(i,) for i in DTYPE_ALL]
@@ -1325,15 +1450,18 @@ class Expand(UnaryOpBase, ABC):
         """See https://pytorch.org/docs/stable/generated/torch.Tensor.expand.html
         """
         super().__init__()
-        self.inp_ranks = [-1]
+        self.inp_ranks = [int_all()]
         SanityCheck.ge(expand_last_dim, 1)
         self.expand_last_dim = expand_last_dim
         self.expand_n = expand_n
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         if self.expand_last_dim <= len(input_shapes[0].shape):
-            input_shapes[0].shape[-self.expand_last_dim] = self.expand_n
-            return input_shapes
+            # NOTE: Werid, deepcopy is useless here.
+            shape = ShapeVar(shape=[*input_shapes[0].shape],
+                             dtype=input_shapes[0].dtype)
+            shape.shape[-self.expand_last_dim] = self.expand_n
+            return [shape]
         else:  # expand it;
             # for example. we have:
             #       input shape [u, v]
@@ -1348,10 +1476,10 @@ class Expand(UnaryOpBase, ABC):
         input_shape = input_shapes[0].shape
         if isinstance(self.expand_n, z3.ExprRef):
             if self.expand_last_dim <= len(input_shape):  # index valid
-                cons = [z3.And(
+                cons = [
                     nnsmith_eq(
-                        input_shape[-self.expand_last_dim], self.expand_n),
-                    nnsmith_ge(self.expand_n, 1))]
+                        input_shape[-self.expand_last_dim], 1),
+                    nnsmith_ge(self.expand_n, 1)]
                 return cons
             return [nnsmith_ge(self.expand_n, 1)]
         else:
@@ -1400,8 +1528,8 @@ class BatchNorm2d(ElementWiseUnaryOp):
 
     def __init__(self, nfeat):
         super().__init__()
-        self.inp_ranks = [4]
-        self.out_ranks = [4]
+        self.inp_ranks = [(4,)]
+        self.out_ranks = [(4,)]
         self.nfeat = nfeat
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
@@ -1436,8 +1564,8 @@ class NCHWConv2d(UnaryOpBase):
         self.stride = stride
         self.padding = padding
 
-        self.inp_ranks = [4]  # NCHW
-        self.out_ranks = [4]  # NCHW
+        self.inp_ranks = [(4,)]  # NC(H,)W
+        self.out_ranks = [(4,)]  # NC(H,)W
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         # not symbolic
@@ -1447,10 +1575,8 @@ class NCHWConv2d(UnaryOpBase):
         is_symbolic_inp = input_shapes[0].constains_symbol() or isinstance(self.kernel_w_size, z3.ExprRef) or isinstance(
             self.kernel_h_size, z3.ExprRef) or isinstance(self.stride, z3.ExprRef) or isinstance(self.padding, z3.ExprRef)
 
-        shape_var = ShapeVar([], dtype=input_shapes[0].dtype)
-        # Batch dim: just copy
-        shape_var.shape.append(input_shapes[0].shape[0])
-        shape_var.shape.append(self.out_channels)        # Output channels
+        shape_var = ShapeVar(
+            [input_shapes[0].shape[0], self.out_channels], dtype=input_shapes[0].dtype)
         if not is_symbolic_inp:
             shape_var.shape.append(
                 (input_shapes[0].shape[2] - self.kernel_h_size + 2 * self.padding) // self.stride + 1)
@@ -1532,13 +1658,15 @@ def random_group(n, k):
 
 
 class Reshape(UnaryOpBase, ABC):
+    num_var_param = int_range(1, 4)
     in_dtypes = [(i,) for i in DTYPE_ALL]
     out_dtypes = [(i,) for i in DTYPE_ALL]
 
-    def __init__(self):
+    def __init__(self, *target_shape):
         super().__init__()
-        self.inp_ranks = [-1]
-        self.target_shape: List[Union[int, z3.ExprRef]]
+        self.inp_ranks = [int_range(1, 4)]
+        self.out_ranks = [(len(target_shape), )]
+        self.target_shape: List[Union[int, z3.ExprRef]] = target_shape
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         __MAX_SOLVE_SYMBOL__ = 8
@@ -1555,19 +1683,14 @@ class Reshape(UnaryOpBase, ABC):
         for i, v in enumerate(self.target_shape):
             # TODO: What to do about bitvectors here?
             if v == -1:
-                if auto_dim != -1:
-                    raise ValueError(
-                        "Only one auto-dim is allowed! "
-                        "See https://pytorch.org/docs/stable/generated/torch.reshape.html")
+                SanityCheck.eq(auto_dim, -1)
                 auto_dim = i
             else:
                 accum = nnsmith_mul(accum, v)
 
         # First see if there's any symbols in the expression
-        symbol_indices = []
-        for v in input_shapes[0].shape:
-            if isinstance(v, z3.ExprRef):
-                symbol_indices.append(i)
+        symbol_indices = [
+            v for v in input_shapes[0].shape if isinstance(v, z3.ExprRef)]
         if len(symbol_indices) == 0:
             shape_var.shape[auto_dim] = reduce(
                 lambda x, y: x * y, input_shapes[0].shape, 1) // accum
@@ -1662,59 +1785,18 @@ class Reshape(UnaryOpBase, ABC):
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
         return [(-1, out_shape_var[0].dtype)]
 
-# Expand 6 times.
-
 
 class Flatten(Reshape):
+    num_var_param = None
     # Inputs are target shape.
+
     def __init__(self, dim0: Union[int, z3.ExprRef]):
-        super().__init__()
+        super().__init__(1, dim0)
         self.dim0 = dim0
-        self.target_shape = [dim0]
-        self.out_ranks = [1]
 
     def torch(self):
-        return lambda x: x.flatten()
-
-
-class Reshape1D(Reshape):
-    # Inputs are target shape.
-    def __init__(self, dim0: Union[int, z3.ExprRef]):
-        super().__init__()
-        self.dim0 = dim0
-        self.target_shape = [dim0]
-        self.out_ranks = [1]
-
-
-class Reshape2D(Reshape):
-    def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef]):
-        super().__init__()
-        self.dim0 = dim0
-        self.dim1 = dim1
-        self.target_shape = [dim0, dim1]
-        self.out_ranks = [2]
-
-
-class Reshape3D(Reshape):
-    def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef]):
-        super().__init__()
-        self.dim0 = dim0
-        self.dim1 = dim1
-        self.dim2 = dim2
-        self.target_shape = [dim0, dim1, dim2]
-        self.out_ranks = [3]
-
-
-class Reshape4D(Reshape):
-    def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef], dim2: Union[int, z3.ExprRef],
-                 dim3: Union[int, z3.ExprRef]):
-        super().__init__()
-        self.dim0 = dim0
-        self.dim1 = dim1
-        self.dim2 = dim2
-        self.dim3 = dim3
-        self.target_shape = [dim0, dim1, dim2, dim3]
-        self.out_ranks = [4]
+        # See https://github.com/pytorch/pytorch/issues/74142
+        return lambda x: x.flatten().unsqueeze(0)
 
 
 class Transpose(UnaryOpBase, ABC):
@@ -1724,7 +1806,8 @@ class Transpose(UnaryOpBase, ABC):
         """See https://pytorch.org/docs/stable/generated/torch.transpose.html
         """
         super().__init__()
-        self.inp_ranks = [-1]
+        self.inp_ranks = [int_from(1)]
+        self.out_ranks = [int_from(1)]
 
     def _init_swap_dims(self, input_shape: List[Union[int, z3.ExprRef]]):
         ConstraintCheck.ge(len(input_shape), 2)
@@ -1760,77 +1843,102 @@ class Transpose(UnaryOpBase, ABC):
 # Sum, Min, Max, Mean, ArgMin, ArgMax, Squeeze, Size
 
 
+class InterpBase(UnaryOpBase):
+    num_var_param = int_range(1, 3)
+
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
+
+    def __init__(self, *size):
+        super().__init__()
+        self.size = size
+        self.inp_ranks = [(len(size) + 2,)]
+        self.out_ranks = [(len(size) + 2,)]
+
+    def _requires(self, input_shapes: List[ShapeVar]):
+        return [nnsmith_gt(v, 0) for v in self.size]
+
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        shape = input_shapes[0].shape
+        for i in range(len(self.size)):
+            shape[-(1 + i)] = self.size[-(1 + i)]
+        return [ShapeVar(shape, input_shapes[0].dtype)]
+
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        return [(out_shape_var[0].ndims, out_shape_var[0].dtype)]
+
+
+class NearestInterp(InterpBase):
+    def torch(self) -> Callable[..., torch.Tensor]:
+        return lambda x: torch.nn.functional.interpolate(x, size=self.size, mode='nearest')
+
+
+class LinearInterp(InterpBase):
+    num_var_param = [1]
+
+    def torch(self) -> Callable[..., torch.Tensor]:
+        return lambda x: torch.nn.functional.interpolate(x, size=self.size, mode='linear')
+
+
+class BilinearInterp(InterpBase):
+    num_var_param = [2]
+
+    def torch(self) -> Callable[..., torch.Tensor]:
+        return lambda x: torch.nn.functional.interpolate(x, size=self.size, mode='bilinear')
+
+
+class BicubicInterp(InterpBase):
+    num_var_param = [2]
+
+    def torch(self) -> Callable[..., torch.Tensor]:
+        return lambda x: torch.nn.functional.interpolate(x, size=self.size, mode='bicubic')
+
+
+class TrilinearInterp(InterpBase):
+    num_var_param = [3]
+
+    def torch(self) -> Callable[..., torch.Tensor]:
+        return lambda x: torch.nn.functional.interpolate(x, size=self.size, mode='trilinear')
+
+
 class ReduceBase(UnaryOpBase, ABC):
     _reduce_out_dtype = None  # None means same as input dtype
 
-    def __init__(self, num_dim: int):
+    def __init__(self):
         super().__init__()
-        SanityCheck.ge(num_dim, 1)
-        self.num_dim = num_dim
-        self.extra_attrs['reduce_dim'] = random.randint(0, self.num_dim - 1)
+        self.inp_ranks = [int_from(1)]
+        self.out_ranks = [int_range(1, __MAX_RANK__ - 1)]
+
+    def _init_reduce_dim(self, input_shape: List[Union[int, z3.ExprRef]]):
+        if 'reduce_dim' not in self.extra_attrs:
+            self.extra_attrs['reduce_dim'] = random.randint(
+                0, len(input_shape) - 1)
+        return self.extra_attrs['reduce_dim']
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        SanityCheck.eq(len(input_shapes[0].shape), self.num_dim)
-        shape_var = input_shapes[0]
         svar_list = []
-        for i, v in enumerate(shape_var.shape):
-            if i != self.extra_attrs['reduce_dim']:
+        for i, v in enumerate(input_shapes[0].shape):
+            if i != self._init_reduce_dim(input_shapes[0].shape):
                 svar_list.append(v)
-        return [ShapeVar(svar_list,
-                         input_shapes[0].dtype if self._reduce_out_dtype is None else self._reduce_out_dtype)]
+        return [ShapeVar(svar_list, input_shapes[0].dtype if self._reduce_out_dtype is None else self._reduce_out_dtype)]
 
     def _requires(self, input_shapes: List[ShapeVar]):
-        SanityCheck.ge(len(input_shapes[0].shape), self.num_dim)
+        reduce_dim = self._init_reduce_dim(input_shapes[0].shape)
         return []
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
-        return [(self.inp_ranks[0], out_shape_var[0].dtype)]
+        return [(1 + out_shape_var[0].ndims, out_shape_var[0].dtype)]
 
 
 class SqueezeBase(ReduceBase, ABC):
     in_dtypes = [(i,) for i in DTYPE_ALL]
 
     def _requires(self, input_shapes):
-        SanityCheck.eq(len(input_shapes[0].shape), self.num_dim)
-        if isinstance(input_shapes[0].shape[self.extra_attrs['reduce_dim']], z3.ExprRef):
-            return [nnsmith_eq(input_shapes[0].shape[self.extra_attrs['reduce_dim']], 1)]
-        else:
-            ConstraintCheck.eq(
-                input_shapes[0].shape[self.extra_attrs['reduce_dim']], 1)
-        return []
+        reduce_dim = self._init_reduce_dim(input_shapes[0].shape)
+        return [nnsmith_eq(input_shapes[0].shape[reduce_dim], 1)]
 
     def torch(self):
         return lambda x: x.squeeze(self.extra_attrs['reduce_dim'])
-
-# FIXME: Support 1D (vector -> scalar)
-
-
-class Squeeze2D(SqueezeBase):
-    def __init__(self):
-        super().__init__(2)
-        self.out_ranks = [1]
-        self.inp_ranks = [2]
-
-
-class Squeeze3D(SqueezeBase):
-    def __init__(self):
-        super().__init__(3)
-        self.out_ranks = [2]
-        self.inp_ranks = [3]
-
-
-class Squeeze4D(SqueezeBase):
-    def __init__(self):
-        super().__init__(4)
-        self.out_ranks = [3]
-        self.inp_ranks = [4]
-
-
-class Squeeze5D(SqueezeBase):
-    def __init__(self):
-        super().__init__(5)
-        self.out_ranks = [4]
-        self.inp_ranks = [5]
 
 
 class ReduceSum(ReduceBase, ABC):
@@ -1842,68 +1950,12 @@ class ReduceSum(ReduceBase, ABC):
         return lambda x: x.sum(self.extra_attrs['reduce_dim'])
 
 
-class ReduceSum2D(ReduceSum):
-    def __init__(self):
-        super().__init__(2)
-        self.out_ranks = [1]
-        self.inp_ranks = [2]
-
-
-class ReduceSum3D(ReduceSum):
-    def __init__(self):
-        super().__init__(3)
-        self.out_ranks = [2]
-        self.inp_ranks = [3]
-
-
-class ReduceSum4D(ReduceSum):
-    def __init__(self):
-        super().__init__(4)
-        self.out_ranks = [3]
-        self.inp_ranks = [4]
-
-
-class ReduceSum5D(ReduceSum):
-    def __init__(self):
-        super().__init__(5)
-        self.out_ranks = [4]
-        self.inp_ranks = [5]
-
-
 class ReduceMin(ReduceBase, ABC):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
 
     def torch(self):
         return lambda x: x.min(self.extra_attrs['reduce_dim']).values
-
-
-class ReduceMin2D(ReduceMin):
-    def __init__(self):
-        super().__init__(2)
-        self.out_ranks = [1]
-        self.inp_ranks = [2]
-
-
-class ReduceMin3D(ReduceMin):
-    def __init__(self):
-        super().__init__(3)
-        self.out_ranks = [2]
-        self.inp_ranks = [3]
-
-
-class ReduceMin4D(ReduceMin):
-    def __init__(self):
-        super().__init__(4)
-        self.out_ranks = [3]
-        self.inp_ranks = [4]
-
-
-class ReduceMin5D(ReduceMin):
-    def __init__(self):
-        super().__init__(5)
-        self.out_ranks = [4]
-        self.inp_ranks = [5]
 
 
 class ReduceMax(ReduceBase, ABC):
@@ -1914,75 +1966,12 @@ class ReduceMax(ReduceBase, ABC):
         return lambda x: x.max(self.extra_attrs['reduce_dim']).values
 
 
-class ReduceMax2D(ReduceMax):
-    def __init__(self):
-        super().__init__(2)
-        self.out_ranks = [1]
-        self.inp_ranks = [2]
-
-
-class ReduceMax3D(ReduceMax):
-    def __init__(self):
-        super().__init__(3)
-        self.out_ranks = [2]
-        self.inp_ranks = [3]
-
-
-class ReduceMax4D(ReduceMax):
-    def __init__(self):
-        super().__init__(4)
-        self.out_ranks = [3]
-        self.inp_ranks = [4]
-
-
-class ReduceMax5D(ReduceMax):
-    def __init__(self):
-        super().__init__(5)
-        self.out_ranks = [4]
-        self.inp_ranks = [5]
-
-
 class ReduceMean(ReduceBase, ABC):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def torch(self):
         return lambda x: x.mean(self.extra_attrs['reduce_dim'])
-
-
-class ReduceMean1D(ReduceMean):
-    def __init__(self):
-        super().__init__(1)
-        self.out_ranks = [0]
-        self.inp_ranks = [1]
-
-
-class ReduceMean2D(ReduceMean):
-    def __init__(self):
-        super().__init__(2)
-        self.out_ranks = [1]
-        self.inp_ranks = [2]
-
-
-class ReduceMean3D(ReduceMean):
-    def __init__(self):
-        super().__init__(3)
-        self.out_ranks = [2]
-        self.inp_ranks = [3]
-
-
-class ReduceMean4D(ReduceMean):
-    def __init__(self):
-        super().__init__(4)
-        self.out_ranks = [3]
-        self.inp_ranks = [4]
-
-
-class ReduceMean5D(ReduceMean):
-    def __init__(self):
-        super().__init__(5)
-        self.out_ranks = [4]
-        self.inp_ranks = [5]
 
 
 class ArgMin(ReduceBase, ABC):
@@ -1996,35 +1985,7 @@ class ArgMin(ReduceBase, ABC):
         return lambda x: x.argmin(self.extra_attrs['reduce_dim'])
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
-        return [(self.inp_ranks[0], random.choice(self.in_dtypes)[0])]
-
-
-class ArgMin2D(ArgMin):
-    def __init__(self):
-        super().__init__(2)
-        self.out_ranks = [1]
-        self.inp_ranks = [2]
-
-
-class ArgMin3D(ArgMin):
-    def __init__(self):
-        super().__init__(3)
-        self.out_ranks = [2]
-        self.inp_ranks = [3]
-
-
-class ArgMin4D(ArgMin):
-    def __init__(self):
-        super().__init__(4)
-        self.out_ranks = [3]
-        self.inp_ranks = [4]
-
-
-class ArgMin5D(ArgMin):
-    def __init__(self):
-        super().__init__(5)
-        self.out_ranks = [4]
-        self.inp_ranks = [5]
+        return [(out_shape_var[0].ndims + 1, random.choice(self.in_dtypes)[0])]
 
 
 class ArgMax(ReduceBase, ABC):
@@ -2038,35 +1999,7 @@ class ArgMax(ReduceBase, ABC):
         return lambda x: x.argmax(self.extra_attrs['reduce_dim'])
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
-        return [(self.inp_ranks[0], random.choice(self.in_dtypes)[0])]
-
-
-class ArgMax2D(ArgMax):
-    def __init__(self):
-        super().__init__(2)
-        self.out_ranks = [1]
-        self.inp_ranks = [2]
-
-
-class ArgMax3D(ArgMax):
-    def __init__(self):
-        super().__init__(3)
-        self.out_ranks = [2]
-        self.inp_ranks = [3]
-
-
-class ArgMax4D(ArgMax):
-    def __init__(self):
-        super().__init__(4)
-        self.out_ranks = [3]
-        self.inp_ranks = [4]
-
-
-class ArgMax5D(ArgMax):
-    def __init__(self):
-        super().__init__(5)
-        self.out_ranks = [4]
-        self.inp_ranks = [5]
+        return [(out_shape_var[0].ndims + 1, random.choice(self.in_dtypes)[0])]
 
 
 class Linear(UnaryOpBase):
@@ -2077,8 +2010,9 @@ class Linear(UnaryOpBase):
         super().__init__()
         self.ifeat = ifeat
         self.ofeat = ofeat
-        self.inp_ranks = [-1]
-        self.out_ranks = [-1]  # at least one dim. cannot be zero.
+        self.inp_ranks = [int_from(1)]
+        # at least one dim. cannot be zranks_all()
+        self.out_ranks = [int_from(1)]
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         assert len(input_shapes) == 1, "Linear only takes one input, but got {}".format(
@@ -2115,34 +2049,33 @@ class Concat(AbsOpBase):
 
     def __init__(self, arity):
         super().__init__()
-        SanityCheck.le(arity, self.MAX_ARITY)
+        SanityCheck.le(arity, Concat.MAX_ARITY)
         self.arity = arity
-        self.concat_rank = random.randint(1, 5)
-        self.extra_attrs['axis'] = random.randint(0, self.concat_rank - 1)
-        self.inp_ranks = [self.concat_rank] * arity
-        self.out_ranks = [self.concat_rank]
+        self.inp_ranks = [(int_from(1))] * arity
+        self.out_ranks = [(int_from(1))]
         self.same_inp_dims = True
+
+    def _init_concat_axis(self, input_shapes: List[ShapeVar]) -> int:
+        if 'axis' not in self.extra_attrs:
+            self.extra_attrs['axis'] = random.randint(
+                0, input_shapes[0].ndims - 1)
+        return self.extra_attrs['axis']
 
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
         ndims = input_shapes[0].ndims
-        SanityCheck.gt(ndims, 0)
-        axis = self.extra_attrs['axis']
-        SanityCheck.gt(ndims, axis)
-
+        SanityCheck.gt(ndims, self._init_concat_axis(input_shapes))
         for s in input_shapes:
             SanityCheck.eq(s.ndims, ndims)
-        assert len(input_shapes) == self.arity
         cons = []
         for d in range(ndims):
-            if d != axis:
+            if d != self._init_concat_axis(input_shapes):
                 cons.extend(nnsmith_eq(s.shape[d], input_shapes[0].shape[d])
                             for s in input_shapes)
         return cons
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        ndims = input_shapes[0].ndims
-        SanityCheck.true(ndims > 0)
-        axis = self.extra_attrs['axis']
+        SanityCheck.true(input_shapes[0].ndims > 0)
+        axis = self._init_concat_axis(input_shapes)
         os = ShapeVar(input_shapes[0].shape, input_shapes[0].dtype)
         os.shape[axis] = reduce(
             nnsmith_add, [s.shape[axis] for s in input_shapes])
@@ -2150,7 +2083,7 @@ class Concat(AbsOpBase):
 
     def torch(self):
         axis = self.extra_attrs['axis']
-        return lambda *args: torch.cat(args, axis)
+        return lambda *args: torch.cat(args, dim=axis)
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
         return [(out_shape_var[0].ndims, out_shape_var[0].dtype) for _ in range(self.arity)]
@@ -2197,8 +2130,8 @@ class Cast(ElementWiseUnaryOp, ABC):
 
     def __init__(self, dtype):
         super().__init__()
-        self.inp_ranks = [-1]
-        self.out_ranks = [-1]
+        self.inp_ranks = [int_all()]
+        self.out_ranks = [int_all()]
         self.extra_attrs = {'to': dtype}
 
     def __str__(self) -> str:
@@ -2262,8 +2195,8 @@ class Gemm(TernaryOpBase):
 
     def __init__(self):
         super().__init__()
-        self.inp_ranks = [-1, 2, 2]
-        self.out_ranks = [2]
+        self.inp_ranks = [int_until(2), (2,), (2,)]
+        self.out_ranks = [(2,)]
 
     def _set_or_get_extra_attrs(self, dtype=None):
         if 'alpha' not in self.extra_attrs:
@@ -2391,8 +2324,7 @@ def config_skip_op(skip_config):
 def _check_comb(comb: DTypeComb, op: AbsOpBase):
     inps = []
     for dtype, ndims in zip(comb, op.inp_ranks):
-        if ndims == -1:
-            ndims = 2
+        ndim = min(ndims)
         # TODO use symbolic solver
         inps.append(torch.empty([2] * ndims, dtype=dtype.value))
     try:

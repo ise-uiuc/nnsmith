@@ -1,6 +1,5 @@
 import matplotlib.pyplot as plt
 from matplotlib_venn import venn2, venn3
-from matplotlib_venn._venn3 import compute_venn3_subsets
 import numpy as np
 
 import os
@@ -9,29 +8,36 @@ import pandas as pd
 
 
 class Ploter:
-    def __init__(self, cov_lim=None, use_pdf=False) -> None:
+    def __init__(self, cov_lim=None, use_pdf=False, one_plot=False) -> None:
         self.legends = []  # type: ignore
         # cov / time, cov / iteration, iteration / time
-        fig, axs = plt.subplots(1, 3, constrained_layout=True, figsize=(13, 5))
+        if not one_plot:
+            fig, axs = plt.subplots(
+                1, 3, constrained_layout=True, figsize=(13, 5))
+        else:
+            fig, axs = plt.subplots(
+                1, 1, constrained_layout=True, figsize=(6, 5))
+            axs = [axs]
+        self.one_plot = one_plot
         self.fig = fig
         self.axs = axs
         self.cov_lim = cov_lim
-        self.cov_max = 0
-        self.cov_min = 1000000000000000000
-        self.xspan = None
+        self.cov_maxes = []
+        self.xspan = 0
         self.use_pdf = use_pdf
 
     def add(self, data, name=None):
         df = np.array(data)
 
         self.axs[0].plot(df[:, 0], df[:, 2])  # cov / time
-        self.axs[1].plot(df[:, 1], df[:, 2])  # cov / iteration
-        self.axs[2].plot(df[:, 0], df[:, 1])  # iter / time
 
-        self.xspan = df[-1, 0]
+        if not self.one_plot:
+            self.axs[1].plot(df[:, 1], df[:, 2])  # cov / iteration
+            self.axs[2].plot(df[:, 0], df[:, 1])  # iter / time
 
-        self.cov_max = max(self.cov_max, df[:, 2].max())
-        self.cov_min = min(self.cov_min, df[:, 2].max())
+        self.xspan = max(self.xspan, df[-1, 0])
+
+        self.cov_maxes.append(df[:, 2].max())
 
         if name:
             self.legends.append(name)
@@ -42,8 +48,17 @@ class Ploter:
         for axs in self.axs:
             axs.legend(self.legends, loc='upper left')
 
+        self.cov_maxes = sorted(self.cov_maxes)
+
+        if len(self.cov_maxes) > 1:
+            print(
+                f'==> Best one is {self.cov_maxes[-1] / self.cov_maxes[-2]:.2f}x better than the second best one')
+
+        cov_max = max(self.cov_maxes)
+        cov_min = min(self.cov_maxes)
+
         if cov_lim is not None:
-            self.axs[0].annotate(f"{int(self.cov_max)}/{int(cov_lim)} ~ $\\bf{{{self.cov_max / cov_lim * 100 :.1f}\%}}$", xy=(self.xspan, self.cov_max * 1.02), xycoords="data",
+            self.axs[0].annotate(f"{int(cov_max)}/{int(cov_lim)} ~ $\\bf{{{cov_max / cov_lim * 100 :.1f}\%}}$", xy=(self.xspan, cov_max * 1.02), xycoords="data",
                                  va="center", ha="right", fontsize=11,
                                  bbox=dict(boxstyle="sawtooth", fc="w"))
         #     self.axs[0].axhline(y=cov_lim, color='r', linestyle='dashdot')
@@ -54,44 +69,45 @@ class Ploter:
 
         if self.cov_lim is not None:
             self.axs[0].set_ylim(bottom=self.cov_lim)
-            self.axs[1].set_ylim(bottom=self.cov_lim)
+            if not self.one_plot:
+                self.axs[1].set_ylim(bottom=self.cov_lim)
         else:
-            self.axs[0].set_ylim(bottom=self.cov_min * 0.85)
-            self.axs[1].set_ylim(bottom=self.cov_min * 0.85)
+            self.axs[0].set_ylim(bottom=cov_min * 0.85)
+            if not self.one_plot:
+                self.axs[1].set_ylim(bottom=cov_min * 0.85)
 
         self.axs[0].set(
             xlabel='Time / Second',
             ylabel=f'# {cov_type}Coverage')
         self.axs[0].set_title('Coverage $\\bf{Time}$ Efficiency')
 
-        self.axs[1].set(
-            ylabel=f'# {cov_type}Coverage',
-            xlabel='# Iteration')
-        self.axs[1].set_title('Coverage $\\bf{Iteration}$ Efficiency')
+        if not self.one_plot:
+            self.axs[1].set(
+                ylabel=f'# {cov_type}Coverage',
+                xlabel='# Iteration')
+            self.axs[1].set_title('Coverage $\\bf{Iteration}$ Efficiency')
 
-        self.axs[2].set(
-            xlabel='Time / Second',
-            ylabel='# Iteration')
-        self.axs[2].set_title('Iteration Speed')
+            self.axs[2].set(
+                xlabel='Time / Second',
+                ylabel='# Iteration')
+            self.axs[2].set_title('Iteration Speed')
 
         if self.use_pdf:
             self.fig.savefig(save + '.pdf')
         self.fig.savefig(save + '.png')
 
 
-def cov_summerize(data, pass_filter=None, tlimit=None, gen_time=None):
-    line_by_time = [[0, 0, 0]]
-    branch_by_time = [[0, 0, 0]]
-    func_by_time = [[0, 0, 0]]
+def cov_summerize(data, pass_filter=None, tlimit=None, branch_only=True, gen_time=None):
     model_total = 0
 
-    final_lf = 0
+    branch_by_time = [[0, 0, 0]]
     final_bf = 0
-    final_ff = 0
+
+    line_by_time = [[0, 0, 0]]
+    final_lf = 0
 
     for time, value in data.items():
         lf = 0
-        ff = 0
         bf = 0
 
         n_model = value['n_model']
@@ -101,28 +117,28 @@ def cov_summerize(data, pass_filter=None, tlimit=None, gen_time=None):
             time -= gen_time[0][:model_total].sum()
         line_cov = 0
         branch_cov = 0
-        func_cov = 0
         for fname in cov:
             if pass_filter is not None and not pass_filter(fname):
                 continue
-            line_cov += len(cov[fname]['lines'])
-            branch_cov += len(cov[fname]['branches'])
-            func_cov += len(cov[fname]['functions'])
 
-            lf += cov[fname]['lf']
-            ff += cov[fname]['ff']
+            branch_cov += len(cov[fname]['branches'])
             bf += cov[fname]['bf']
-        line_by_time.append([time, model_total, line_cov])
+
+            if not branch_only:
+                line_cov += len(cov[fname]['lines'])
+                lf += cov[fname]['lf']
+
+        if not branch_only:
+            line_by_time.append([time, model_total, line_cov])
+
         branch_by_time.append([time, model_total, branch_cov])
-        func_by_time.append([time, model_total, func_cov])
 
         final_lf = max(final_lf, lf)
         final_bf = max(final_bf, bf)
-        final_ff = max(final_ff, ff)
 
         if tlimit is not None and time > tlimit:
             break
-    return line_by_time, branch_by_time, func_by_time, (final_lf, final_bf, final_ff)
+    return line_by_time, branch_by_time, (final_lf, final_bf)
 
 
 def tvm_pass_filter(fname):
@@ -144,10 +160,8 @@ def tvm_arith_filter(fname):
     return 'arith' in fname
 
 
-def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag='', tlimit=None, pdf=False, pass_tag='', gen_time=None):
-    line_ploter = Ploter(use_pdf=pdf)
-    branch_ploter = Ploter(use_pdf=pdf)
-    func_ploter = Ploter(use_pdf=pdf)
+def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag='', tlimit=None, pdf=False, one_plot=False, pass_tag='', gen_time=None):
+    branch_ploter = Ploter(use_pdf=pdf, one_plot=one_plot)
 
     assert fuzz_tags is not None
     if pass_filter is not None:
@@ -157,32 +171,24 @@ def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag=''
     # We took the max.
     lf = 0
     bf = 0
-    ff = 0
 
     for idx, (k, v) in enumerate(data.items()):
-        line_by_time, branch_by_time, func_by_time, (lf_, bf_, ff_) = cov_summerize(
+        _, branch_by_time, (lf_, bf_) = cov_summerize(
             v, tlimit=tlimit, pass_filter=pass_filter,
             gen_time=gen_time[k] if gen_time is not None else None)
-        line_ploter.add(data=line_by_time, name=fuzz_tags[idx])
         branch_ploter.add(data=branch_by_time, name=fuzz_tags[idx])
-        func_ploter.add(data=func_by_time, name=fuzz_tags[idx])
 
         lf = max(lf, lf_)
         bf = max(bf, bf_)
-        ff = max(ff, ff_)
 
-    line_ploter.plot(save=os.path.join(
-        folder, target_tag + pass_tag + 'line_cov'), cov_type='Line', cov_lim=lf)
     branch_ploter.plot(save=os.path.join(
         folder, target_tag + pass_tag + 'branch_cov'), cov_type='Branch', cov_lim=bf)
-    func_ploter.plot(save=os.path.join(
-        folder, target_tag + pass_tag + 'func_cov'), cov_type='Function', cov_lim=ff)
 
     # venn graph plot
     branch_cov_sets = []
     for _, v in data.items():
         last_key = sorted(list(v.keys()))[-1]
-        # file -> {lines, branches, functions}
+        # file -> {lines, branches}
         final_cov = v[last_key]['merged_cov']
         branch_set = set()
         for fname in final_cov:
@@ -296,7 +302,7 @@ if '__main__' == __name__:
 
     if pass_filter is not None:
         plot_one_round(folder=args.output, data=data,
-                       pass_filter=pass_filter, pass_tag='opt_', tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, gen_time=gen_time)
+                       pass_filter=pass_filter, pass_tag='opt_', tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, one_plot=True, gen_time=gen_time)
     if arith_filter is not None:
         plot_one_round(folder=args.output, data=data,
                        pass_filter=arith_filter, pass_tag='arith_', tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, gen_time=gen_time)

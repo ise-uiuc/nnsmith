@@ -16,10 +16,8 @@ def analyze_lcov(path):
     ret = {
         # 'filename': {
         #    'lines': [identifiers],
-        #    'functions': [identifiers],
         #    'branches': [identifiers],
         #    'lf': # lines total,
-        #    'ff': # functions total,
         #    'bf': # branches total,
         # }
     }
@@ -35,7 +33,6 @@ def analyze_lcov(path):
         filename = cov_lines[0][3:]
 
         lines = set()
-        functions = set()
         branches = set()
 
         # LH: # line hits
@@ -44,34 +41,19 @@ def analyze_lcov(path):
         # NOTE: LH might (slightly) != len(lines). we only consider len(lines).
 
         n_line_total = 0    # LF: # lines
-        n_func_total = 0    # FNF: # functions -> directly use FNH
         n_branch_total = 0  # BRF: # branches
 
         lf = 0
-        fnf = 0
         brf = 0
-
-        func_name_to_line = {}
-        func_line_set = set()
 
         for cov_line in cov_lines[1:]:
             cov_line = cov_line.rstrip('\n')
-            if cov_line.startswith('FN:'):
-                line_number, func_name = cov_line[3:].split(',')
-                func_name_to_line[func_name] = int(line_number)
-                if int(line_number) not in func_line_set:
-                    n_func_total += 1
-            elif cov_line.startswith('DA:'):
+            if cov_line.startswith('DA:'):
                 # DA: <line number>,<execution count> for each instrumented line
                 line_number, exec_count = cov_line[3:].split(',')
                 if exec_count != '0':
                     lines.add(int(line_number))
                 n_line_total += 1
-            elif cov_line.startswith('FNDA:'):
-                # FNDA: <call-count>,<function-name>
-                call_count, func_name = cov_line[5:].split(',')
-                if call_count != '0':
-                    functions.add(func_name_to_line[func_name])
             elif cov_line.startswith('BRDA:'):
                 # BRDA: <line number>,<block number>,<branch number>,<taken>
                 line_number, block_number, branch_number, taken = cov_line[5:].split(',')
@@ -84,10 +66,6 @@ def analyze_lcov(path):
                 lf = int(cov_line[3:])
             # elif cov_line.startswith('FNH:'):
             #     n_func_hit = int(cov_line[4:])
-            elif cov_line.startswith('FNF:'):
-                fnf = int(cov_line[4:])
-            # elif cov_line.startswith('BRH:'):
-            #     n_branch_hit = int(cov_line[4:])
             elif cov_line.startswith('BRF:'):
                 brf = int(cov_line[4:])
             else:
@@ -98,22 +76,19 @@ def analyze_lcov(path):
         n_line_total = max(lf, n_line_total)
 
         assert len(lines) <= n_line_total, f'{len(lines)} <= {n_line_total} in {filename}'
-        assert len(functions) <= n_func_total, f'{len(functions)} <= {n_func_total} in {filename}'
         assert len(branches) <= n_branch_total, f'{len(branches)} <= {n_branch_total} in {filename}'
 
         ret[filename] = {
             'lines': lines,
-            'functions': functions,
             'branches': branches,
             'lf': n_line_total,
-            'ff': n_func_total,
             'bf': n_branch_total,
         }
         
     return ret
 
 
-def analyze_folder(folder, redo=False):
+def analyze_folder(folder, redo=False, max_time=None):
     return_write_name = os.path.join(folder, 'merged_cov.pkl')
 
     if os.path.exists(return_write_name) and not redo:
@@ -147,10 +122,8 @@ def analyze_folder(folder, redo=False):
     def merge_cov(current, rhs, hint=''):
         # {
         #     'lines': lines,
-        #     'functions': functions,
         #     'branches': branches,
         #     'lf': n_line_total,
-        #     'ff': n_func_total,
         #     'bf': n_branch_total,
         # }
 
@@ -162,16 +135,11 @@ def analyze_folder(folder, redo=False):
                 continue
             else:
                 current[k]['lines'] = current[k]['lines'].union(rhs[k]['lines'])
-                current[k]['functions'] = current[k]['functions'].union(rhs[k]['functions'])
                 current[k]['branches'] = current[k]['branches'].union(rhs[k]['branches'])
 
                 if current[k]['lf'] != rhs[k]['lf']:
                     print(f'[WARNING] total line {current[k]["lf"]} != {rhs[k]["lf"]} in {k} ' + hint)
                     current[k]['lf'] = max(current[k]['lf'], rhs[k]['lf'])
-                
-                if current[k]['ff'] != rhs[k]['ff']:
-                    print(f'[WARNING] total func {current[k]["ff"]} != {rhs[k]["ff"]} in {k} ' + hint)
-                    current[k]['ff'] = max(current[k]['ff'], rhs[k]['ff'])
                 
                 if current[k]['bf'] != rhs[k]['bf']:
                     print(f'[WARNING] total branch {current[k]["bf"]} != {rhs[k]["bf"]} in {k} ' + hint)
@@ -182,8 +150,12 @@ def analyze_folder(folder, redo=False):
     current_cov = {}
     current_time = 0
     for i, r in enumerate(results):
-        t, _, n_model = stats[i].split(',')
+        tokens = stats[i].split(',')
+        t = tokens[0]
+        n_model = tokens[2]
         current_time += float(t)
+        if max_time is not None and current_time > max_time:
+            break
         ret[current_time] = {}
         ret[current_time]['n_model'] = int(n_model)
         current_cov = merge_cov(current_cov, r, f'merging {file_list[i]}')
@@ -198,7 +170,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Analyze coverage and plot visualizations.')
     parser.add_argument('-f', '--folders', type=str, nargs='+', help='bug report folder')
     parser.add_argument('--redo', action='store_true', help='redo analysis')
+    parser.add_argument('--max_time', type=int, default=60*60*4, help='max time in seconds for coverage evaluation')
     args = parser.parse_args()
 
     for folder in args.folders:
-        analyze_folder(folder, redo=args.redo)
+        analyze_folder(folder, redo=args.redo, max_time=args.max_time)

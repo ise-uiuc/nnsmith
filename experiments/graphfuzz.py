@@ -8,7 +8,8 @@ Here's a few facts:
     4.1: In additoin to LEMON, they support non-unary operators, ensuring the shape match by:
         a. slicing;
         b. padding (keeping layers element-wise); 
-    4.2: Operators with padding to ensure everything is element-wise.
+        c. unsqueezing; (we added this to make GraphFuzz even better)
+    4.2: Operators with padding to try to ensure everything is element-wise.
         NOTE: Through the examples, they basically assume input rank is 4 (NCHW).
 
 Thus we now conclude the search space:
@@ -36,9 +37,10 @@ import torch
 from tqdm import tqdm
 
 from nnsmith.util import mkdir
-from nnsmith.abstract.op import ALL_OP_TYPES, AbsOpBase, BatchNorm2d, \
-    Concat, ElementWiseUnaryOp, Input, Constant, Linear, NCHWConv2d, Pool2d, Softmax, DType
+from nnsmith.abstract.op import ALL_OP_TYPES, AbsOpBase, Softmax, BatchNorm2d, \
+    Concat, Input, Constant, NCHWConv2d, Pool2d, DType, Div, ElementWiseUnaryOp, BcastBinaryOp
 from nnsmith.dtype_test import rewrite_op_dtype
+
 
 class GraphFuzzNet(torch.nn.Module):
     def __init__(self, op_list: List[AbsOpBase]) -> None:
@@ -51,7 +53,7 @@ class GraphFuzzNet(torch.nn.Module):
             self.torch_inst.append(inst)
             if isinstance(inst, torch.nn.Module):
                 self.mlist.append(inst)
-    
+
     def forward(self, x):
         available_tensors = [x]
         shape_checker = x.shape
@@ -59,7 +61,7 @@ class GraphFuzzNet(torch.nn.Module):
             n_inp = len(op.inp_ranks)
             n_out = len(op.out_ranks)
             selected = [random.choice(available_tensors) for _ in range(n_inp)]
-            type_match = False
+            dtype_match = False
             for its in op.in_dtypes:
                 n_match = 0
                 for expected, have in zip(its, selected):
@@ -67,57 +69,92 @@ class GraphFuzzNet(torch.nn.Module):
                         break
                     n_match += 1
                 if n_match == n_inp:
-                    type_match = True
+                    dtype_match = True
                     break
-            
-            if not type_match:
+
+            # dtype match
+            if not dtype_match:
                 type_req = random.choice(op.in_dtypes)
-                outs = self.torch_inst[idx](*[tensor.type(DType.torch(t)) for tensor, t in zip(selected, type_req)])
-                # e.g., [(t, t, ...), ...]
-            else:
-                outs = self.torch_inst[idx](*selected)
-            
-            if isinstance(op, Concat): # Slice back
-                concat_axis = op.extra_attrs['axis']
-                if concat_axis == 0:
-                    outs = outs[0:x.shape[concat_axis]]
-                elif concat_axis == 1:
-                    outs = outs[:, 0:x.shape[concat_axis]]
-                elif concat_axis == 2:
-                    outs = outs[:, :, 0:x.shape[concat_axis]]
-                elif concat_axis == 3:
-                    outs = outs[:, :, :, 0:x.shape[concat_axis]]
-                elif concat_axis == 4:
-                    outs = outs[:, :, :, :, 0:x.shape[concat_axis]]
-                else:
-                    raise NotImplementedError
+                selected = [tensor.type(DType.torch(t))
+                            for tensor, t in zip(selected, type_req)]
+
+            # rank match
+            for i_st, st in enumerate(selected):
+                while len(selected[i_st].shape) > len(shape_checker):
+                    selected[i_st] = torch.select(
+                        selected[i_st], dim=0, index=0)
+
+                while len(selected[i_st].shape) < len(shape_checker):
+                    selected[i_st] = selected[i_st].unsqueeze(0)
+
+            # shape match
+            for i_st, st in enumerate(selected):
+                assert len(st.shape) == len(shape_checker)
+                if not st.shape == shape_checker:
+                    pads = []
+                    need2pad = False
+                    need2slice = False
+                    for i in range(len(st.shape)):
+                        if st.shape[i] < shape_checker[i]:
+                            pads.append(shape_checker[i] - st.shape[i])
+                            need2pad = True
+                        elif st.shape[i] > shape_checker[i]:
+                            pads.append(0)
+                            need2slice = True
+                        else:
+                            pads.append(0)
+
+                    # padding if too small
+                    if need2pad:
+                        padding = []
+                        for p in pads:
+                            padding.append(0)
+                            padding.append(p)
+                        selected[i_st] = torch.nn.functional.pad(
+                            selected[i_st], tuple(padding), mode='constant', value=1)
+
+                    # slicing if too large
+                    if need2slice:
+                        # must be rank of 4 now.
+                        selected[i_st] = selected[i_st][:shape_checker[0],
+                                                        :shape_checker[1], :shape_checker[2], :shape_checker[3]]
+
+            if isinstance(op, Div):
+                # avoid float-point errors.
+                selected[1] = selected[1].abs() + 0.1
+
+            outs = self.torch_inst[idx](*selected)
 
             if n_out == 1:
                 available_tensors.append(outs)
-                assert shape_checker == outs.shape, f"{shape_checker} != {outs.shape} in {op}"
             else:
                 available_tensors.extend(outs)
-                for o in outs:
-                    assert shape_checker == o.shape, f"{shape_checker} != {o.shape} in {op}"
-        
+
         return available_tensors[-1]
 
 
 class GraphFuzz:
     @staticmethod
-    def get_available_op_ts():
+    def get_available_op_ts(try_all=False):
+        # Using try all, we allow GraphFuzz to generate all possible operators.
+        # even though most of it gonna fail.
         available_op_ts = []
         for op_t in ALL_OP_TYPES:
-            if op_t is Input or op_t is Constant or op_t is Linear:
+            if op_t is Input or op_t is Constant:
                 continue
-            if issubclass(op_t, ElementWiseUnaryOp):
-                available_op_ts.append(op_t)
-            elif op_t is NCHWConv2d:
-                available_op_ts.append(op_t)
-            elif issubclass(op_t, Concat):
-                available_op_ts.append(op_t)
-            elif issubclass(op_t, Pool2d):
-                available_op_ts.append(op_t)
+            if not try_all:
+                if issubclass(op_t, ElementWiseUnaryOp):
+                    available_op_ts.append(op_t)
+                elif op_t is NCHWConv2d:
+                    available_op_ts.append(op_t)
+                elif issubclass(op_t, Concat):
+                    available_op_ts.append(op_t)
+                elif issubclass(op_t, Pool2d):
+                    available_op_ts.append(op_t)
+                elif issubclass(op_t, BcastBinaryOp):
+                    available_op_ts.append(op_t)
+                continue
+            available_op_ts.append(op_t)
         return available_op_ts
 
     def get_pool2d_params(self, input_shape):
@@ -168,8 +205,8 @@ class GraphFuzz:
                 return iC, iC, kh, kw, s, pad
         return [iC, iC, 1, 1, 1, 0]  # simple fallback
 
-    def __init__(self, approx_nop=10, dim_limit=[5, 5, 224, 224]) -> None:
-        self.available_op_ts = self.get_available_op_ts()
+    def __init__(self, approx_nop=10, dim_limit=[5, 5, 224, 224], try_all=False) -> None:
+        self.available_op_ts = self.get_available_op_ts(try_all=try_all)
         self.base_op_n = approx_nop
         self.dim_limit = dim_limit
 
@@ -182,7 +219,8 @@ class GraphFuzz:
             input_shape.append(random.randint(1, ls))
 
         ops = []
-        op_ts = [random.choice(self.available_op_ts) for _ in range(self.base_op_n)]
+        op_ts = [random.choice(self.available_op_ts)
+                 for _ in range(self.base_op_n)]
         for op_t in op_ts:
             if op_t is NCHWConv2d:
                 ic, oc, kw, kh, s, pad = self.get_conv2d_params(input_shape)
@@ -196,28 +234,33 @@ class GraphFuzz:
                 ops.append(op_t(input_shape[1]))
             elif issubclass(op_t, Concat):
                 op = op_t()
-                op.extra_attrs['axis'] = min(3, op.extra_attrs['axis'])
+                op.extra_attrs['axis'] = random.randint(0, 3)
                 ops.append(op)
             else:
-                ops.append(op_t())
-        
+                ops.append(op_t(*[random.randint(0, 10)
+                           for _ in range(op_t.get_num_var_param())]))
+
         return ops, input_shape
-            
+
     def run_once(self, save_path=None):
         ops, ishape = self.create_random_schedule()
         model = GraphFuzzNet(ops)
         with torch.no_grad():
-            torch.onnx.export(model, torch.randn(ishape), save_path, opset_version=14)
+            torch.onnx.export(model, torch.randn(ishape),
+                              save_path, opset_version=14)
+
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--approx_nop", type=int, default=10)
-    parser.add_argument("--dim_limit", type=int, nargs="+", default=[5, 5, 224, 224])
+    parser.add_argument("--dim_limit", type=int, nargs="+",
+                        default=[5, 5, 224, 224])
     parser.add_argument('--time_budget', type=int, default=60 * 60 * 4)
     parser.add_argument("--onnx_dir", type=str, default=None)
     parser.add_argument('--ort_cache', type=str, default=None)
     parser.add_argument("--seed", type=int, default=233)
+    parser.add_argument("--try_all", action='store_true')
     args = parser.parse_args()
 
     print(f'Using seed {args.seed}')
@@ -235,7 +278,8 @@ if __name__ == "__main__":
         # must pre run this. otherwise using ort will slow down generation.
         rewrite_op_dtype(ALL_OP_TYPES, backend=None, cache=args.ort_cache)
 
-    gf = GraphFuzz(approx_nop=args.approx_nop, dim_limit=args.dim_limit)
+    gf = GraphFuzz(approx_nop=args.approx_nop,
+                   dim_limit=args.dim_limit, try_all=args.try_all)
 
     # FORMAT: {generation time cost in seconds}, {model relative path}
     # MUST RANK by GENERATION ORDER.

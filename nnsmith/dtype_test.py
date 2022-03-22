@@ -1,8 +1,8 @@
 from typing import List
-from inspect import signature
 import warnings
 import pickle
 import os
+import random
 
 import z3
 import torch
@@ -58,17 +58,19 @@ def rewrite_op_dtype(ops: List[AbsOpBase], backend=None, verbose=False, cache=No
             print(f'===> Trying {node_t} # {idx}')
         available_idtypes = node_t.in_dtypes
 
-        op_param_n = signature(node_t).parameters
+        op_param_n = node_t.get_num_var_param()
         op_params = [z3.Int('v%s-%s' % (idx, k))
-                     for k in range(len(op_param_n))]
+                     for k in range(op_param_n)]
         op = node_t(*op_params)
 
         solver = z3.Solver()
 
         inputs = []
-        for i, rank in enumerate(op.inp_ranks):
-            if rank == -1:
-                rank = 2
+        for i, ranks in enumerate(op.inp_ranks):
+            if op.same_inp_dims and inputs:
+                rank = inputs[0].ndims
+            else:
+                rank = random.choice(ranks)
             shape = ShapeVar(shape=[z3.Int('s%s' % (k))
                              for k in range(rank)], dtype=available_idtypes[0][i])
             inputs.append(shape)
@@ -153,9 +155,18 @@ def rewrite_op_dtype(ops: List[AbsOpBase], backend=None, verbose=False, cache=No
 
 if __name__ == '__main__':
     import argparse
+    import numpy as np
     parser = argparse.ArgumentParser()
     parser.add_argument('--cache', default='config/ort_cpu_dtype.pkl')
+    parser.add_argument('--seed', default=233, type=int)
     args = parser.parse_args()
+
+    if args.cache == 'None':
+        args.cache = None
+
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
 
     from nnsmith.backends.ort_graph import ORTExecutor
     backend = ORTExecutor(opt_level=3)

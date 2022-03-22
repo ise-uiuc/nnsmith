@@ -32,7 +32,7 @@ def analyze_one(model_path):
     return nodes, edges
 
 
-def analyze_folders(folders, cache_dir=None, force=False):
+def analyze_folders(folders, cache_dir=None, force=False, n_limit=None):
     res = []
 
     __CACHE_FILE__ = 'onnx_analysis_cache.pkl'
@@ -46,13 +46,16 @@ def analyze_folders(folders, cache_dir=None, force=False):
     times = []
     file_hubs = []
     least_time = None
-    for folder in folders:
+    assert n_limit is None or len(n_limit) == len(folders)
+    for i, folder in enumerate(folders):
         df = pd.read_csv(os.path.join(folder, 'gentime.csv'),
                          usecols=[0, 1], header=None)
         ts = df[0].to_numpy()
 
         times.append(ts)
         files = df[1].tolist()
+        if n_limit is not None:
+            files = files[:n_limit[i]]
         files = [os.path.join(folder, f) for f in files]
         file_hubs.append(files)
 
@@ -87,6 +90,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--folders', type=str, nargs='+', required=True)
     parser.add_argument('--tags', type=str, nargs='+', default=None)
+    # should compare models within same generation duration.
+    parser.add_argument('--nlim', type=int, nargs='+', default=None)
     parser.add_argument('--output', type=str, default='results')
     parser.add_argument('--force', action='store_true')
     args = parser.parse_args()
@@ -97,7 +102,7 @@ if __name__ == '__main__':
         assert len(args.tags) == len(args.folders)
 
     results = analyze_folders(
-        args.folders, cache_dir=args.output, force=args.force)
+        args.folders, cache_dir=args.output, force=args.force, n_limit=args.nlim)
     for tag, (nodes, edges) in zip(args.tags, results):
         print(f'{tag}:\t nodes: {len(nodes)};\t edges: {len(edges)}')
 
@@ -112,10 +117,12 @@ if __name__ == '__main__':
         edge_list.append(edges)
 
     if len(node_list) == 2:
-        venn2(subsets=node_list, set_labels=[f'$\\bf{{{t}}}$' for t in args.tags])
+        venn2(subsets=node_list, set_labels=[
+              f'$\\bf{{{t}}}$' for t in args.tags])
         venn2_circles(subsets=node_list, linestyle='dashed')
     elif len(node_list) == 3:
-        v = venn3(subsets=node_list, set_labels=[f'$\\bf{{{t}}}$' for t in args.tags])
+        v = venn3(subsets=node_list, set_labels=[
+                  f'$\\bf{{{t}}}$' for t in args.tags])
         hatches = ['\\', '.', '*']
         circles = ['MediumVioletRed', 'SeaGreen', 'Lavender']
         for idx, id in enumerate(['100', '010', '001', '111']):
@@ -139,10 +146,12 @@ if __name__ == '__main__':
     plt.close()
 
     if len(node_list) == 2:
-        venn2(subsets=edge_list, set_labels=[f'$\\bf{{{t}}}$' for t in args.tags])
+        venn2(subsets=edge_list, set_labels=[
+              f'$\\bf{{{t}}}$' for t in args.tags])
         venn2_circles(subsets=edge_list, linestyle='dashed')
     elif len(node_list) == 3:
-        v = venn3(subsets=edge_list, set_labels=[f'$\\bf{{{t}}}$' for t in args.tags])
+        v = venn3(subsets=edge_list, set_labels=[
+                  f'$\\bf{{{t}}}$' for t in args.tags])
         hatches = ['\\', '.', '*']
         circles = ['MediumVioletRed', 'SeaGreen', 'Lavender']
         for idx, id in enumerate(['100', '010', '001', '111']):

@@ -43,7 +43,7 @@ if __name__ == '__main__':
     parser.add_argument('--report_folder', type=str, required=True)
     parser.add_argument('--backend', type=str, default='tvm',
                         help='One of ort, trt, tvm, and xla')
-    parser.add_argument('--dp', type=int, default=100,
+    parser.add_argument('--dp', type=int, default=250,
                         help='# data point you want.')
     parser.add_argument('--dev', type=str, default='cpu', help='cpu/gpu')
     parser.add_argument('--sum', action='store_true', help='Use summary.')
@@ -83,8 +83,8 @@ if __name__ == '__main__':
     config_file = open(os.path.join(args.report_folder, 'stats.csv'), 'w')
     stderr_file = open(os.path.join(args.report_folder, 'stderr.txt'), 'w')
 
-    def record(btime, n_models, seed):
-        config_file.write(f'{btime},{seed},{n_models}\n')
+    def record(btime, n_models, seed, lcov_name):
+        config_file.write(f'{btime},{seed},{n_models},{lcov_name}\n')
         config_file.flush()
 
     lines = open(os.path.join(args.model_dir, 'gentime.csv'), 'r').readlines()
@@ -95,6 +95,10 @@ if __name__ == '__main__':
 
     process_time_sum = 0  # sum of all btime
 
+    # sometimes stuff got crashed and we will attribute the cost to the later batch.
+    lagged_time = 0
+    lagged_n_model = 0
+
     for i in tqdm(range(len(batch_list))):
         if process_time_sum > args.max_time:
             print(f'==> Timeout!')
@@ -103,7 +107,8 @@ if __name__ == '__main__':
         batch = batch_list[i]
         btime = 0
         sum_path = os.path.join(args.report_folder, f'{i}.txt')
-        lcov_path = os.path.join(args.report_folder, f'{i}.lcov')
+        lcov_name = f'{i}.lcov'
+        lcov_path = os.path.join(args.report_folder, lcov_name)
         seed = random.getrandbits(32)
 
         model_batch = []
@@ -133,7 +138,8 @@ if __name__ == '__main__':
         exit_code = p.returncode
 
         # Write stderr
-        stderr_file.write(f'iter {i}: {model_batch} ~ exit_code={exit_code}\n')
+        stderr_file.write(
+            f'iter {i}: {[os.path.split(path)[-1] for path in model_batch]} ~ exit_code={exit_code}\n')
         if errs:
             stderr_file.write(errs)
         stderr_file.flush()
@@ -165,15 +171,22 @@ if __name__ == '__main__':
                 if args.sum:
                     os.system(
                         f'{llvm_cov} report -instr-profile={profdata_path} {lib_expr} > {sum_path}')
-                if 0 == os.system(f'lz4 {lcov_path}  {lcov_path}.lz4 -f'):
-                    os.remove(lcov_path)
+                assert 0 == os.system(f'lz4 {lcov_path}  {lcov_path}.lz4 -f')
                 if not args.keep_raw:
                     os.remove(profraw_path)
                     os.remove(profdata_path)
         else:
             print(f'{profraw_path} does not exist...', file=sys.stderr)
 
-        record(btime, len(model_batch), seed)
+        if os.path.exists(lcov_path + '.lz4'):
+            record(btime + lagged_time, len(model_batch) +
+                   lagged_n_model, seed, lcov_name=lcov_name)
+            lagged_time = 0
+            lagged_n_model = 0
+        else:
+            # Means no lcov due to some LLVM issues.
+            lagged_time += btime
+            lagged_n_model += len(model_batch)
 
     config_file.close()
     stderr_file.close()

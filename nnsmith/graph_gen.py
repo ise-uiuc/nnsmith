@@ -14,7 +14,7 @@ import uuid
 
 import pickle
 import cloudpickle
-from typing import Dict, NamedTuple, Tuple, List, Optional
+from typing import Dict, NamedTuple, Tuple, List, Optional, Set
 from inspect import signature
 import traceback
 import random
@@ -22,7 +22,7 @@ import time
 import os
 import copy
 
-from nnsmith.error import NNSmithInternalError, SanityCheck, ConstraintCheck, ConstraintError
+from nnsmith.error import SanityCheck, ConstraintCheck, ConstraintError
 from nnsmith.export import torch2onnx
 from nnsmith.abstract.op import *
 
@@ -372,7 +372,7 @@ class SymbolNet(nn.Module):
 class SimpleGenerator:
 
     def __init__(self, min_dims=[1, 3, 48, 48], skip=[Input], viz_sbs=False, megabyte_lim=__MB_LIM__, seed=None, verbose=False, use_bitvec=False,
-                 viz_verbose=False, merge_op_v=None, limnf=True, forward_prob=None):
+                 viz_verbose=False, merge_op_v=None, limnf=True, forward_prob=None, candidates_overwrite=None):
         if seed is not None:
             np.random.seed(seed)
             random.seed(seed)
@@ -381,10 +381,12 @@ class SimpleGenerator:
         self.viz_verbose = viz_verbose
         auto_infer_in_dtypes(self.verbose)
 
-        self.op_candidates = [
-            op for op in ALL_OP_TYPES if op not in skip and not op._skip]
-        if os.getenv('NNSMITH_DEBUG_CONV_ONLY', None) is not None:  # for debugging only
-            self.op_candidates = [NCHWConv2d]
+        if candidates_overwrite is None:
+            self.op_candidates = [
+                op for op in ALL_OP_TYPES if op not in skip and not op._skip]
+        else:
+            self.op_candidates = candidates_overwrite
+
         if use_bitvec:
             self.solver = z3.SolverFor("QF_UFBV")
         else:
@@ -659,11 +661,9 @@ class SimpleGenerator:
         shape_indices = []
         if force_shape_indices is None:
             for i, shape_var in enumerate(oshapes):
-                if node.out_ranks[i] == -1:
-                    node.out_ranks[i] = len(shape_var.shape)
-                else:
-                    SanityCheck.eq(node.out_ranks[i], len(shape_var.shape), "{}'s dimension size is not {} in {}".format(
-                        shape_var.shape, node.out_ranks[i], node.__class__.__name__))
+                SanityCheck.true(len(shape_var.shape) in node.out_ranks[i], "{}'s dimension size is not {} in {}".format(
+                    shape_var.shape, node.out_ranks[i], node.__class__.__name__))
+                node.out_ranks[i] = (len(shape_var.shape),)
                 shape_idx = len(self.alive_shapes)
                 shape_indices.append(shape_idx)
                 self.alive_shapes.append((succ_nid, shape_var, i))
@@ -798,16 +798,15 @@ class SimpleGenerator:
         dim_spec_list = []
 
         if op.same_inp_dims:  # find `n_inp` under the same input shapes.
-            final_dim = -1
-            for dim in op.inp_ranks:
-                if dim != -1:
-                    if final_dim == -1:
-                        final_dim = dim
-                    else:
-                        SanityCheck.eq(final_dim, dim)
-            if final_dim == -1:
-                final_dim = random.choice(list(self.dim2shape_idx.keys()))
-            dim_spec_list = [final_dim] * n_inp
+            rank_set = set(op.inp_ranks[0])
+
+            for ranks in op.inp_ranks[1:]:
+                rank_set.intersection_update(set(ranks))
+
+            SanityCheck.ge(len(rank_set), 1)
+
+            final_dim = random.choice(list(rank_set))
+            dim_spec_list = [(final_dim,)] * n_inp
         else:  # inputs have different dimension sizes.
             dim_spec_list = op.inp_ranks
 
@@ -869,32 +868,32 @@ class SimpleGenerator:
 
         return False
 
-    def filter_shapes(self, ndim, dtype, candidate_shapes: List[ShapeVar]):
+    def filter_shapes(self, ndims, dtype, candidate_shapes: List[ShapeVar]):
         cans = range(len(candidate_shapes))
 
         cans = list(filter(  # filter with ndim
-            lambda sid: candidate_shapes[sid].ndims == ndim or ndim == -1, cans))
+            lambda sid: candidate_shapes[sid].ndims in ndims, cans))
         if len(cans) == 0:
             raise RequiredDimNotFound(
-                'Cannot find a shape variable with #dimensions %s.' % ndim)
+                f'Cannot find a shape variable with #dimensions {ndims}.')
 
         if dtype is not None:
             cans = list(filter(  # filter with dtype
                 lambda sid: candidate_shapes[sid].dtype == dtype, cans))
             if len(cans) == 0:
                 raise RequiredDimNotFound(
-                    'Cannot find a shape variable with #dimensions %s and dtype %s.' % (ndim, dtype))
+                    f'Cannot find a shape variable with #dimensions {ndims} and dtype {dtype}.')
 
         return cans
 
     def pick_shape(self, node_t, candidates):
         return random.choice(candidates)
 
-    def pick_shape_var_idx(self, node_t, ndim_list: List[int], dtype_combs_spec: List[DTypeComb], candidate_shapes: List[ShapeVar]) -> List[int]:
+    def pick_shape_var_idx(self, node_t, ndim_list: List[Set[int]], dtype_combs_spec: List[DTypeComb], candidate_shapes: List[ShapeVar]) -> List[int]:
         """Randomly pick indices to shape variables from the output pool.
 
         Args:
-            ndim_list (List[int]): required dimension sizes of the shape variables.
+            ndim_list (List[Set]): duable dims for each input.
 
         Returns:
             List[int]: indices to applicable shape variables.
@@ -905,9 +904,9 @@ class SimpleGenerator:
             print('dtype_combs_spec:', dtype_combs_spec)
 
         all_can_dtypes = []
-        for i, ndim in enumerate(ndim_list):
+        for i, ndims in enumerate(ndim_list):
             all_can_dtypes.extend([candidate_shapes[i].dtype for i in self.filter_shapes(
-                ndim=ndim, dtype=None, candidate_shapes=candidate_shapes)])
+                ndims=ndims, dtype=None, candidate_shapes=candidate_shapes)])
         # only use dtypes currently available after ndim filtering
         dtype_combs = [comb for comb in dtype_combs_spec if all(
             i in all_can_dtypes for i in comb)]
@@ -915,9 +914,9 @@ class SimpleGenerator:
             raise RequiredDimNotFound('Op %s: Cannot find a shape variable with dim_spec %s and dtype combinations %s.' % (
                 node_t, ndim_list, dtype_combs_spec))
         dtype_comb = random.choice(dtype_combs)
-        for i, ndim in enumerate(ndim_list):
+        for i, ndims in enumerate(ndim_list):
             candidates = self.filter_shapes(
-                ndim=ndim, dtype=dtype_comb[i], candidate_shapes=candidate_shapes)
+                ndims=ndims, dtype=dtype_comb[i], candidate_shapes=candidate_shapes)
             shape_var_candidates.append(
                 self.pick_shape(node_t, candidates))
 
@@ -1088,125 +1087,6 @@ class PureSymbolGen(SimpleGenerator):
         # res = self.solver.check()
         # assert res == z3.sat, res
         # return self.solver.model()
-
-
-class GenerationTable:
-    # Hyper-parameters
-    _MAX_CONF = 4.0
-    _BASE_VAL = 1.0
-    _MIN_CONF = 0.1
-    _INIT_VAL = 2.0
-
-    def distribute_wts(self):
-        wts = [1] * len(ALL_OP_TYPES)
-        normalize_op_t = [Constant, Cast]
-        op_t_idx = {}
-        for i in range(len(ALL_OP_TYPES)):
-            for op_t in normalize_op_t:
-                if issubclass(ALL_OP_TYPES[i], op_t):
-                    op_t_idx[op_t] = op_t_idx.get(op_t, []) + [i]
-
-        for idx in op_t_idx.values():
-            for i in idx:
-                wts[i] = 1.0 / len(idx)
-
-        for i in range(len(ALL_OP_TYPES)):
-            ii = self.row_mapper(ALL_OP_TYPES[i])
-            jj = self.col_mapper(ALL_OP_TYPES[i])
-            self.np_table[ii] *= wts[i]
-            self.np_table[jj] *= wts[i]
-
-    def __init__(self):
-        self.np_table = np.ones((len(ALL_OP_TYPES), len(
-            ALL_OP_TYPES) - 1)) * self._INIT_VAL  # do not count Input
-        self.distribute_wts()
-        # Close those impossible connections.
-        for src_t in ALL_OP_TYPES:
-            for tar_t in ALL_OP_TYPES:
-                if tar_t is Input:
-                    continue
-
-                inp_dims = tar_t(
-                    *[None for _ in signature(tar_t).parameters]).inp_ranks
-                out_dims = src_t(
-                    *[None for _ in signature(src_t).parameters]).out_ranks
-
-                if -1 in inp_dims or -1 in out_dims or set(inp_dims).intersection(out_dims):
-                    continue
-
-                self.np_table[self.row_mapper(
-                    src_t)][self.col_mapper(tar_t)] = 0.
-
-    def row_mapper(self, t):
-        if isinstance(t, int):
-            return t
-        return ALL_OP_TYPES.index(t)
-
-    def col_mapper(self, t):
-        if isinstance(t, int):
-            return t
-        return ALL_OP_TYPES.index(t) - 1
-
-    def on_new_cov(self, src_t, tar_t):
-        if self.row_mapper(src_t) == 0:  # Ignore input node.
-            return
-        val = self.np_table[self.row_mapper(src_t)][self.col_mapper(tar_t)]
-        self.np_table[self.row_mapper(src_t)][self.col_mapper(
-            tar_t)] = min(self._MAX_CONF, max(self._BASE_VAL, val * 1.1))
-
-    def on_no_cov(self, src_t, tar_t):
-        if self.row_mapper(src_t) == 0:
-            return
-        self.np_table[self.row_mapper(
-            src_t)][self.col_mapper(tar_t)] = self._BASE_VAL  # reset.
-
-    def on_unsolvable(self, src_t, tar_t):
-        if self.row_mapper(src_t) == 0:
-            return
-        val = self.np_table[self.row_mapper(src_t)][self.col_mapper(tar_t)]
-        self.np_table[self.row_mapper(src_t)][self.col_mapper(
-            tar_t)] = max(self._MIN_CONF, min(self._BASE_VAL, val * 0.9))
-
-    def lookup(self, src_t, tar_t):
-        return self.np_table[self.row_mapper(src_t)][self.col_mapper(tar_t)]
-
-    def __len__(self):
-        return len(self.np_table)
-
-    def __getitem__(self, t):
-        return self.np_table[self.row_mapper(t)]
-
-
-class CoverageTableGen(PureSymbolGen):
-    def __init__(self, table: GenerationTable, state, **kwargs):
-        self.table = table
-        SanityCheck.true('unsolvable' in state, 'unsolvable not in state')
-        self.state = state
-        super(CoverageTableGen, self).__init__(**kwargs)
-
-    def pick_alive_shape(self, node_t, candidates):
-        # node_t target node...
-        # candidates -> outputs of input nodes...
-        successor_probability = self.table.np_table.transpose()[
-            self.table.col_mapper(node_t)]
-        candidate_ops = [type(self.abstract_graph.nodes[self.alive_shapes[alive_shape_idx][0]]['op'])
-                         for alive_shape_idx in candidates]
-        candidate_indices = [self.table.row_mapper(op) for op in candidate_ops]
-        candidate_conf = successor_probability[candidate_indices]
-        if candidate_conf.sum() == 0:
-            raise NNSmithInternalError(
-                f'Candidate prob is zero -- candidates: {[op.__name__ for op in candidate_ops]} -> {node_t}')
-        return np.random.choice(candidates, p=candidate_conf / candidate_conf.sum())
-
-    def pick_next_op_type(self):
-        probability_vector = self.table.np_table.sum(axis=1)
-        return np.random.choice(ALL_OP_TYPES, p=probability_vector / probability_vector.sum())
-
-    def on_timeout(self, node: AbsOpBase, ishape_indices: List[int]):
-        # node -> ishape_indices :: on_unsolvable
-        for idx in ishape_indices:
-            self.state['unsolvable'].append(
-                (type(node).__name__, type(self.id2nxnode(self.alive_shapes[idx][0])['op']).__name__))
 
 
 class Bin:
@@ -1501,7 +1381,8 @@ def random_model_gen(
         mode='random',
         merge_op_v=None,
         limnf=True,
-        forward_prob=None,):
+        forward_prob=None,
+        candidates_overwrite=None):
 
     GenCls = {
         'random': PureSymbolGen,
@@ -1509,43 +1390,10 @@ def random_model_gen(
     }[mode]
     gen = GenCls(min_dims=min_dims,
                  viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec, merge_op_v=merge_op_v, limnf=limnf,
-                 forward_prob=forward_prob)
+                 forward_prob=forward_prob, candidates_overwrite=candidates_overwrite)
     gen.abstract_gen(max_node_size=max_nodes,
                      max_gen_millisec=timeout)
     solution = gen.get_symbol_solutions()
-
-    return gen, solution
-
-
-def table_model_gen(
-        table,
-        state,
-        min_dims=[1, 3, 48, 48],
-        viz_sbs=False,
-        max_nodes=5,
-        seed=None,
-        use_bitvec=False,
-        timeout=50000,
-        verbose=False,
-        merge_op_v=None,
-        limnf=True,):
-    if verbose:
-        strt_time = time.time()
-
-    gen = CoverageTableGen(table=table, state=state, min_dims=min_dims,
-                           viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec, merge_op_v=merge_op_v, limnf=limnf)
-
-    gen.abstract_gen(max_node_size=max_nodes,
-                     max_gen_millisec=timeout)
-    if verbose:
-        print(
-            f'{time.time() - strt_time}s to generate a graph w/ {len(gen.abstract_graph.nodes())} nodes')
-
-    solution = gen.get_symbol_solutions()
-    if verbose:
-        print(
-            f'{len(solution)} symbols and {len(gen.solver.assertions())} constraints.')
-        print(solution)
 
     return gen, solution
 

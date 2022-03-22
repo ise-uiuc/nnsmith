@@ -34,23 +34,41 @@ Please prepare ~ 50GB disk space to store LEMON.
 ```shell
 # step 1: Run LEMON to generate models (https://github.com/ganler/LEMON);
 # step 2:
+# For TVM
 python experiments/lemon_tf2onnx.py --lemon_output_dir /PATH/TO/LEMON/lemon_outputs/ --onnx_dir lemon-onnx
 python experiments/cov_eval.py --model_dir lemon-onnx    \
                                --report_folder lemon-cov \
-                               --backend tvm --lib ../tvm/build/libtvm.so \
+                               --backend tvm --lib '../tvm/build/libtvm.so ../tvm/build/libtvm_runtime.so' \
                                --llvm-version 14 # if you compile tvm w/ llvm 14 instrumented on ubuntu.
-python experiments/cov_merge.py -f lemon-cov     # generate merged_cov.pkl
+# For ORT:
+python experiments/cov_eval.py --model_dir lemon-onnx \
+                               --report_folder lemon-ort \
+                               --backend ort \
+                               --lib '../onnxruntime/build/Linux/RelWithDebInfo/libonnxruntime_providers_shared.so ../onnxruntime/build/Linux/RelWithDebInfo/libonnxruntime.so' \
+                               --llvm-version 14
+python experiments/cov_merge.py -f lemon-tvm     # generate merged_cov.pkl
 ```
 
 #### nnsmith
 
 ```shell
 python experiments/nnsmith_gen_onnx.py --onnx_dir nnsmith-onnx
+# Generate models for ONNX spec:
+# python nnsmith/dtype_test.py
+# python experiments/nnsmith_gen_onnx.py --onnx_dir nnsmith-onnx-ort --ort_cache config/ort_cpu_dtype.pkl
 python experiments/cov_eval.py --model_dir nnsmith-onnx    \
                                --report_folder nnsmith-cov \
-                               --backend tvm --lib ../tvm/build/libtvm.so \
+                               --backend tvm --lib '../tvm/build/libtvm.so ../tvm/build/libtvm_runtime.so' \
                                --llvm-version 14 # if you compile tvm w/ llvm 14 instrumented on ubuntu.
-python experiments/cov_merge.py -f nnsmith-cov     # generate merged_cov.pkl
+python experiments/cov_merge.py -f nnsmith-tvm     # generate merged_cov.pkl
+```
+
+#### Visualization
+
+```shell
+mkdir results # Store those files in results
+python experiments/viz_merged_cov.py --folders lemon-tvm nnsmith-tvm GraphFuzz-tvm --tvm # Curves and venn graph.
+python experiments/onnx_analyzer.py --folders lemon-onnx nnsmith-onnx GraphFuzz-onnx # venn graph ~ #op #edge
 ```
 
 ### Fuzz a single backend (Not for evaluation)

@@ -25,7 +25,6 @@ from backend_executor import DummyExecutor
 from nnsmith.abstract.op import ALL_OP_TYPES, auto_infer_in_dtypes, config_skip_op
 from nnsmith import util
 from nnsmith.error import IncorrectResult, NNSmithInternalError, SanityCheck
-from nnsmith.graph_gen import GenerationTable
 from nnsmith.backends import DiffTestBackend
 from nnsmith.input_gen import gen_one_input
 from nnsmith.difftest import assert_allclose
@@ -131,12 +130,6 @@ class Reporter:  # From Tzer.
         self.n_bug += 1
 
     def flush(self, fuzz):
-        if fuzz.table is not None:
-            os.system('mv {} {}'.format(
-                os.path.join(self.report_folder, f'state.pkl'),
-                os.path.join(self.report_folder, f'state.pkl.bak')))
-            pickle.dump({'table': fuzz.table}, open(
-                os.path.join(self.report_folder, f'state.pkl'), 'wb'), protocol=4)
         profile = fuzz.profile  # type: pd.DataFrame
         if os.path.exists(os.path.join(self.report_folder, f'profile.pkl')):
             os.system('mv {} {}'.format(
@@ -181,7 +174,7 @@ class CustomProgress(Progress):
 
 
 class FuzzingLoop:  # TODO: Support multiple backends.
-    def __init__(self, backends: Dict[str, DiffTestBackend], mode='table', root=None, time_budget=60 * 60 * 4, max_nodes=None, fix_nodes=10, inp_gen='random',
+    def __init__(self, backends: Dict[str, DiffTestBackend], mode='random', root=None, time_budget=60 * 60 * 4, max_nodes=None, fix_nodes=10, inp_gen='random',
                  summaries: List[SummaryBase] = None, fork_bkn=False, _PER_MODEL_TIMEOUT_=1000, use_bitvec=False, no_progress=False, merge_op_v=None,
                  limnf=True, use_cuda=False, warmup=False, yes=False, flush_freq=None, record_model=False):
         self.root = root
@@ -189,7 +182,6 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             report_folder=root, name_hint=list(backends.keys())[0], yes=yes, flush_freq=flush_freq)
         self.mode = mode  # `random` or `table`
         self.inp_gen = inp_gen  # `random` or `grad`
-        self.table = GenerationTable() if mode == 'table' else None
 
         SanityCheck.gt(len(backends), 0, "Empty backends are not allowed!")
         self.backends = backends
@@ -291,8 +283,6 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         use_torch = any(i.__class__.__name__ ==
                         'TchExecutor' for i in self.backends.values())
 
-        last_cov = 0
-
         try:
             with CustomProgress(
                 fuzz_status=self.rich,
@@ -340,19 +330,19 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                                 mode = random.choice(['random', 'guided'])
                             gen_info['mode'] = mode
                             self.stage = mode + ' gen'
-                            sat_inputs, state, edge_set, seed, ret_profile = forked_execution(mode,
-                                                                                              _TMP_ONNX_FILE_,
-                                                                                              table=self.table,
-                                                                                              max_nodes=self.cur_node_size,
-                                                                                              max_gen_millisec=self._PER_MODEL_TIMEOUT_,
-                                                                                              inp_gen=self.inp_gen,
-                                                                                              save_torch=use_torch,
-                                                                                              summaries=self.summaries,
-                                                                                              seed=seed,
-                                                                                              use_bitvec=self.use_bitvec,
-                                                                                              merge_op_v=self.merge_op_v,
-                                                                                              limnf=self.limnf,
-                                                                                              use_cuda=self.use_cuda)
+                            sat_inputs, state, edge_set, seed, ret_profile = \
+                                forked_execution(mode,
+                                                 _TMP_ONNX_FILE_,
+                                                 max_nodes=self.cur_node_size,
+                                                 max_gen_millisec=self._PER_MODEL_TIMEOUT_,
+                                                 inp_gen=self.inp_gen,
+                                                 save_torch=use_torch,
+                                                 summaries=self.summaries,
+                                                 seed=seed,
+                                                 use_bitvec=self.use_bitvec,
+                                                 merge_op_v=self.merge_op_v,
+                                                 limnf=self.limnf,
+                                                 use_cuda=self.use_cuda)
                             gen_info.update(ret_profile)
                             gen_info['forked_exe_time'] = time.time() - \
                                 forked_exe_t_s
@@ -450,14 +440,6 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         self.slowest_model_eval_t = max(self.slowest_model_eval_t,
                                                         self.cur_model_eval_t)
 
-                        cur_cov = __COV_DRIVER__.get_now()
-                        if edge_set:
-                            for src, dst in edge_set:
-                                if cur_cov == last_cov:
-                                    self.table.on_no_cov(src, dst)
-                                else:
-                                    self.table.on_new_cov(src, dst)
-
                     except Exception as e:
                         self.stage = f'reporting bug'
                         # ignore models with invalid inputs
@@ -500,9 +482,14 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         break
         finally:  # cleanup
             os.system('rm ' + _TMP_ONNX_FILE_ + '*')
-            last_cov = __COV_DRIVER__.get_now()
         forkpool_execution.terminate()
         self.reporter.flush(self)
+        try:
+            print('Trying to store hitmap (if allowed)')
+            with open(os.path.join(self.reporter.report_folder, 'hitmap.pkl'), 'wb') as f:
+                pickle.dump(__COV_DRIVER__.get_hitmap(), f)
+        except Exception as e:
+            print(f'Failed to store hitmap: {e}')
 
 
 if __name__ == '__main__':
