@@ -1709,8 +1709,11 @@ class ReduceBase(UnaryOpBase, ABC):
 
     def _init_reduce_dim(self, input_shape: List[Union[int, z3.ExprRef]]):
         if 'reduce_dim' not in self.extra_attrs:
-            self.extra_attrs['reduce_dim'] = random.randint(
-                0, max(0, len(input_shape) - 1))
+            if len(input_shape) == 0:
+                self.extra_attrs['reduce_dim'] = None
+            else:
+                self.extra_attrs['reduce_dim'] = random.randint(
+                    0, len(input_shape) - 1)
         return self.extra_attrs['reduce_dim']
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
@@ -1738,6 +1741,8 @@ class Squeeze(ReduceBase):
 
     def _requires(self, input_shapes):
         reduce_dim = self._init_reduce_dim(input_shapes[0].shape)
+        if reduce_dim is None:
+            return []
         return [nnsmith_eq(input_shapes[0].shape[reduce_dim], 1)]
 
     def torch(self):
@@ -2198,6 +2203,12 @@ if __name__ == '__main__':
     print('Non leaf ops: ', ALL_NON_LEAF_OP_TYPES)
     assert Reshape in ALL_OP_TYPES
     auto_infer_in_dtypes()
+
+    # Reduce rank 0
+    abs_op = Squeeze()
+    scalar = ShapeVar.from_torch(torch.tensor(10))
+    assert abs_op.shape_fn([scalar])[0].ndims == 0
+    abs_op.requires([scalar])
 
     # ReLU
     lhs = torch.relu(torch.randn(1, 1, 1, 1)).shape
