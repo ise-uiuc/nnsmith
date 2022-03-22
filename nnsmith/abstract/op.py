@@ -2287,14 +2287,10 @@ def _glob_nonleaf_op_classes() -> List[Type[AbsOpBase]]:
 ALL_NON_LEAF_OP_TYPES = _glob_nonleaf_op_classes()
 ALL_OP_TYPES = _glob_leaf_op_classes()
 ALL_OP_STR2TYPE = {c.__name__: c for c in ALL_OP_TYPES}
-EXPANDED_OP_V0 = [Constant, Cast]
-EXPANDED_OP_V1 = [Concat, Constant, Expand, Reshape, ArgMax,
-                  ArgMin, ReduceMax, ReduceMin, ReduceMean, SqueezeBase,
-                  ReduceSum, TrigonometricOp, Comparator, Logical, BcastBinaryOp1]
-# less aggressive. may switch to EXPANDED_OP_V1 on backward mode?
-EXPANDED_OP_V2 = [Concat, Constant, Expand,
-                  Reshape, TrigonometricOp, Comparator, Logical, BcastBinaryOp1]
-EXPANDED_OP = EXPANDED_OP_V2  # points to latest version
+EXPANDED_OP_V0 = [Cast, Expand, TrigonometricOp,
+                  Comparator, Logical, InterpBase]
+# may also consider Concat, BcastBinaryOp1
+EXPANDED_OP = EXPANDED_OP_V0  # points to latest version
 
 
 def config_skip_op(skip_config):

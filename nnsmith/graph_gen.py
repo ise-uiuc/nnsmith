@@ -631,7 +631,7 @@ class SimpleGenerator:
 
     def compute_wts(self):
         self.wts = [1] * len(self.op_candidates)
-        normalize_op_t = {'latest': EXPANDED_OP, 'v1': EXPANDED_OP_V1,
+        normalize_op_t = {'latest': EXPANDED_OP,
                           'v0': EXPANDED_OP_V0}[self.merge_op_v]
         op_t_idx = {}
         for i in range(len(self.op_candidates)):
