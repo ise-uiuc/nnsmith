@@ -45,7 +45,7 @@ class ParamShapeSummary(SummaryBase):
 
             if op_t.num_var_param is not None:
                 # input is a variable list.
-                for i in range(op_t.get_num_var_param()):
+                for i in range(max(op_t.num_var_param)):
                     self.data[op_name][f'param_var{i}'] = {}
             else:
                 construct_param_dict = signature(op_t).parameters
@@ -78,8 +78,7 @@ class ParamShapeSummary(SummaryBase):
             else:
                 for key in construct_param_dict:
                     _record(self.data[op_name]['param_' + key],
-                        getattr(op, key), itr)
-                
+                            getattr(op, key), itr)
 
     def dump(self, output_path):
         pickle.dump(self.data, open(output_path, 'wb'))
