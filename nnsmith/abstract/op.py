@@ -1503,7 +1503,7 @@ class NCHWConv2d(UnaryOpBase):
         return [(4, out_shape_var[0].dtype)]
 
 
-class Reshape(UnaryOpBase):
+class ReshapeBase(UnaryOpBase):
     num_var_param = int_range(1, 4)
     in_dtypes = [(i,) for i in DTYPE_ALL]
     out_dtypes = [(i,) for i in DTYPE_ALL]
@@ -1578,7 +1578,11 @@ class Reshape(UnaryOpBase):
         return [(-1, out_shape_var[0].dtype)]
 
 
-class Flatten(Reshape):
+class Reshape(ReshapeBase):
+    pass
+
+
+class Flatten(ReshapeBase):
     num_var_param = None
     # Inputs are target shape.
 
