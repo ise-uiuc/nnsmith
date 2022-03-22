@@ -28,7 +28,7 @@ from nnsmith.error import IncorrectResult, NNSmithInternalError, SanityCheck
 from nnsmith.backends import DiffTestBackend
 from nnsmith.input_gen import gen_one_input
 from nnsmith.difftest import assert_allclose
-from nnsmith.graph_input_gen import forked_execution, forkpool_execution
+from nnsmith.graph_input_gen import _DEFAULT_FORK_METHOD, forked_execution, forkpool_execution
 import networkx as nx
 import onnx
 from summary import GraphSummary, ParamShapeSummary, SummaryBase
@@ -579,6 +579,8 @@ if __name__ == '__main__':
     config_skip_op(skip)
     if args.no_run_backend:
         backends = {'dummy': DummyExecutor()}
+    elif os.getenv('NNSMITH_FORK', _DEFAULT_FORK_METHOD) != 'pool':
+        print('Warning: NNSMITH_FORK is not set to "pool". "pool" is recommended to isolate z3 from the interference from backend execution.')
     fuzzing_loop = FuzzingLoop(
         root=args.root,
         backends=backends,
