@@ -330,8 +330,8 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                                 mode = random.choice(['random', 'guided'])
                             gen_info['mode'] = mode
                             self.stage = mode + ' gen'
-                            sat_inputs, state, edge_set, seed, ret_profile = \
-                                forked_execution(mode,
+                            sat_inputs, edge_set, seed, ret_profile = \
+                                forked_execution(self.mode,
                                                  _TMP_ONNX_FILE_,
                                                  max_nodes=self.cur_node_size,
                                                  max_gen_millisec=self._PER_MODEL_TIMEOUT_,

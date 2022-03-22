@@ -171,9 +171,9 @@ def _forked_execution(
             subprocess_call(gen_method, seed, max_nodes,
                             max_gen_millisec, inp_gen, output_path, use_bitvec, merge_op_v, limnf, use_cuda, ipc_dict)
         # make ipc_dict serializable
-        del ipc_dict['state']['summaries']
+        del ipc_dict['state']
 
-        return ipc_dict['sat_inputs'], ipc_dict['state'], ipc_dict['edges'], ipc_dict['seed'], dict(ipc_dict['profile'])
+        return ipc_dict['sat_inputs'], ipc_dict['edges'], ipc_dict['seed'], dict(ipc_dict['profile'])
 
 
 forkpool_execution = util.forkpool_execution(_forked_execution)

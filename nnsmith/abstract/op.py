@@ -312,6 +312,9 @@ class ShapeVar:
             return 1
         return reduce(lambda x, y: nnsmith_mul(x, y), self.shape, 1)
 
+    def deepcopy(self):
+        return ShapeVar(shape=list(self.shape), dtype=self.dtype)
+
     @staticmethod
     def from_torch(torch_tensor):
         return ShapeVar(list(torch_tensor.shape), torch_tensor.dtype)
@@ -328,7 +331,7 @@ def check_shape_fn(func):
         SanityCheck.eq(len(input_shapes), len(self.inp_ranks), "{} requires {} inputs, but got {}".format(
             self.__class__.__name__,
             len(self.inp_ranks), len(input_shapes)))
-        res = func(self, input_shapes)
+        res = func(self, [s.deepcopy() for s in input_shapes])
         SanityCheck.eq(len(res), len(self.out_ranks), "{} requires {} outputs, but got {}".format(
             self.__class__.__name__,
             len(self.out_ranks), len(res)))
@@ -337,13 +340,13 @@ def check_shape_fn(func):
 
 
 def check_require_fn(func):
-    def wrapper_check_require_fn(self, input_shapes):
+    def wrapper_check_require_fn(self, input_shapes: List[ShapeVar]):
         if not _INFERRED:
             auto_infer_in_dtypes()
         SanityCheck.eq(len(input_shapes), len(self.inp_ranks), "{} requires {} inputs, but got {}".format(
             self.__class__.__name__,
             len(self.inp_ranks), len(input_shapes)))
-        return func(self, deepcopy(input_shapes))
+        return func(self, [s.deepcopy() for s in input_shapes])
     return wrapper_check_require_fn
 
 
@@ -1381,13 +1384,8 @@ class Pad(UnaryOpBase):
             self.padding_list) % 2 == 0, f'padding_list must be even, got {self.padding_list}'
 
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
-        ndims = input_shapes[0].ndims
         pad = self.padding_list
         isv = input_shapes[0].shape
-        assert len(pad) % 2 == 0, pad
-        assert len(pad) // 2 <= len(isv), pad
-        if self.extra_attrs['type'] != 'constant':
-            ConstraintCheck.true((len(pad) // 2) in [ndims - 1, ndims - 2])
         cons = []
         for i in range(len(pad) // 2):
             j = len(isv) - 1 - i
@@ -1395,16 +1393,13 @@ class Pad(UnaryOpBase):
             cons.append(nnsmith_ge(nnsmith_add(pad[i * 2], isv[j]), 0))
             cons.append(nnsmith_ge(nnsmith_add(
                 pad[i * 2 + 1], isv[j]), 0))
-            # per torch's complaint: Padding size should be less than the corresponding input dimension
-            cons.append(nnsmith_lt(pad[i * 2], isv[j]))
-            cons.append(nnsmith_lt(pad[i * 2 + 1], isv[j]))
+            cons.append(nnsmith_gt(nnsmith_add(
+                pad[i * 2 + 1], nnsmith_add(pad[i * 2], isv[j])), 0))
         return cons
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         isv = input_shapes[0].shape
         pad = self.padding_list
-        assert len(pad) % 2 == 0, pad
-        assert len(pad) // 2 <= len(isv), pad
         s = list(isv)
         for i in range(len(pad) // 2):
             j = len(isv) - 1 - i
@@ -1443,6 +1438,18 @@ class ReflectPad(Pad):
         super().__init__(padding_list, 'reflect')
         self.inp_ranks = [int_range(len(padding_list) // 2 + 1, 4)]
         self.out_ranks = [int_range(len(padding_list) // 2 + 1, 4)]
+
+    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+        cons = super()._requires(input_shapes)
+        pad = self.padding_list
+        isv = input_shapes[0].shape
+        cons = []
+        for i in range(len(pad) // 2):
+            j = len(isv) - 1 - i
+            # per torch's complaint: Padding size should be less than the corresponding input dimension
+            cons.append(nnsmith_lt(pad[i * 2], isv[j]))
+            cons.append(nnsmith_lt(pad[i * 2 + 1], isv[j]))
+        return cons
 
 
 class Expand(UnaryOpBase, ABC):
@@ -1661,7 +1668,7 @@ def random_group(n, k):
     return ret
 
 
-class ReshapeBase(UnaryOpBase, ABC):
+class ReshapeBase(UnaryOpBase):
     num_var_param = int_range(1, 4)
     in_dtypes = [(i,) for i in DTYPE_ALL]
     out_dtypes = [(i,) for i in DTYPE_ALL]
@@ -1807,7 +1814,7 @@ class Flatten(ReshapeBase):
         return lambda x: x.flatten().unsqueeze(0)
 
 
-class Transpose(UnaryOpBase, ABC):
+class Transpose(UnaryOpBase):
     in_dtypes = [(i,) for i in DTYPE_ALL]
 
     def __init__(self):
@@ -1937,11 +1944,16 @@ class ReduceBase(UnaryOpBase, ABC):
         reduce_dim = self._init_reduce_dim(input_shapes[0].shape)
         return []
 
+    def _get_irank(self, orank):
+        if orank == 0:
+            return random.randint(0, 1)
+        return orank + 1
+
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
-        return [(1 + out_shape_var[0].ndims, out_shape_var[0].dtype)]
+        return [(self._get_irank(out_shape_var[0].ndims), out_shape_var[0].dtype)]
 
 
-class SqueezeBase(ReduceBase, ABC):
+class Squeeze(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_ALL]
 
     def _requires(self, input_shapes):
@@ -1952,7 +1964,7 @@ class SqueezeBase(ReduceBase, ABC):
         return lambda x: x.squeeze(self.extra_attrs['reduce_dim'])
 
 
-class ReduceSum(ReduceBase, ABC):
+class ReduceSum(ReduceBase):
     # pytorch exporter doesn't support int32
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS if i != DType.int32]
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS if i != DType.int32]
@@ -1961,7 +1973,7 @@ class ReduceSum(ReduceBase, ABC):
         return lambda x: x.sum(self.extra_attrs['reduce_dim'])
 
 
-class ReduceMin(ReduceBase, ABC):
+class ReduceMin(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
 
@@ -1969,7 +1981,7 @@ class ReduceMin(ReduceBase, ABC):
         return lambda x: x.min(self.extra_attrs['reduce_dim']).values
 
 
-class ReduceMax(ReduceBase, ABC):
+class ReduceMax(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
 
@@ -1977,7 +1989,7 @@ class ReduceMax(ReduceBase, ABC):
         return lambda x: x.max(self.extra_attrs['reduce_dim']).values
 
 
-class ReduceMean(ReduceBase, ABC):
+class ReduceMean(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
@@ -1985,7 +1997,7 @@ class ReduceMean(ReduceBase, ABC):
         return lambda x: x.mean(self.extra_attrs['reduce_dim'])
 
 
-class ArgMin(ReduceBase, ABC):
+class ArgMin(ReduceBase):
     # FIXME(JK): ints are somehow not supported in onnxruntime, which we use to gen inputs.
     # Make it include ints once we use other backends other than onnxruntime.
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -1996,10 +2008,10 @@ class ArgMin(ReduceBase, ABC):
         return lambda x: x.argmin(self.extra_attrs['reduce_dim'])
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
-        return [(out_shape_var[0].ndims + 1, random.choice(self.in_dtypes)[0])]
+        return [(self._get_irank(out_shape_var[0].ndims), random.choice(self.in_dtypes)[0])]
 
 
-class ArgMax(ReduceBase, ABC):
+class ArgMax(ReduceBase):
     # FIXME(JK): ints are somehow not supported in onnxruntime, which we use to gen inputs.
     # Make it include ints once we use other backends other than onnxruntime.
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -2010,7 +2022,7 @@ class ArgMax(ReduceBase, ABC):
         return lambda x: x.argmax(self.extra_attrs['reduce_dim'])
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
-        return [(out_shape_var[0].ndims + 1, random.choice(self.in_dtypes)[0])]
+        return [(self._get_irank(out_shape_var[0].ndims), random.choice(self.in_dtypes)[0])]
 
 
 class Linear(UnaryOpBase):
