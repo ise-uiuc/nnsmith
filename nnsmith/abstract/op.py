@@ -1701,7 +1701,7 @@ class ReduceBase(UnaryOpBase, ABC):
 
     def __init__(self):
         super().__init__()
-        self.inp_ranks = [int_from(1)]
+        self.inp_ranks = [int_from(0)]
         self.out_ranks = [int_range(0, __MAX_RANK__ - 1)]
 
     def __str__(self) -> str:
@@ -1741,12 +1741,15 @@ class Squeeze(ReduceBase):
 
     def _requires(self, input_shapes):
         reduce_dim = self._init_reduce_dim(input_shapes[0].shape)
-        if reduce_dim is None:
+        if input_shapes[0].ndims == 0:
             return []
         return [nnsmith_eq(input_shapes[0].shape[reduce_dim], 1)]
 
     def torch(self):
-        return lambda x: x.squeeze(self.extra_attrs['reduce_dim'])
+        if self.extra_attrs['reduce_dim']:
+            return lambda x: x.squeeze(self.extra_attrs['reduce_dim'])
+        else:
+            return lambda x: x.squeeze()
 
 
 class ReduceSum(ReduceBase):
@@ -1755,7 +1758,9 @@ class ReduceSum(ReduceBase):
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS if i != DType.int32]
 
     def torch(self):
-        return lambda x: x.sum(self.extra_attrs['reduce_dim'])
+        if self.extra_attrs['reduce_dim']:
+            return lambda x: x.sum(self.extra_attrs['reduce_dim'])
+        return lambda x: x.sum()
 
 
 class ReduceMin(ReduceBase):
@@ -1763,7 +1768,9 @@ class ReduceMin(ReduceBase):
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
 
     def torch(self):
-        return lambda x: x.min(self.extra_attrs['reduce_dim']).values
+        if self.extra_attrs['reduce_dim']:
+            return lambda x: x.min(self.extra_attrs['reduce_dim']).values
+        return lambda x: x.min()
 
 
 class ReduceMax(ReduceBase):
@@ -1771,7 +1778,9 @@ class ReduceMax(ReduceBase):
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
 
     def torch(self):
-        return lambda x: x.max(self.extra_attrs['reduce_dim']).values
+        if self.extra_attrs['reduce_dim']:
+            return lambda x: x.max(self.extra_attrs['reduce_dim']).values
+        return lambda x: x.max()
 
 
 class ReduceMean(ReduceBase):
@@ -1779,7 +1788,9 @@ class ReduceMean(ReduceBase):
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def torch(self):
-        return lambda x: x.mean(self.extra_attrs['reduce_dim'])
+        if self.extra_attrs['reduce_dim']:
+            return lambda x: x.mean(self.extra_attrs['reduce_dim'])
+        return lambda x: x.mean()
 
 
 class ArgMin(ReduceBase):
@@ -1790,7 +1801,9 @@ class ArgMin(ReduceBase):
     _reduce_out_dtype = DType.int64
 
     def torch(self):
-        return lambda x: x.argmin(self.extra_attrs['reduce_dim'])
+        if self.extra_attrs['reduce_dim']:
+            return lambda x: x.argmin(self.extra_attrs['reduce_dim'])
+        return lambda x: x.argmin()
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
         return [(self._get_irank(out_shape_var[0].ndims), random.choice(self.in_dtypes)[0])]
@@ -1804,7 +1817,9 @@ class ArgMax(ReduceBase):
     _reduce_out_dtype = DType.int64
 
     def torch(self):
-        return lambda x: x.argmax(self.extra_attrs['reduce_dim'])
+        if self.extra_attrs['reduce_dim']:
+            return lambda x: x.argmax(self.extra_attrs['reduce_dim'])
+        return lambda x: x.argmax()
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
         return [(self._get_irank(out_shape_var[0].ndims), random.choice(self.in_dtypes)[0])]
