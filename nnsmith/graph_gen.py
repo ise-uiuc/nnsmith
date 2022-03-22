@@ -1092,17 +1092,18 @@ class PureSymbolGen(SimpleGenerator):
 
 
 class Bin:
-    def __init__(self, lb, ub, scale='linear', base=None):
+    def __init__(self, lb, ub, scale='linear', base=None, mul=1):
         self.lb = lb
         self.ub = ub
         assert scale in ['linear', 'log']
         self.scale = scale
         self.base = base
+        self.mul = mul
 
     def to_linear(self, x):
         if self.scale == 'log':
             x = math.pow(self.base, x)
-        return int(x)
+        return int(x) * self.mul
 
     def sample(self):
         x = random.uniform(self.lb, self.ub)
@@ -1113,6 +1114,8 @@ class Bin:
             return None, None
         if self.ub == None:  # one-sided
             return self.to_linear(self.lb), None
+        if self.lb == None:  # one-sided
+            return None, self.to_linear(self.ub)
         lb = self.sample()
         ub = self.sample()
         if lb > ub:
@@ -1166,6 +1169,15 @@ def __SLICE_CONSTRAINTS(node, inp_shps: List[ShapeVar], construct_param_dict):
 _DEFAULT_BINS = 6
 _DEFAULT_BIN_CONS = [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)] + \
     [Bin(_DEFAULT_BINS, None, scale='log', base=2)]
+_PAD_BIN_CONS = (
+    [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)] +  # positive
+    [Bin(_DEFAULT_BINS, None, scale='log', base=2)] +  # positive
+    # negative
+    [Bin(i, i + 1, scale='log', base=2, mul=-1) for i in range(_DEFAULT_BINS)] +
+    [Bin(None, _DEFAULT_BINS, scale='log', base=2, mul=-1)] +  # negative
+    [Bin(0, 1)]  # 0
+)
+
 PARAM_CONFIG1 = {
     'NCHWConv2d': {
         'kernel_h_size': _DEFAULT_BIN_CONS,
@@ -1175,9 +1187,9 @@ PARAM_CONFIG1 = {
         'out_channels': _DEFAULT_BIN_CONS,
         'in_channels': [],  # skip
     },
-    'ConstPad': defaultdict(lambda: _DEFAULT_BIN_CONS),
-    'ReplicatePad': defaultdict(lambda: _DEFAULT_BIN_CONS),
-    'ReflectPad': defaultdict(lambda: _DEFAULT_BIN_CONS),
+    'ConstPad': defaultdict(lambda: _PAD_BIN_CONS),
+    'ReplicatePad': defaultdict(lambda: _PAD_BIN_CONS),
+    'ReflectPad': defaultdict(lambda: _PAD_BIN_CONS),
     'NearestInterp': defaultdict(lambda: _DEFAULT_BIN_CONS),
     'LinearInterp': defaultdict(lambda: _DEFAULT_BIN_CONS),
     'BilinearInterp': defaultdict(lambda: _DEFAULT_BIN_CONS),
@@ -1289,7 +1301,6 @@ class GuidedGen(PureSymbolGen):
                 continue
             bin_id = random.randint(0, len(bins) - 1)
             lb, ub = bins[bin_id].sample_range()
-            # print('\t{} <= {} < {}'.format(lb, key, ub))
             ret.extend(range_constrain(param, lb, ub))
         return ret
 
