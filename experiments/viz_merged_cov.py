@@ -5,6 +5,8 @@ import numpy as np
 
 import os
 
+import pandas as pd
+
 
 class Ploter:
     def __init__(self, cov_lim=None, use_pdf=False) -> None:
@@ -77,7 +79,7 @@ class Ploter:
         self.fig.savefig(save + '.png')
 
 
-def cov_summerize(data, pass_filter=None, tlimit=None):
+def cov_summerize(data, pass_filter=None, tlimit=None, gen_time=None):
     line_by_time = [[0, 0, 0]]
     branch_by_time = [[0, 0, 0]]
     func_by_time = [[0, 0, 0]]
@@ -95,6 +97,8 @@ def cov_summerize(data, pass_filter=None, tlimit=None):
         n_model = value['n_model']
         cov = value['merged_cov']
         model_total += n_model
+        if gen_time is not None:
+            time -= gen_time[0][:model_total].sum()
         line_cov = 0
         branch_cov = 0
         func_cov = 0
@@ -140,7 +144,7 @@ def tvm_arith_filter(fname):
     return 'arith' in fname
 
 
-def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag='', tlimit=None, pdf=False, pass_tag=''):
+def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag='', tlimit=None, pdf=False, pass_tag='', gen_time=None):
     line_ploter = Ploter(use_pdf=pdf)
     branch_ploter = Ploter(use_pdf=pdf)
     func_ploter = Ploter(use_pdf=pdf)
@@ -157,7 +161,8 @@ def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag=''
 
     for idx, (k, v) in enumerate(data.items()):
         line_by_time, branch_by_time, func_by_time, (lf_, bf_, ff_) = cov_summerize(
-            v, tlimit=tlimit, pass_filter=pass_filter)
+            v, tlimit=tlimit, pass_filter=pass_filter,
+            gen_time=gen_time[k] if gen_time is not None else None)
         line_ploter.add(data=line_by_time, name=fuzz_tags[idx])
         branch_ploter.add(data=branch_by_time, name=fuzz_tags[idx])
         func_ploter.add(data=func_by_time, name=fuzz_tags[idx])
@@ -247,10 +252,14 @@ if '__main__' == __name__:
     parser.add_argument('--tvm', action='store_true', help='use tvm')
     parser.add_argument('--ort', action='store_true', help='use ort')
     parser.add_argument('--pdf', action='store_true', help='use pdf as well')
+    parser.add_argument('--no_count_gen', action='store_true',
+                        help='do not count generation time')
     args = parser.parse_args()
 
     if args.tags is None:
         args.tags = [os.path.split(f)[-1].split('-')[0] for f in args.folders]
+        # args.tags = [os.path.split(os.path.split(f)[-2])[-1]
+        #              for f in args.folders]
     else:
         assert len(args.tags) == len(args.folders)
 
@@ -272,20 +281,24 @@ if '__main__' == __name__:
     if args.tvm:
         arith_filter = tvm_arith_filter
     elif args.ort:
-        raise NotImplementedError
+        arith_filter = None
     else:
         print(f'[WARNING] No pass filter is used (use --tvm or --ort)')
 
     data = {}
+    gen_time = {} if args.no_count_gen else None
     for f in args.folders:
         with open(os.path.join(f, 'merged_cov.pkl'), 'rb') as fp:
             data[f] = pickle.load(fp)
+            if args.no_count_gen:
+                gen_time[f] = pd.read_csv(os.path.join(
+                    f, '../gentime.csv'), header=None)
 
     if pass_filter is not None:
         plot_one_round(folder=args.output, data=data,
-                       pass_filter=pass_filter, pass_tag='opt_', tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf)
+                       pass_filter=pass_filter, pass_tag='opt_', tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, gen_time=gen_time)
     if arith_filter is not None:
         plot_one_round(folder=args.output, data=data,
-                       pass_filter=arith_filter, pass_tag='arith_', tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf)
+                       pass_filter=arith_filter, pass_tag='arith_', tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, gen_time=gen_time)
     plot_one_round(folder=args.output, data=data,
-                   pass_filter=None, tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf)  # no pass
+                   pass_filter=None, tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, gen_time=gen_time)  # no pass
