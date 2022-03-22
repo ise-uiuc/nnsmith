@@ -1656,7 +1656,7 @@ def random_group(n, k):
     return ret
 
 
-class Reshape(UnaryOpBase, ABC):
+class ReshapeBase(UnaryOpBase, ABC):
     num_var_param = int_range(1, 4)
     in_dtypes = [(i,) for i in DTYPE_ALL]
     out_dtypes = [(i,) for i in DTYPE_ALL]
@@ -1785,7 +1785,11 @@ class Reshape(UnaryOpBase, ABC):
         return [(-1, out_shape_var[0].dtype)]
 
 
-class Flatten(Reshape):
+class Reshape(ReshapeBase):
+    pass
+
+
+class Flatten(ReshapeBase):
     num_var_param = None
     # Inputs are target shape.
 
@@ -2257,6 +2261,22 @@ def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
     return ret
 
 
+def _glob_nonleaf_op_classes() -> List[Type[AbsOpBase]]:
+    ret = []
+
+    def _glob_nonleaf_op_classes_rec(cls):
+        nonlocal ret
+        if cls is Input or cls is Constant:
+            return
+        for c in cls.__subclasses__():
+            if c.__subclasses__():
+                _glob_nonleaf_op_classes_rec(c)
+                ret.append(c)
+    _glob_nonleaf_op_classes_rec(AbsOpBase)
+    return ret
+
+
+ALL_NON_LEAF_OP_TYPES = _glob_nonleaf_op_classes()
 ALL_OP_TYPES = _glob_leaf_op_classes()
 ALL_OP_STR2TYPE = {c.__name__: c for c in ALL_OP_TYPES}
 EXPANDED_OP_V0 = [Constant, Cast]
@@ -2380,13 +2400,15 @@ def auto_infer_in_dtypes(verbose=False):
 if __name__ == '__main__':
     # Test shape functions
     print(len(ALL_OP_TYPES), 'operators supported:')
-    print(ALL_OP_TYPES)
+    print(ALL_OP_STR2TYPE.keys())
+    print('Non leaf ops: ', ALL_NON_LEAF_OP_TYPES)
+    assert Reshape in ALL_OP_TYPES
     auto_infer_in_dtypes()
 
     # Reshape from scalar
     lhs = ShapeVar([], DType.float32)
     s = z3.Solver()
-    op = Reshape1D(1)
+    op = Reshape(1)
     rhs = op.shape_fn([lhs])
     assert all(rhs[0].eq(ShapeVar([1], DType.float32))), (lhs, rhs)
     s.add(*op.requires([lhs]))
@@ -2431,14 +2453,14 @@ if __name__ == '__main__':
     source_shape = (2, 3, 4)
     target_shape = (1, 2, 3, 2, 2)
     a = torch.randn(*source_shape)
-    assert a.reshape(*target_shape).shape == Reshape5D(*target_shape).shape_fn(
+    assert a.reshape(*target_shape).shape == Reshape(*target_shape).shape_fn(
         [ShapeVar(source_shape, DType.float32)])[0].torch()
 
     # Dirty fix for z3 bug by wrapping the context using seprated functions.
     def test_reshape_symbol():  # See https://github.com/Z3Prover/z3/issues/989
         s = z3.Solver()
         v = z3.Ints('a b c d e')
-        abs_op = Reshape5D(*v)
+        abs_op = Reshape(*v)
         cons = abs_op.requires([ShapeVar(source_shape, DType.float32)])
         for c in cons:
             s.add(c)
