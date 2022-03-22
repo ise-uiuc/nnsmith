@@ -1254,6 +1254,11 @@ def __GROUP_RESHAPE(node, inp_shps, construct_param_dict, bin=True):
 PARAM_CONFIG1['Reshape'] = __GROUP_RESHAPE
 assert all(i in ALL_OP_STR2TYPE for i in PARAM_CONFIG1.keys())
 
+PARAM_CONFIG2 = copy.deepcopy(PARAM_CONFIG1)
+PARAM_CONFIG2['ConstPad'] = defaultdict(lambda: _DEFAULT_BIN_CONS)
+PARAM_CONFIG2['ReplicatePad'] = defaultdict(lambda: _DEFAULT_BIN_CONS)
+PARAM_CONFIG2['ReflectPad'] = defaultdict(lambda: _DEFAULT_BIN_CONS)
+
 
 class GuidedGen(PureSymbolGen):
     def __init__(self, summaries=None, scale='log', base=2, default_bins=_DEFAULT_BINS, constrain_prob=None, **kwargs):
@@ -1261,7 +1266,7 @@ class GuidedGen(PureSymbolGen):
             os.getenv('NNSMITH_G_PROB', 1))
         self.base = 2
         self.param_config = {
-            '0': PARAM_CONFIG0, '1': PARAM_CONFIG1
+            '0': PARAM_CONFIG0, '1': PARAM_CONFIG1, '2': PARAM_CONFIG2
         }[os.getenv('NNSMITH_G_CONFIG', '1')]
         if scale == 'log':
             self.default_config = defaultdict(
