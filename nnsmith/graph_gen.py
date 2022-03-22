@@ -25,6 +25,7 @@ import copy
 from nnsmith.error import SanityCheck, ConstraintCheck, ConstraintError
 from nnsmith.export import torch2onnx
 from nnsmith.abstract.op import *
+from nnsmith.abstract.op import __MAX_RANK__ as __MAX_RANK__
 
 
 NNSMITH_LIMNF_V = os.getenv('NNSMITH_LIMNF_V', '0')
@@ -850,6 +851,7 @@ class SimpleGenerator:
                              for k in range(op_param_n)]
 
                 op: AbsOpBase = node_t(*op_params)
+                op._param_list = op_params
 
                 if random.uniform(0, 1) < self.forward_prob:
                     if self.try_forward_insert(op):
@@ -1130,7 +1132,7 @@ def range_constrain(param, lb, ub):
         ret.append(nnsmith_ge(param, lb))
     if ub is not None and os.getenv('NNSMITH_LB', 'off') == 'off':  # HACK
         ret.append(nnsmith_lt(param, ub))
-    return [z3.And(*ret)]
+    return [z3.And(*ret)] if len(ret) > 0 else []
 
 
 def __SLICE_CONSTRAINTS(node, inp_shps: List[ShapeVar], construct_param_dict):
@@ -1162,21 +1164,25 @@ def __SLICE_CONSTRAINTS(node, inp_shps: List[ShapeVar], construct_param_dict):
 
 
 _DEFAULT_BINS = 6
+_DEFAULT_BIN_CONS = [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)] + \
+    [Bin(_DEFAULT_BINS, None, scale='log', base=2)]
 PARAM_CONFIG1 = {
     'NCHWConv2d': {
-        'kernel_h_size': [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)] +
-        [Bin(_DEFAULT_BINS, None, scale='log', base=2)],
-        'kernel_w_size': [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)],
-        'stride': [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)] +
-        [Bin(_DEFAULT_BINS, None, scale='log', base=2)],
-        'padding': [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)] + [Bin(0, 1)] +
-        [Bin(_DEFAULT_BINS, None, scale='log', base=2)],
-        'out_channels': [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)] +
-        [Bin(_DEFAULT_BINS, None, scale='log', base=2)],
+        'kernel_h_size': _DEFAULT_BIN_CONS,
+        'kernel_w_size': _DEFAULT_BIN_CONS,
+        'stride': _DEFAULT_BIN_CONS,
+        'padding': _DEFAULT_BIN_CONS + [Bin(0, 1)],
+        'out_channels': _DEFAULT_BIN_CONS,
         'in_channels': [],  # skip
     },
-    # last bin is eseentially no constraint, to ensure -1 can be included
-    'Reshape': defaultdict(lambda: [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)] + [Bin(None, None)]),
+    'ConstPad': defaultdict(lambda: _DEFAULT_BIN_CONS),
+    'ReplicatePad': defaultdict(lambda: _DEFAULT_BIN_CONS),
+    'ReflectPad': defaultdict(lambda: _DEFAULT_BIN_CONS),
+    'NearestInterp': defaultdict(lambda: _DEFAULT_BIN_CONS),
+    'LinearInterp': defaultdict(lambda: _DEFAULT_BIN_CONS),
+    'BilinearInterp': defaultdict(lambda: _DEFAULT_BIN_CONS),
+    'BicubicInterp': defaultdict(lambda: _DEFAULT_BIN_CONS),
+    'TrilinearInterp': defaultdict(lambda: _DEFAULT_BIN_CONS),
     'Slice': __SLICE_CONSTRAINTS,
 }
 PARAM_CONFIG1['Linear'] = {
@@ -1192,6 +1198,16 @@ PARAM_CONFIG1['AvgPool2d'] = {
 PARAM_CONFIG1['MaxPool2d'] = PARAM_CONFIG1['AvgPool2d']
 
 
+def get_name_param(node: AbsOpBase, construct_param_dict):
+    if node.num_var_param is None:
+        key_param = [(key, getattr(node, key))
+                     for key in construct_param_dict]
+    else:
+        key_param = [(f'param_var{i}', param)
+                     for i, param in enumerate(node._param_list)]
+    return key_param
+
+
 def __GROUP_RESHAPE(node, inp_shps, construct_param_dict, bin=True):
     bins = [Bin(i, i + 1, scale='log', base=2)
             for i in range(_DEFAULT_BINS)] + [Bin(None, None)]
@@ -1202,7 +1218,7 @@ def __GROUP_RESHAPE(node, inp_shps, construct_param_dict, bin=True):
     ng = node.ng
     assert len(src_group) == len(dst_group) == ng, (src_group, dst_group)
 
-    construct_params = list(construct_param_dict.keys())
+    construct_params = get_name_param(node, construct_param_dict)
     if bin:
         for gid in range(ng):
             ds = dst_group[gid]
@@ -1212,33 +1228,19 @@ def __GROUP_RESHAPE(node, inp_shps, construct_param_dict, bin=True):
             for idx, d in enumerate(ds):
                 if idx in disable:
                     continue
-                key = construct_params[d]
-                param = getattr(node, key)
+                name, param = construct_params[d]
                 if len(bins) == 0:
                     continue
                 bin_id = random.randint(0, len(bins) - 1)
                 lb, ub = bins[bin_id].sample_range()
                 ret.extend(range_constrain(param, lb, ub))
 
+    # print('reshape ng:', ng, 'cons:', ret)
     return ret
 
 
 PARAM_CONFIG1['Reshape'] = __GROUP_RESHAPE
-PARAM_CONFIG1['Reshape1D'] = __GROUP_RESHAPE
-PARAM_CONFIG1['Reshape2D'] = __GROUP_RESHAPE
-PARAM_CONFIG1['Reshape3D'] = __GROUP_RESHAPE
-PARAM_CONFIG1['Reshape4D'] = __GROUP_RESHAPE
-PARAM_CONFIG1['Reshape5D'] = __GROUP_RESHAPE
-PARAM_CONFIG1['Reshape6D'] = __GROUP_RESHAPE
-
-PARAM_CONFIG2 = copy.deepcopy(PARAM_CONFIG1)
-del PARAM_CONFIG2['Reshape']
-del PARAM_CONFIG2['Reshape1D']
-del PARAM_CONFIG2['Reshape2D']
-del PARAM_CONFIG2['Reshape3D']
-del PARAM_CONFIG2['Reshape4D']
-del PARAM_CONFIG2['Reshape5D']
-del PARAM_CONFIG2['Reshape6D']
+assert all(i in ALL_OP_STR2TYPE for i in PARAM_CONFIG1.keys())
 
 
 class GuidedGen(PureSymbolGen):
@@ -1247,7 +1249,7 @@ class GuidedGen(PureSymbolGen):
             os.getenv('NNSMITH_G_PROB', 1))
         self.base = 2
         self.param_config = {
-            '0': PARAM_CONFIG0, '1': PARAM_CONFIG1, '2': PARAM_CONFIG2
+            '0': PARAM_CONFIG0, '1': PARAM_CONFIG1
         }[os.getenv('NNSMITH_G_CONFIG', '1')]
         if scale == 'log':
             self.default_config = defaultdict(
@@ -1281,13 +1283,7 @@ class GuidedGen(PureSymbolGen):
             return ret
         if callable(config):
             return config(node, input_shapes, construct_param_dict)
-
-        # if len(construct_param_dict) > 0:
-        #     print('Op {} constraint:'.format(node))
-        for idx, key in enumerate(construct_param_dict):
-            # pc = counter['param_' + key]  # type: Counter
-            param = getattr(node, key)
-            # bin_id = min(pc.keys(), key=lambda k: pc)
+        for key, param in get_name_param(node, construct_param_dict):
             bins = config[key]
             if len(bins) == 0:
                 continue
