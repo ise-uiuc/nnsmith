@@ -1643,7 +1643,7 @@ class InterpBase(UnaryOpBase):
         return [nnsmith_gt(v, 0) for v in self.size]
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        shape = input_shapes[0].shape
+        shape = list(input_shapes[0].shape)
         for i in range(len(self.size)):
             shape[-(1 + i)] = self.size[-(1 + i)]
         return [ShapeVar(shape, input_shapes[0].dtype)]
@@ -1692,6 +1692,9 @@ class ReduceBase(UnaryOpBase, ABC):
         super().__init__()
         self.inp_ranks = [int_from(1)]
         self.out_ranks = [int_range(0, __MAX_RANK__ - 1)]
+
+    def __str__(self) -> str:
+        return super().__str__() + f'(dim={self.extra_attrs["reduce_dim"]})'
 
     def _init_reduce_dim(self, input_shape: List[Union[int, z3.ExprRef]]):
         if 'reduce_dim' not in self.extra_attrs:
