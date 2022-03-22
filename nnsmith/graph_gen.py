@@ -844,10 +844,10 @@ class SimpleGenerator:
         try:
             for _ in range(max_shape_var_pick_time):
                 # should recreate a new instance since some attributes (like axis) should be initialized for each pick
-                op_param_n = signature(node_t).parameters
+                op_param_n = node_t.get_num_var_param()
                 op_id = len(self.abstract_graph.nodes)
                 op_params = [self.new_sym('op%s_%s' % (op_id, k))
-                             for k in range(len(op_param_n))]
+                             for k in range(op_param_n)]
 
                 op: AbsOpBase = node_t(*op_params)
 
