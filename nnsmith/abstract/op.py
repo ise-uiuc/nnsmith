@@ -949,6 +949,17 @@ class Sigmoid(ElementWiseUnaryOp):
         return torch.sigmoid
 
 
+class Floor(ElementWiseUnaryOp):
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
+
+    def __init__(self):
+        super().__init__()
+
+    def torch(self):
+        return torch.floor
+
+
 class TrigonometricOp(ElementWiseUnaryOp):
     pass
 
