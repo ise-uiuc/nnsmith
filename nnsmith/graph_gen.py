@@ -1053,7 +1053,7 @@ class PureSymbolGen(SimpleGenerator):
             constraints.extend(shape.gt_zero())
 
         self.cur_node = node
-        constraints.extend(self.extra_constraints(node, input_shapes))
+        # constraints.extend(self.extra_constraints(node, input_shapes))
 
         mem = list(self.ph_cons)
         for i in occ_holder_indices:
