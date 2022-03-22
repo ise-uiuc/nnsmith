@@ -1308,7 +1308,8 @@ class Expand(UnaryOpBase, ABC):
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         if self.expand_last_dim <= len(input_shapes[0].shape):
             # NOTE: Werid, deepcopy is useless here.
-            shape = ShapeVar(shape=[*input_shapes[0].shape], dtype=input_shapes[0].dtype)
+            shape = ShapeVar(shape=[*input_shapes[0].shape],
+                             dtype=input_shapes[0].dtype)
             shape.shape[-self.expand_last_dim] = self.expand_n
             return [shape]
         else:  # expand it;
@@ -1424,7 +1425,8 @@ class NCHWConv2d(UnaryOpBase):
         is_symbolic_inp = input_shapes[0].constains_symbol() or isinstance(self.kernel_w_size, z3.ExprRef) or isinstance(
             self.kernel_h_size, z3.ExprRef) or isinstance(self.stride, z3.ExprRef) or isinstance(self.padding, z3.ExprRef)
 
-        shape_var = ShapeVar([input_shapes[0].shape[0], self.out_channels], dtype=input_shapes[0].dtype)
+        shape_var = ShapeVar(
+            [input_shapes[0].shape[0], self.out_channels], dtype=input_shapes[0].dtype)
         if not is_symbolic_inp:
             shape_var.shape.append(
                 (input_shapes[0].shape[2] - self.kernel_h_size + 2 * self.padding) // self.stride + 1)
@@ -1489,7 +1491,7 @@ class NCHWConv2d(UnaryOpBase):
         return [(4, out_shape_var[0].dtype)]
 
 
-class Reshape(UnaryOpBase, ABC):
+class ReshapeBase(UnaryOpBase, ABC):
     num_var_param = int_range(1, 4)
     in_dtypes = [(i,) for i in DTYPE_ALL]
     out_dtypes = [(i,) for i in DTYPE_ALL]
@@ -1521,7 +1523,8 @@ class Reshape(UnaryOpBase, ABC):
                 accum = nnsmith_mul(accum, v)
 
         # First see if there's any symbols in the expression
-        symbol_indices = [v for v in input_shapes[0].shape if isinstance(v, z3.ExprRef)]
+        symbol_indices = [
+            v for v in input_shapes[0].shape if isinstance(v, z3.ExprRef)]
         if len(symbol_indices) == 0:
             shape_var.shape[auto_dim] = reduce(
                 lambda x, y: x * y, input_shapes[0].shape, 1) // accum
@@ -1563,7 +1566,11 @@ class Reshape(UnaryOpBase, ABC):
         return [(-1, out_shape_var[0].dtype)]
 
 
-class Flatten(Reshape):
+class Reshape(ReshapeBase):
+    pass
+
+
+class Flatten(ReshapeBase):
     num_var_param = None
     # Inputs are target shape.
 
@@ -1619,9 +1626,10 @@ class Transpose(UnaryOpBase, ABC):
 
 # Sum, Min, Max, Mean, ArgMin, ArgMax, Squeeze, Size
 
+
 class InterpBase(UnaryOpBase):
     num_var_param = int_range(1, 3)
-    
+
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
@@ -1630,14 +1638,14 @@ class InterpBase(UnaryOpBase):
         self.size = size
         self.inp_ranks = [(len(size) + 2,)]
         self.out_ranks = [(len(size) + 2,)]
-    
+
     def _requires(self, input_shapes: List[ShapeVar]):
         return [nnsmith_gt(v, 0) for v in self.size]
-    
+
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         shape = input_shapes[0].shape
         for i in range(len(self.size)):
-            shape[-(1+i)] = self.size[-(1+i)]
+            shape[-(1 + i)] = self.size[-(1 + i)]
         return [ShapeVar(shape, input_shapes[0].dtype)]
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
@@ -1646,27 +1654,36 @@ class InterpBase(UnaryOpBase):
 
 class NearestInterp(InterpBase):
     def torch(self) -> Callable[..., torch.Tensor]:
-        return lambda x : torch.nn.functional.interpolate(x, size=self.size, mode='nearest')
+        return lambda x: torch.nn.functional.interpolate(x, size=self.size, mode='nearest')
+
 
 class LinearInterp(InterpBase):
     num_var_param = [1]
+
     def torch(self) -> Callable[..., torch.Tensor]:
-        return lambda x : torch.nn.functional.interpolate(x, size=self.size, mode='linear')
+        return lambda x: torch.nn.functional.interpolate(x, size=self.size, mode='linear')
+
 
 class BilinearInterp(InterpBase):
     num_var_param = [2]
+
     def torch(self) -> Callable[..., torch.Tensor]:
-        return lambda x : torch.nn.functional.interpolate(x, size=self.size, mode='bilinear')
+        return lambda x: torch.nn.functional.interpolate(x, size=self.size, mode='bilinear')
+
 
 class BicubicInterp(InterpBase):
     num_var_param = [2]
+
     def torch(self) -> Callable[..., torch.Tensor]:
-        return lambda x : torch.nn.functional.interpolate(x, size=self.size, mode='bicubic')
+        return lambda x: torch.nn.functional.interpolate(x, size=self.size, mode='bicubic')
+
 
 class TrilinearInterp(InterpBase):
     num_var_param = [3]
+
     def torch(self) -> Callable[..., torch.Tensor]:
-        return lambda x : torch.nn.functional.interpolate(x, size=self.size, mode='trilinear')
+        return lambda x: torch.nn.functional.interpolate(x, size=self.size, mode='trilinear')
+
 
 class ReduceBase(UnaryOpBase, ABC):
     _reduce_out_dtype = None  # None means same as input dtype
@@ -2022,6 +2039,22 @@ def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
     return ret
 
 
+def _glob_nonleaf_op_classes() -> List[Type[AbsOpBase]]:
+    ret = []
+
+    def _glob_nonleaf_op_classes_rec(cls):
+        nonlocal ret
+        if cls is Input or cls is Constant:
+            return
+        for c in cls.__subclasses__():
+            if c.__subclasses__():
+                _glob_nonleaf_op_classes_rec(c)
+                ret.append(c)
+    _glob_nonleaf_op_classes_rec(AbsOpBase)
+    return ret
+
+
+ALL_NON_LEAF_OP_TYPES = _glob_nonleaf_op_classes()
 ALL_OP_TYPES = _glob_leaf_op_classes()
 ALL_OP_STR2TYPE = {c.__name__: c for c in ALL_OP_TYPES}
 EXPANDED_OP_V0 = [Constant, Cast]
@@ -2142,7 +2175,9 @@ def auto_infer_in_dtypes(verbose=False):
 if __name__ == '__main__':
     # Test shape functions
     print(len(ALL_OP_TYPES), 'operators supported:')
-    print(ALL_OP_TYPES)
+    print(ALL_OP_STR2TYPE.keys())
+    print('Non leaf ops: ', ALL_NON_LEAF_OP_TYPES)
+    assert Reshape in ALL_OP_TYPES
     auto_infer_in_dtypes()
 
     # ReLU
@@ -2184,14 +2219,14 @@ if __name__ == '__main__':
     source_shape = (2, 3, 4)
     target_shape = (1, 2, 3, 2, 2)
     a = torch.randn(*source_shape)
-    assert a.reshape(*target_shape).shape == Reshape5D(*target_shape).shape_fn(
+    assert a.reshape(*target_shape).shape == Reshape(*target_shape).shape_fn(
         [ShapeVar(source_shape, DType.float32)])[0].torch()
 
     # Dirty fix for z3 bug by wrapping the context using seprated functions.
     def test_reshape_symbol():  # See https://github.com/Z3Prover/z3/issues/989
         s = z3.Solver()
         v = z3.Ints('a b c d e')
-        abs_op = Reshape5D(*v)
+        abs_op = Reshape(*v)
         cons = abs_op.requires([ShapeVar(source_shape, DType.float32)])
         for c in cons:
             s.add(c)
