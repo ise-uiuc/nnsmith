@@ -1712,7 +1712,7 @@ class ReduceBase(UnaryOpBase, ABC):
 
     def __init__(self):
         super().__init__()
-        self.inp_ranks = [int_from(0)]
+        self.inp_ranks = [int_from(1)] # TVM bug ~ crash on scalar.min()
         self.out_ranks = [int_range(0, __MAX_RANK__ - 1)]
 
     def __str__(self) -> str:
@@ -1739,8 +1739,8 @@ class ReduceBase(UnaryOpBase, ABC):
         return []
 
     def _get_irank(self, orank):
-        if orank == 0:
-            return random.randint(0, 1)
+        # if orank == 0:  # TVM bug ~ crash on scalar.min()
+        #     return random.randint(0, 1)
         return orank + 1
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
