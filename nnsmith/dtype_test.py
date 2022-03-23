@@ -123,6 +123,8 @@ def rewrite_op_dtype(ops: List[AbsOpBase], backend=None, verbose=False, cache=No
                 if 'onnxruntime.capi.onnxruntime_pybind11_state.NotImplemented' in str(type(e)) or \
                         "Unexpected data type for" in str(e):
                     continue
+                if 'DiagnosticError: one or more error diagnostics were emitted, please check diagnostic render for output' in str(type(e)):
+                    continue
                 raise e
             success_idtypes.append(itypes)
             otypes = []
