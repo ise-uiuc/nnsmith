@@ -1976,7 +1976,7 @@ class Squeeze(ReduceBase):
         return [nnsmith_eq(input_shapes[0].shape[reduce_dim], 1)]
 
     def torch(self):
-        if self.extra_attrs['reduce_dim']:
+        if self.extra_attrs['reduce_dim'] is not None:
             return lambda x: x.squeeze(self.extra_attrs['reduce_dim'])
         else:
             return lambda x: x.squeeze()
@@ -1988,7 +1988,7 @@ class ReduceSum(ReduceBase):
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS if i != DType.int32]
 
     def torch(self):
-        if self.extra_attrs['reduce_dim']:
+        if self.extra_attrs['reduce_dim'] is not None:
             return lambda x: x.sum(self.extra_attrs['reduce_dim'])
         return lambda x: x.sum()
 
@@ -1998,7 +1998,7 @@ class ReduceMin(ReduceBase):
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
 
     def torch(self):
-        if self.extra_attrs['reduce_dim']:
+        if self.extra_attrs['reduce_dim'] is not None:
             return lambda x: x.min(self.extra_attrs['reduce_dim']).values
         return lambda x: x.min()
 
@@ -2008,7 +2008,7 @@ class ReduceMax(ReduceBase):
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
 
     def torch(self):
-        if self.extra_attrs['reduce_dim']:
+        if self.extra_attrs['reduce_dim'] is not None:
             return lambda x: x.max(self.extra_attrs['reduce_dim']).values
         return lambda x: x.max()
 
@@ -2018,7 +2018,7 @@ class ReduceMean(ReduceBase):
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def torch(self):
-        if self.extra_attrs['reduce_dim']:
+        if self.extra_attrs['reduce_dim'] is not None:
             return lambda x: x.mean(self.extra_attrs['reduce_dim'])
         return lambda x: x.mean()
 
@@ -2031,7 +2031,7 @@ class ArgMin(ReduceBase):
     _reduce_out_dtype = DType.int64
 
     def torch(self):
-        if self.extra_attrs['reduce_dim']:
+        if self.extra_attrs['reduce_dim'] is not None:
             return lambda x: x.argmin(self.extra_attrs['reduce_dim'])
         return lambda x: x.argmin()
 
@@ -2047,7 +2047,7 @@ class ArgMax(ReduceBase):
     _reduce_out_dtype = DType.int64
 
     def torch(self):
-        if self.extra_attrs['reduce_dim']:
+        if self.extra_attrs['reduce_dim'] is not None:
             return lambda x: x.argmax(self.extra_attrs['reduce_dim'])
         return lambda x: x.argmax()
 
