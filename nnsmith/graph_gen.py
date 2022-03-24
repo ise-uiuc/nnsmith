@@ -1445,6 +1445,9 @@ if __name__ == '__main__':
     print('Initializing SymbolNet time: {}s'.format(time.time() - srt_time))
     torch2onnx(net, args.output_path, verbose=args.verbose,
                use_cuda=args.use_cuda)
+    import onnx
+    onnx.checker.check_model(
+        onnx.load(args.output_path), full_check=True)
     input_st = time.time()
 
     sat_inputs = None
