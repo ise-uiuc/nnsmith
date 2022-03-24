@@ -16,11 +16,15 @@ from tqdm import tqdm
 import torch
 
 
-def nnsmith_gen_once(path, seed, max_nodes, candidates_overwrite=None):
+def nnsmith_gen_once(path, seed, max_nodes, candidates_overwrite=None, mode='random'):
+    if mode == 'hybrid':
+        mode = random.choice(['random', 'guided'])
+
     torch.manual_seed(seed)
     gen, solution = random_model_gen(
         min_dims=[1, 3, 48, 48],  # Only rank useful. Dim sizes means nothing.
-        seed=seed, max_nodes=max_nodes, candidates_overwrite=candidates_overwrite)
+        seed=seed, max_nodes=max_nodes, candidates_overwrite=candidates_overwrite,
+        mode=mode)
     net = SymbolNet(gen.abstract_graph, solution,
                     verbose=False, alive_shapes=gen.alive_shapes)
     with torch.no_grad():
@@ -36,6 +40,7 @@ if __name__ == '__main__':
     parser.add_argument('--graphfuzz_ops', action='store_true')
     parser.add_argument('--ort_cache', type=str, default=None)
     parser.add_argument('--seed', type=int, default=233)
+    parser.add_argument('--mode', type=str, default='random')
     args = parser.parse_args()
 
     mkdir(args.onnx_dir)
@@ -75,7 +80,7 @@ if __name__ == '__main__':
                     warnings.simplefilter("ignore")
                     nnsmith_gen_once(os.path.join(
                         args.onnx_dir, to_name), seed, max_nodes=10,
-                        candidates_overwrite=candidates_overwrite)
+                        candidates_overwrite=candidates_overwrite, mode=args.mode)
                 label = to_name
                 valid_cnt += 1
             except Exception as e:
