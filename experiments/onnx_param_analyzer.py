@@ -8,9 +8,11 @@ from multiprocessing import Pool, cpu_count
 import onnx
 import pandas as pd
 import pickle
+import seaborn as sns
 
+import matplotlib.pyplot as plt
+from matplotlib_venn import venn2, venn2_circles, venn3, venn3_circles
 OP_PARAM_NAMES = {  # use as a sanity check. All ops should have the same set of param names.
-    'Conv': ['kernel_shape', 'strides', 'pads', 'dilations'],
 }
 
 UNDEFINED = 0
@@ -29,9 +31,6 @@ TENSORS = 9
 GRAPHS = 10
 SPARSE_TENSORS = 12
 TYPE_PROTOS = 14
-
-
-OP_TO_SHOW = ['Conv', 'Dense', 'Pad', 'Reshape']
 
 
 def parse_attr(attr):
@@ -105,7 +104,7 @@ def to_tuple(op_type, attrs):
     return tuple(sorted(attrs.items(), key=lambda x: x[0]))
 
 
-def analyze_one_count(model_path):
+def analyze_one(model_path):
     if 'FAILURE' in model_path:
         return {}
 
@@ -114,8 +113,6 @@ def analyze_one_count(model_path):
     info = {}
     for node in model.graph.node:
         # print(node)
-        if node.op_type not in info:
-            info[node.op_type] = Counter()
 
         attrs = {}
         for attr in node.attribute:
@@ -123,6 +120,10 @@ def analyze_one_count(model_path):
             if v is not None:
                 attrs[attr.name] = v
         t = to_tuple(node.op_type, attrs)
+        if len(t) == 0:
+            continue
+        if node.op_type not in info:
+            info[node.op_type] = Counter()
         # print('attrs=\n', attrs)
         # print('tuple=', t)
         assert t == tuple(t), f'{t} not comparable'
@@ -138,15 +139,8 @@ def analyze_one_count(model_path):
         # print(shape)
         ish.update({shape: 1})
     res = {'input shape': ish}
-    for op in OP_TO_SHOW:
-        res[op + '_param'] = info.get(op, Counter())
+    res.update(info)
     return res
-
-
-def analyze_one(*args, **kwargs):
-    a = analyze_one_count(*args, **kwargs)
-    # drop the frequency information
-    return {k: set(v.keys()) for k, v in a.items()}
 
 
 def analyze_folders(folders, cache_dir=None, force=False, n_limit=None):
@@ -185,13 +179,13 @@ def analyze_folders(folders, cache_dir=None, force=False, n_limit=None):
         file_hubs[i] = file_hubs[i][:(ts < least_time).sum()]
 
     for files in file_hubs:
-        sets = {}
+        cnts = {}
         for new in map(analyze_one, files):
-            for k, v in new.items():
-                if k not in sets:
-                    sets[k] = set()
-                sets[k] |= v
-        res.append(sets)
+            for op_name, cnt in new.items():
+                if op_name not in cnts:
+                    cnts[op_name] = Counter()
+                cnts[op_name].update(cnt)
+        res.append(cnts)
 
     if cache_dir is not None:
         if not os.path.exists(cache_dir):
@@ -211,8 +205,14 @@ if __name__ == '__main__':
     parser.add_argument('--nlim', type=int, nargs='+', default=None)
     parser.add_argument('--output', type=str, default='results')
     parser.add_argument('--force', action='store_true')
+    parser.add_argument('--ops', type=str, nargs='+',
+                        default=None, help='Pass operator names to show.')
     args = parser.parse_args()
 
+    ops = args.ops
+    if ops is None:
+        ops = ['MaxPool', 'AveragePool', 'Conv', 'Dense', 'Slice']
+        # Resahpe and Pad's parameters are specified using a tensor so unfortunately hard to parse. Skip for now.
     if args.tags is None:
         args.tags = [os.path.split(f)[-1].split('-')[0] for f in args.folders]
     else:
@@ -220,18 +220,59 @@ if __name__ == '__main__':
 
     results = analyze_folders(
         args.folders, cache_dir=args.output, force=args.force, n_limit=args.nlim)
-    for tag, sets in zip(args.tags, results):
-        print(f'{tag}:\t')
-        for k, v in sets.items():
-            print(f'\t{k}: {len(v)}')
 
-    import matplotlib.pyplot as plt
-    from matplotlib_venn import venn2, venn2_circles, venn3, venn3_circles
+    df = pd.DataFrame()
+    for tag, cnts in zip(args.tags, results):
+        print(f'{tag}:\t')
+        for op_name, cnt in cnts.items():
+            print(f'\t{op_name}: {len(cnt)}')
+        df1 = pd.DataFrame({
+            'name': cnts.keys(),
+            'count': [len(cnt) for cnt in cnts.values()],
+            'ratio': [len(cnt) / sum(cnt.values()) for cnt in cnts.values()],
+        })
+        df1['tag'] = tag
+        df = df.append(df1, ignore_index=True)
+
+    def print_most_common(d):
+        s = sum(d.values())
+        for k, v in d.most_common():
+            print(f'`{k}`: count={v} ratio={v / s}')
+
+    # print_most_common(results[0]['MaxPool'])
+    # print_most_common(results[0]['input shape'])
+    # print_most_common(results[0]['Reshape'])
+
+    for c in ['Count', 'Ratio']:
+        _c = c.lower()
+        df_ops = df[df.name.map(lambda x: x in ops)]
+        plt.title(
+            f"{c} of unqiue parameter combination for different ONNX operators")
+        sns.barplot(x='name', y=f'{_c}', hue='tag', data=df_ops)
+        plt.tight_layout()
+        plt.savefig(os.path.join(args.output, f'{_c}_params.png'))
+        plt.close()
+
+        df_ops = df[df.name.map(lambda x: x != 'input shape')]
+        fig, ax = plt.subplots(figsize=(20, 6))
+        plt.title(
+            f"{_c} of unqiue parameter combination for different ONNX operators")
+        sns.barplot(x='name', y=f'{_c}', hue='tag', data=df_ops, ax=ax)
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.savefig(os.path.join(args.output, f'{_c}_params_all.png'))
+        plt.close()
+
+        plt.title(f"{_c} of unqiue input shapes")
+        df_inp = df[df.name.map(lambda x: x == 'input shape')]
+        sns.barplot(x='name', y=f'{_c}', hue='tag', data=df_inp)
+        plt.savefig(os.path.join(args.output, f'{_c}_inputs.png'))
+        plt.close()
 
     node_list = []  # TODO: should call it params
     edge_list = []  # TODO: should call it input shapes
     for i in range(len(results)):
-        nodes = results[i]['Conv_param']  # TODO: more ops
+        nodes = results[i]['Conv']  # TODO: more ops
         edges = results[i]['input shape']
         node_list.append(nodes)
         edge_list.append(edges)
