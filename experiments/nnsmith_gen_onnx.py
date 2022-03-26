@@ -14,6 +14,7 @@ import warnings
 
 from tqdm import tqdm
 import torch
+import tarfile
 
 
 def nnsmith_gen_once(path, seed, max_nodes, candidates_overwrite=None, mode='random'):
@@ -41,6 +42,7 @@ if __name__ == '__main__':
     parser.add_argument('--ort_cache', type=str, default=None)
     parser.add_argument('--seed', type=int, default=233)
     parser.add_argument('--mode', type=str, default='random')
+    parser.add_argument('--tar', action='store_true')
     args = parser.parse_args()
 
     mkdir(args.onnx_dir)
@@ -69,6 +71,9 @@ if __name__ == '__main__':
     gen_cnt = 0
     valid_cnt = 0
 
+    if args.tar:
+        tar = tarfile.open(os.path.join(args.onnx_dir, 'models.tar'), 'w')
+
     with tqdm(total=args.time_budget) as pbar:
         while time.time() - start_time < args.time_budget:
             seed = random.getrandbits(32)
@@ -83,6 +88,10 @@ if __name__ == '__main__':
                         candidates_overwrite=candidates_overwrite, mode=args.mode)
                 label = to_name
                 valid_cnt += 1
+                if args.tar:
+                    tar.add(os.path.join(args.onnx_dir, to_name),
+                            arcname='models/' + to_name)
+                    os.unlink(os.path.join(args.onnx_dir, to_name))
             except Exception as e:
                 print(f'Fail when seed={seed}')
                 print(e)  # Skip a few errors.
