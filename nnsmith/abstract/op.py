@@ -1931,7 +1931,7 @@ class ReduceBase(UnaryOpBase, ABC):
 
     def __init__(self):
         super().__init__()
-        self.inp_ranks = [int_from(1)] # TVM bug ~ crash on scalar.min()
+        self.inp_ranks = [int_from(1)]  # TVM bug ~ crash on scalar.min()
         self.out_ranks = [int_range(0, __MAX_RANK__ - 1)]
 
     def __str__(self) -> str:
