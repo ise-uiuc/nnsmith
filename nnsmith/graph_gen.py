@@ -244,8 +244,13 @@ class SymbolNet(nn.Module):
             init_tensors = self.get_random_inps(
                 margin, base, use_cuda=use_cuda)
 
-        inputs = [torch.nn.parameter.Parameter(
-            tensor.data) for tensor in init_tensors]
+        inputs = []
+        for tensor in init_tensors:
+            if tensor.data.dtype.is_floating_point:
+                inputs.append(torch.nn.parameter.Parameter(tensor.data))
+            else:
+                inputs.append(tensor.data)
+
         self.enable_training(extra_trainable=inputs)
 
         last_check_intermediate_numeric = self.check_intermediate_numeric
@@ -306,8 +311,8 @@ class SymbolNet(nn.Module):
                 self.hacked[node_id] = cond
             if self.verbose:
                 print(
-                    f'executing instruction op={op}, node_id={node_id}, inps={inps}, outs={outs}')
-                print('input_tensors=')
+                    f'--> executing op={op}, node_id={node_id}, inps={inps}, outs={outs}')
+                print('\tinputs=')
                 for i in input_tensors:
                     print(f'  (shape={i.shape} dtype={i.dtype})')
             outputs = inst(*input_tensors)
@@ -344,7 +349,7 @@ class SymbolNet(nn.Module):
                     return outputs
 
             if self.verbose:
-                print('outputs=', ','.join(
+                print('\toutputs=', ','.join(
                     f'(shape={i.shape} dtype={i.dtype})' for i in outputs))
             for idx in inps:
                 local_ref_cnt[idx] -= 1
@@ -362,7 +367,7 @@ class SymbolNet(nn.Module):
 class SimpleGenerator:
 
     def __init__(self, min_dims=[1, 3, 48, 48], skip=[Input], viz_sbs=False, megabyte_lim=__MB_LIM__, seed=None, verbose=False, use_bitvec=False,
-                 viz_verbose=False, merge_op_v=None, limnf=True, candidates_overwrite=None):
+                 viz_verbose=False, merge_op_v=None, limnf=True, candidates_overwrite=None, init_fp=False):
         if seed is not None:
             np.random.seed(seed)
             random.seed(seed)
@@ -411,7 +416,7 @@ class SimpleGenerator:
 
         # <op idx>
         self.placeholders: List[int] = []
-        init_placeholder = self.create_placeholder(len(min_dims))
+        init_placeholder = self.create_placeholder(len(min_dims), dtype=torch.float32 if init_fp else None)
         self.solver.add(init_placeholder.out_shape.gt_zero())
         self.forward_insert_node(init_placeholder, [], oshapes=[
                                  init_placeholder.out_shape])
@@ -1160,9 +1165,7 @@ def random_model_gen(
         timeout=50000,
         verbose=False,
         mode='random',
-        merge_op_v=None,
-        limnf=True,
-        candidates_overwrite=None):
+        **kwargs):
 
     GenCls = {
         'random': PureSymbolGen,
@@ -1170,7 +1173,7 @@ def random_model_gen(
     }[mode]
     gen = GenCls(min_dims=min_dims,
                  viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec,
-                 merge_op_v=merge_op_v, limnf=limnf, candidates_overwrite=candidates_overwrite)
+                 **kwargs)
     gen.abstract_gen(max_node_size=max_nodes,
                      max_gen_millisec=timeout)
     solution = gen.get_symbol_solutions()
