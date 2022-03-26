@@ -533,6 +533,11 @@ if __name__ == '__main__':
         backends = {'tvm-opt': TVMExecutor(opt_level=4),
                     'tvm-debug': TVMExecutor(opt_level=0)}
         __COV_DRIVER__ = TVMExecutor.coverage_install()
+    elif args.backend == 'tvm-cuda':
+        from nnsmith.backends.tvm_graph import TVMExecutor
+        backends = {'tvm-opt': TVMExecutor(opt_level=4, target="cuda"),
+                    'tvm-debug': TVMExecutor(opt_level=0)}
+        __COV_DRIVER__ = TVMExecutor.coverage_install()
     elif args.backend == 'ort':
         from nnsmith.backends.ort_graph import ORTExecutor
         backends = {'ort-opt': ORTExecutor(opt_level=3),
@@ -558,7 +563,7 @@ if __name__ == '__main__':
     if args.skip is not None:
         skip += ',' + args.skip
     auto_infer_in_dtypes()  # TODO: remove this someday
-    if args.backend != 'tvm':
+    if not args.backend.startswith('tvm'):
         cache_file = f'config/fuzz_{list(backends.keys())[0]}_op_dtype.json'
 
         def run():

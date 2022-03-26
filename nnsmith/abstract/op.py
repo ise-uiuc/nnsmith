@@ -2351,6 +2351,7 @@ def config_skip_op(skip_config):
             'LegacyConstant*',
         ],
         'tvm': [],
+        'tvm-cuda': [],
         'ort': [],
         'xla': [],
         'tch': [],
