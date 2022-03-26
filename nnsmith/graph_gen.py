@@ -1318,8 +1318,6 @@ class GuidedGen(PureSymbolGen):
             print(
                 '# guidance applied: {} / {}'.format(len(cur_cons), len(all_cons)))
 
-        assert self.check_sat() == z3.sat
-
 
 def parse_args():
     import argparse
