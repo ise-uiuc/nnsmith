@@ -81,6 +81,9 @@ if __name__ == '__main__':
         succ_v3 = False
         try_times_v3 = 0
 
+        if args.use_cuda:
+            net.use_cuda()
+
         net.check_intermediate_numeric = True
         with torch.no_grad():
             for init_tensors in init_tensor_samples:

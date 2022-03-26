@@ -56,6 +56,8 @@ class SymbolNet(nn.Module):
         self.n_output = 0
         self.inp_id_cnt = 0
 
+        self.using_cuda = None # not sure
+
         # keep track of layers and weights so that the tracing can work properly
         self.mlist = nn.ModuleList()
         self.graph = graph
@@ -228,7 +230,7 @@ class SymbolNet(nn.Module):
             inputs = self.get_random_inps(margin, base, use_cuda)
 
             if use_cuda:
-                self = self.cuda()
+                self.use_cuda()
 
             self.forward(*inputs)
 
@@ -258,7 +260,7 @@ class SymbolNet(nn.Module):
 
         if use_cuda:
             inputs = [inp.cuda() for inp in inputs]
-            self = self.cuda()
+            self.use_cuda()
 
         sat_inputs = None
         for _ in range(max_iter):
@@ -282,6 +284,10 @@ class SymbolNet(nn.Module):
         self.check_intermediate_numeric = last_check_intermediate_numeric
         return sat_inputs
 
+    def use_cuda(self):
+        self.cuda()
+        self.using_cuda = True
+
     def forward(self, *args, **kwargs):
         # required: input_info, tensors, ref_cnt, instructions, hacked, first_run verbose # alive_shapes, graph
         xs = [None] * len(self.input_info)
@@ -300,6 +306,8 @@ class SymbolNet(nn.Module):
 
         for inst, inps, outs, op, node_id in self.instructions:
             input_tensors = [self.tensors[idx] for idx in inps]
+            if self.using_cuda:
+                input_tensors = [inp.cuda() for inp in input_tensors]
             if isinstance(op, Div):
                 if not self.first_run:
                     cond = self.hacked[node_id]
