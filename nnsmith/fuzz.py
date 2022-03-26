@@ -149,7 +149,7 @@ class Reporter:  # From Tzer.
             os.remove(f'{profraw}')  # remove old to avoid clogging
             __COV_DRIVER__.write_src_coverage()
             shutil.copy(f'{profraw}', folder /
-                        f'src_cov_history/{profraw}-{self.record_coverage_cnt}')
+                        f'src_cov_history/profraw-{self.record_coverage_cnt}')
 
     def record_coverage(self, fuzz):
         if self.record_coverage_cnt % self.flush_freq == 0:
