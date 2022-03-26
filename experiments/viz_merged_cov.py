@@ -43,20 +43,22 @@ class Ploter:
             assert not self.legends
 
     def plot(self, save='cov', cov_type='', cov_lim=None):
-        for axs in self.axs:
-            axs.legend(self.legends, loc='upper left')
+        self.axs[-1].legend(self.legends)
 
         self.cov_maxes = sorted(self.cov_maxes)
 
         if len(self.cov_maxes) > 1:
-            print(
-                f'==> Best one is {self.cov_maxes[-1] / self.cov_maxes[-2]:.2f}x better than the second best one')
+            for rk in range(1, len(self.cov_maxes)):
+                best = self.cov_maxes[-1]
+                cur = self.cov_maxes[-(rk + 1)]
+                print(
+                    f'==> Best one is [{best} / {cur}] = **{best / cur:.2f}x** better than the NO. {rk + 1} baseline.')
 
         cov_max = max(self.cov_maxes)
         cov_min = min(self.cov_maxes)
 
         if cov_lim is not None:
-            self.axs[0].annotate(f"{int(cov_max)}/{int(cov_lim)} ~ $\\bf{{{cov_max / cov_lim * 100 :.1f}\%}}$", xy=(self.xspan, cov_max * 1.02), xycoords="data",
+            self.axs[0].annotate(f"{int(cov_max)}/{int(cov_lim)} ~ $\\bf{{{cov_max / cov_lim * 100 :.1f}\%}}$", xy=(self.xspan, cov_max * 1.03), xycoords="data",
                                  va="center", ha="right", fontsize=11,
                                  bbox=dict(boxstyle="sawtooth", fc="w"))
         #     self.axs[0].axhline(y=cov_lim, color='r', linestyle='dashdot')
@@ -84,6 +86,8 @@ class Ploter:
                 ylabel=f'# {cov_type}Coverage',
                 xlabel='# Iteration')
             self.axs[1].set_title('Coverage $\\bf{Iteration}$ Efficiency')
+            plt.setp(self.axs[1].get_xticklabels(), rotation=30,
+                     horizontalalignment='right')
 
             self.axs[2].set(
                 xlabel='Time / Second',
@@ -152,7 +156,7 @@ def ort_pass_filter(fname):
     return 'onnxruntime/core/optimizer/' in fname
 
 
-def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag='', tlimit=None, pdf=False, one_plot=False):
+def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag='', tlimit=None, pdf=False, one_plot=False, venn=False):
     branch_ploter = Ploter(use_pdf=pdf, one_plot=one_plot)
 
     assert fuzz_tags is not None
@@ -173,6 +177,9 @@ def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag=''
 
     branch_ploter.plot(save=os.path.join(
         folder, target_tag + pass_tag + 'branch_cov'), cov_type='Branch', cov_lim=bf)
+
+    if not venn:
+        return
 
     # venn graph plot
     branch_cov_sets = []
@@ -248,6 +255,7 @@ if '__main__' == __name__:
     parser.add_argument('--tvm', action='store_true', help='use tvm')
     parser.add_argument('--ort', action='store_true', help='use ort')
     parser.add_argument('--pdf', action='store_true', help='use pdf as well')
+    parser.add_argument('--venn', action='store_true', help='plot venn')
     args = parser.parse_args()
 
     if args.tags is None:
@@ -276,6 +284,6 @@ if '__main__' == __name__:
 
     if pass_filter is not None:
         plot_one_round(folder=args.output, data=data,
-                       pass_filter=pass_filter, tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, one_plot=True)
+                       pass_filter=pass_filter, tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, one_plot=True, venn=args.venn)
     plot_one_round(folder=args.output, data=data,
-                   pass_filter=None, tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf)  # no pass
+                   pass_filter=None, tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, venn=args.venn)  # no pass
