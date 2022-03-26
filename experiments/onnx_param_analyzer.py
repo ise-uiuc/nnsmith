@@ -77,7 +77,7 @@ def parse_attr(attr):
     #   repeated TypeProto type_protos = 15;// list of type protos
     # }
     if not hasattr(attr, 'type'):
-        print('warning: no type found for', attr)
+        print('warning: no type found for', attr.name)
         return None
     if attr.type == INT:
         return attr.i
@@ -190,7 +190,7 @@ def analyze_one(model_path):
 def analyze_folders(folders, cache_dir=None, force=False, n_limit=None):
     res = []
 
-    __CACHE_FILE__ = 'onnx_analysis_cache.pkl'
+    __CACHE_FILE__ = 'onnx_param_cache.pkl'
     for folder in folders:
         if os.path.exists(os.path.join(cache_dir, __CACHE_FILE__)) and not force and cache_dir is not None:
             print('===> {} already exists.'.format(
@@ -224,13 +224,15 @@ def analyze_folders(folders, cache_dir=None, force=False, n_limit=None):
 
     for files in file_hubs:
         cnts = {}
-        for new in map(analyze_one, files):
-            if new is None:
-                continue
-            for op_name, cnt in new.items():
-                if op_name not in cnts:
-                    cnts[op_name] = Counter()
-                cnts[op_name].update(cnt)
+        with Pool(min(cpu_count(), len(files))) as p:
+            for new in p.imap_unordered(analyze_one, files):
+                if new is None:
+                    continue
+                for op_name, cnt in new.items():
+                    if op_name not in cnts:
+                        cnts[op_name] = Counter()
+                    cnts[op_name].update(cnt)
+
         res.append(cnts)
 
     if cache_dir is not None:
@@ -288,7 +290,7 @@ if __name__ == '__main__':
         df_op_ish = to_df(cnts, '_ish')
         df_op_param_ish = to_df(cnts, '_attr_ish')
         df1 = pd.concat([df_op_param, df_op_ish, df_op_param_ish])
-        df1['tag'] = tag
+        df1['fuzzers'] = tag
         df = df.append(df1, ignore_index=True)
 
     def print_most_common(d):

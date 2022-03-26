@@ -7,16 +7,29 @@ import os
 import pandas as pd
 
 
+SMALL_SIZE = 8
+MEDIUM_SIZE = 15
+BIGGER_SIZE = 18
+
+plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
+plt.rc('axes', titlesize=MEDIUM_SIZE)     # fontsize of the axes title
+plt.rc('axes', labelsize=MEDIUM_SIZE)    # fontsize of the x and y labels
+plt.rc('xtick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
+plt.rc('ytick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
+plt.rc('legend', fontsize=MEDIUM_SIZE)    # legend fontsize
+plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
+
+
 class Ploter:
     def __init__(self, cov_lim=None, use_pdf=False, one_plot=False) -> None:
         self.legends = []  # type: ignore
         # cov / time, cov / iteration, iteration / time
         if not one_plot:
             fig, axs = plt.subplots(
-                1, 3, constrained_layout=True, figsize=(13, 5))
+                1, 2, constrained_layout=True, figsize=(9, 5))
         else:
             fig, axs = plt.subplots(
-                1, 1, constrained_layout=True, figsize=(6, 5))
+                1, 1, constrained_layout=True, figsize=(5, 5.5))
             axs = [axs]
         self.one_plot = one_plot
         self.fig = fig
@@ -29,11 +42,30 @@ class Ploter:
     def add(self, data, name=None):
         df = np.array(data)
 
-        self.axs[0].plot(df[:, 0], df[:, 2])  # cov / time
+        ALPHA = 0.8
+        LW = 2
+        MARKER_SIZE = 10
+        N_MARKER = 8
+        MARKERS = ['*', 'X', '^', 'd']
+        LS = 'dashed'
+        markevery = int(len(df) / N_MARKER)
+        marker = MARKERS[len(self.cov_maxes) % len(MARKERS)]
+
+        # linestyle=LS, marker=marker, markevery=markevery, markersize=MARKER_SIZE, alpha=ALPHA, lw=LW
+        style_kw = {
+            'linestyle': LS,
+            'marker': marker,
+            'markevery': markevery,
+            'markersize': MARKER_SIZE,
+            'alpha': ALPHA,
+            'lw': LW
+        }
+
+        self.axs[0].plot(df[:, 0], df[:, 2], **style_kw)  # cov / time
 
         if not self.one_plot:
-            self.axs[1].plot(df[:, 1], df[:, 2])  # cov / iteration
-            self.axs[2].plot(df[:, 0], df[:, 1])  # iter / time
+            self.axs[1].plot(df[:, 1], df[:, 2], **style_kw)  # cov / iteration
+            # self.axs[2].plot(df[:, 0], df[:, 1], **style_kw)  # iter / time
 
         self.xspan = max(self.xspan, df[-1, 0])
 
@@ -45,21 +77,23 @@ class Ploter:
             assert not self.legends
 
     def plot(self, save='cov', cov_type='', cov_lim=None):
-        for axs in self.axs:
-            axs.legend(self.legends, loc='upper left')
+        self.axs[-1].legend(self.legends)
 
         self.cov_maxes = sorted(self.cov_maxes)
 
         if len(self.cov_maxes) > 1:
-            print(
-                f'==> Best one is {self.cov_maxes[-1] / self.cov_maxes[-2]:.2f}x better than the second best one')
+            for rk in range(1, len(self.cov_maxes)):
+                best = self.cov_maxes[-1]
+                cur = self.cov_maxes[-(rk + 1)]
+                print(
+                    f'==> Best one is [{best} / {cur}] = **{best / cur:.2f}x** better than the NO. {rk + 1} baseline.')
 
         cov_max = max(self.cov_maxes)
         cov_min = min(self.cov_maxes)
 
         if cov_lim is not None:
-            self.axs[0].annotate(f"{int(cov_max)}/{int(cov_lim)} ~ $\\bf{{{cov_max / cov_lim * 100 :.1f}\%}}$", xy=(self.xspan, cov_max * 1.02), xycoords="data",
-                                 va="center", ha="right", fontsize=11,
+            self.axs[0].annotate(f"{int(cov_max)} / {int(cov_lim)} ~ $\\bf{{{cov_max / cov_lim * 100 :.1f}\%}}$", xy=(self.xspan, cov_max * 1.03), xycoords="data",
+                                 va="center", ha="right", fontsize=MEDIUM_SIZE,
                                  bbox=dict(boxstyle="sawtooth", fc="w"))
         #     self.axs[0].axhline(y=cov_lim, color='r', linestyle='dashdot')
         #     self.axs[1].axhline(y=cov_lim, color='r', linestyle='dashdot')
@@ -86,11 +120,13 @@ class Ploter:
                 ylabel=f'# {cov_type}Coverage',
                 xlabel='# Iteration')
             self.axs[1].set_title('Coverage $\\bf{Iteration}$ Efficiency')
+            plt.setp(self.axs[1].get_xticklabels(), rotation=30,
+                     horizontalalignment='right')
 
-            self.axs[2].set(
-                xlabel='Time / Second',
-                ylabel='# Iteration')
-            self.axs[2].set_title('Iteration Speed')
+            # self.axs[2].set(
+            #     xlabel='Time / Second',
+            #     ylabel='# Iteration')
+            # self.axs[2].set_title('Iteration Speed')
 
         if self.use_pdf:
             self.fig.savefig(save + '.pdf')
@@ -160,7 +196,7 @@ def tvm_arith_filter(fname):
     return 'arith' in fname
 
 
-def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag='', tlimit=None, pdf=False, one_plot=False, pass_tag='', gen_time=None):
+def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag='', tlimit=None, pdf=False, one_plot=False, pass_tag='', gen_time=None, venn=False):
     branch_ploter = Ploter(use_pdf=pdf, one_plot=one_plot)
 
     assert fuzz_tags is not None
@@ -183,6 +219,9 @@ def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag=''
 
     branch_ploter.plot(save=os.path.join(
         folder, target_tag + pass_tag + 'branch_cov'), cov_type='Branch', cov_lim=bf)
+
+    if not venn:
+        return
 
     # venn graph plot
     branch_cov_sets = []
@@ -260,6 +299,7 @@ if '__main__' == __name__:
     parser.add_argument('--pdf', action='store_true', help='use pdf as well')
     parser.add_argument('--no_count_gen', action='store_true',
                         help='do not count generation time')
+    parser.add_argument('--venn', action='store_true', help='plot venn')
     args = parser.parse_args()
 
     if args.tags is None:
@@ -302,9 +342,9 @@ if '__main__' == __name__:
 
     if pass_filter is not None:
         plot_one_round(folder=args.output, data=data,
-                       pass_filter=pass_filter, pass_tag='opt_', tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, one_plot=True, gen_time=gen_time)
+                       pass_filter=pass_filter, pass_tag='opt_', tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, one_plot=True, gen_time=gen_time, venn=args.venn)
     if arith_filter is not None:
         plot_one_round(folder=args.output, data=data,
-                       pass_filter=arith_filter, pass_tag='arith_', tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, gen_time=gen_time)
+                       pass_filter=arith_filter, pass_tag='arith_', tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, gen_time=gen_time, venn=args.venn)
     plot_one_round(folder=args.output, data=data,
-                   pass_filter=None, tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, gen_time=gen_time)  # no pass
+                   pass_filter=None, tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, gen_time=gen_time, venn=args.venn)  # no pass
