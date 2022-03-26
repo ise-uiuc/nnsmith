@@ -5,16 +5,28 @@ import numpy as np
 import os
 
 
+SMALL_SIZE = 8
+MEDIUM_SIZE = 15
+BIGGER_SIZE = 18
+
+plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
+plt.rc('axes', titlesize=MEDIUM_SIZE)     # fontsize of the axes title
+plt.rc('axes', labelsize=MEDIUM_SIZE)    # fontsize of the x and y labels
+plt.rc('xtick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
+plt.rc('ytick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
+plt.rc('legend', fontsize=MEDIUM_SIZE)    # legend fontsize
+plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
+
 class Ploter:
     def __init__(self, cov_lim=None, use_pdf=False, one_plot=False) -> None:
         self.legends = []  # type: ignore
         # cov / time, cov / iteration, iteration / time
         if not one_plot:
             fig, axs = plt.subplots(
-                1, 3, constrained_layout=True, figsize=(13, 5))
+                1, 2, constrained_layout=True, figsize=(9, 5))
         else:
             fig, axs = plt.subplots(
-                1, 1, constrained_layout=True, figsize=(6, 5))
+                1, 1, constrained_layout=True, figsize=(5, 5.5))
             axs = [axs]
         self.one_plot = one_plot
         self.fig = fig
@@ -27,11 +39,30 @@ class Ploter:
     def add(self, data, name=None):
         df = np.array(data)
 
-        self.axs[0].plot(df[:, 0], df[:, 2])  # cov / time
+        ALPHA = 0.8
+        LW = 2
+        MARKER_SIZE = 10
+        N_MARKER = 8
+        MARKERS = ['*', 'X', '^', 'd']
+        LS = 'dashed'
+        markevery = int(len(df) / N_MARKER)
+        marker = MARKERS[len(self.cov_maxes) % len(MARKERS)]
+
+        # linestyle=LS, marker=marker, markevery=markevery, markersize=MARKER_SIZE, alpha=ALPHA, lw=LW
+        style_kw = {
+            'linestyle': LS,
+            'marker': marker,
+            'markevery': markevery,
+            'markersize': MARKER_SIZE,
+            'alpha': ALPHA,
+            'lw': LW
+        }
+
+        self.axs[0].plot(df[:, 0], df[:, 2], **style_kw)  # cov / time
 
         if not self.one_plot:
-            self.axs[1].plot(df[:, 1], df[:, 2])  # cov / iteration
-            self.axs[2].plot(df[:, 0], df[:, 1])  # iter / time
+            self.axs[1].plot(df[:, 1], df[:, 2], **style_kw)  # cov / iteration
+            # self.axs[2].plot(df[:, 0], df[:, 1], **style_kw)  # iter / time
 
         self.xspan = max(self.xspan, df[-1, 0])
 
@@ -58,8 +89,8 @@ class Ploter:
         cov_min = min(self.cov_maxes)
 
         if cov_lim is not None:
-            self.axs[0].annotate(f"{int(cov_max)}/{int(cov_lim)} ~ $\\bf{{{cov_max / cov_lim * 100 :.1f}\%}}$", xy=(self.xspan, cov_max * 1.03), xycoords="data",
-                                 va="center", ha="right", fontsize=11,
+            self.axs[0].annotate(f"{int(cov_max)} / {int(cov_lim)} ~ $\\bf{{{cov_max / cov_lim * 100 :.1f}\%}}$", xy=(self.xspan, cov_max * 1.03), xycoords="data",
+                                 va="center", ha="right", fontsize=MEDIUM_SIZE,
                                  bbox=dict(boxstyle="sawtooth", fc="w"))
         #     self.axs[0].axhline(y=cov_lim, color='r', linestyle='dashdot')
         #     self.axs[1].axhline(y=cov_lim, color='r', linestyle='dashdot')
@@ -89,10 +120,10 @@ class Ploter:
             plt.setp(self.axs[1].get_xticklabels(), rotation=30,
                      horizontalalignment='right')
 
-            self.axs[2].set(
-                xlabel='Time / Second',
-                ylabel='# Iteration')
-            self.axs[2].set_title('Iteration Speed')
+            # self.axs[2].set(
+            #     xlabel='Time / Second',
+            #     ylabel='# Iteration')
+            # self.axs[2].set_title('Iteration Speed')
 
         if self.use_pdf:
             self.fig.savefig(save + '.pdf')
