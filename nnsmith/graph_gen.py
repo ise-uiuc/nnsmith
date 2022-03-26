@@ -422,10 +422,7 @@ class SimpleGenerator:
 
         # <op idx>
         self.placeholders: List[int] = []
-        # placeholder constraints matching self.placeholders
-        self.ph_cons: List[z3.ExprRef] = []
         # for all (including newly created tmp) placeholders
-        self.all_ph_cons = {}
         self.insert_init_ph_node(self.create_placeholder(len(min_dims)))
         self.init_ph_alive = True
         self.forward_prob = 0.5 if forward_prob is None else forward_prob
@@ -450,20 +447,11 @@ class SimpleGenerator:
             dtype=dtype if dtype is not None else self.random_dtype())
         self.monotonic_placeholder_id += 1
         ph = Placeholder(shapevar)
-        self.all_ph_cons[ph] = self.gen_ph_cons(ph)
         return ph
 
     # default to no input constraints
     def gen_ph_cons(self, ph: Placeholder) -> List[z3.ExprRef]:
         return []
-        # if not self.use_bitvec:  # bit vector is randomizable
-        #     # The batch size should not have a big min size (avoid unnecessary computation);
-        #     # FIXME: input constraints will make SMT solving costly.
-        #     for i in range(len(ph.out_shape.shape)):
-        #         self.all_ph_cons[ph].append(
-        #             nnsmith_ge(
-        #                 ph.out_shape.shape[i], self.min_dims[i])
-        #         ))
 
     def post_process(self):
         '''Called after the graph is finalized. May be used to add parameter guidance.'''
@@ -483,7 +471,6 @@ class SimpleGenerator:
 
     def new_syms(self, names):
         if self.use_bitvec:
-            # bv_size = random.randint(6, 8)
             bv_sizes = list(map(len, random_group(
                 int(os.getenv("NNSMITH_BITS", 30)), len(names))))
             assert len(bv_sizes) == len(names)
@@ -582,8 +569,6 @@ class SimpleGenerator:
         if self.use_bitvec:
             for assump in assumptions:
                 self.check_arith_ref(assump)
-        # ph_cons = sum(self.ph_cons, [])
-        # assumptions = list(assumptions) + ph_cons
 
         if self.verbose:
             print('---> total constraints: \n',
@@ -657,7 +642,6 @@ class SimpleGenerator:
         succ_nid = self.get_new_node_id()
         if isinstance(node, Placeholder):
             self.placeholders.append(succ_nid)
-            self.ph_cons.append(self.all_ph_cons[node])
 
         shape_indices = []
         if force_shape_indices is None:
@@ -735,7 +719,6 @@ class SimpleGenerator:
                 )
                 ishape_indices.append(shape_idx)
                 self.placeholders.append(nid)
-                self.ph_cons.append(self.all_ph_cons[input_node])
             else:
                 ishape_indices.append(input_node)
 
@@ -788,7 +771,6 @@ class SimpleGenerator:
             # remove placeholders
             self.abstract_graph.remove_node(nx_idx)
             # self.reusable_placeholder_nx_indices.append(nx_idx)
-            self.ph_cons.remove(self.ph_cons[self.placeholders.index(nx_idx)])
             self.placeholders.remove(nx_idx)
 
         if self.is_viz_sbs:
@@ -1055,14 +1037,8 @@ class PureSymbolGen(SimpleGenerator):
         self.cur_node = node
         # constraints.extend(self.extra_constraints(node, input_shapes))
 
-        mem = list(self.ph_cons)
-        for i in occ_holder_indices:
-            self.ph_cons.remove(mem[i])  # temporarily remove occupy
-        for ph in new_inp_placeholders:
-            self.ph_cons.append(self.all_ph_cons[ph])
         # TODO: consider nfloats.
         check_res = self.check_sat(*constraints)
-        self.ph_cons = mem  # revert
 
         if check_res != z3.sat:
             return False
@@ -1342,13 +1318,6 @@ class GuidedGen(PureSymbolGen):
             print(
                 '# guidance applied: {} / {}'.format(len(cur_cons), len(all_cons)))
 
-        # if self.check_sat(*cons, timeout=self.max_gen_millisec // len(graph.nodes) / 10) == z3.sat:
-        #     self.solver.add(*cons)
-        #     if self.verbose:
-        #         print('guidance for op {} added'.format(op))
-        # else:
-        #     if self.verbose:
-        #         print('guidance for op {} not added. cons: {}'.format(op, cons))
         assert self.check_sat() == z3.sat
 
 
