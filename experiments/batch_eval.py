@@ -2,9 +2,15 @@ import os
 import sys
 import random
 import numpy as np
+import pickle
 
 from nnsmith.backends import DiffTestBackend
 from nnsmith.input_gen import gen_one_input
+
+def mcov_write(path):
+    if path:
+        with open(path + '.pkl', 'wb') as f:
+            pickle.dump(backend._coverage_install().get_hitmap(), f)
 
 if __name__ == '__main__':
     import argparse
@@ -13,6 +19,7 @@ if __name__ == '__main__':
                         help='List to ONNX model paths')
     parser.add_argument('--backend', type=str, default='tvm',
                         help='One of ort, trt, tvm, and xla')
+    parser.add_argument('--memcov', type=str, default=None, help='Path to store memcov.')
     parser.add_argument('--dev', type=str, default='cpu', help='cpu/gpu')
     parser.add_argument('--seed', type=int, default=233,
                         help='to generate random input data')
@@ -31,9 +38,13 @@ if __name__ == '__main__':
         backend = ORTExecutor(opt_level=3)
     else:
         raise NotImplementedError("Other backends not supported yet.")
+    
+    if args.memcov:
+        assert backend._coverage_install().get_now() is not None, "Memcov unavailable!"
 
     n_unsupported = 0
-    for path in args.models:
+    for i, path in enumerate(args.models):
+        print(f'-> {path}', flush=True, file=sys.stderr)
         onnx_model = DiffTestBackend.get_onnx_proto(path)
         # TODO: Check if needs to run diff test
         is_diff_test = os.path.exists(path + '.inp.pkl')
@@ -49,6 +60,9 @@ if __name__ == '__main__':
                     onnx_model)
                 eval_inputs = gen_one_input(input_spec, 1, 2)
                 backend.predict(onnx_model, eval_inputs)
+
+            mcov_write(args.memcov)
+
         except Exception as e:
             if 'onnxruntime.capi.onnxruntime_pybind11_state.NotImplemented' in str(type(e)) or \
                     "Unexpected data type for" in str(e):
@@ -64,3 +78,5 @@ if __name__ == '__main__':
 
     if n_unsupported == len(args.models):
         print("$ORT.SKIP$ all ORT models are not supported. just don't count this.", file=sys.stderr)
+
+    mcov_write(args.memcov)
