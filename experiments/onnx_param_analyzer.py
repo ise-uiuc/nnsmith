@@ -4,6 +4,8 @@
 from collections import Counter
 import os
 from multiprocessing import Pool, cpu_count
+import traceback
+from typing import Dict
 
 import onnx
 import pandas as pd
@@ -12,8 +14,7 @@ import seaborn as sns
 
 import matplotlib.pyplot as plt
 from matplotlib_venn import venn2, venn2_circles, venn3, venn3_circles
-OP_PARAM_NAMES = {  # use as a sanity check. All ops should have the same set of param names.
-}
+from onnx import helper, shape_inference
 
 UNDEFINED = 0
 FLOAT = 1
@@ -88,27 +89,59 @@ def parse_attr(attr):
         return None  # skip
     elif attr.type == FLOAT:
         return None  # skip
-    else:  # TODO: handle subgraph...
+    elif attr.type == GRAPH:  # TODO: handle subgraph...
+        return None
+    else:
         print(f'Warning: skip type `{attr.type}` for\n{attr}')
         return None
 
 
-def to_tuple(op_type, attrs):
-    global OP_PARAM_NAMES
-    if op_type not in OP_PARAM_NAMES:
-        OP_PARAM_NAMES[op_type] = sorted(attrs.keys())
-    else:
-        if sorted(attrs.keys()) != OP_PARAM_NAMES[op_type]:
-            print(
-                f'Warning: {op_type} has different param names, {sorted(attrs.keys())} vs {OP_PARAM_NAMES[op_type]}')
+def attr_to_tuple(op_type, attrs):
     return tuple(sorted(attrs.items(), key=lambda x: x[0]))
+
+
+def ish_to_tuple(ish):
+    return tuple(sorted(ish.items(), key=lambda x: x[0]))
+
+
+def analyze_shape(model):
+    ret: Dict[str, tuple] = {}  # name->shape
+    model = shape_inference.infer_shapes(model, True, True, True)
+    for vi in model.graph.value_info:
+        if not hasattr(vi.type, 'tensor_type'):
+            print('Warning: skip non-tensor ValueInfo: ', vi)
+            continue
+        dims = vi.type.tensor_type.shape.dim
+        ret[vi.name] = tuple(int(dim.dim_value) for dim in dims)
+
+    for node in list(model.graph.input) + list(model.graph.output):
+        if not hasattr(node.type, 'tensor_type'):
+            print('Warning: skip unknown input/output:\n', node)
+            continue
+        shape = tuple(int(dim.dim_value)
+                      for dim in node.type.tensor_type.shape.dim)
+        assert node.name not in ret, f'{node.name} already in ret, {node}'
+        ret[node.name] = shape
+
+    for node in model.graph.initializer:
+        shape = tuple(int(dim)
+                      for dim in node.dims)
+        if node.name in ret:
+            assert ret[node.name] == shape, f'{node.name} already in ret but shape mismatch, {node} vs {ret[node.name]}'
+        ret[node.name] = shape
+    return ret
 
 
 def analyze_one(model_path):
     if 'FAILURE' in model_path:
         return {}
-
-    model = onnx.load(model_path)
+    try:
+        model = onnx.load(model_path)
+        shape_dict = analyze_shape(model)
+    except Exception as e:
+        print('-------------> Skip model', model_path, 'due to exception:')
+        traceback.print_exc()
+        return
 
     info = {}
     for node in model.graph.node:
@@ -119,15 +152,26 @@ def analyze_one(model_path):
             v = parse_attr(attr)
             if v is not None:
                 attrs[attr.name] = v
-        t = to_tuple(node.op_type, attrs)
-        if len(t) == 0:
-            continue
+        attr_t = attr_to_tuple(node.op_type, attrs)
+
+        ish = {idx: shape_dict[i]
+               for idx, i in enumerate(node.input) if i != ""}
+        ish_t = ish_to_tuple(ish)
+
+        t = (*ish_t, *attr_t)
+
+        # if len(attr_t) == 0:
+        #     continue
         if node.op_type not in info:
-            info[node.op_type] = Counter()
+            info[node.op_type + '_attr_ish'] = Counter()
+            info[node.op_type + '_attr'] = Counter()
+            info[node.op_type + '_ish'] = Counter()
         # print('attrs=\n', attrs)
         # print('tuple=', t)
         assert t == tuple(t), f'{t} not comparable'
-        info[node.op_type].update({t: 1})
+        info[node.op_type + '_attr_ish'].update({t: 1})
+        info[node.op_type + '_attr'].update({attr_t: 1})
+        info[node.op_type + '_ish'].update({ish_t: 1})
 
     ish = Counter()
     for node in model.graph.input:
@@ -138,7 +182,7 @@ def analyze_one(model_path):
                       for dim in node.type.tensor_type.shape.dim)
         # print(shape)
         ish.update({shape: 1})
-    res = {'input shape': ish}
+    res = {'PlaceHolder_ish': ish}
     res.update(info)
     return res
 
@@ -181,6 +225,8 @@ def analyze_folders(folders, cache_dir=None, force=False, n_limit=None):
     for files in file_hubs:
         cnts = {}
         for new in map(analyze_one, files):
+            if new is None:
+                continue
             for op_name, cnt in new.items():
                 if op_name not in cnts:
                     cnts[op_name] = Counter()
@@ -222,15 +268,26 @@ if __name__ == '__main__':
         args.folders, cache_dir=args.output, force=args.force, n_limit=args.nlim)
 
     df = pd.DataFrame()
+
+    def to_df(cnts, suffix):
+        cnts = {k[:-len(suffix)]: v for k,
+                v in cnts.items() if k.endswith(suffix)}
+        return pd.DataFrame({
+            'name': cnts.keys(),
+            'count': [len(cnt) for cnt in cnts.values()],
+            'ratio': [len(cnt) / sum(cnt.values()) for cnt in cnts.values()],
+            'cat': [suffix] * len(cnts)
+        })
+
     for tag, cnts in zip(args.tags, results):
         print(f'{tag}:\t')
         for op_name, cnt in cnts.items():
             print(f'\t{op_name}: {len(cnt)}')
-        df1 = pd.DataFrame({
-            'name': cnts.keys(),
-            'count': [len(cnt) for cnt in cnts.values()],
-            'ratio': [len(cnt) / sum(cnt.values()) for cnt in cnts.values()],
-        })
+
+        df_op_param = to_df(cnts, '_attr')
+        df_op_ish = to_df(cnts, '_ish')
+        df_op_param_ish = to_df(cnts, '_attr_ish')
+        df1 = pd.concat([df_op_param, df_op_ish, df_op_param_ish])
         df1['tag'] = tag
         df = df.append(df1, ignore_index=True)
 
@@ -239,97 +296,32 @@ if __name__ == '__main__':
         for k, v in d.most_common():
             print(f'`{k}`: count={v} ratio={v / s}')
 
-    # print_most_common(results[0]['MaxPool'])
-    # print_most_common(results[0]['input shape'])
-    # print_most_common(results[0]['Reshape'])
+    # print_most_common(results[0]['MaxPool_ish'])
+    # print_most_common(results[0]['MaxPool_attr_ish'])
+    # print_most_common(results[0]['MaxPool_attr'])
 
-    for c in ['Count', 'Ratio']:
-        _c = c.lower()
-        df_ops = df[df.name.map(lambda x: x in ops)]
-        plt.title(
-            f"{c} of unqiue parameter combination for different ONNX operators")
-        sns.barplot(x='name', y=f'{_c}', hue='tag', data=df_ops)
-        plt.tight_layout()
-        plt.savefig(os.path.join(args.output, f'{_c}_params.png'))
-        plt.close()
+    def plot_one_cat(df, cat, name):
+        df = df[df['cat'] == cat]
+        for c in ['Count', 'Ratio']:
+            _c = c.lower()
+            df_ops = df[df.name.map(lambda x: x in ops)]
+            plt.title(
+                f"{c} of unqiue {name} combination for different ONNX operators")
+            sns.barplot(x='name', y=f'{_c}', hue='tag', data=df_ops)
+            plt.tight_layout()
+            plt.savefig(os.path.join(args.output, f'{_c}_{cat}.png'))
+            plt.close()
 
-        df_ops = df[df.name.map(lambda x: x != 'input shape')]
-        fig, ax = plt.subplots(figsize=(20, 6))
-        plt.title(
-            f"{_c} of unqiue parameter combination for different ONNX operators")
-        sns.barplot(x='name', y=f'{_c}', hue='tag', data=df_ops, ax=ax)
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-        plt.savefig(os.path.join(args.output, f'{_c}_params_all.png'))
-        plt.close()
+            df_ops = df[df.name.map(lambda x: x != 'input shape')]
+            fig, ax = plt.subplots(figsize=(20, 6))
+            plt.title(
+                f"{c} of unqiue {name} combination for different ONNX operators")
+            sns.barplot(x='name', y=f'{_c}', hue='tag', data=df_ops, ax=ax)
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            plt.savefig(os.path.join(args.output, f'{_c}_params_{cat}.png'))
+            plt.close()
 
-        plt.title(f"{_c} of unqiue input shapes")
-        df_inp = df[df.name.map(lambda x: x == 'input shape')]
-        sns.barplot(x='name', y=f'{_c}', hue='tag', data=df_inp)
-        plt.savefig(os.path.join(args.output, f'{_c}_inputs.png'))
-        plt.close()
-
-    node_list = []  # TODO: should call it params
-    edge_list = []  # TODO: should call it input shapes
-    for i in range(len(results)):
-        nodes = results[i]['Conv']  # TODO: more ops
-        edges = results[i]['input shape']
-        node_list.append(nodes)
-        edge_list.append(edges)
-
-    if len(node_list) == 2:
-        venn2(subsets=node_list, set_labels=[
-              f'$\\bf{{{t}}}$' for t in args.tags])
-        venn2_circles(subsets=node_list, linestyle='dashed')
-    elif len(node_list) == 3:
-        v = venn3(subsets=node_list, set_labels=[
-                  f'$\\bf{{{t}}}$' for t in args.tags])
-        hatches = ['\\', '.', '*']
-        circles = ['MediumVioletRed', 'SeaGreen', 'Lavender']
-        for idx, id in enumerate(['100', '010', '001', '111']):
-            if v.get_label_by_id(id) is None:
-                continue
-
-            cnt = int(v.get_label_by_id(id).get_text())
-
-            if id != '111':
-                v.get_patch_by_id(id).set_alpha(0.5)
-                v.get_patch_by_id(id).set_hatch(hatches[idx])
-                v.get_patch_by_id(id).set_edgecolor(circles[idx])
-                v.get_patch_by_id(id).set_linewidth(2)
-                v.get_patch_by_id(id).set_linestyle('--')
-
-    plt.title("Venn Diagram of Covered ONNX Operators")
-    plt.savefig(
-        f'{os.path.join(args.output, "onnx_node_venn")}.png', bbox_inches='tight')
-    plt.savefig(
-        f'{os.path.join(args.output, "onnx_node_venn")}.pdf', bbox_inches='tight')
-    plt.close()
-
-    if len(node_list) == 2:
-        venn2(subsets=edge_list, set_labels=[
-              f'$\\bf{{{t}}}$' for t in args.tags])
-        venn2_circles(subsets=edge_list, linestyle='dashed')
-    elif len(node_list) == 3:
-        v = venn3(subsets=edge_list, set_labels=[
-                  f'$\\bf{{{t}}}$' for t in args.tags])
-        hatches = ['\\', '.', '*']
-        circles = ['MediumVioletRed', 'SeaGreen', 'Lavender']
-        for idx, id in enumerate(['100', '010', '001', '111']):
-            if v.get_label_by_id(id) is None:
-                continue
-
-            cnt = int(v.get_label_by_id(id).get_text())
-
-            if id != '111':
-                v.get_patch_by_id(id).set_alpha(0.5)
-                v.get_patch_by_id(id).set_hatch(hatches[idx])
-                v.get_patch_by_id(id).set_edgecolor(circles[idx])
-                v.get_patch_by_id(id).set_linewidth(2)
-                v.get_patch_by_id(id).set_linestyle('--')
-    plt.title("Venn Diagram of Covered ONNX Operators Edges")
-    plt.savefig(
-        f'{os.path.join(args.output, "onnx_edge_venn")}.png', bbox_inches='tight')
-    plt.savefig(
-        f'{os.path.join(args.output, "onnx_edge_venn")}.pdf', bbox_inches='tight')
-    plt.close()
+    plot_one_cat(df, '_attr', 'attribute')
+    plot_one_cat(df, '_ish', 'input shapes')
+    plot_one_cat(df, '_attr_ish', 'attribute and input shapes')
