@@ -51,11 +51,20 @@ if __name__ == '__main__':
 
             files_to_plot.setdefault(n_nodes, []).append(fname)
 
+    v3_times = {}
+    grad_times = {}
+
     for n_nodes, flist in files_to_plot.items():
         for fname in flist:
             data = pd.read_csv(fname)
+            v3_times.setdefault(n_nodes, []).extend(data["v3-time"][1:]) # first item takes lib init time which is unfair to be considered.
+            grad_times.setdefault(n_nodes, []).extend(data["grad-time"][1:])
             plot_data.setdefault('base', {}).setdefault(n_nodes, []).append(sum(data['v3-succ']))
             plot_data.setdefault('gradient', {}).setdefault(n_nodes, []).append(sum(data['grad-succ']))
+
+    for n_nodes in v3_times.keys():
+        print(f'{n_nodes} nodes: v3 mean time: {1000 * np.mean(v3_times[n_nodes]):.2f}ms')
+        print(f'{n_nodes} nodes: grad mean time: {1000 * np.mean(grad_times[n_nodes]):.2f}ms')
 
     print(plot_data)
 
@@ -106,9 +115,9 @@ if __name__ == '__main__':
     plt.legend(legends)
     # plt.legend(legends, loc='upper center', bbox_to_anchor=(0.5, 1.1),
     #            fancybox=True, shadow=True, ncol=5)
-    plt.xticks(base_x, keys)
-    plt.xlabel('# Operators in Models w/ Vulnerable Op.', fontweight='bold')
+    plt.xticks(base_x, [f'{k}-node model' for k in keys])
+    # plt.xlabel('# Operators in Models w/ Vulnerable Op.', fontweight='bold')
     plt.ylabel('# Tests w/o NaN/Inf', fontweight='bold')
 
-    plt.savefig(f'plot-inp-search-{MODEL_SIZE_TO_GLOB}.pdf')
-    plt.savefig(f'plot-inp-search-{MODEL_SIZE_TO_GLOB}.png')
+    plt.savefig(f'grad-{MODEL_SIZE_TO_GLOB}.pdf')
+    plt.savefig(f'grad-{MODEL_SIZE_TO_GLOB}.png')
