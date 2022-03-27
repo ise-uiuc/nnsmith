@@ -3,10 +3,71 @@
 
 import os
 from multiprocessing import Pool, cpu_count
+from typing import Dict, Set
+import re
+import pickle
 
 import onnx
 import pandas as pd
-import pickle
+
+from tvm import relay
+
+def relay_op_cluster(mod, ignore_arg=False, verbose=False):
+    mod = relay.transform.InferType()(mod)
+    op2type = {}
+
+    def visit(node):
+        def comment_remover(text):
+          def replacer(match):
+              s = match.group(0)
+              if s.startswith('/'):
+                  return " " # note: a space and not an empty string
+              else:
+                  return s
+          pattern = re.compile(
+              r'//.*?$|/\*.*?\*/|\'(?:\\.|[^\\\'])*\'|"(?:\\.|[^\\"])*"',
+              re.DOTALL | re.MULTILINE
+          )
+          return re.sub(pattern, replacer, text)
+
+        # the trick is: make a signature string. lmao.
+        if isinstance(node, relay.Call):
+            statement = comment_remover(str(node).splitlines()[-1]).replace(' ', '')
+            num_args = len(node.type_args)
+            attr_str = ','.join(statement[:-1].split(',')[num_args:])
+            op_str = str(node.op)
+
+            if attr_str == '':
+                attr_str = None
+
+            if ignore_arg:
+              arg_type_str=None
+            else:
+              arg_type_str = str(node.type_args).replace(' ', '')
+
+            hash_str = f'{arg_type_str}-{attr_str}'
+            if verbose:
+                print(f'[DENIG] {statement=}')
+                print(f'[DEBUG] {op_str=}')
+                print(f'[DENIG] {arg_type_str=}')
+                print(f'[DEBUG] {attr_str=}')
+                print(f'[DEBUG] {hash_str=}')
+            op2type.setdefault(op_str, set()).add(hash_str)
+
+    relay.analysis.post_order_visit(mod['main'], lambda node: visit(node))
+    return op2type
+
+def analyze_one_relay(model_path) -> Dict[Set[str]]:
+    """Return <op name> -> tag (a string)
+    """
+    if 'FAILURE' in model_path:
+        return {}
+    
+    onnx_model = onnx.load(model_path)
+    mod, _ = relay.frontend.from_onnx(
+            onnx_model, freeze_params=True)
+    
+    return relay_op_cluster(mod)
 
 
 def analyze_one(model_path):
