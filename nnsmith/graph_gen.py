@@ -1,7 +1,8 @@
 # See https://github.com/Z3Prover/z3/issues/5656
+import z3  # Always import z3 first to avoid incompatibility issue.
+
 from multiprocessing import Process
 import psutil
-import z3  # Always import z3 first to avoid incompatibility issue.
 from collections import defaultdict
 import math
 import textwrap
@@ -63,6 +64,9 @@ class SymbolNet(nn.Module):
         self.instructions = []  # <Func, <input idx>, <output idx>>
         self.n_output = 0
         self.inp_id_cnt = 0
+        self.n_vulnerable_op = 0
+
+        self.using_cuda = None # not sure
 
         # keep track of layers and weights so that the tracing can work properly
         self.mlist = nn.ModuleList()
@@ -120,6 +124,9 @@ class SymbolNet(nn.Module):
                     self.mlist.append(cur_op)
                 self.instructions.append(
                     (cur_op, input_idx, output_idx, op, node_id))
+
+                if hasattr(op, 'torch_loss'):
+                    self.n_vulnerable_op += 1
             else:  # Should be input node
                 SanityCheck.true(type(op) is Input, 'type(op) should be Input')
                 SanityCheck.eq(len(output_idx), 1)
@@ -196,7 +203,7 @@ class SymbolNet(nn.Module):
             to_train.append(t)
         for t in self.parameters():
             to_train.append(t)
-        self.optimizer = torch.optim.Adam(to_train, lr=5e-2)
+        self.optimizer = torch.optim.Adam(to_train, lr=5e-1)
         self.training_reset()
 
     def _check_out_dtype(self, outputs, node_id, op):
@@ -239,7 +246,7 @@ class SymbolNet(nn.Module):
             inputs = self.get_random_inps(margin, base, use_cuda)
 
             if use_cuda:
-                self = self.cuda()
+                self.use_cuda()
 
             self.forward(*inputs)
 
@@ -255,8 +262,13 @@ class SymbolNet(nn.Module):
             init_tensors = self.get_random_inps(
                 margin, base, use_cuda=use_cuda)
 
-        inputs = [torch.nn.parameter.Parameter(
-            tensor.data) for tensor in init_tensors]
+        inputs = []
+        for tensor in init_tensors:
+            if tensor.data.dtype.is_floating_point:
+                inputs.append(torch.nn.parameter.Parameter(tensor.data))
+            else:
+                inputs.append(tensor.data)
+
         self.enable_training(extra_trainable=inputs)
 
         last_check_intermediate_numeric = self.check_intermediate_numeric
@@ -264,7 +276,7 @@ class SymbolNet(nn.Module):
 
         if use_cuda:
             inputs = [inp.cuda() for inp in inputs]
-            self = self.cuda()
+            self.use_cuda()
 
         sat_inputs = None
         for _ in range(max_iter):
@@ -288,6 +300,10 @@ class SymbolNet(nn.Module):
         self.check_intermediate_numeric = last_check_intermediate_numeric
         return sat_inputs
 
+    def use_cuda(self):
+        self.cuda()
+        self.using_cuda = True
+
     def forward(self, *args, **kwargs):
         # required: input_info, tensors, ref_cnt, instructions, hacked, first_run verbose # alive_shapes, graph
         xs = [None] * len(self.input_info)
@@ -306,6 +322,8 @@ class SymbolNet(nn.Module):
 
         for inst, inps, outs, op, node_id in self.instructions:
             input_tensors = [self.tensors[idx] for idx in inps]
+            if self.using_cuda:
+                input_tensors = [inp.cuda() for inp in input_tensors]
             if isinstance(op, Div):
                 if not self.first_run:
                     cond = self.hacked[node_id]
@@ -317,8 +335,8 @@ class SymbolNet(nn.Module):
                 self.hacked[node_id] = cond
             if self.verbose:
                 print(
-                    f'executing instruction op={op}, node_id={node_id}, inps={inps}, outs={outs}')
-                print('input_tensors=')
+                    f'--> executing op={op}, node_id={node_id}, inps={inps}, outs={outs}')
+                print('\tinputs=')
                 for i in input_tensors:
                     print(f'  (shape={i.shape} dtype={i.dtype})')
             outputs = inst(*input_tensors)
@@ -333,8 +351,6 @@ class SymbolNet(nn.Module):
 
                 self.invalid_found_last |= any(invalid_mask)
                 if self.invalid_found_last and (self.use_gradient and not self.stop_updating_loss):
-                    print(
-                        f'Detected NaN or Inf in outputs ~ {op} ~ id {node_id}.')
                     if self.verbose:
                         for inp_i, inp in enumerate(input_tensors):
                             print(
@@ -343,10 +359,9 @@ class SymbolNet(nn.Module):
                     ConstraintCheck.true(hasattr(
                         op, 'torch_loss'), f'op={op} has no `torch_loss` but produces NaN or INF!')
                     vul_op_loss = op.torch_loss(*input_tensors)
+                    print(
+                        f'[NaN/Inf] in outputs ~ {op} ~ id {node_id} :: {vul_op_loss.min().data:.3f} ~ {vul_op_loss.max().data:.3f}')
 
-                    if self.verbose:
-                        print(
-                            f'vulnerable op loss :: {vul_op_loss.min().data:.5f} ~ {vul_op_loss.max().data:.5f}')
                     if self.loss is None:
                         self.loss = vul_op_loss.mean()
                     else:
@@ -355,7 +370,7 @@ class SymbolNet(nn.Module):
                     return outputs
 
             if self.verbose:
-                print('outputs=', ','.join(
+                print('\toutputs=', ','.join(
                     f'(shape={i.shape} dtype={i.dtype})' for i in outputs))
             for idx in inps:
                 local_ref_cnt[idx] -= 1
@@ -373,7 +388,7 @@ class SymbolNet(nn.Module):
 class SimpleGenerator:
 
     def __init__(self, min_dims=[1, 3, 48, 48], skip=[Input], viz_sbs=False, megabyte_lim=__MB_LIM__, seed=None, verbose=False, use_bitvec=False,
-                 viz_verbose=False, merge_op_v=None, limnf=True, forward_prob=None, candidates_overwrite=None):
+                 viz_verbose=False, merge_op_v=None, limnf=True, candidates_overwrite=None, forward_prob=None, init_fp=False):
         if seed is not None:
             np.random.seed(seed)
             random.seed(seed)
@@ -423,7 +438,7 @@ class SimpleGenerator:
         # <op idx>
         self.placeholders: List[int] = []
         # for all (including newly created tmp) placeholders
-        self.insert_init_ph_node(self.create_placeholder(len(min_dims)))
+        self.insert_init_ph_node(self.create_placeholder(len(min_dims), dtype=torch.float32 if init_fp else None))
         self.init_ph_alive = True
         self.forward_prob = 0.5 if forward_prob is None else forward_prob
 
@@ -1358,18 +1373,15 @@ def random_model_gen(
         timeout=50000,
         verbose=False,
         mode='random',
-        merge_op_v=None,
-        limnf=True,
-        forward_prob=None,
-        candidates_overwrite=None):
+        **kwargs):
 
     GenCls = {
         'random': PureSymbolGen,
         'guided': GuidedGen,
     }[mode]
     gen = GenCls(min_dims=min_dims,
-                 viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec, merge_op_v=merge_op_v, limnf=limnf,
-                 forward_prob=forward_prob, candidates_overwrite=candidates_overwrite)
+                 viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec,
+                 **kwargs)
     gen.abstract_gen(max_node_size=max_nodes,
                      max_gen_millisec=timeout)
     solution = gen.get_symbol_solutions()

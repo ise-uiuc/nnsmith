@@ -889,9 +889,8 @@ class LegacyConstant4D(Constant):
 Div = type('Div', (BcastBinaryOp1,), {
     'torch': lambda self:
         lambda x, y: torch.div(x, y, rounding_mode='floor' if DType(
-            x.dtype) in DTYPE_INTS else None),
-    'torch_loss': lambda self, _, x: torch.where(x.abs() < 1e-3, x.abs(), torch.zeros_like(x))})
-
+            x.dtype) in DTYPE_INTS else None)})
+# 'torch_loss': lambda self, _, x: torch.where(x.abs() < 1e-3, x.abs(), torch.zeros_like(x))
 
 class Pow(BcastBinaryOp):
     in_dtypes = [(i, i) for i in DTYPE_FLOATS]

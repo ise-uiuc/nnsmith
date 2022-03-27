@@ -3,6 +3,8 @@ simply generate a bunch of models and see if the can find viable inputs.
 """
 
 from nnsmith.graph_gen import random_model_gen, SymbolNet
+from nnsmith.dtype_test import rewrite_op_dtype
+from nnsmith.abstract.op import ALL_OP_TYPES
 
 import torch
 import numpy as np
@@ -17,16 +19,18 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--max_nodes', type=int, default=25)
     parser.add_argument('--exp-seed', type=int)
-    parser.add_argument('--n_inp_sample', type=int, default=10)
+    parser.add_argument('--n_inp_sample', type=int, default=1)
     parser.add_argument('--n_model', type=int, default=50)
     parser.add_argument('--min_dims', type=list, default=[1, 3, 48, 48])
-    parser.add_argument('--timeout', type=int, default=50000)
+    parser.add_argument('--timeout', type=int, default=5000)
     parser.add_argument('--use_cuda', action='store_true')
     parser.add_argument('--verbose', action='store_true')
-    parser.add_argument('--use_bitvec', action='store_true')
-    parser.add_argument('--viz_graph', action='store_true')
     parser.add_argument('--output_path', type=str, default='output.onnx')
     args = parser.parse_args()
+
+    __DIFF_CACHE__ = 'config/diff.pkl'
+    differentiable_ops = rewrite_op_dtype(ALL_OP_TYPES, backend=None, diff=True, verbose=True, cache=__DIFF_CACHE__)
+    print(differentiable_ops)
 
     exp_seed = args.exp_seed
     if exp_seed is None:
@@ -51,28 +55,42 @@ if __name__ == '__main__':
         'grad-succ': [],
     }
 
-    for _ in tqdm(range(args.n_model)):
+    def mknet():
         model_seed = random.getrandbits(32)
-        gen, solution = random_model_gen(min_dims=args.min_dims, seed=model_seed, max_nodes=args.max_nodes,
-                                         use_bitvec=args.use_bitvec, timeout=args.timeout)
+        gen, solution = random_model_gen(
+            min_dims=args.min_dims, seed=model_seed, max_nodes=args.max_nodes, 
+            timeout=args.timeout, candidates_overwrite=differentiable_ops, init_fp=True)
+        gen.viz('debug.png')
         net = SymbolNet(gen.abstract_graph, solution, verbose=args.verbose,
                         alive_shapes=gen.alive_shapes)
+        net.eval()
+        return net, gen.num_op(), model_seed
 
-        results['n_nodes'].append(len(net.graph.nodes))
+    for _ in tqdm(range(args.n_model)):
+        while True:
+            net, num_op, model_seed = mknet()
+            # break # NOTE: uncomment this line to see how serious the issue is.
+            if net.n_vulnerable_op > 0:
+                break
+
+        results['n_nodes'].append(num_op)
         results['model_seed'].append(model_seed)
 
         init_tensor_samples = []
         n_step = args.n_inp_sample
         interval = 1 / n_step
-        for v in np.linspace(-1, 1, n_step):
-            init_tensors = [v + torch.rand(ii.op.shape)
-                            * interval for ii in net.input_info]
+        for v in np.linspace(-10, 10, n_step):
+            init_tensors = [(v + torch.rand(ii.op.shape_var.shape)
+                            * interval).to(dtype=ii.op.shape_var.dtype.value) for ii in net.input_info]
             init_tensor_samples.append(init_tensors)
 
         # Test v3
         strt_time = time.time()
         succ_v3 = False
         try_times_v3 = 0
+
+        if args.use_cuda:
+            net.use_cuda()
 
         net.check_intermediate_numeric = True
         with torch.no_grad():
