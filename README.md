@@ -6,24 +6,7 @@ Keep active bug tracking and please put bug reports/trackings on this [google sh
 
 ## Quick Start
 
-### Fuzz all backends simultaneously
-
-```shell
-export root='./tmp/seed1' # the path storing (to store) the model and inputs (outputs and bug reports)
-# See difftest.py for the spec of the file structure
-
-python ./nnsmith/graph_input_gen.py --root ./tmp/seed1 # generate models and inputs
-
-... # setup your enviroment for ort
-python ./nnsmith/run_batch_model.py --root $root --gen_input 10 --backend ort # test
-
-... # setup your enviroment for xla
-python ./nnsmith/run_batch_model.py --root $root --gen_input 10 --backend xla # test
-# ...
-
-# compare the result (all close)
-python -m nnsmith.difftest --root $root
-```
+**`fuzz.py` is broken temporarily. Don't use it.**
 
 ### Coverage Evaluation
 
@@ -71,27 +54,6 @@ python experiments/viz_merged_cov.py --folders lemon-tvm nnsmith-tvm GraphFuzz-t
 python experiments/onnx_analyzer.py --folders lemon-onnx nnsmith-onnx GraphFuzz-onnx # venn graph ~ #op #edge
 ```
 
-### Fuzz a single backend (Not for evaluation)
-
-```shell
-# fuzzing
-export target=fuzz_report
-python nnsmith/fuzz.py --report $target
-# Bug report will be put under `$target` (fuzz_report by default).
-# Under $target
-# - cov_by_time.csv               ~ csv to plot the coverage trend; (use `plot_cov.py`).
-# - meta.txt                      ~ metadata.
-# - ${ErrType}__${ID}/      
-#                    - err.txt    ~ error message
-#                    - model.onnx ~ error model
-
-python experiments/plot_cov.py -f $target # -cl 80000
-# use `-cl` to set the axis bias.
-
-# To fuzz with gradient driven approach (inp_gen=`random` by default)
-python nnsmith/fuzz.py --report $target --inp_gen grad
-```
-
 ### Examine a single model
 
 ```shell
@@ -112,36 +74,10 @@ python ./nnsmith/backend_executor.py --model <model_path> --backend tvm-llvm --c
 ### Evaluate input searching algorithm
 
 ```shell
-python experiments/input_search.py --max_nodes 15 --n_model 100 --n_inp_sample 1
+python experiments/input_search.py --max_nodes 10 --n_model 100 --n_inp_sample 1
 
 # visualization
 python experiments/plot_inp_search.py
-```
-
-### Coverage normalization
-
-Note that this step is not necessary as the coverage branch of TVM should already have the `blocklist.txt` file.
-
-1. Run fuzzing with source-level coverage on all baselines.
-
-```shell
-LLVM_PROFILE_FILE="nnsmith.profraw" python nnsmith/fuzz.py --root source-cov
-LLVM_PROFILE_FILE="lemon.profraw" python experiments/eval_lemon.py --model_dir /path/to/lemon_outputs --report_folder lemon
-# other baseline commands;
-```
-
-2. Generate coverage reports (`coverage.txt`).
-
-```shell
-llvm-profdata-14 merge -sparse nnsmith.profraw lemon.profraw -o tvm.profdata
-llvm-cov-14 report /PATH/TO/tvm/build/libtvm.so -instr-profile=tvm.profdata > coverage.txt
-```
-
-3. Generate `blocklist.txt` based on `coverage.txt`.
-
-```shell
-python experiments/tvm_blocklist_gen.py --tvm_home /PATH/TO/tvm --src_cov_report coverage.txt
-# you got `tvm-blocklist.txt`
 ```
 
 ## Notes
@@ -232,7 +168,7 @@ pip install onnxruntime-gpu # the order matters; and you have to split the insta
     - `./build.sh --config RelWithDebInfo --build_shared_lib --parallel --build_wheel --skip_onnx_tests`
     - `pip install build/Linux/RelWithDebInfo/dist/onnxruntime-1.11.0-cp38-cp38-linux_x86_64.whl --force-reinstall`
 - [x] Enable multiple inputs; @jinkun
-- [ ] **High-Priority** Parameter-wise Fuzzing;
+- [x] **High-Priority** Parameter-wise Fuzzing. i.e., binning @jinkun
 - [x] (Experimental) Improve input-searching algorithm @jiawei
     - [x] [Gradient-based Input Searching](https://dl.acm.org/doi/pdf/10.1145/3468264.3468612)
 - [x] Implement the re-designed graph construction algorithm (mixed forward/backward construction) @jiawei
@@ -240,10 +176,11 @@ pip install onnxruntime-gpu # the order matters; and you have to split the insta
 - [x] LEMON coverage evaluation ([modified](https://github.com/ganler/LEMON) to make it work) @jiawei
 - [x] Coverage normalization. @jiawei
 - [x] **Op Batch 3**: Softmax, BatchNorm, Linear, Flatten, *Pool2d. @jiawei
-- [ ] 2-phase evaluation: first generate model quickly; then evaluate them with instrumentation.
+- [x] 2-phase evaluation: first generate model quickly; then evaluate them with instrumentation.
     - [x] LEMON
     - [x] nnsmith
     - [x] graph-fuzz
 - [x] Implement baseline [graph-fuzz](https://dl.acm.org/doi/abs/10.1109/ICSE43902.2021.00037)
 - [x] Migrate to source-level coverage (more information)
 - [x] Inference in/out detailed data type by direct backend execution.
+- [ ] Fix `fuzz.py` (for open source not for research)

@@ -57,6 +57,8 @@ if __name__ == '__main__':
                         60 * 4, help='max time in seconds for coverage evaluation')
     parser.add_argument('--llvm-version', type=str, default='',
                         help='version of llvm during coverage stuff. must align w/ tvm.')
+    parser.add_argument('-y', action='store_true')
+    parser.add_argument('--keep_raw', action='store_true')
     args = parser.parse_args()
 
     # Set global seed
@@ -83,7 +85,7 @@ if __name__ == '__main__':
         args.dp = 1000
 
     if not args.resume:
-        mkdir(args.report_folder)
+        mkdir(args.report_folder, yes=args.y)
         # FORMAT:
         #   batch time (gen time + eval time)
         #   seed
@@ -150,7 +152,7 @@ if __name__ == '__main__':
             # for memcov
             memcov_name = f'{i}.memcov'
             memcov_path = os.path.join(args.report_folder, memcov_name)
-            
+
             seed = random.getrandbits(32)
 
             model_batch = []
@@ -177,7 +179,8 @@ if __name__ == '__main__':
             ]
             if args.memcov:
                 arguments += ['--memcov', memcov_path]
-            p = subprocess.Popen(arguments, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=copied_env)
+            p = subprocess.Popen(
+                arguments, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=copied_env)
             _, errs = p.communicate()
             errs = errs.decode()
             exit_code = p.returncode
@@ -193,7 +196,7 @@ if __name__ == '__main__':
             stderr_file.flush()
 
             if '$ORT.SKIP$' in errs:  # all models are unsupported by ort. skip it.
-                if os.path.exists(profraw_path):
+                if os.path.exists(profraw_path) and not args.keep_raw:
                     os.remove(profraw_path)
                 continue
 
@@ -221,20 +224,22 @@ if __name__ == '__main__':
                         if args.sum:
                             os.system(
                                 f'{llvm_cov} report -instr-profile={profdata_path} {lib_expr} > {sum_path}')
-                        assert 0 == os.system(f'lz4 {lcov_path}')
-                        os.remove(profraw_path)
-                        os.remove(profdata_path)
+                        assert 0 == os.system(
+                            f'lz4 {lcov_path} {lcov_path}.lz4')
+                        if not args.keep_raw:
+                            os.remove(profraw_path)
+                            os.remove(profdata_path)
                 else:
                     print(f'{profraw_path} does not exist...', file=sys.stderr)
 
             if os.path.exists(lcov_path + '.lz4'):
                 record(btime + lagged_time, len(model_batch) +
-                    lagged_n_model, seed, cov_name=lcov_name)
+                       lagged_n_model, seed, cov_name=lcov_name)
                 lagged_time = 0
                 lagged_n_model = 0
             elif os.path.exists(memcov_path + '.pkl'):
                 record(btime + lagged_time, len(model_batch) +
-                    lagged_n_model, seed, cov_name=memcov_name)
+                       lagged_n_model, seed, cov_name=memcov_name)
                 lagged_time = 0
                 lagged_n_model = 0
             else:

@@ -6,6 +6,7 @@ import pickle
 
 from nnsmith.backends import DiffTestBackend
 from nnsmith.input_gen import gen_one_input
+import traceback
 
 def mcov_write(path):
     if path:
@@ -73,7 +74,7 @@ if __name__ == '__main__':
             print(
                 "==============================================================", file=sys.stderr)
             print(f"Failed execution at {path}", file=sys.stderr)
-            print(e, file=sys.stderr)
+            traceback.print_exc()
             # Done!
 
     if n_unsupported == len(args.models):

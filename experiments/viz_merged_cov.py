@@ -4,6 +4,8 @@ import numpy as np
 
 import os
 
+import pandas as pd
+
 
 SMALL_SIZE = 8
 MEDIUM_SIZE = 15
@@ -16,6 +18,7 @@ plt.rc('xtick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
 plt.rc('ytick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
 plt.rc('legend', fontsize=MEDIUM_SIZE)    # legend fontsize
 plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
+
 
 class Ploter:
     def __init__(self, cov_lim=None, use_pdf=False, one_plot=False) -> None:
@@ -130,7 +133,7 @@ class Ploter:
         self.fig.savefig(save + '.png')
 
 
-def cov_summerize(data, pass_filter=None, tlimit=None, branch_only=True):
+def cov_summerize(data, pass_filter=None, tlimit=None, branch_only=True, gen_time=None):
     model_total = 0
 
     branch_by_time = [[0, 0, 0]]
@@ -146,6 +149,8 @@ def cov_summerize(data, pass_filter=None, tlimit=None, branch_only=True):
         n_model = value['n_model']
         cov = value['merged_cov']
         model_total += n_model
+        if gen_time is not None:
+            time -= gen_time[0][:model_total].sum()
         line_cov = 0
         branch_cov = 0
         for fname in cov:
@@ -187,11 +192,16 @@ def ort_pass_filter(fname):
     return 'onnxruntime/core/optimizer/' in fname
 
 
-def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag='', tlimit=None, pdf=False, one_plot=False, venn=False):
+def tvm_arith_filter(fname):
+    return 'arith' in fname
+
+
+def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag='', tlimit=None, pdf=False, one_plot=False, pass_tag='', gen_time=None, venn=False):
     branch_ploter = Ploter(use_pdf=pdf, one_plot=one_plot)
 
     assert fuzz_tags is not None
-    pass_tag = 'opt_' if pass_filter is not None else ''
+    if pass_filter is not None:
+        assert pass_tag != ''
 
     # Due to lcov, diff lcov's total cov might be slightly different.
     # We took the max.
@@ -200,7 +210,8 @@ def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag=''
 
     for idx, (k, v) in enumerate(data.items()):
         _, branch_by_time, (lf_, bf_) = cov_summerize(
-            v, tlimit=tlimit, pass_filter=pass_filter)
+            v, tlimit=tlimit, pass_filter=pass_filter,
+            gen_time=gen_time[k] if gen_time is not None else None)
         branch_ploter.add(data=branch_by_time, name=fuzz_tags[idx])
 
         lf = max(lf, lf_)
@@ -286,11 +297,15 @@ if '__main__' == __name__:
     parser.add_argument('--tvm', action='store_true', help='use tvm')
     parser.add_argument('--ort', action='store_true', help='use ort')
     parser.add_argument('--pdf', action='store_true', help='use pdf as well')
+    parser.add_argument('--no_count_gen', action='store_true',
+                        help='do not count generation time')
     parser.add_argument('--venn', action='store_true', help='plot venn')
     args = parser.parse_args()
 
     if args.tags is None:
         args.tags = [os.path.split(f)[-1].split('-')[0] for f in args.folders]
+        # args.tags = [os.path.split(os.path.split(f)[-2])[-1]
+        #              for f in args.folders]
     else:
         assert len(args.tags) == len(args.folders)
 
@@ -308,13 +323,28 @@ if '__main__' == __name__:
     else:
         print(f'[WARNING] No pass filter is used (use --tvm or --ort)')
 
+    arith_filter = None
+    if args.tvm:
+        arith_filter = tvm_arith_filter
+    elif args.ort:
+        arith_filter = None
+    else:
+        print(f'[WARNING] No pass filter is used (use --tvm or --ort)')
+
     data = {}
+    gen_time = {} if args.no_count_gen else None
     for f in args.folders:
         with open(os.path.join(f, 'merged_cov.pkl'), 'rb') as fp:
             data[f] = pickle.load(fp)
+            if args.no_count_gen:
+                gen_time[f] = pd.read_csv(os.path.join(
+                    f, '../gentime.csv'), header=None)
 
     if pass_filter is not None:
         plot_one_round(folder=args.output, data=data,
-                       pass_filter=pass_filter, tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, one_plot=True, venn=args.venn)
+                       pass_filter=pass_filter, pass_tag='opt_', tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, one_plot=True, gen_time=gen_time, venn=args.venn)
+    if arith_filter is not None:
+        plot_one_round(folder=args.output, data=data,
+                       pass_filter=arith_filter, pass_tag='arith_', tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, gen_time=gen_time, venn=args.venn)
     plot_one_round(folder=args.output, data=data,
-                   pass_filter=None, tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, venn=args.venn)  # no pass
+                   pass_filter=None, tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, gen_time=gen_time, venn=args.venn)  # no pass

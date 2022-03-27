@@ -1,5 +1,8 @@
 # See https://github.com/Z3Prover/z3/issues/5656
 import z3  # Always import z3 first to avoid incompatibility issue.
+
+from multiprocessing import Process
+import psutil
 from collections import defaultdict
 import math
 import textwrap
@@ -23,6 +26,12 @@ import copy
 from nnsmith.error import SanityCheck, ConstraintCheck, ConstraintError
 from nnsmith.export import torch2onnx
 from nnsmith.abstract.op import *
+from nnsmith.abstract.op import __MAX_RANK__ as __MAX_RANK__
+
+
+NNSMITH_LIMNF_V = os.getenv('NNSMITH_LIMNF_V', '0')
+assert NNSMITH_LIMNF_V in ['0', '1']
+NNSMITH_BV_SIZE = os.getenv('NNSMITH_BV_SIZE', '8')
 
 
 class RequiredDimNotFound(Exception):
@@ -143,12 +152,15 @@ class SymbolNet(nn.Module):
             # ensure n_floats and flops within limit
             tmp_inp = [shape_vars[i] for i in ishape_indices]
             op.shape_fn(tmp_inp)
-            n_floats += op.n_floats(tmp_inp)
-            assert n_floats * 8 < megabyte_lim * 1024 * \
-                1024, f'Current number of elements ({n_floats/1024/1024}m) exceeded memory limit ({megabyte_lim} MB)'
+            op_nfl = op.n_floats(tmp_inp)
+            if self.verbose:
+                print(f"op: {op} nfloats: {op_nfl}")
+            n_floats += op_nfl
+            assert n_floats * 8 <= megabyte_lim * 1024 * \
+                1024, f'Current number of elements ({n_floats/1024/1024}m) exceeded memory limit ({megabyte_lim} MB) Current op: {op}'
             if FLOPS_LIM is not None:
                 assert op.flops(
-                    tmp_inp) < FLOPS_LIM, f'Current number of flops ({op.flops(tmp_inp)}m) exceeded limit ({FLOPS_LIM} m)'
+                    tmp_inp) < FLOPS_LIM, f'Current number of flops ({op.flops(tmp_inp)}m) exceeded limit ({FLOPS_LIM} m). Current op: {op}'
 
         if self.verbose:
             print('input_info=', self.input_info)
@@ -376,10 +388,11 @@ class SymbolNet(nn.Module):
 class SimpleGenerator:
 
     def __init__(self, min_dims=[1, 3, 48, 48], skip=[Input], viz_sbs=False, megabyte_lim=__MB_LIM__, seed=None, verbose=False, use_bitvec=False,
-                 viz_verbose=False, merge_op_v=None, limnf=True, candidates_overwrite=None, init_fp=False):
+                 viz_verbose=False, merge_op_v=None, limnf=True, candidates_overwrite=None, forward_prob=None, init_fp=False):
         if seed is not None:
             np.random.seed(seed)
             random.seed(seed)
+            torch.manual_seed(seed)
         self.verbose = verbose
         self.viz_verbose = viz_verbose
         auto_infer_in_dtypes(self.verbose)
@@ -396,7 +409,7 @@ class SimpleGenerator:
             self.solver = z3.Solver()
 
         # 4 bytes per float (assume we use float64)
-        self.limit_float = 1024**2 * megabyte_lim / 8
+        self.limit_float = 1024**2 * megabyte_lim // 8
 
         # Node -> op: AbsOpBase
         # Edge -> shape_idx:-> self.alive_shapes
@@ -411,48 +424,81 @@ class SimpleGenerator:
         self.is_viz_sbs = viz_sbs
 
         self.use_bitvec = use_bitvec
-        # self.input_shape = self.insert_input_node(min_dims)
         self.min_dims = min_dims
         self.n_floats = 0
-        self.n_inps = 0
         self.monotonic_placeholder_id = 0
         self.monotonic_nx_node_idx = 0
-        self.reusable_placeholder_nx_indices = []
+        # self.reusable_placeholder_nx_indices = []
         self.last_soln = None
         self.wts = None
         self.merge_op_v = merge_op_v or 'v0'  # v0 as default version
         self.limnf = limnf
+        self.n_floats_cons = []
 
         # <op idx>
         self.placeholders: List[int] = []
-        init_placeholder = self.create_placeholder(len(min_dims), dtype=torch.float32 if init_fp else None)
-        self.solver.add(init_placeholder.out_shape.gt_zero())
-        self.forward_insert_node(init_placeholder, [], oshapes=[
-                                 init_placeholder.out_shape])
+        # for all (including newly created tmp) placeholders
+        self.insert_init_ph_node(self.create_placeholder(len(min_dims), dtype=torch.float32 if init_fp else None))
         self.init_ph_alive = True
+        self.forward_prob = 0.5 if forward_prob is None else forward_prob
+
+    def random_rank(self):
+        return random.choices(range(__MAX_RANK__ + 1),
+                              weights=[1, 1, 1, 1, 2, 1])[0]
+
+    def random_dtype(self):
+        wts = [1] * len(DTYPE_ALL)
+        for i in DTYPE_FLOATS:
+            wts[DTYPE_ALL.index(i)] = 8
+        for i in DTYPE_INTS:
+            wts[DTYPE_ALL.index(i)] = 2
+        return random.choices(DTYPE_ALL, weights=wts)[0]
 
     def create_placeholder(self, dim, dtype=None):
+        syms = self.new_syms(['v%s_%s' % (
+            self.monotonic_placeholder_id, k) for k in range(dim)])
         shapevar = ShapeVar(
-            shape=[self.new_sym('v%s_%s' % (
-                self.monotonic_placeholder_id, k)) for k in range(dim)],
-            dtype=dtype if dtype is not None else random.choice(DTYPE_ALL))
+            shape=syms,
+            dtype=dtype if dtype is not None else self.random_dtype())
         self.monotonic_placeholder_id += 1
-        return Placeholder(shapevar)
+        ph = Placeholder(shapevar)
+        return ph
 
-    def new_sym(self, name):
+    # default to no input constraints
+    def gen_ph_cons(self, ph: Placeholder) -> List[z3.ExprRef]:
+        return []
+
+    def post_process(self):
+        '''Called after the graph is finalized. May be used to add parameter guidance.'''
+        pass
+
+    def new_sym(self, name, bv_size=None):
         if self.use_bitvec:
-            bv_size = 8
+            bv_size = bv_size or NNSMITH_BV_SIZE
+            if isinstance(bv_size, str) and bv_size.startswith('random'):
+                bv_size = random.randint(1, int(bv_size[len('random'):]))
+            elif isinstance(bv_size, str):
+                bv_size = int(bv_size)
             zero_size = ARITH_MAX_WIDTH - bv_size
             return z3.ZeroExt(zero_size, z3.BitVec(name, bv_size))
         else:
             return z3.Int(name)
 
+    def new_syms(self, names):
+        if self.use_bitvec:
+            bv_sizes = list(map(len, random_group(
+                int(os.getenv("NNSMITH_BITS", 30)), len(names))))
+            assert len(bv_sizes) == len(names)
+            return [self.new_sym(name, bvsize) for name, bvsize in zip(names, bv_sizes)]
+        else:
+            return [self.new_sym(name) for name in names]
+
     @ abstractmethod
-    def insert_input_node(self, min_dims, shape=None, dtype=DType.float32) -> ShapeVar:
+    def insert_init_ph_node(self, min_dims, shape=None, dtype=DType.float32) -> ShapeVar:
         raise NotImplementedError
 
     @ abstractmethod
-    def try_insert_node(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
+    def try_forward_insert_at(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
         raise NotImplementedError
 
     @ abstractmethod
@@ -474,7 +520,14 @@ class SimpleGenerator:
         # exclude placeholders.
         return len(self.abstract_graph.nodes) - len(self.placeholders)
 
+    def recompute_n_floats(self):
+        self.n_floats = 0
+        for i in self.alive_shapes:
+            self.n_floats = nnsmith_add(self.n_floats, i[1].nelement())
+
     def abstract_gen(self, max_node_size=10, max_gen_millisec=2000):
+        self.max_gen_millisec = max_gen_millisec
+        self.cur_phase = 'abstract_gen'
         z3.set_param(
             "smt.phase_selection",
             5,
@@ -485,7 +538,7 @@ class SimpleGenerator:
             "timeout",
             max_gen_millisec // 3,
             "memory_max_size",
-            16 * 1024,  # MB
+            50 * 1024,  # MB
         )
         init_time = time.time()
         while time.time() - init_time < max_gen_millisec / 1000 and self.num_op() < max_node_size:
@@ -495,7 +548,18 @@ class SimpleGenerator:
             self.try_insert_node_type(node_t)
         if abs(self.num_op() - max_node_size) >= 3:
             print(
-                f'[WARNING]: graph size: {len(self.abstract_graph.nodes)} != expected size: {max_node_size}')
+                f'[WARNING]: graph size: {len(self.abstract_graph.nodes)} < expected size: {max_node_size}')
+        self.cur_phase = 'post_process'
+
+        self.recompute_n_floats()
+        if self.limnf:  # add into solver since graph is finalized to avoid repeated solving
+            if NNSMITH_LIMNF_V == '0':
+                self.solver.add(nnsmith_le(self.n_floats, self.limit_float))
+            elif NNSMITH_LIMNF_V == '1':
+                self.solver.add(*self.n_floats_cons)
+            assert self.check_sat() == z3.sat
+
+        self.post_process()  # can be used to add more constraints
         # init graph placeholders
         shuffled_placeholder = self.placeholders
         self.abstract_graph.nodes[shuffled_placeholder[0]
@@ -510,34 +574,64 @@ class SimpleGenerator:
 
     def check_arith_ref(self, var):
         SanityCheck.true(isinstance(
-            var, (z3.BitVecRef, z3.BoolRef)), f"{type(var)}not supported.")
-        for child in var.children():
-            self.check_arith_ref(child)
+            var, (z3.BitVecRef, z3.BoolRef, bool)), f"{type(var)}not supported.")
+        if not isinstance(var, bool):
+            for child in var.children():
+                self.check_arith_ref(child)
 
-    def check_sat(self, *assumptions):
+    def check_sat(self, *assumptions, timeout=None):
         start = time.time()
         if self.use_bitvec:
             for assump in assumptions:
                 self.check_arith_ref(assump)
-        cres = self.solver.check(*assumptions)
+
+        if self.verbose:
+            print('---> total constraints: \n',
+                  '\n'.join(sorted(map(str,
+                                       list(self.solver.assertions()) + list(assumptions)))))
+        if timeout is None:
+            cres = self.solver.check(*assumptions)
+        else:
+            def _run():
+                cres = self.solver.check(*assumptions)
+                exit({'sat': 0, 'unsat': 1, 'unknown': 2}[str(cres)])
+
+            p = Process(target=_run)
+            p.start()
+            p.join(timeout=timeout / 1000)
+            if p.is_alive():
+                cres = z3.unknown
+                for child in psutil.Process(p.pid).children(recursive=False):
+                    child: psutil.Process  # type: ignore
+                    try:
+                        child.terminate()
+                        child.wait()
+                    except psutil.NoSuchProcess:
+                        pass
+                p.terminate()
+                p.join()
+
+            else:
+                cres = {0: z3.sat, 1: z3.unsat, 2: z3.unknown}[p.exitcode]
 
         checking_time = int((time.time() - start) * 1000)
         if checking_time > 3000 and self.cur_node:  # 3s
             warnings.warn(
-                f'[WARNING] check {self.cur_node} {checking_time} ms')
-
+                f'[WARNING] check {self.cur_node} {checking_time} ms at phase {self.cur_phase}')
         if self.verbose:
             print(cres, '<-- checking time:', checking_time, 'ms')
 
             if cres == z3.unsat:
                 print(f'Unsat core: {self.solver.unsat_core()}')
         if cres == z3.sat:
+            if timeout is None:
+                self.solver.check(*assumptions)
             self.last_soln = self.solver.model()
         return cres
 
     def compute_wts(self):
         self.wts = [1] * len(self.op_candidates)
-        normalize_op_t = {'latest': EXPANDED_OP, 'v1': EXPANDED_OP_V1,
+        normalize_op_t = {'latest': EXPANDED_OP,
                           'v0': EXPANDED_OP_V0}[self.merge_op_v]
         op_t_idx = {}
         for i in range(len(self.op_candidates)):
@@ -691,43 +785,11 @@ class SimpleGenerator:
 
             # remove placeholders
             self.abstract_graph.remove_node(nx_idx)
-            self.reusable_placeholder_nx_indices.append(nx_idx)
+            # self.reusable_placeholder_nx_indices.append(nx_idx)
             self.placeholders.remove(nx_idx)
 
         if self.is_viz_sbs:
             self.viz()
-
-    def try_insert_node_type_at(self, node_t, ishape_indices: List[int]) -> bool:
-        if self.verbose:
-            print(f'Inserting node #{len(self.abstract_graph.nodes)}: '
-                  f'trying to insert node type {node_t.__name__}')
-        if issubclass(node_t, Input):
-            try:
-                self.insert_input_node(self.min_dims)
-            # TODO: check the exception type (ideally only z3 check_failure), don't drop internal errors
-            except:
-                return False
-            return True
-        op_param_n = node_t.get_num_var_param()
-        op_id = len(self.abstract_graph.nodes)
-        op_params = [self.new_sym('op%s_%s' % (op_id, k))
-                     for k in range(len(op_param_n))]
-
-        op: AbsOpBase = node_t(*op_params)
-
-        try:
-            if self.try_insert_node(op, ishape_indices):
-                return True
-        except RequiredDimNotFound:
-            if self.verbose:
-                traceback.print_exc()
-            return False
-        except ConstraintError:
-            if self.verbose:
-                traceback.print_exc()
-            return False
-
-        return False
 
     def try_forward_insert(self, op: AbsOpBase):
         n_inp = len(op.inp_ranks)
@@ -749,7 +811,7 @@ class SimpleGenerator:
         ishape_indices = self.pick_shape_var_idx(
             type(op), dim_spec_list, op.in_dtypes, candidate_shapes=[s[1] for s in self.alive_shapes])
 
-        if self.try_insert_node(op, ishape_indices):
+        if self.try_forward_insert_at(op, ishape_indices):
             return True
 
         return False
@@ -777,16 +839,18 @@ class SimpleGenerator:
             print(f'Inserting node #{len(self.abstract_graph.nodes)}: '
                   f'trying to insert node type {node_t.__name__}')
 
-        op_id = len(self.abstract_graph.nodes)
-
         try:
             for _ in range(max_shape_var_pick_time):
+                # should recreate a new instance since some attributes (like axis) should be initialized for each pick
                 op_param_n = node_t.get_num_var_param()
+                op_id = len(self.abstract_graph.nodes)
                 op_params = [self.new_sym('op%s_%s' % (op_id, k))
                              for k in range(op_param_n)]
-                op: AbsOpBase = node_t(*op_params)
 
-                if random.randint(0, 1):
+                op: AbsOpBase = node_t(*op_params)
+                op._param_list = op_params
+
+                if random.uniform(0, 1) < self.forward_prob:
                     if self.try_forward_insert(op):
                         return True
                 else:
@@ -824,7 +888,7 @@ class SimpleGenerator:
     def pick_shape(self, node_t, candidates):
         return random.choice(candidates)
 
-    def pick_shape_var_idx(self, node_t, ndim_list: List[Set[int]], dtype_combs: List[DTypeComb], candidate_shapes: List[ShapeVar]) -> List[int]:
+    def pick_shape_var_idx(self, node_t, ndim_list: List[Set[int]], dtype_combs_spec: List[DTypeComb], candidate_shapes: List[ShapeVar]) -> List[int]:
         """Randomly pick indices to shape variables from the output pool.
 
         Args:
@@ -836,18 +900,18 @@ class SimpleGenerator:
 
         shape_var_candidates = []
         if self.verbose:
-            print('dtype_combs:', dtype_combs)
+            print('dtype_combs_spec:', dtype_combs_spec)
 
         all_can_dtypes = []
         for i, ndims in enumerate(ndim_list):
             all_can_dtypes.extend([candidate_shapes[i].dtype for i in self.filter_shapes(
                 ndims=ndims, dtype=None, candidate_shapes=candidate_shapes)])
         # only use dtypes currently available after ndim filtering
-        dtype_combs = [comb for comb in dtype_combs if all(
+        dtype_combs = [comb for comb in dtype_combs_spec if all(
             i in all_can_dtypes for i in comb)]
         if len(dtype_combs) == 0:
             raise RequiredDimNotFound('Op %s: Cannot find a shape variable with dim_spec %s and dtype combinations %s.' % (
-                node_t, ndim_list, dtype_combs))
+                node_t, ndim_list, dtype_combs_spec))
         dtype_comb = random.choice(dtype_combs)
         for i, ndims in enumerate(ndim_list):
             candidates = self.filter_shapes(
@@ -867,60 +931,59 @@ class SimpleGenerator:
 
 
 class PureSymbolGen(SimpleGenerator):
-    def insert_input_node(self, min_dims, dtype=DType.float32, constrain_min=True) -> ShapeVar:
-        input_tensor_shape = ShapeVar(
-            shape=[self.new_sym('i%s_s%s' % (self.n_inps, k)) for k in range(len(min_dims))], dtype=dtype)
-        input_node = Input(self.n_inps, dtype, *input_tensor_shape.shape)
+    def insert_init_ph_node(self, ph: Placeholder) -> Placeholder:
+        self.forward_insert_node(ph, [], oshapes=[
+                                 ph.out_shape])
 
-        self.forward_insert_node(input_node, [], oshapes=[input_tensor_shape])
-        for c in input_tensor_shape.gt_zero():
+        for c in ph.out_shape.gt_zero():
             self.solver.add(c)
 
-        if not self.use_bitvec and constrain_min:  # bit vector is randomizable
-            # The batch size should not have a big min size (avoid unnecessary computation);
-            # FIXME: input constraints will make SMT solving costly.
-            for i in range(len(input_tensor_shape.shape)):
-                self.solver.add(nnsmith_ge(
-                    input_tensor_shape.shape[i], min_dims[i]))
-        check_res = self.check_sat()
-        # FIXME sometimes the constraints are too complicated to return stable result.
-        SanityCheck.eq(check_res, z3.sat,
-                       msg=f'Constraints not sat but {check_res}.')
         if self.limnf:
-            self.n_floats = nnsmith_add(
-                self.n_floats, input_tensor_shape.nelement())
-        self.n_inps += 1
-        return input_tensor_shape
+            if NNSMITH_LIMNF_V == '0':
+                self.n_floats = nnsmith_add(
+                    self.n_floats, ph.out_shape.nelement())
+            elif NNSMITH_LIMNF_V == '1':
+                self.n_floats_cons.append(nnsmith_le(
+                    ph.out_shape.nelement(), self.limit_float // 16))
+        return ph
 
     # subclasses may override this
-    def extra_constraints(self, node: AbsOpBase, ishape_indices: List[int]):
+    def extra_constraints(self, node: AbsOpBase, input_shapes: List[ShapeVar]):
         return []
 
-    def try_insert_node(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
+    def try_forward_insert_at(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
         input_shapes = [self.alive_shapes[idx][1] for idx in ishape_indices]
         constraints = node.requires(input_shapes)
 
         if self.verbose:
             print('---> Trying to solve: ', node, constraints)
-            print('---> total constraints: \n',
-                  '\n'.join(sorted(map(str, set(self.solver.assertions())))))
 
         # make a copy
         output_shapes = node.shape_fn(input_shapes)
         if self.limnf:
-            tmp_n_floats = nnsmith_add(
-                self.n_floats, node.n_floats(input_shapes))
+            if NNSMITH_LIMNF_V == '0':
+                tmp_n_floats = nnsmith_add(
+                    self.n_floats, node.n_floats(input_shapes))
+            elif NNSMITH_LIMNF_V == '1':
+                tmp_n_floats_cons = self.n_floats_cons + \
+                    [nnsmith_le(node.n_floats(input_shapes),
+                                self.limit_float // 16)]
 
         for shape in output_shapes:
             for c in shape.gt_zero():
                 constraints.append(c)
 
         self.cur_node = node
-        constraints.extend(self.extra_constraints(node, ishape_indices))
+        # constraints.extend(self.extra_constraints(node, input_shapes))
         if self.limnf:
-            check_res = self.check_sat(
-                *constraints, nnsmith_le(tmp_n_floats, self.limit_float))
-        check_res = self.check_sat(*constraints)
+            if NNSMITH_LIMNF_V == '0':
+                check_res = self.check_sat(
+                    *constraints, nnsmith_le(tmp_n_floats, self.limit_float))
+            elif NNSMITH_LIMNF_V == '1':
+                check_res = self.check_sat(
+                    *constraints, *tmp_n_floats_cons)
+        else:
+            check_res = self.check_sat(*constraints)
         if check_res == z3.unknown:  # Timeout thing.
             self.on_timeout(node, ishape_indices)
 
@@ -930,7 +993,10 @@ class PureSymbolGen(SimpleGenerator):
         for c in constraints:
             self.solver.add(c)
         if self.limnf:
-            self.n_floats = tmp_n_floats
+            if NNSMITH_LIMNF_V == '0':
+                self.n_floats = tmp_n_floats
+            elif NNSMITH_LIMNF_V == '1':
+                self.n_floats_cons = tmp_n_floats_cons
 
         if self.verbose:
             print('>> Forward insertion node: ', node)
@@ -941,6 +1007,9 @@ class PureSymbolGen(SimpleGenerator):
         return True
 
     def try_occupy_placeholder(self, node: AbsOpBase, occ_holder_indices: List[int]) -> bool:
+        if self.verbose:
+            print(
+                f'---> Trying to occupy placeholder: {occ_holder_indices} for node {node}')
         # S2 - create X: X can be
         #                   - a new placeholder (fallback)
         #                   - an existing alive shape
@@ -964,8 +1033,11 @@ class PureSymbolGen(SimpleGenerator):
         new_inp_placeholders = []
         constraints = []
         for rank, dtype in node.deduct_inp_ranks_and_dtype(occupied_holder_shapes):
+            # oversample rank 4 tensors as they may be more important
             ph = self.create_placeholder(
-                rank if rank != -1 else random.randint(0, 4), dtype=dtype)
+                rank if rank != -1 else
+                self.random_rank(),
+                dtype=dtype)
             new_inp_placeholders.append(ph)
             constraints.extend(ph.out_shape.gt_zero())
 
@@ -978,7 +1050,8 @@ class PureSymbolGen(SimpleGenerator):
             constraints.extend(shape.gt_zero())
 
         self.cur_node = node
-        # TODO: not considering extra constraints for now.
+        # constraints.extend(self.extra_constraints(node, input_shapes))
+
         # TODO: consider nfloats.
         check_res = self.check_sat(*constraints)
 
@@ -1010,17 +1083,18 @@ class PureSymbolGen(SimpleGenerator):
 
 
 class Bin:
-    def __init__(self, lb, ub, scale='linear', base=None):
+    def __init__(self, lb, ub, scale='linear', base=None, mul=1):
         self.lb = lb
         self.ub = ub
         assert scale in ['linear', 'log']
         self.scale = scale
         self.base = base
+        self.mul = mul
 
     def to_linear(self, x):
         if self.scale == 'log':
             x = math.pow(self.base, x)
-        return int(x)
+        return int(x) * self.mul
 
     def sample(self):
         x = random.uniform(self.lb, self.ub)
@@ -1031,6 +1105,8 @@ class Bin:
             return None, None
         if self.ub == None:  # one-sided
             return self.to_linear(self.lb), None
+        if self.lb == None:  # one-sided
+            return None, self.to_linear(self.ub)
         lb = self.sample()
         ub = self.sample()
         if lb > ub:
@@ -1040,46 +1116,149 @@ class Bin:
         return lb, ub
 
 
+PARAM_CONFIG0 = {  # no guidance on param, only on inputs.
+}
+
+
+def range_constrain(param, lb, ub):
+    ret = []
+    if lb is not None:
+        ret.append(nnsmith_ge(param, lb))
+    if ub is not None and os.getenv('NNSMITH_LB', 'off') == 'off':  # HACK
+        ret.append(nnsmith_lt(param, ub))
+    return [z3.And(*ret)] if len(ret) > 0 else []
+
+
+def __SLICE_CONSTRAINTS(node, inp_shps: List[ShapeVar], construct_param_dict):
+    # NOTE(JK): backward mode is slow at generating a chain of many slice ops.
+    # Might be one potential general performance issue. If hit performance bottleneck someday,
+    # might want to revisit this (substitute old placeholder symbols might help?)
+    inp = inp_shps[0]
+    start = getattr(node, 'start')
+    end = getattr(node, 'end')
+    dim_s = inp.shape[node.extra_attrs['axis']]
+    MAX_TICKS = 1024
+    ret = []
+    lb = 0
+    if not isinstance(start, int):
+        if random.randint(0, 1) or True:
+            # start / (dim_s - 1) \in [l / MAX_TICKS, r / MAX_TICKS]
+            # start * MAX_TICKS \in [l * (dim_s-1) , r * (dim_s-1)]
+            var = nnsmith_mul(start, MAX_TICKS)
+            l, r = Bin(lb, MAX_TICKS).sample_range()
+            lb = l
+            ret.extend(range_constrain(var, l * (dim_s - 1), r * (dim_s - 1)))
+
+    if not isinstance(end, int):
+        if random.randint(0, 1) or True:
+            var = nnsmith_mul(end, MAX_TICKS)
+            l, r = Bin(lb, MAX_TICKS).sample_range()
+            ret.extend(range_constrain(var, l * dim_s, r * dim_s))
+    return ret
+
+
+_DEFAULT_BINS = 6
+_DEFAULT_BIN_CONS = [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)] + \
+    [Bin(_DEFAULT_BINS, None, scale='log', base=2)]
+_PAD_BIN_CONS = (
+    [Bin(i, i + 1, scale='log', base=2) for i in range(_DEFAULT_BINS)] +  # positive
+    [Bin(_DEFAULT_BINS, None, scale='log', base=2)] +  # positive
+    # negative
+    [Bin(i, i + 1, scale='log', base=2, mul=-1) for i in range(_DEFAULT_BINS)] +
+    [Bin(None, _DEFAULT_BINS, scale='log', base=2, mul=-1)] +  # negative
+    [Bin(0, 1)]  # 0
+)
+
 PARAM_CONFIG1 = {
     'NCHWConv2d': {
-        'kernel_h_size': [Bin(i, i + 1, scale='log', base=2) for i in range(8)],
-        'kernel_w_size': [Bin(i, i + 1, scale='log', base=2) for i in range(8)],
-        'stride': [Bin(i, i + 1, scale='log', base=2) for i in range(8)],
-        'padding': [Bin(i, i + 1, scale='log', base=2) for i in range(8)] + [Bin(0, 1)],
-        'out_channels': [Bin(i, i + 1, scale='log', base=2) for i in range(8)] +
-        [Bin(8, None, scale='log', base=2)],
+        'kernel_h_size': _DEFAULT_BIN_CONS,
+        'kernel_w_size': _DEFAULT_BIN_CONS,
+        'stride': _DEFAULT_BIN_CONS,
+        'padding': _DEFAULT_BIN_CONS + [Bin(0, 1)],
+        'out_channels': _DEFAULT_BIN_CONS,
         'in_channels': [],  # skip
     },
-    # last bin is eseentially no constraint, to ensure -1 can be included
-    # defaultdict(lambda: [Bin(i, i + 1, scale='log', base=2) for i in range(8)] + [Bin(None, None)]),
-    # 'Reshape': defaultdict(lambda: [])
+    'ConstPad': defaultdict(lambda: _PAD_BIN_CONS),
+    'ReplicatePad': defaultdict(lambda: _PAD_BIN_CONS),
+    'ReflectPad': defaultdict(lambda: _PAD_BIN_CONS),
+    'NearestInterp': defaultdict(lambda: _DEFAULT_BIN_CONS),
+    'LinearInterp': defaultdict(lambda: _DEFAULT_BIN_CONS),
+    'BilinearInterp': defaultdict(lambda: _DEFAULT_BIN_CONS),
+    'BicubicInterp': defaultdict(lambda: _DEFAULT_BIN_CONS),
+    'TrilinearInterp': defaultdict(lambda: _DEFAULT_BIN_CONS),
+    'Slice': __SLICE_CONSTRAINTS,
 }
-# PARAM_CONFIG1['Reshape1D'] = PARAM_CONFIG1['Reshape']
-# PARAM_CONFIG1['Reshape2D'] = PARAM_CONFIG1['Reshape']
-# PARAM_CONFIG1['Reshape3D'] = PARAM_CONFIG1['Reshape']
-# PARAM_CONFIG1['Reshape4D'] = PARAM_CONFIG1['Reshape']
-# PARAM_CONFIG1['Reshape5D'] = PARAM_CONFIG1['Reshape']
-# PARAM_CONFIG1['Reshape6D'] = PARAM_CONFIG1['Reshape']
-PARAM_CONFIG2 = {
-    'NCHWConv2d': {
-        'kernel_h_size': [Bin(1, 256, scale='linear')],
-        'kernel_w_size': [Bin(1, 256, scale='linear')],
-        'stride': [Bin(1, 256, scale='linear')],
-        'padding': [Bin(1, 256, scale='linear')] + [Bin(0, 1)],
-        'out_channels': [Bin(1, 256, scale='linear')] +
-        [Bin(256, None, scale='linear')],
-        'in_channels': [],  # skip
-    },
+PARAM_CONFIG1['Linear'] = {
+    'ifeat': [],
+    'ofeat': PARAM_CONFIG1['NCHWConv2d']['out_channels']
 }
+PARAM_CONFIG1['AvgPool2d'] = {
+    'kernel_h_size': PARAM_CONFIG1['NCHWConv2d']['kernel_h_size'],
+    'kernel_w_size': PARAM_CONFIG1['NCHWConv2d']['kernel_w_size'],
+    'stride': PARAM_CONFIG1['NCHWConv2d']['stride'],
+    'padding': PARAM_CONFIG1['NCHWConv2d']['padding'],
+}
+PARAM_CONFIG1['MaxPool2d'] = PARAM_CONFIG1['AvgPool2d']
+
+
+def get_name_param(node: AbsOpBase, construct_param_dict):
+    if node.num_var_param is None:
+        key_param = [(key, getattr(node, key))
+                     for key in construct_param_dict]
+    else:
+        key_param = [(f'param_var{i}', param)
+                     for i, param in enumerate(node._param_list)]
+    return key_param
+
+
+def __GROUP_RESHAPE(node, inp_shps, construct_param_dict, bin=True):
+    bins = [Bin(i, i + 1, scale='log', base=2)
+            for i in range(_DEFAULT_BINS)] + [Bin(None, None)]
+    ret = []
+
+    src_group = node.src_group
+    dst_group = node.dst_group
+    ng = node.ng
+    assert len(src_group) == len(dst_group) == ng, (src_group, dst_group)
+
+    construct_params = get_name_param(node, construct_param_dict)
+    if bin:
+        for gid in range(ng):
+            ds = dst_group[gid]
+            disable = list(range(len(ds)))
+            random.shuffle(disable)
+            disable = disable[:1]
+            for idx, d in enumerate(ds):
+                if idx in disable:
+                    continue
+                name, param = construct_params[d]
+                if len(bins) == 0:
+                    continue
+                bin_id = random.randint(0, len(bins) - 1)
+                lb, ub = bins[bin_id].sample_range()
+                ret.extend(range_constrain(param, lb, ub))
+
+    # print('reshape ng:', ng, 'cons:', ret)
+    return ret
+
+
+PARAM_CONFIG1['Reshape'] = __GROUP_RESHAPE
+assert all(i in ALL_OP_STR2TYPE for i in PARAM_CONFIG1.keys())
+
+PARAM_CONFIG2 = copy.deepcopy(PARAM_CONFIG1)
+PARAM_CONFIG2['ConstPad'] = defaultdict(lambda: _DEFAULT_BIN_CONS)
+PARAM_CONFIG2['ReplicatePad'] = defaultdict(lambda: _DEFAULT_BIN_CONS)
+PARAM_CONFIG2['ReflectPad'] = defaultdict(lambda: _DEFAULT_BIN_CONS)
 
 
 class GuidedGen(PureSymbolGen):
-    def __init__(self, summaries=None, scale='log', base=2, default_bins=8, constrain_prob=1, **kwargs):
-        super(GuidedGen, self).__init__(**kwargs)
-
-        self.constrain_prob = constrain_prob
+    def __init__(self, summaries=None, scale='log', base=2, default_bins=_DEFAULT_BINS, constrain_prob=None, **kwargs):
+        self.constrain_prob = constrain_prob if constrain_prob is not None else float(
+            os.getenv('NNSMITH_G_PROB', 1))
         self.base = 2
-        self.param_config = PARAM_CONFIG1
+        self.param_config = {
+            '0': PARAM_CONFIG0, '1': PARAM_CONFIG1, '2': PARAM_CONFIG2
+        }[os.getenv('NNSMITH_G_CONFIG', '1')]
         if scale == 'log':
             self.default_config = defaultdict(
                 lambda: [Bin(i, i + 1, scale=scale, base=base) for i in range(default_bins)] +
@@ -1090,59 +1269,76 @@ class GuidedGen(PureSymbolGen):
                 lambda: [Bin(0, 256, scale='linear')] + [Bin(256, None, scale='linear')])
         self.scale = scale
         # self.inp
+        super(GuidedGen, self).__init__(**kwargs)
 
-    def insert_input_node(self, min_dims, dtype=DType.float32) -> ShapeVar:
-        ish = super().insert_input_node(min_dims, dtype, constrain_min=False)
+    def gen_ph_cons(self, ph: Placeholder):
         constraints = []
-        for i in ish.shape:
+        for i in ph.out_shape.shape:
             bins = self.default_config[0]
             lb, ub = bins[random.randint(0, len(bins) - 1)].sample_range()
-            constraints.extend(self.range_constrain(i, lb, ub))
+            constraints.extend(range_constrain(i, lb, ub))
         # throw exception for now since this is unlikely to happen
-        assert self.check_sat(
-            *constraints, nnsmith_le(self.n_floats, self.limit_float)) == z3.sat, 'Input constraints too tight'
-        self.solver.add(*constraints)
-        return ish
+        # assert self.check_sat(
+        #     *constraints, nnsmith_le(self.n_floats, self.limit_float)) == z3.sat, 'Input constraints too tight'
+        return constraints
 
-    def range_constrain(self, param, lb, ub):
-        ret = []
-        if lb is not None:
-            ret.append(nnsmith_ge(param, lb))
-        if ub is not None:
-            ret.append(nnsmith_lt(param, ub))
-        return ret
-
-    def extra_constraints(self, node: AbsOpBase, ishape_indices: List[int]):
-        if random.uniform(0, 1) < self.constrain_prob:
-            return []
+    def extra_constraints(self, node: AbsOpBase, input_shapes: List[ShapeVar]):
         ret = []
         construct_param_dict = signature(node.__init__).parameters
         config = self.param_config.get(
             node.__class__.__name__, None)
         if config is None:
             return ret
-
-        # if len(construct_param_dict) > 0:
-        #     print('Op {} constraint:'.format(node))
-        for idx, key in enumerate(construct_param_dict):
-            # pc = counter['param_' + key]  # type: Counter
-            param = getattr(node, key)
-            # bin_id = min(pc.keys(), key=lambda k: pc)
+        if callable(config):
+            return config(node, input_shapes, construct_param_dict)
+        for key, param in get_name_param(node, construct_param_dict):
             bins = config[key]
             if len(bins) == 0:
                 continue
             bin_id = random.randint(0, len(bins) - 1)
             lb, ub = bins[bin_id].sample_range()
-            # print('\t{} <= {} < {}'.format(lb, key, ub))
-            ret.extend(self.range_constrain(param, lb, ub))
+            ret.extend(range_constrain(param, lb, ub))
         return ret
+
+    def post_process(self):
+        # collect guidance
+        graph = self.abstract_graph
+        shuffled_nids = list(graph.nodes)
+        random.shuffle(shuffled_nids)
+        all_cons = []
+        for node_id in shuffled_nids:
+            op = graph.nodes[node_id]['op']
+            ishape_indices = graph.nodes[node_id]['ishape_indices']
+            ishape_vars = [self.alive_shapes[i][1] for i in ishape_indices]
+            if isinstance(op, AbsOpBase):
+                cons = self.extra_constraints(op, ishape_vars)
+            else:
+                assert isinstance(op, Placeholder), op
+                cons = self.gen_ph_cons(op)
+            if len(cons) == 0 or random.uniform(0, 1) > self.constrain_prob:
+                continue
+            all_cons.extend(cons)
+
+        # apply all guidance at once and back off if failed
+        shuffled = list(range(len(all_cons)))
+        random.shuffle(shuffled)
+        cur_cons = [all_cons[i] for i in shuffled]
+        timeout = self.max_gen_millisec / (1 + math.log2(len(cur_cons))) / 3
+        while self.check_sat(*cur_cons) != z3.sat:
+            cur_cons = cur_cons[:len(cur_cons) // 2]
+            if len(cur_cons) == 0:
+                break
+        self.solver.add(cur_cons)
+        if self.verbose:
+            print(
+                '# guidance applied: {} / {}'.format(len(cur_cons), len(all_cons)))
 
 
 def parse_args():
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--max_nodes', type=int, default=5)
+    parser.add_argument('--max_nodes', type=int, default=10)
     parser.add_argument('--min_dims', type=list, default=[1, 3, 48, 48])
     parser.add_argument('--timeout', type=int, default=50000)
     parser.add_argument('--viz_sbs', action='store_true',
@@ -1160,8 +1356,11 @@ def parse_args():
     parser.set_defaults(limnf=True)
     parser.add_argument('--no_limnf', dest='limnf', action='store_false',
                         help='Disable the limit on the number of floats')
+    parser.add_argument('--limnf', dest='limnf', action='store_true',
+                        help='Enable the limit on the number of floats')
     parser.add_argument('--use_cuda', action='store_true')
     parser.add_argument('--no_export', action='store_true')
+    parser.add_argument('--forward_prob', type=float)
     return parser.parse_args()
 
 
@@ -1207,7 +1406,7 @@ if __name__ == '__main__':
     strt_time = time.time()
     gen, solution = random_model_gen(min_dims=args.min_dims, seed=seed, viz_sbs=args.viz_sbs, max_nodes=args.max_nodes,
                                      use_bitvec=args.use_bitvec, timeout=args.timeout, verbose=args.verbose, mode=args.mode,
-                                     limnf=args.limnf, merge_op_v=args.merge_op_v)
+                                     limnf=args.limnf, merge_op_v=args.merge_op_v, forward_prob=args.forward_prob)
     print(
         f'{len(solution)} symbols and {len(gen.solver.assertions())} constraints.')
     print(
@@ -1223,7 +1422,11 @@ if __name__ == '__main__':
     net = SymbolNet(gen.abstract_graph, solution, verbose=args.verbose,
                     alive_shapes=gen.alive_shapes)
     print('Initializing SymbolNet time: {}s'.format(time.time() - srt_time))
-    # turn this on so that nan in the intermediate tensors can be detected too
+    torch2onnx(net, args.output_path, verbose=args.verbose,
+               use_cuda=args.use_cuda)
+    import onnx
+    onnx.checker.check_model(
+        onnx.load(args.output_path), full_check=True)
     input_st = time.time()
 
     sat_inputs = None
@@ -1249,9 +1452,6 @@ if __name__ == '__main__':
 
     ed_time = time.time()
     print('Time to generate inputs: {:.3f}s'.format(ed_time - input_st))
-
-    torch2onnx(net, args.output_path, verbose=args.verbose,
-               use_cuda=args.use_cuda)
 
     stats = {
         'gen_succ': True,

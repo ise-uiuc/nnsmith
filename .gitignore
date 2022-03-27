@@ -8,6 +8,7 @@ tmp/
 *.stderr
 *.stdout
 fuzz_report/
+config
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

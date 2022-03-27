@@ -37,6 +37,7 @@ class DummyExecutor(DiffTestBackend):
 class BackendCreator:
     NAME_MAP = {
         'ort': 'ORTExecutor',
+        'ort-debug': 'ORTExecutorDebug',
         'tvm-llvm': 'TVMExecutorLLVM',
         'tvm-debug': 'TVMExecutorDebug',
         'tvm-cuda': 'TVMExecutor',
@@ -53,6 +54,9 @@ class BackendCreator:
         if name == 'ort':
             from nnsmith.backends.ort_graph import ORTExecutor
             return ORTExecutor()
+        elif name == 'ort-debug':
+            from nnsmith.backends.ort_graph import ORTExecutor
+            return ORTExecutor(0)
         elif name == 'tvm-debug':
             from nnsmith.backends.tvm_graph import TVMExecutor
             return TVMExecutor(executor='debug', opt_level=0)
@@ -155,10 +159,14 @@ if __name__ == '__main__':
             return run_backend_single_model(args.model, bknd, dump_raw, seed)
 
     outputs = run_backend(BackendCreator(args.backend), args.dump_raw)
+    if input_gen.is_invalid(outputs):
+        print(f'[WARNING] Backend {args.backend} output is invalid')
     if args.cmp_with is not None:
         oracle = BackendCreator(args.cmp_with)
         outputs_oracle = run_backend(
             oracle, None if args.dump_raw is None else args.dump_raw + ".oracle")
         difftest.assert_allclose(
             outputs, outputs_oracle, args.backend, args.cmp_with)
+        if input_gen.is_invalid(outputs_oracle):
+            print(f'[WARNING] Backend {args.comp_with} output is invalid')
     print(f'Total time: {time.time() - st}')

@@ -28,10 +28,12 @@ from nnsmith.error import IncorrectResult, NNSmithInternalError, SanityCheck
 from nnsmith.backends import DiffTestBackend
 from nnsmith.input_gen import gen_one_input
 from nnsmith.difftest import assert_allclose
-from nnsmith.graph_input_gen import forked_execution
+from nnsmith.graph_input_gen import _DEFAULT_FORK_METHOD, forked_execution, forkpool_execution
 import networkx as nx
 import onnx
 from summary import GraphSummary, ParamShapeSummary, SummaryBase
+import socket
+import tarfile
 from nnsmith.dtype_test import rewrite_op_dtype
 
 __COV_DRIVER__ = None
@@ -43,7 +45,7 @@ _COV_BY_TIME_NAME_ = 'cov_by_time.csv'
 
 
 class Reporter:  # From Tzer.
-    def __init__(self, report_folder=None, name_hint='') -> None:
+    def __init__(self, report_folder=None, name_hint='', yes=False, flush_freq=None) -> None:
         # Checks
         self.start_time = time.perf_counter()
         self.report_folder = report_folder
@@ -53,7 +55,7 @@ class Reporter:  # From Tzer.
 
         if os.path.exists(self.report_folder):
             # TODO: Allow continous fuzzing...
-            decision = ''
+            decision = '' if not yes else 'y'
             while decision.lower() not in ['y', 'n']:
                 decision = input(
                     'Report folder already exists. Press [Y/N] to continue or exit...')
@@ -61,9 +63,13 @@ class Reporter:  # From Tzer.
                 raise NNSmithInternalError(
                     f'{self.report_folder} already exist... We want an empty folder to report...')
             else:
-                shutil.rmtree(self.report_folder)
+                for f in Path(self.report_folder).glob('*'):
+                    if str(f.name) not in ['stdout.log', 'stderr.log'] and not f.name.endswith('.profraw'):
+                        os.system(f'rm -rf {f}')
 
-        os.mkdir(self.report_folder)
+        Path(self.report_folder).mkdir(parents=True, exist_ok=True)
+        Path(self.report_folder).joinpath('src_cov_history').mkdir(
+            parents=True, exist_ok=True)
         print(f'Create report folder: {self.report_folder}')
 
         print(f'Using `{self.report_folder}` as the fuzzing report folder')
@@ -82,12 +88,18 @@ class Reporter:  # From Tzer.
 
             f.write(f'START TIME: {datetime.datetime.now()}\n')
             f.write(f'COMMAND: {sys.argv}\n')
+            f.write(f'NNSMITH ENVIRONMENT:\n')
+            for k, v in os.environ.items():
+                if k.startswith('NNSMITH_'):
+                    f.write(f'\t{k}={v}\n')
+            f.write(f'HOSTNAME: {socket.gethostname()}\n')
             _log_repo(f, 'Fuzzer', fuzz_repo)
             if 'tvm' in name_hint and os.getenv('TVM_HOME'):
                 _log_repo(f, 'TVM', git.Repo(os.getenv('TVM_HOME')))
 
         self.n_bug = 0
         self.record_coverage_cnt = 0
+        self.flush_freq = flush_freq or 1000
 
     def report_bug(self, err_type: Exception, buggy_onnx_path: str, buggy_torch_path: str, message: str, stdout: str, stderr: str, graph_path: str, sat_inputs=None):
         dir = f'{type(err_type).__name__}__{self.n_bug}'
@@ -130,8 +142,17 @@ class Reporter:  # From Tzer.
         for i in fuzz.summaries:
             i.dump(os.path.join(self.report_folder, f'{i}.pkl'))
 
+        # flush source coverage
+        if fuzz.src_cov_flush:
+            profraw = __COV_DRIVER__.get_src_coverage_filename()
+            folder = Path(self.report_folder)
+            os.remove(f'{profraw}')  # remove old to avoid clogging
+            __COV_DRIVER__.write_src_coverage()
+            shutil.copy(f'{profraw}', folder /
+                        f'src_cov_history/profraw-{self.record_coverage_cnt}')
+
     def record_coverage(self, fuzz):
-        if self.record_coverage_cnt % 10 == 0:
+        if self.record_coverage_cnt % self.flush_freq == 0:
             self.flush(fuzz)
         self.record_coverage_cnt += 1
         with open(os.path.join(self.report_folder, _COV_BY_TIME_NAME_), 'a') as f:
@@ -153,13 +174,13 @@ class CustomProgress(Progress):
 
 
 class FuzzingLoop:  # TODO: Support multiple backends.
-    def __init__(self, backends: Dict[str, DiffTestBackend], mode='random', root=None, time_budget=60 * 60 * 4, max_nodes=32, inp_gen='random',
+    def __init__(self, backends: Dict[str, DiffTestBackend], mode='random', root=None, time_budget=60 * 60 * 4, max_nodes=None, fix_nodes=10, inp_gen='random',
                  summaries: List[SummaryBase] = None, fork_bkn=False, _PER_MODEL_TIMEOUT_=1000, use_bitvec=False, no_progress=False, merge_op_v=None,
-                 limnf=True, use_cuda=False, warmup=False):
+                 limnf=True, use_cuda=False, warmup=False, yes=False, flush_freq=None, record_model=False):
         self.root = root
         self.reporter = Reporter(
-            report_folder=root, name_hint=list(backends.keys())[0])
-        self.mode = mode
+            report_folder=root, name_hint=list(backends.keys())[0], yes=yes, flush_freq=flush_freq)
+        self.mode = mode  # `random` or `table`
         self.inp_gen = inp_gen  # `random` or `grad`
 
         SanityCheck.gt(len(backends), 0, "Empty backends are not allowed!")
@@ -167,6 +188,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
 
         self.time_budget = time_budget
         self.max_nodes = max_nodes
+        self.fix_nodes = fix_nodes
 
         self.cur_gen_t = float('nan')
         self.slowest_gen_t = -float("inf")
@@ -196,6 +218,18 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         self.limnf = limnf
         self.use_cuda = use_cuda
         self.warmup = warmup
+        try:
+            __COV_DRIVER__.init_src_coverage()
+            self.src_cov_flush = True
+        except Exception as e:
+            rich.print('[bold yellow]Warning: [reset]\n'
+                       f'\tTurning source coverage flush off due to `{e}`\n'
+                       f'\tIf you see undefined symbol error, you may install patch'
+                       f'https://github.com/lazycal/tvm/commit/fdbb6b4369dc1df850836a02f069e72681ae7be4 to enable coverage flush')
+            self.src_cov_flush = False
+        self.record_model = record_model
+        if self.record_model:
+            self.tar = tarfile.open(Path(self.root) / 'models.tar', 'w')
 
         rich.print(
             f'[bold yellow]To exit the program: `kill {os.getpid()}`[/bold yellow]')
@@ -203,8 +237,10 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             '[grey]This is because we use z3 written in C++ w/ Python wrappers. Ctrl+C may not stop it.')
 
     def rich(self):
+        keys = [k for k in self.gen_profile.columns if k.endswith(
+            '_t') or k.endswith('_time')]
         breakdown = ', '.join(
-            f'[cyan]{k}[/cyan]: {v:.1f}s' for k, v in self.gen_profile.mean().to_dict().items() if k.endswith('_t') or k.endswith('_time'))
+            f'[cyan]{k}[/cyan]: {v:.1f}s' for k, v in self.gen_profile[keys].mean().to_dict().items())
         return [Columns([
             Panel.fit(
                 f'{datetime.timedelta(seconds=round(time.time()-self.start_time))} ~ '
@@ -279,16 +315,23 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                             seed = random.getrandbits(32)
                             self.cur_seed = seed
                             # TODO: for backward compatibility. Use the lines after in the future
-                            self.cur_node_size = 10
-                            # self.cur_node_size = random.randint(
-                            #     1, self.max_nodes)
+                            if self.fix_nodes is not None:
+                                self.cur_node_size = self.fix_nodes
+                            else:
+                                self.cur_node_size = random.randint(
+                                    1, self.max_nodes)
                             gen_info['seed'] = seed
                             gen_info['cur_node_size'] = self.cur_node_size
-                            self.stage = 'gen model'
                             progress.refresh()
                             forked_exe_t_s = time.time()
+                            if self.mode != 'hybrid':
+                                mode = self.mode
+                            else:
+                                mode = random.choice(['random', 'guided'])
+                            gen_info['mode'] = mode
+                            self.stage = mode + ' gen'
                             sat_inputs, edge_set, seed, ret_profile = \
-                                forked_execution(self.mode,
+                                forked_execution(mode,
                                                  _TMP_ONNX_FILE_,
                                                  max_nodes=self.cur_node_size,
                                                  max_gen_millisec=self._PER_MODEL_TIMEOUT_,
@@ -321,14 +364,18 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         except Exception as e:
                             traceback.print_exc()
                             print('Seed:', seed, 'cur_node_size:',
-                                  self.cur_node_size)
-                            print('retrying...')
+                                  self.cur_node_size, 'mode:', mode,
+                                  'cur succ rate:', self.gen_profile['gen_succ'].mean(), file=sys.stderr)
+                            print('retrying...', file=sys.stderr)
                         gen_info['gen_succ'] = gen_succ
                         gen_info['time_stamp'] = time.perf_counter() - \
                             self.start_time
 
                         self.gen_profile = self.gen_profile.append(
                             gen_info, ignore_index=True)
+                    if self.record_model:
+                        self.tar.add(_TMP_ONNX_FILE_,
+                                     arcname=f'models/{len(self.profile)}.onnx')
 
                     if len(self.profile) == 0 and self.warmup:  # warmup done
                         if NNSMITH_FORK_OLD is None:
@@ -435,6 +482,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         break
         finally:  # cleanup
             os.system('rm ' + _TMP_ONNX_FILE_ + '*')
+        forkpool_execution.terminate()
         self.reporter.flush(self)
         try:
             print('Trying to store hitmap (if allowed)')
@@ -463,14 +511,31 @@ if __name__ == '__main__':
     parser.set_defaults(limnf=True)
     parser.add_argument('--no_limnf', dest='limnf', action='store_false',
                         help='Disable the limit on the number of floats')
+    parser.add_argument('--limnf', dest='limnf', action='store_true',
+                        help='Enable the limit on the number of floats')
     parser.add_argument('--use_cuda', action='store_true')
     parser.add_argument('--warmup', action='store_true')
+    parser.add_argument('-y', action='store_true', help='Yes to all')
+    parser.add_argument('--max_nodes', type=int)
+    parser.add_argument('--fix_nodes', type=int)
+    parser.add_argument('--flush_freq', type=int)
+    parser.add_argument('--record_model', action='store_true')
+    parser.add_argument('--no_run_backend', action='store_true')
     args = parser.parse_args()
+    assert int(args.fix_nodes is not None) + \
+        int(args.max_nodes is not None) <= 1, '--fix_nodes and --max_nodes cannot be specified together'
+    if args.fix_nodes is None and args.max_nodes is None:
+        args.fix_nodes = 10  # default behavior
 
     backends = None
     if args.backend == 'tvm':
         from nnsmith.backends.tvm_graph import TVMExecutor
         backends = {'tvm-opt': TVMExecutor(opt_level=4),
+                    'tvm-debug': TVMExecutor(opt_level=0)}
+        __COV_DRIVER__ = TVMExecutor.coverage_install()
+    elif args.backend == 'tvm-cuda':
+        from nnsmith.backends.tvm_graph import TVMExecutor
+        backends = {'tvm-opt': TVMExecutor(opt_level=4, target="cuda"),
                     'tvm-debug': TVMExecutor(opt_level=0)}
         __COV_DRIVER__ = TVMExecutor.coverage_install()
     elif args.backend == 'ort':
@@ -498,25 +563,30 @@ if __name__ == '__main__':
     if args.skip is not None:
         skip += ',' + args.skip
     auto_infer_in_dtypes()  # TODO: remove this someday
-    cache_file = f'config/fuzz_{list(backends.keys())[0]}_op_dtype.json'
+    if not args.backend.startswith('tvm'):
+        cache_file = f'config/fuzz_{list(backends.keys())[0]}_op_dtype.json'
 
-    def run():
-        rewrite_op_dtype(
-            ALL_OP_TYPES,
-            backend=list(backends.values())[0],
-            cache=cache_file,
-            print_failures=True)
-    if not Path(cache_file).exists():
-        Path('config').mkdir(exist_ok=True)
-        print('Warning: Op dtypes config file does not exist. '
-              'Inferring op dtype for the first run...')
-        p = Process(target=run)
-        p.start()
-        p.join()
-        assert p.exitcode == 0, 'Failed to infer op dtypes'
-    print('Reading cache config file:', cache_file)
-    run()
+        def run():
+            rewrite_op_dtype(
+                ALL_OP_TYPES,
+                backend=list(backends.values())[0],
+                cache=cache_file,
+                print_failures=True)
+        if not Path(cache_file).exists():
+            Path('config').mkdir(exist_ok=True)
+            print('Warning: Op dtypes config file does not exist. '
+                  'Inferring op dtype for the first run...')
+            p = Process(target=run)
+            p.start()
+            p.join()
+            assert p.exitcode == 0, 'Failed to infer op dtypes'
+        print('Reading cache config file:', cache_file)
+        run()
     config_skip_op(skip)
+    if args.no_run_backend:
+        backends = {'dummy': DummyExecutor()}
+    elif os.getenv('NNSMITH_FORK', _DEFAULT_FORK_METHOD) != 'pool':
+        print('Warning: NNSMITH_FORK is not set to "pool". "pool" is recommended to isolate z3 from the interference from backend execution.')
     fuzzing_loop = FuzzingLoop(
         root=args.root,
         backends=backends,
@@ -531,5 +601,10 @@ if __name__ == '__main__':
         limnf=args.limnf,
         use_cuda=args.use_cuda,
         warmup=args.warmup,
+        yes=args.y,
+        max_nodes=args.max_nodes,
+        fix_nodes=args.fix_nodes,
+        flush_freq=args.flush_freq,
+        record_model=args.record_model,
     )
     fuzzing_loop.fuzz()

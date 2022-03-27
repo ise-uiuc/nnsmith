@@ -32,13 +32,19 @@ from nnsmith.error import SanityCheck, ConstraintCheck
 ARITH_MAX_WIDTH: int = 64
 _INFERRED = False
 _DEV = torch.device("cpu")
-FLOPS_LIM = os.getenv("NNSMITH_FLOPS_LIM", None)
-if FLOPS_LIM == 'on':  # use predefined value
-    FLOPS_LIM = 2**22
-elif FLOPS_LIM is None:
-    pass
+FLOPS_LIM = os.getenv("NNSMITH_FLOPS_LIM", 'auto')
+if FLOPS_LIM == 'auto':  # use predefined value
+    FLOPS_LIM = 2**30
+elif FLOPS_LIM == 'off':
+    FLOPS_LIM = None
 else:
     FLOPS_LIM = float(FLOPS_LIM)
+
+# control wheter to model FLOPS in z3 too. If not, we will check it after model is concretized.
+Z3_CONS_FLOPS = os.getenv("NNSMITH_Z3_CONS_FLOPS", 'on')
+assert Z3_CONS_FLOPS in [
+    'on', 'off'], "NNSMITH_Z3_CONS_FLOPS must be either 'on' or 'off'"
+Z3_CONS_FLOPS = Z3_CONS_FLOPS == 'on'
 
 
 def _op_set_use_cuda(use_cuda):
@@ -190,6 +196,8 @@ def nnsmith_div(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3
     left, right = align_bvs(left, right)
     if isinstance(left, z3.BitVecRef) or isinstance(right, z3.BitVecRef):
         return z3.UDiv(left, right)
+    if isinstance(left, int) and isinstance(right, int):
+        return left // right
     return left / right
 
 
@@ -198,6 +206,13 @@ def nnsmith_mod(left: Union[float, int, z3.ExprRef], right: Union[float, int, z3
     if isinstance(left, z3.BitVecRef) or isinstance(right, z3.BitVecRef):
         return z3.URem(left, right)
     return left % right
+
+
+def nnsmith_min(left, right):
+    if isinstance(left, int) and isinstance(right, int):
+        return min(left, right)
+    left, right = align_bvs(left, right)
+    return z3.If(nnsmith_le(left, right), left, right)
 
 
 class DType(Enum):
@@ -282,7 +297,7 @@ class ShapeVar:
             if isinstance(self.shape[i], z3.ExprRef) or isinstance(other.shape[i], z3.ExprRef):
                 ret.append(nnsmith_eq(self.shape[i], other.shape[i]))
             else:
-                ConstraintCheck.gt(self.shape[i], other.shape[i])
+                ConstraintCheck.eq(self.shape[i], other.shape[i])
         return ret
 
     def torch(self):
@@ -612,6 +627,12 @@ class ElementWiseUnaryOp(UnaryOpBase):
 #         return ret
 
 
+def bcast_rand_ndims(num_svars, target_ndims):
+    res = [random.randint(0, target_ndims) for _ in range(num_svars)]
+    res[random.randint(0, num_svars - 1)] = target_ndims
+    return res
+
+
 class BcastBinaryOp(BinaryOpBase):
     bcastable = True
     # by default, output dtype is the same as the first input dtype
@@ -631,11 +652,11 @@ class BcastBinaryOp(BinaryOpBase):
     def _requires(self, input_shapes):
         return broadcast_cons_binary(*(ish.shape for ish in input_shapes))
 
-    # FIXME: should be more flexible but need some constraints.
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        x, y = bcast_rand_ndims(2, out_shape_var[0].ndims)
         return [
-            (out_shape_var[0].ndims, out_shape_var[0].dtype),
-            (out_shape_var[0].ndims, out_shape_var[0].dtype),
+            (x, out_shape_var[0].dtype),
+            (y, out_shape_var[0].dtype),
         ]
 
 
@@ -645,13 +666,21 @@ class BcastBinaryOp1(BcastBinaryOp):  # +-*/ max min
     _bcast_out_dtypes = None
 
 
-class BcastBinaryOp2(BcastBinaryOp):  # > < =
+class Comparator(BcastBinaryOp):  # > < =
     in_dtypes = [(i, i) for i in DTYPE_ALL]
     out_dtypes = [(DType.bool,)]
     _bcast_out_dtypes = [DType.bool]
 
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        x, y = bcast_rand_ndims(2, out_shape_var[0].ndims)
+        in_dtypes = random.choice(self.in_dtypes)
+        return [
+            (x, in_dtypes[0]),
+            (y, in_dtypes[1]),
+        ]
 
-class BcastBinaryOp3(BcastBinaryOp):  # logical and or xor
+
+class Logical(BcastBinaryOp):  # logical and or xor
     in_dtypes = [(DType.bool, DType.bool)]
     out_dtypes = [(DType.bool,)]
     _bcast_out_dtypes = [DType.bool]
@@ -683,10 +712,11 @@ class Where(TernaryOpBase):
         return torch.where
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        x, y, z = bcast_rand_ndims(3, out_shape_var[0].ndims)
         return [
-            (out_shape_var[0].ndims, DType.bool),
-            (out_shape_var[0].ndims, out_shape_var[0].dtype),
-            (out_shape_var[0].ndims, out_shape_var[0].dtype),
+            (x, DType.bool),
+            (y, out_shape_var[0].dtype),
+            (z, out_shape_var[0].dtype),
         ]
 
 
@@ -699,13 +729,13 @@ Mul = type('Mul', (BcastBinaryOp1,), {'torch': lambda self: torch.mul})
 Max = type('Max', (BcastBinaryOp1,), {'torch': lambda self: torch.max})
 Min = type('Min', (BcastBinaryOp1,), {'torch': lambda self: torch.min})
 
-Equal = type('Equal', (BcastBinaryOp2,), {'torch': lambda self: torch.eq})
-Greater = type('Greater', (BcastBinaryOp2,), {'torch': lambda self: torch.gt})
-Less = type('Less', (BcastBinaryOp2,), {'torch': lambda self: torch.lt})
+Equal = type('Equal', (Comparator,), {'torch': lambda self: torch.eq})
+Greater = type('Greater', (Comparator,), {'torch': lambda self: torch.gt})
+Less = type('Less', (Comparator,), {'torch': lambda self: torch.lt})
 
-And = type('And', (BcastBinaryOp3,), {'torch': lambda self: torch.logical_and})
-Or = type('Or', (BcastBinaryOp3,), {'torch': lambda self: torch.logical_or})
-Xor = type('Xor', (BcastBinaryOp3,), {'torch': lambda self: torch.logical_xor})
+And = type('And', (Logical,), {'torch': lambda self: torch.logical_and})
+Or = type('Or', (Logical,), {'torch': lambda self: torch.logical_or})
+Xor = type('Xor', (Logical,), {'torch': lambda self: torch.logical_xor})
 
 # TODO: support exactly what onnx spec says (e.g., int support in the rhs)
 # lhs_dtypes = (DType.int32, DType.int64, DType.float32, DType.float64)
@@ -1139,6 +1169,7 @@ class Softmax(ElementWiseUnaryOp):
 
 
 class Pool2d(UnaryOpBase):
+    # TODO: distinguish stride_h and stride_w
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
@@ -1195,7 +1226,7 @@ class Pool2d(UnaryOpBase):
         cons.append(nnsmith_le(
             self.padding, nnsmith_div(self.kernel_w_size, 2)))
         # limit FLOPS
-        if FLOPS_LIM is not None:
+        if Z3_CONS_FLOPS:
             cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
         for c in cons:
             if isinstance(c, z3.ExprRef):
@@ -1203,6 +1234,11 @@ class Pool2d(UnaryOpBase):
             else:
                 ConstraintCheck.true(c)
         return ret
+
+    def flops(self, input_shapes):
+        return nnsmith_mul(nnsmith_mul(self.shape_fn(input_shapes)[0].nelement(),
+                                       self.kernel_h_size),
+                           self.kernel_w_size)
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
         return [(4, out_shape_var[0].dtype)]
@@ -1214,8 +1250,121 @@ class MaxPool2d(Pool2d):
 
 
 class AvgPool2d(Pool2d):
+    # TODO: model more
+    # self.extra_attrs['ceil_mode'] = random.choice([False, True])
+    # self.extra_attrs['count_include_pad'] = random.choice([False, True])
+    # self.extra_attrs['divisor_override'] = None  # ignore for now
+
     def torch(self) -> Callable[..., torch.Tensor]:
         return torch.nn.AvgPool2d(kernel_size=(self.kernel_h_size, self.kernel_w_size), stride=self.stride, padding=self.padding)
+
+
+class Slice(UnaryOpBase):
+    # pytorch slice always exported as a stack of single-dim slices, so only model sinlge-dim slice here
+    # pytorch slice only supports forward slicing, so only model forward slicing here
+    in_dtypes = [(i,) for i in DTYPE_ALL]
+    INT_MAX = 2**63 - 1
+    INT_MIN = -2**63
+
+    def __init__(self, start, end, step):
+        super().__init__()
+        self.inp_ranks = [int_from(1)]
+        self.out_ranks = [int_from(1)]
+        self.start = start
+        self.end = end
+        self.step = step
+
+    def __str__(self) -> str:
+        if 'axis' in self.extra_attrs:
+            tail = {'axis': self.extra_attrs['axis'],
+                    'region': self.extra_attrs['region']}
+        else:
+            tail = {}
+        if isinstance(self.start, int):
+            tail['start'] = self.start
+        if isinstance(self.end, int):
+            tail['end'] = self.end
+        if isinstance(self.step, int):
+            tail['step'] = self.step
+        return super().__str__() + ' ' + str(tail)
+
+    def _get_attrs(self, ndims):
+        ConstraintCheck.true(ndims > 0)
+        if 'axis' not in self.extra_attrs:
+            self.extra_attrs['ndims'] = ndims
+            self.extra_attrs['axis'] = random.randint(0, ndims - 1)
+            # specifying the region of the start and end pointer.
+            # start \in [0, dim_s-1] if region=='right' else [-dim_s, -1]
+            # end \in [-dim_s, -1] if region=='left' else [0, dim_s]
+            self.extra_attrs['region'] = random.choice(
+                ['left', 'mid', 'right'])
+            if random.uniform(0, 1) < 0.1:
+                # torch exporter does not support start=INT_MIN
+                # if random.uniform(0, 1) < 0.5:
+                #     # because pytorch only supports forward slicing,
+                #     # start cannot be INT_MAX, otherwise it slices empty tensor
+                #     self.start = self.INT_MIN
+                # else:
+                self.end = self.INT_MAX
+        return self.extra_attrs['axis']
+
+    def _requires(self, input_shapes: List[ShapeVar]):
+        inp = input_shapes[0]
+        axis = self._get_attrs(inp.ndims)
+        reg = self.extra_attrs['region']
+        cons = []
+        dim_s = inp.shape[axis]
+        # range for start
+        l, r = (0, nnsmith_sub(dim_s, 1))
+        # range for end
+        ll, rr = (0, dim_s)
+        assert not isinstance(self.start, int)
+        cons.append(z3.And(  # start \in [l, r]
+            nnsmith_ge(self.start, l),
+            nnsmith_le(self.start, r)))
+        if not isinstance(self.end, int):
+            cons.append(z3.And(  # end \in [ll, rr]
+                nnsmith_ge(self.end, ll),
+                nnsmith_le(self.end, rr)))
+            cons.append(nnsmith_gt(self.end, self.start))
+        else:
+            assert self.end == self.INT_MAX
+
+        cons.append(nnsmith_ge(self.step, 1))  # forward slicing only
+        cons.append(nnsmith_le(self.step, dim_s))
+        return cons
+
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        inp = input_shapes[0]
+        axis = self._get_attrs(inp.ndims)
+        s = list(inp.shape)
+        end = self.end
+        if self.end == Slice.INT_MAX:
+            end = inp.shape[axis]
+        s[axis] = nnsmith_div(
+            nnsmith_add(nnsmith_sub(end, self.start),
+                        nnsmith_sub(self.step, 1)),
+            self.step)
+        return [ShapeVar(s, input_shapes[0].dtype)]
+
+    def torch(self):
+        reg = self.extra_attrs['region']
+
+        def _func(x):
+            dim_s = x.shape[self.extra_attrs['axis']]
+            start, end = self.start, self.end
+            if reg in ['left', 'mid']:
+                start -= dim_s
+            # actual end would be 0, which is not really 'left'
+            if reg == 'left' and end < dim_s and end != Slice.INT_MAX:
+                end -= dim_s
+            s = tuple(slice(None, None) if i != self.extra_attrs['axis'] else slice(start, end, self.step)
+                      for i in range(self.extra_attrs['ndims']))
+            return x[s]
+        return _func
+
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        return [(out_shape_var[0].ndims, out_shape_var[0].dtype)]
 
 
 def _pad_num_var_param(rstart=1, max=None):
@@ -1478,7 +1627,7 @@ class NCHWConv2d(UnaryOpBase):
         # not too extream to avoid torch exporter issue
         cons.append(nnsmith_le(self.padding, 255))
         # limit FLOPS
-        if FLOPS_LIM is not None:
+        if Z3_CONS_FLOPS:
             cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
         for c in cons:
             if isinstance(c, z3.ExprRef):
@@ -1494,7 +1643,7 @@ class NCHWConv2d(UnaryOpBase):
     def flops(self, input_shapes):
         w = ShapeVar([self.out_channels, self.in_channels, self.kernel_h_size,
                      self.kernel_w_size], dtype=input_shapes[0].dtype)
-        return nnsmith_mul(self._shape_fn(input_shapes)[0].nelement(), w.nelement())
+        return nnsmith_mul(nnsmith_mul(nnsmith_mul(self._shape_fn(input_shapes)[0].nelement(), self.in_channels), self.kernel_h_size), self.kernel_w_size)
 
     def n_floats(self, input_shapes):
         padded_data = ShapeVar(
@@ -1510,6 +1659,22 @@ class NCHWConv2d(UnaryOpBase):
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
         return [(4, out_shape_var[0].dtype)]
+
+
+def random_group(n, k):
+    xs = sorted([random.randint(0, n - k) for _ in range(k - 1)])
+    xs = [0] + xs + [n - k]
+    ret = []
+    perm = list(range(n))
+    random.shuffle(perm)
+    for i in range(k):
+        st = xs[i] + i
+        ed = xs[i + 1] + i + 1
+        assert st < ed, (xs, st, ed)
+        assert ed <= n, (st, ed, n)
+        assert st >= 0, (st, ed, n)
+        ret.append([perm[j] for j in range(st, ed)])
+    return ret
 
 
 class ReshapeBase(UnaryOpBase):
@@ -1556,29 +1721,83 @@ class ReshapeBase(UnaryOpBase):
         return [shape_var]
 
     def _requires(self, input_shapes):
-        # TODO: How to handle -1 with input shapes?
-        # If your target shape is concrete, then your output shape's total pixels must be the same as the input shape's.
-        if -1 not in self.target_shape:
-            total_pixels = reduce(
-                lambda x, y: nnsmith_mul(x, y), self.target_shape, 1)
-            cons = [nnsmith_eq(total_pixels, reduce(
-                lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape, 1))]
-            for s in self.target_shape:
-                cons.append(nnsmith_ge(s, 1))
-            if os.getenv('NNSMITH_CONS_RESHAPE', 'on') != 'off':
-                # should not be too extreme!
-                __DIM_LIMIT__ = 4096
-                lim = __DIM_LIMIT__
-                for s in self.target_shape[::-1]:
-                    cons.append(nnsmith_le(s, lim))
-                    lim //= 2
-                    lim = max(lim, 1)
-            return cons
+        # if int(os.getenv('NNSMITH_GRES', 1)) >= 3:  # TODO(JK): remove this once stablized
+        #     return []
+        # # TODO: How to handle -1 with input shapes?
+        # # If your target shape is concrete, then your output shape's total pixels must be the same as the input shape's.
+        # if -1 not in self.target_shape:
+        #     total_pixels = reduce(
+        #         lambda x, y: nnsmith_mul(x, y), self.target_shape, 1)
+        #     cons = [nnsmith_eq(total_pixels, reduce(
+        #         lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape, 1))]
+        #     if os.getenv('NNSMITH_CONS_RESHAPE', 'on') != 'off':
+        #         # should not be too extreme!
+        #         __DIM_LIMIT__ = 4096
+        #         lim = __DIM_LIMIT__
+        #         for s in self.target_shape[::-1]:
+        #             cons.append(nnsmith_le(s, lim))
+        #             lim //= 2
+        #             lim = max(lim, 1)
+        #     return cons
+        # else:
+        #     # If you use auto mode (specifying -1 for some dimensions), then the total number of input pixels must be exactly divisible by that of the output shape.
+        #     minimul_pixels = reduce(
+        #         lambda x, y: nnsmith_mul(x, y), [v for v in self.target_shape if v != -1], 1)
+        #     return [nnsmith_eq(nnsmith_mod(reduce(lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape, 1), minimul_pixels), 0)]
+
+        ret = []
+
+        inp = input_shapes[0]
+        src_len, dst_len = inp.ndims, len(self.target_shape)
+        if src_len == 0:
+            src_len = 1  # special handling for scalar
+        if dst_len == 0:
+            dst_len = 1  # special handling for scalar
+        gres_config = os.getenv('NNSMITH_GRES', '4')
+        if gres_config == '5':
+            ng = 1
+        elif gres_config == '3':
+            ng = min(src_len, dst_len)
+        elif gres_config == '4':
+            ub = min(src_len, dst_len)
+            ng = random.choices(range(1, ub + 1), k=1,
+                                weights=[2**i for i in range(ub)])[0]
         else:
-            # If you use auto mode (specifying -1 for some dimensions), then the total number of input pixels must be exactly divisible by that of the output shape.
-            minimul_pixels = reduce(
-                lambda x, y: nnsmith_mul(x, y), [v for v in self.target_shape if v != -1], 1)
-            return [nnsmith_eq(nnsmith_mod(reduce(lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape, 1), minimul_pixels), 0)]
+            raise ValueError(
+                f'NNSMITH_GRES={gres_config} is not recognized')
+        src_group = random_group(src_len, ng)
+        dst_group = random_group(dst_len, ng)
+        self.ng = ng
+        self.src_group = src_group
+        self.dst_group = dst_group
+        assert len(src_group) == len(dst_group) == ng, (src_group, dst_group)
+
+        # group constraints
+        src_vars = inp.shape
+        dst_vars = self.target_shape
+        if len(src_vars) == 0:
+            src_vars = [1]  # special handling for scalar
+        if len(dst_vars) == 0:
+            dst_vars = [1]  # special handling for scalar
+        cons_group = []
+        for gid in range(ng):
+            src_idx = src_group[gid]
+            dst_idx = dst_group[gid]
+            src_prod = reduce(nnsmith_mul, [src_vars[i] for i in src_idx], 1)
+            dst_prod = reduce(nnsmith_mul, [dst_vars[i] for i in dst_idx], 1)
+            cons_group.append(nnsmith_eq(src_prod, dst_prod))
+
+        ret.extend(cons_group)
+        if os.getenv('NNSMITH_CONS_RESHAPE', 'off') != 'off':
+            # should not be too extreme!
+            __DIM_LIMIT__ = 4096
+            lim = __DIM_LIMIT__
+            for s in self.target_shape[::-1]:
+                ret.append(nnsmith_le(s, lim))
+                lim //= 2
+                lim = max(lim, 1)
+        assert -1 not in self.target_shape
+        return ret
 
     def torch(self):
         return lambda x: x.reshape(*self.target_shape)
@@ -1711,7 +1930,7 @@ class ReduceBase(UnaryOpBase, ABC):
 
     def __init__(self):
         super().__init__()
-        self.inp_ranks = [int_from(1)] # TVM bug ~ crash on scalar.min()
+        self.inp_ranks = [int_from(1)]  # TVM bug ~ crash on scalar.min()
         self.out_ranks = [int_range(0, __MAX_RANK__ - 1)]
 
     def __str__(self) -> str:
@@ -1848,9 +2067,12 @@ class Linear(UnaryOpBase):
         self.out_ranks = [int_from(1)]
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        assert len(input_shapes) == 1, "Linear only takes one input, but got {}".format(
+            len(input_shapes))
         return [ShapeVar(shape=[*input_shapes[0].shape[:-1], self.ofeat], dtype=DType.float32)]
 
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+        ConstraintCheck.true(input_shapes[0].ndims >= 1)
         return [
             nnsmith_ge(self.ifeat, 1),
             nnsmith_ge(self.ofeat, 1),
@@ -2048,7 +2270,7 @@ class Gemm(TernaryOpBase):
         mat1, mat2 = input_shapes[1], input_shapes[2]
         cons.append(mat1.shape[1] == mat2.shape[0])
         self._set_or_get_extra_attrs(input_shapes[0].dtype.value)
-        if FLOPS_LIM is not None:
+        if Z3_CONS_FLOPS:
             cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
         return cons
 
@@ -2065,11 +2287,11 @@ class Gemm(TernaryOpBase):
         return mat1.shape[0] * mat1.shape[1] * mat2.shape[1]
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
-        dtype = out_shape_var[0].dtype
         return [
-            (-1, dtype),
-            (2, dtype),
-            (2, dtype)]
+            (random.randint(0, 2), out_shape_var[0].dtype),
+            (2, out_shape_var[0].dtype),
+            (2, out_shape_var[0].dtype)
+        ]
 
 
 def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
@@ -2106,11 +2328,10 @@ def _glob_nonleaf_op_classes() -> List[Type[AbsOpBase]]:
 ALL_NON_LEAF_OP_TYPES = _glob_nonleaf_op_classes()
 ALL_OP_TYPES = _glob_leaf_op_classes()
 ALL_OP_STR2TYPE = {c.__name__: c for c in ALL_OP_TYPES}
-EXPANDED_OP_V0 = [Constant, Cast]
-EXPANDED_OP_V1 = [Concat, Constant, Expand, Reshape, ArgMax,
-                  ArgMin, ReduceMax, ReduceMin, ReduceMean, Squeeze,
-                  ReduceSum, TrigonometricOp]
-EXPANDED_OP = EXPANDED_OP_V1  # points to latest version
+EXPANDED_OP_V0 = [Cast, Expand, TrigonometricOp,
+                  Comparator, Logical, InterpBase]
+# may also consider Concat, BcastBinaryOp1
+EXPANDED_OP = EXPANDED_OP_V0  # points to latest version
 
 
 def config_skip_op(skip_config):
@@ -2129,6 +2350,7 @@ def config_skip_op(skip_config):
             'LegacyConstant*',
         ],
         'tvm': [],
+        'tvm-cuda': [],
         'ort': [],
         'xla': [],
         'tch': [],
@@ -2214,7 +2436,7 @@ def auto_infer_in_dtypes(verbose=False):
             print('infered result:', valid_combs)
         if op_t.in_dtypes is not None:
             # we disable type promotion for bcast binary ops so the difference is fine
-            if verbose and valid_combs != op_t.in_dtypes and not issubclass(op_t, (BcastBinaryOp1, BcastBinaryOp2, BcastBinaryOp3)):
+            if verbose and valid_combs != op_t.in_dtypes and not issubclass(op_t, (BcastBinaryOp1, Comparator, Logical)):
                 warnings.warn('Inferred result for `{}` different from given one.\nInferred={}\n, given={}'.format(
                     op_t.__name__, valid_combs, op_t.in_dtypes))
         else:
@@ -2229,6 +2451,14 @@ if __name__ == '__main__':
     assert Reshape in ALL_OP_TYPES
     auto_infer_in_dtypes()
 
+    # Reshape from scalar
+    lhs = ShapeVar([], DType.float32)
+    s = z3.Solver()
+    op = Reshape(1)
+    rhs = op.shape_fn([lhs])
+    assert all(rhs[0].eq(ShapeVar([1], DType.float32))), (lhs, rhs)
+    s.add(*op.requires([lhs]))
+    assert s.check() == z3.sat
     # Reduce rank 0
     abs_op = Squeeze()
     scalar = ShapeVar.from_torch(torch.tensor(10))

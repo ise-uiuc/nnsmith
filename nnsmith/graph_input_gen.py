@@ -21,6 +21,11 @@ from nnsmith.backends import DiffTestBackend
 from nnsmith.error import SanityCheck
 from nnsmith.graph_gen import SymbolNet, random_model_gen
 from nnsmith.export import torch2onnx
+import util
+
+# pool should be better when backends are also running.
+# Using fork for consistency with previous setting.
+_DEFAULT_FORK_METHOD = 'fork'
 
 
 class ModelGenSubProcesssError(Exception):
@@ -99,7 +104,7 @@ def subprocess_call(gen_method, seed, max_nodes, max_gen_millisec, inp_gen, outp
 
 
 # @safe_wrapper
-def forked_execution(
+def _forked_execution(
         gen_method, output_path, seed=None, max_nodes=10, max_gen_millisec=2000, save_torch=False, inp_gen='random',
         use_bitvec=False, summaries=None, merge_op_v=None, limnf=True, use_cuda=False):
     if seed is None:
@@ -119,7 +124,9 @@ def forked_execution(
         ipc_dict['edges'] = set()
         ipc_dict['profile'] = manager.dict()
         nnsmith_fork = os.environ.get(
-            'NNSMITH_FORK', 'fork')  # specify the fork method.
+            'NNSMITH_FORK', _DEFAULT_FORK_METHOD)  # specify the fork method.
+        if nnsmith_fork == 'pool':
+            nnsmith_fork = 'fork'
         if nnsmith_fork == 'forkserver':
             # TODO(JK): integrate the initializations (skip op, infer type, etc.) and rich panel into forkserver
             warnings.warn(
@@ -167,6 +174,16 @@ def forked_execution(
         del ipc_dict['state']
 
         return ipc_dict['sat_inputs'], ipc_dict['edges'], ipc_dict['seed'], dict(ipc_dict['profile'])
+
+
+forkpool_execution = util.forkpool_execution(_forked_execution)
+
+
+def forked_execution(*args, **kwargs):
+    nnsmith_fork = os.environ.get(
+        'NNSMITH_FORK', _DEFAULT_FORK_METHOD)  # specify the fork method.
+
+    return _forked_execution(*args, **kwargs) if nnsmith_fork != 'pool' else forkpool_execution(*args, **kwargs)
 
 
 # TODO(from Jiawei @Jinkun): stop using this implementation.
