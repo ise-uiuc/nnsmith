@@ -1,6 +1,7 @@
 """Just to figure out operators types and connections.
 """
 
+from collections import Counter
 import os
 from multiprocessing import Pool, cpu_count
 from typing import Dict, Set
@@ -13,7 +14,7 @@ import pandas as pd
 from tvm import relay
 
 
-def relay_op_cluster(mod, ignore_arg=False, verbose=False):
+def relay_op_cluster(mod, ignore_arg=False, verbose=False, use_counter=False):
     mod = relay.transform.InferType()(mod)
     op2type = {}
 
@@ -49,19 +50,26 @@ def relay_op_cluster(mod, ignore_arg=False, verbose=False):
 
             hash_str = f'{arg_type_str}-{attr_str}'
             if verbose:
-                print(f'[DENIG] {statement=}')
-                print(f'[DEBUG] {op_str=}')
-                print(f'[DENIG] {arg_type_str=}')
-                print(f'[DEBUG] {attr_str=}')
-                print(f'[DEBUG] {hash_str=}')
-            op2type.setdefault(op_str, set()).add(hash_str)
+                print(f'[DENIG] statement={statement}')
+                print(f'[DEBUG] op_str={op_str}')
+                print(f'[DENIG] arg_type_str={arg_type_str}')
+                print(f'[DEBUG] attr_str={attr_str}')
+                print(f'[DEBUG] hash_str={hash_str}')
+            if use_counter:
+                op2type.setdefault(op_str+'_inp_attr', Counter()).update({hash_str: 1})
+                op2type.setdefault(op_str+'_inp', Counter()).update({arg_type_str: 1})
+                op2type.setdefault(op_str+'_attr', Counter()).update({attr_str: 1})
+            else:
+                op2type.setdefault(op_str+'_inp_attr', set()).update({hash_str: 1})
+                op2type.setdefault(op_str+'_inp', set()).update({arg_type_str: 1})
+                op2type.setdefault(op_str+'_attr', set()).update({attr_str: 1})
 
     for func in mod.functions.values():
         relay.analysis.post_order_visit(func, lambda node: visit(node))
     return op2type
 
 
-def analyze_one_relay(model_path) -> Dict[Set[str]]:
+def analyze_one_relay(model_path, use_counter=False) -> Dict[str, Set[str]]:
     """Return <op name> -> tag (a string)
     """
     if 'FAILURE' in model_path:
