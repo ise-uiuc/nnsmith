@@ -13,6 +13,8 @@ import pandas as pd
 
 from tvm import relay
 
+from nnsmith.backends import DiffTestBackend
+
 
 def relay_op_cluster(mod, ignore_arg=False, verbose=False, use_counter=False):
     mod = relay.transform.InferType()(mod)
@@ -75,9 +77,11 @@ def analyze_one_relay(model_path, use_counter=False) -> Dict[str, Set[str]]:
     if 'FAILURE' in model_path:
         return {}
 
-    onnx_model = onnx.load(model_path)
+    onnx_model = DiffTestBackend.get_onnx_proto(model_path)
+    inp_spec, _ = DiffTestBackend.analyze_onnx_io(onnx_model)
+    shape_dict = {name: inp_spec[name].shape for name in inp_spec}
     mod, _ = relay.frontend.from_onnx(
-        onnx_model, freeze_params=True)
+        onnx_model, shape_dict, freeze_params=True)
 
     return relay_op_cluster(mod)
 
