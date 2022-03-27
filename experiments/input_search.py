@@ -55,7 +55,7 @@ if __name__ == '__main__':
         'grad-succ': [],
     }
 
-    for _ in tqdm(range(args.n_model)):
+    def mknet():
         model_seed = random.getrandbits(32)
         gen, solution = random_model_gen(
             min_dims=args.min_dims, seed=model_seed, max_nodes=args.max_nodes, 
@@ -64,8 +64,16 @@ if __name__ == '__main__':
         net = SymbolNet(gen.abstract_graph, solution, verbose=args.verbose,
                         alive_shapes=gen.alive_shapes)
         net.eval()
+        return net, gen.num_op(), model_seed
 
-        results['n_nodes'].append(len(net.graph.nodes))
+    for _ in tqdm(range(args.n_model)):
+        while True:
+            net, num_op, model_seed = mknet()
+            # break # NOTE: uncomment this line to see how serious the issue is.
+            if net.n_vulnerable_op > 0:
+                break
+
+        results['n_nodes'].append(num_op)
         results['model_seed'].append(model_seed)
 
         init_tensor_samples = []

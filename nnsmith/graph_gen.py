@@ -55,6 +55,7 @@ class SymbolNet(nn.Module):
         self.instructions = []  # <Func, <input idx>, <output idx>>
         self.n_output = 0
         self.inp_id_cnt = 0
+        self.n_vulnerable_op = 0
 
         self.using_cuda = None # not sure
 
@@ -114,6 +115,9 @@ class SymbolNet(nn.Module):
                     self.mlist.append(cur_op)
                 self.instructions.append(
                     (cur_op, input_idx, output_idx, op, node_id))
+
+                if hasattr(op, 'torch_loss'):
+                    self.n_vulnerable_op += 1
             else:  # Should be input node
                 SanityCheck.true(type(op) is Input, 'type(op) should be Input')
                 SanityCheck.eq(len(output_idx), 1)
@@ -187,7 +191,7 @@ class SymbolNet(nn.Module):
             to_train.append(t)
         for t in self.parameters():
             to_train.append(t)
-        self.optimizer = torch.optim.Adam(to_train, lr=5e-2)
+        self.optimizer = torch.optim.Adam(to_train, lr=5e-1)
         self.training_reset()
 
     def _check_out_dtype(self, outputs, node_id, op):
@@ -335,8 +339,6 @@ class SymbolNet(nn.Module):
 
                 self.invalid_found_last |= any(invalid_mask)
                 if self.invalid_found_last and (self.use_gradient and not self.stop_updating_loss):
-                    print(
-                        f'Detected NaN or Inf in outputs ~ {op} ~ id {node_id}.')
                     if self.verbose:
                         for inp_i, inp in enumerate(input_tensors):
                             print(
@@ -345,10 +347,9 @@ class SymbolNet(nn.Module):
                     ConstraintCheck.true(hasattr(
                         op, 'torch_loss'), f'op={op} has no `torch_loss` but produces NaN or INF!')
                     vul_op_loss = op.torch_loss(*input_tensors)
+                    print(
+                        f'[NaN/Inf] in outputs ~ {op} ~ id {node_id} :: {vul_op_loss.min().data:.3f} ~ {vul_op_loss.max().data:.3f}')
 
-                    if self.verbose:
-                        print(
-                            f'vulnerable op loss :: {vul_op_loss.min().data:.5f} ~ {vul_op_loss.max().data:.5f}')
                     if self.loss is None:
                         self.loss = vul_op_loss.mean()
                     else:
