@@ -50,21 +50,18 @@ def relay_op_cluster(mod, ignore_arg=False, verbose=False, use_counter=False):
             else:
                 arg_type_str = str(node.type_args).replace(' ', '')
 
-            hash_str = f'{arg_type_str}-{attr_str}'
+            hash_str = f'{arg_type_str}@{attr_str}'
             if verbose:
                 print(f'[DENIG] statement={statement}')
                 print(f'[DEBUG] op_str={op_str}')
                 print(f'[DENIG] arg_type_str={arg_type_str}')
                 print(f'[DEBUG] attr_str={attr_str}')
                 print(f'[DEBUG] hash_str={hash_str}')
+
             if use_counter:
-                op2type.setdefault(op_str+'_inp_attr', Counter()).update({hash_str: 1})
-                op2type.setdefault(op_str+'_inp', Counter()).update({arg_type_str: 1})
-                op2type.setdefault(op_str+'_attr', Counter()).update({attr_str: 1})
+                op2type.setdefault(op_str, Counter()).update({hash_str: 1})
             else:
-                op2type.setdefault(op_str+'_inp_attr', set()).update({hash_str: 1})
-                op2type.setdefault(op_str+'_inp', set()).update({arg_type_str: 1})
-                op2type.setdefault(op_str+'_attr', set()).update({attr_str: 1})
+                op2type.setdefault(op_str, set()).update({hash_str: 1})
 
     for func in mod.functions.values():
         relay.analysis.post_order_visit(func, lambda node: visit(node))
