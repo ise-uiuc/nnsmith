@@ -3,9 +3,12 @@
 
 from collections import Counter
 import os
-from multiprocessing import Pool, cpu_count
+from multiprocessing import cpu_count, Process
+from time import sleep, time
 import traceback
+from typing import List, Tuple
 
+from uuid import uuid4
 import pandas as pd
 import pickle
 import seaborn as sns
@@ -14,18 +17,31 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 from onnx_graph_analyzer import analyze_one_relay
 
+__TMP_FOLDER__ = 'param_analyzer_tmp'
 
-def analyze_one(model_path, verbose=False):
-    try:
-        return analyze_one_relay(model_path, use_counter=True)
-    except:
-        if verbose:
+
+def analyze_one(model_path, verbose=False) -> Tuple[str, Process]:
+    def execute(model_path, target_path):
+        try:
+            res = analyze_one_relay(model_path, use_counter=True)
+            if not os.path.exists(__TMP_FOLDER__):
+                os.makedirs(__TMP_FOLDER__)
+            with open(target_path, 'wb') as f:
+                pickle.dump(res, f)
+            return target_path
+        except:
             print('-------------> Skip model', model_path, 'due to exception:')
-            traceback.print_exc()
-        return None
+            if verbose:
+                traceback.print_exc()
+            return None
+
+    target_path = os.path.join(__TMP_FOLDER__, f'{uuid4()}.pkl')
+    p = Process(target=execute, args=(model_path, target_path))
+    p.start()
+    return target_path, p
 
 
-def analyze_folders(folders, cache_dir=None, force=False, n_limit=None, resume=False, write_freq=1000):
+def analyze_folders(folders, cache_dir=None, force=False, n_limit=None, resume=False, write_freq=250):
     res = []
 
     def write_once(res):
@@ -36,7 +52,8 @@ def analyze_folders(folders, cache_dir=None, force=False, n_limit=None, resume=F
                 pickle.dump(res, fp)
 
     __CACHE_FILE__ = 'onnx_param_cache.pkl'
-    use_cache = os.path.exists(os.path.join(cache_dir, __CACHE_FILE__)) and cache_dir is not None
+    use_cache = os.path.exists(os.path.join(
+        cache_dir, __CACHE_FILE__)) and cache_dir is not None
     if resume:
         assert use_cache
     if use_cache and not force:
@@ -83,28 +100,58 @@ def analyze_folders(folders, cache_dir=None, force=False, n_limit=None, resume=F
                 first_hub_resume = True
         new_file_hub.extend(file_hubs[len(res):])
         file_hubs = new_file_hub
+        print(f'===> Resume from {len(file_hubs)} jobs.')
 
-    nexe = 0
+    def update_once(path):
+        if os.path.exists(path):
+            with open(path, 'rb') as fp:
+                new = pickle.load(fp)
+                for op_name, cnt in new.items():
+                    if op_name not in res[-1]['param_map']:
+                        res[-1]['param_map'][op_name] = Counter()
+                    res[-1]['param_map'][op_name].update(cnt)
+            os.remove(path)
+
     for files in file_hubs:
         if not first_hub_resume:
             res.append({
                 'nfiles': 0,
                 'param_map': {},
             })
-        with Pool(min(cpu_count(), len(files))) as p:
-            for new in tqdm(p.imap(analyze_one, files), total=len(files)):
-                # new -> Map[str -> Set(str)]
-                res[-1]['nfiles'] += 1
-                if new is None:
-                    continue
-                for op_name, cnt in new.items():
-                    if op_name not in res[-1]['param_map']:
-                        res[-1]['param_map'][op_name] = Counter()
-                    res[-1]['param_map'][op_name].update(cnt)
-                
-                nexe += 1
-                if nexe % write_freq == 0:
+
+        n_pararllel = min(cpu_count() + 4, len(files))
+        jobs: List[Tuple[str, Process]] = []
+
+        def try_pop(timeout=None):
+            if len(jobs) == 0:
+                return False
+            tar, p = jobs[0]
+            p.join(timeout=timeout)
+            if p.is_alive():
+                return False
+            if p.exitcode != 0:
+                print('-------------> Skip model', path,
+                      'due to crash | exit code', p.exitcode)
+            res[-1]['nfiles'] += 1
+            pbar.update()
+            update_once(tar)
+            jobs.pop(0)
+            return True
+
+        with tqdm(total=len(files)) as pbar:
+            for path in files:
+                if len(jobs) < n_pararllel:
+                    jobs.append(analyze_one(path, verbose=False))
+                else:
+                    try_pop()
+                    while try_pop(timeout=0.1):
+                        pass
+
+                if pbar.n % write_freq == 0:
                     write_once(res)
+
+            while try_pop():
+                pass
 
     write_once(res)
     return res
