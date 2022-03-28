@@ -13,6 +13,7 @@ from nnsmith.abstract.op import ALL_OP_TYPES, ALL_OP_STR2TYPE, AbsOpBase, DType,
 from nnsmith.backends import DiffTestBackend
 from nnsmith.input_gen import gen_one_input
 
+
 def _differentiable_test(model, available_idtypes, concrete_input_shapes, oranks, verbose=False):
     model.eval()
 
@@ -22,7 +23,7 @@ def _differentiable_test(model, available_idtypes, concrete_input_shapes, oranks
     for itypes in available_idtypes:
         assert len(itypes) == len(
             concrete_input_shapes), f'{len(itypes)} != {len(concrete_input_shapes)}'
-        
+
         torch_inputs = []
 
         for s, dt in zip(concrete_input_shapes, itypes):
@@ -31,7 +32,7 @@ def _differentiable_test(model, available_idtypes, concrete_input_shapes, oranks
                 torch_inputs.append(torch.nn.parameter.Parameter(data))
             else:
                 torch_inputs.append(data)
-        
+
         if os.getenv('USE_CUDA') == '1':
             torch_inputs = [i.cuda() for i in torch_inputs]
             model = model.cuda()
@@ -65,7 +66,7 @@ def _differentiable_test(model, available_idtypes, concrete_input_shapes, oranks
         if verbose:
             print(f'=====> [Success] {itypes}')
     success_odtypes = list(success_odtypes)
-    
+
     return success_idtypes, success_odtypes
 
 
@@ -116,10 +117,24 @@ def _inference_test(model, available_idtypes, concrete_input_shapes, oranks, ver
         if verbose:
             print(f'=====> [Success] {itypes}')
     success_odtypes = list(success_odtypes)
-    
+
     return success_idtypes, success_odtypes
 
-def rewrite_op_dtype(ops: List[AbsOpBase], diff=False, backend=None, verbose=False, cache=None):
+
+def reset_node_t(node_t, success_idtypes, success_odtypes, verbose=False):
+    if verbose:
+        diffi = set(node_t.in_dtypes) - set(success_idtypes)
+        diffo = set(node_t.out_dtypes) - set(success_odtypes)
+        if len(diffi) > 0:
+            print(f'=====> [Failure] {node_t.__name__}: idtypes: {diffi}')
+        if len(diffo) > 0:
+            print(f'=====> [Failure] {node_t.__name__}: odtypes: {diffo}')
+
+    node_t.in_dtypes = success_idtypes
+    node_t.out_dtypes = success_odtypes
+
+
+def rewrite_op_dtype(ops: List[AbsOpBase], diff=False, backend=None, verbose=False, cache=None, print_failures=False):
     ret_ops = []
 
     class TestNet(torch.nn.Module):
@@ -157,8 +172,8 @@ def rewrite_op_dtype(ops: List[AbsOpBase], diff=False, backend=None, verbose=Fal
 
         if reuse_cache:
             success_idtypes, success_odtypes = cache_dict[str(node_t)]
-            node_t.in_dtypes = success_idtypes
-            node_t.out_dtypes = success_odtypes
+            reset_node_t(node_t, success_idtypes, success_odtypes,
+                         verbose=verbose or print_failures)
             continue
 
         if verbose:
@@ -200,17 +215,20 @@ def rewrite_op_dtype(ops: List[AbsOpBase], diff=False, backend=None, verbose=Fal
             concrete_input_shapes.append(shape)
 
         model = TestNet(concrete_op)
-        
+
         if verbose:
             print(f'=====> [Testing] {node_t}')
 
         if diff:
-            success_idtypes, success_odtypes = _differentiable_test(model, available_idtypes, concrete_input_shapes, op.out_ranks, verbose)
+            success_idtypes, success_odtypes = _differentiable_test(
+                model, available_idtypes, concrete_input_shapes, op.out_ranks, verbose)
         else:
-            success_idtypes, success_odtypes = _inference_test(model, available_idtypes, concrete_input_shapes, op.out_ranks, verbose)
+            success_idtypes, success_odtypes = _inference_test(
+                model, backend, available_idtypes, concrete_input_shapes, op.out_ranks,
+                verbose, print_failures, node_t)
 
-        node_t.in_dtypes = success_idtypes
-        node_t.out_dtypes = success_odtypes
+        reset_node_t(node_t, success_idtypes, success_odtypes,
+                     verbose=verbose or print_failures)
 
         if len(success_idtypes) != 0 and len(success_odtypes) != 0:
             ret_ops.append(node_t)
@@ -225,9 +243,11 @@ def rewrite_op_dtype(ops: List[AbsOpBase], diff=False, backend=None, verbose=Fal
             pickle.dump(cache_dict, f)
 
     if reuse_cache:
-        ret_ops = [ALL_OP_STR2TYPE[op_t.split("'")[1].split('.')[-1]] for op_t in cache_dict.keys()]
+        ret_ops = [ALL_OP_STR2TYPE[op_t.split("'")[1].split(
+            '.')[-1]] for op_t in cache_dict.keys()]
 
     return ret_ops
+
 
 if __name__ == '__main__':
     import argparse
@@ -248,4 +268,5 @@ if __name__ == '__main__':
     from nnsmith.backends.ort_graph import ORTExecutor
     backend = ORTExecutor(opt_level=3)
 
-    rewrite_op_dtype(ALL_OP_TYPES, backend=backend, diff=args.diff, verbose=True, cache=args.cache)
+    rewrite_op_dtype(ALL_OP_TYPES, backend=backend,
+                     diff=args.diff, verbose=True, cache=args.cache)
