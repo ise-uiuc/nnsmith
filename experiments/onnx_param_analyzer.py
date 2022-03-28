@@ -4,18 +4,32 @@
 from collections import Counter
 import os
 from multiprocessing import cpu_count, Process
-from time import sleep, time
 import traceback
 from typing import List, Tuple
 
 from uuid import uuid4
+from attr import mutable
 import pandas as pd
 import pickle
-import seaborn as sns
 
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+import numpy as np
+
 from onnx_graph_analyzer import analyze_one_relay
+
+SMALL_SIZE = 8
+MEDIUM_SIZE = 15
+BIGGER_SIZE = 18
+SUPER_BIG = 22
+
+plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
+plt.rc('axes', titlesize=MEDIUM_SIZE)     # fontsize of the axes title
+plt.rc('axes', labelsize=SUPER_BIG)    # fontsize of the x and y labels
+plt.rc('xtick', labelsize=MEDIUM_SIZE)    # fontsize of the tick labels
+plt.rc('ytick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
+plt.rc('legend', fontsize=SUPER_BIG)    # legend fontsize
+plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
 __TMP_FOLDER__ = 'param_analyzer_tmp'
 
@@ -118,6 +132,8 @@ def analyze_folders(folders, cache_dir=None, force=False, n_limit=None, resume=F
                 'nfiles': 0,
                 'param_map': {},
             })
+        else:
+            first_hub_resume = False
 
         n_pararllel = min(cpu_count() + 4, len(files))
         jobs: List[Tuple[str, Process]] = []
@@ -184,6 +200,60 @@ if __name__ == '__main__':
     results = analyze_folders(
         args.folders, cache_dir=args.output, force=args.force, n_limit=args.nlim, resume=args.resume)
 
-    for tag, single_res in zip(args.tags, results):
+    mutual_keys = set.intersection(*[set(r['param_map'].keys()) for r in results])
+
+    mutual_keys = set([k for k in mutual_keys if 'dyn.' not in k])
+
+    same_keys = []
+    for k in mutual_keys: # Don't plot if the item num is the same (meaningless to compare)
+        if len(set([len(r['param_map'][k]) for r in results])) == 1:
+            same_keys.append(k)
+    
+    mutual_keys -= set(same_keys)
+
+    mutual_keys = sorted(list(mutual_keys))
+
+    col_width = 3
+    bar_width = (col_width * 0.5) / len(results)
+    base_x = np.arange(len(mutual_keys))
+
+    vals = []
+    for single_res in results:
         param_map = single_res['param_map']
-        pass
+        v = []
+        for k in mutual_keys:
+            v.append(len(param_map[k]))
+        vals.append(v)
+
+    vals = np.array(vals)
+
+    legends = []
+    HATCHES = ['*', '-', 'X', '*', '|', '-', '.', '/', 'O', 'o', 'x', '\\']
+    COLORS = ['blue', 'orange']
+
+    fig, ax = plt.subplots(
+        1, 1, constrained_layout=True, figsize=(16, 10))
+
+    print(mutual_keys)
+
+    for idx, (tag, single_res) in enumerate(zip(args.tags, results)):
+        legends.append(tag)
+        param_map = single_res['param_map']
+        print(single_res['nfiles'])
+
+        pv = vals[idx] / np.min(vals, axis=0)
+
+        x_pos = base_x # - 0.5 * col_width + (idx + 0.5) * bar_width
+        ax.bar(x_pos, pv,
+               width=bar_width, label=tag, yerr=None, color=COLORS[idx], align='center', hatch=HATCHES[idx], alpha=0.35)
+
+    plt.grid(alpha=0.3)
+    plt.legend(legends)
+    # plt.legend(legends, loc='upper center', bbox_to_anchor=(0.5, 1.1),
+    #            fancybox=True, shadow=True, ncol=5)
+    plt.xticks(base_x, [k.split('.')[-1] for k in mutual_keys], rotation=90)
+    # plt.xlabel('# Operators in Models w/ Vulnerable Op.', fontweight='bold')
+    plt.ylabel('# Unique Parameter and Input Types per Op.', fontweight='bold')
+
+    plt.savefig(os.path.join(args.output, 'param_diff.pdf'))
+    plt.savefig(os.path.join(args.output, 'param_diff.png'))
