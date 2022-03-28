@@ -18,7 +18,7 @@ import numpy as np
 
 from onnx_graph_analyzer import analyze_one_relay
 
-SMALL_SIZE = 8
+SMALL_SIZE = 6
 MEDIUM_SIZE = 15
 BIGGER_SIZE = 18
 SUPER_BIG = 22
@@ -200,15 +200,28 @@ if __name__ == '__main__':
     results = analyze_folders(
         args.folders, cache_dir=args.output, force=args.force, n_limit=args.nlim, resume=args.resume)
 
-    mutual_keys = set.intersection(*[set(r['param_map'].keys()) for r in results])
+    mutual_keys = set.intersection(
+        *[set(r['param_map'].keys()) for r in results])
 
-    mutual_keys = set([k for k in mutual_keys if 'dyn.' not in k])
+    BLACK_LIST = ['dyn.', 'copy']
+    NUM_THRESH = 5
+
+    for k in list(mutual_keys):
+        for bk in BLACK_LIST:
+            if bk in k:
+                mutual_keys -= set([k])
 
     same_keys = []
-    for k in mutual_keys: # Don't plot if the item num is the same (meaningless to compare)
+    # Don't plot if the item num is the same (meaningless to compare)
+    for k in mutual_keys:
         if len(set([len(r['param_map'][k]) for r in results])) == 1:
             same_keys.append(k)
-    
+
+    for res in results:
+        for k in list(mutual_keys):
+            if len(res['param_map'][k]) < NUM_THRESH:
+                mutual_keys -= set([k])
+
     mutual_keys -= set(same_keys)
 
     mutual_keys = sorted(list(mutual_keys))
@@ -243,17 +256,24 @@ if __name__ == '__main__':
 
         pv = vals[idx] / np.min(vals, axis=0)
 
-        x_pos = base_x # - 0.5 * col_width + (idx + 0.5) * bar_width
+        x_pos = base_x  # - 0.5 * col_width + (idx + 0.5) * bar_width
         ax.bar(x_pos, pv,
                width=bar_width, label=tag, yerr=None, color=COLORS[idx], align='center', hatch=HATCHES[idx], alpha=0.35)
+
+    for x, v in zip(base_x, vals.max(axis=0) / vals.min(axis=0)):
+        ax.text(x - bar_width * 0.6, v + 0.15, f'{v:.1f}x',
+                fontweight='bold', fontsize=SMALL_SIZE)
 
     plt.grid(alpha=0.3)
     plt.legend(legends)
     # plt.legend(legends, loc='upper center', bbox_to_anchor=(0.5, 1.1),
     #            fancybox=True, shadow=True, ncol=5)
-    plt.xticks(base_x, [k.split('.')[-1] for k in mutual_keys], rotation=90)
+    plt.xticks(base_x, [k.split('.')[-1]
+               for k in mutual_keys], rotation=90)
+    plt.xlim([base_x[0] - 1, base_x[-1] + 1])
+    # plt.gcf().subplots_adjust(left=base_x[0] - 1, right=base_x[-1] + 1)
+    # fig.subplots_adjust(left=base_x[0] - 1, right=base_x[-1] + 1)
     # plt.xlabel('# Operators in Models w/ Vulnerable Op.', fontweight='bold')
     plt.ylabel('# Unique Parameter and Input Types per Op.', fontweight='bold')
-
     plt.savefig(os.path.join(args.output, 'param_diff.pdf'))
     plt.savefig(os.path.join(args.output, 'param_diff.png'))
