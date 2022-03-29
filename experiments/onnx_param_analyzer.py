@@ -6,9 +6,8 @@ import os
 from multiprocessing import cpu_count, Process
 import traceback
 from typing import List, Tuple
-
+import math
 from uuid import uuid4
-from attr import mutable
 import pandas as pd
 import pickle
 
@@ -18,7 +17,7 @@ import numpy as np
 
 from onnx_graph_analyzer import analyze_one_relay
 
-SMALL_SIZE = 6
+SMALL_SIZE = 12
 MEDIUM_SIZE = 15
 BIGGER_SIZE = 18
 SUPER_BIG = 22
@@ -203,7 +202,10 @@ if __name__ == '__main__':
     mutual_keys = set.intersection(
         *[set(r['param_map'].keys()) for r in results])
 
+    # dyn -> dynamic op not considered
+    # copy -> memory op not considered
     BLACK_LIST = ['dyn.', 'copy']
+    # You at least to have 5 instances otherwise too trivial to show.
     NUM_THRESH = 5
 
     for k in list(mutual_keys):
@@ -224,6 +226,39 @@ if __name__ == '__main__':
 
     mutual_keys -= set(same_keys)
 
+    # only show representative ops
+    #   merge redundancy;
+    #      -> param-free element wise ops
+    unary_pf_ew = ['abs', 'acos', 'cos', 'asin', 'sin', 'ceil', 'floor', 'log', 'logical_not',
+                   'atan', 'tan', 'erf', 'negative', 'nn.relu', 'round', 'sigmoid', 'sqrt']
+    bin_pf_ew = ['add', 'divide', 'equal', 'floor_mod', 'greater', 'multiply', 'subtract',
+                 'less', 'logical_and', 'logical_or', 'logical_xor', 'maximum', 'minimum', 'power']
+    simple_reduce_ops = ['sum', 'min', 'max', 'mean']
+    UEW_KEY = '$\\bf unary$ elem.-wise'
+    BEW_KEY = '$\\bf bin.$ elem.-wise'
+    REDUCE_KEY = 'simple $\\bf reduce$'
+    for res in results:
+        res['param_map'][UEW_KEY] = Counter()
+        for uk in unary_pf_ew:
+            if uk in res['param_map']:
+                res['param_map'][UEW_KEY] += res['param_map'][uk]
+        res['param_map'][BEW_KEY] = Counter()
+        for bk in bin_pf_ew:
+            if bk in res['param_map']:
+                res['param_map'][BEW_KEY] += res['param_map'][bk]
+        res['param_map'][REDUCE_KEY] = Counter()
+        for rk in simple_reduce_ops:
+            if rk in res['param_map']:
+                res['param_map'][REDUCE_KEY] += res['param_map'][rk]
+
+    mutual_keys -= set(unary_pf_ew)
+    mutual_keys -= set(bin_pf_ew)
+    mutual_keys -= set(simple_reduce_ops)
+
+    mutual_keys.add(UEW_KEY)
+    mutual_keys.add(BEW_KEY)
+    mutual_keys.add(REDUCE_KEY)
+
     mutual_keys = sorted(list(mutual_keys))
 
     col_width = 3
@@ -241,18 +276,21 @@ if __name__ == '__main__':
     vals = np.array(vals)
 
     legends = []
-    HATCHES = ['*', '-', 'X', '*', '|', '-', '.', '/', 'O', 'o', 'x', '\\']
+    HATCHES = ['x', '-', 'X', '*', '|', '-', '.', '/', 'O', 'o', 'x', '\\']
     COLORS = ['blue', 'orange']
 
     fig, ax = plt.subplots(
-        1, 1, constrained_layout=True, figsize=(16, 10))
+        1, 1, constrained_layout=True, figsize=(15, 8))
 
     print(mutual_keys)
 
     for idx, (tag, single_res) in enumerate(zip(args.tags, results)):
-        legends.append(tag)
         param_map = single_res['param_map']
-        print(single_res['nfiles'])
+        print(f"{single_res['nfiles']=}")
+        padding = int((10 - len(tag)) * 1.2)
+        blank = r' '
+        legends.append(
+            f'{tag + "".join([blank for _ in range(padding)])} (total: {vals[idx].sum()})')
 
         pv = vals[idx] / np.min(vals, axis=0)
 
@@ -266,14 +304,15 @@ if __name__ == '__main__':
 
     plt.grid(alpha=0.3)
     plt.legend(legends)
-    # plt.legend(legends, loc='upper center', bbox_to_anchor=(0.5, 1.1),
-    #            fancybox=True, shadow=True, ncol=5)
-    plt.xticks(base_x, [k.split('.')[-1]
-               for k in mutual_keys], rotation=90)
-    plt.xlim([base_x[0] - 1, base_x[-1] + 1])
+
+    xticks = []
+    for k in mutual_keys:
+        xticks.append(k if k.startswith('$') else k.split('.')[-1])
+    plt.xticks(base_x, xticks, rotation=45, ha='right', rotation_mode='anchor')
+    plt.xlim([base_x[0] - 0.5, base_x[-1] + 0.5])
     # plt.gcf().subplots_adjust(left=base_x[0] - 1, right=base_x[-1] + 1)
     # fig.subplots_adjust(left=base_x[0] - 1, right=base_x[-1] + 1)
     # plt.xlabel('# Operators in Models w/ Vulnerable Op.', fontweight='bold')
-    plt.ylabel('# Unique Parameter and Input Types per Op.', fontweight='bold')
+    plt.ylabel('# Unique Op. Instance', fontweight='bold')
     plt.savefig(os.path.join(args.output, 'param_diff.pdf'))
     plt.savefig(os.path.join(args.output, 'param_diff.png'))
