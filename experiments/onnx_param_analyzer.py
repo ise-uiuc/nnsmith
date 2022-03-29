@@ -6,7 +6,7 @@ import os
 from multiprocessing import cpu_count, Process
 import traceback
 from typing import List, Tuple
-import math
+
 from uuid import uuid4
 import pandas as pd
 import pickle
@@ -25,7 +25,7 @@ SUPER_BIG = 22
 plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
 plt.rc('axes', titlesize=MEDIUM_SIZE)     # fontsize of the axes title
 plt.rc('axes', labelsize=SUPER_BIG)    # fontsize of the x and y labels
-plt.rc('xtick', labelsize=MEDIUM_SIZE)    # fontsize of the tick labels
+plt.rc('xtick', labelsize=BIGGER_SIZE)    # fontsize of the tick labels
 plt.rc('ytick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
 plt.rc('legend', fontsize=SUPER_BIG)    # legend fontsize
 plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
@@ -308,7 +308,7 @@ if __name__ == '__main__':
     xticks = []
     for k in mutual_keys:
         xticks.append(k if k.startswith('$') else k.split('.')[-1])
-    plt.xticks(base_x, xticks, rotation=45, ha='right', rotation_mode='anchor')
+    plt.xticks(base_x, xticks, rotation=60, ha='right', rotation_mode='anchor')
     plt.xlim([base_x[0] - 0.5, base_x[-1] + 0.5])
     # plt.gcf().subplots_adjust(left=base_x[0] - 1, right=base_x[-1] + 1)
     # fig.subplots_adjust(left=base_x[0] - 1, right=base_x[-1] + 1)

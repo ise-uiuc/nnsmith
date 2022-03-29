@@ -19,6 +19,8 @@ plt.rc('ytick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
 plt.rc('legend', fontsize=MEDIUM_SIZE)    # legend fontsize
 plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
+MIN_FAC = 0.8
+
 
 class Ploter:
     def __init__(self, cov_lim=None, use_pdf=False, one_plot=False) -> None:
@@ -26,10 +28,10 @@ class Ploter:
         # cov / time, cov / iteration, iteration / time
         if not one_plot:
             fig, axs = plt.subplots(
-                1, 2, constrained_layout=True, figsize=(9, 5))
+                1, 2, constrained_layout=True, figsize=(10, 4.5))
         else:
             fig, axs = plt.subplots(
-                1, 1, constrained_layout=True, figsize=(5, 5.5))
+                1, 1, constrained_layout=True, figsize=(7.5, 6))
             axs = [axs]
         self.one_plot = one_plot
         self.fig = fig
@@ -91,8 +93,11 @@ class Ploter:
         cov_max = max(self.cov_maxes)
         cov_min = min(self.cov_maxes)
 
+        top_lim = cov_max + (cov_max - cov_min) * 0.2
+
         if cov_lim is not None:
-            self.axs[0].annotate(f"{int(cov_max)} / {int(cov_lim)} ~ $\\bf{{{cov_max / cov_lim * 100 :.1f}\%}}$", xy=(self.xspan, cov_max * 1.03), xycoords="data",
+            self.axs[0].annotate(f"{int(cov_max)} / {int(cov_lim)} ~ $\\bf{{{cov_max / cov_lim * 100 :.1f}\%}}$",
+                                 xy=(self.xspan, cov_max + (top_lim - cov_max) / 2), xycoords="data",
                                  va="center", ha="right", fontsize=MEDIUM_SIZE,
                                  bbox=dict(boxstyle="sawtooth", fc="w"))
         #     self.axs[0].axhline(y=cov_lim, color='r', linestyle='dashdot')
@@ -102,24 +107,31 @@ class Ploter:
             cov_type += ' '
 
         if self.cov_lim is not None:
-            self.axs[0].set_ylim(bottom=self.cov_lim)
+            self.axs[0].set_ylim(bottom=self.cov_lim,
+                                 top=top_lim)
             if not self.one_plot:
-                self.axs[1].set_ylim(bottom=self.cov_lim)
+                self.axs[1].set_ylim(bottom=self.cov_lim,
+                                     top=top_lim)
         else:
-            self.axs[0].set_ylim(bottom=cov_min * 0.85)
+            self.axs[0].set_ylim(bottom=cov_min * MIN_FAC,
+                                 top=top_lim)
             if not self.one_plot:
-                self.axs[1].set_ylim(bottom=cov_min * 0.85)
+                self.axs[1].set_ylim(bottom=cov_min * MIN_FAC,
+                                     top=top_lim)
 
         self.axs[0].set(
             xlabel='Time / Second',
             ylabel=f'# {cov_type}Coverage')
         self.axs[0].set_title('Coverage $\\bf{Time}$ Efficiency')
+        self.axs[0].grid(alpha=0.5)
 
         if not self.one_plot:
             self.axs[1].set(
-                ylabel=f'# {cov_type}Coverage',
+                # ylabel=f'# {cov_type}Coverage',
                 xlabel='# Iteration')
+            self.axs[1].set_yticklabels([])
             self.axs[1].set_title('Coverage $\\bf{Iteration}$ Efficiency')
+            self.axs[1].grid(alpha=0.5)
             plt.setp(self.axs[1].get_xticklabels(), rotation=30,
                      horizontalalignment='right')
 
@@ -326,8 +338,10 @@ if '__main__' == __name__:
     arith_filter = None
     if args.tvm:
         arith_filter = tvm_arith_filter
+        MIN_FAC = 0.9
     elif args.ort:
         arith_filter = None
+        MIN_FAC = 0.82
     else:
         print(f'[WARNING] No pass filter is used (use --tvm or --ort)')
 
