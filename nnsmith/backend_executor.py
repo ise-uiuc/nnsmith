@@ -168,5 +168,5 @@ if __name__ == '__main__':
         difftest.assert_allclose(
             outputs, outputs_oracle, args.backend, args.cmp_with)
         if input_gen.is_invalid(outputs_oracle):
-            print(f'[WARNING] Backend {args.comp_with} output is invalid')
+            print(f'[WARNING] Backend {args.cmp_with} output is invalid')
     print(f'Total time: {time.time() - st}')
