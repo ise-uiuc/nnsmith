@@ -70,7 +70,7 @@ def _differentiable_test(model, available_idtypes, concrete_input_shapes, oranks
     return success_idtypes, success_odtypes
 
 
-def _inference_test(model, available_idtypes, concrete_input_shapes, oranks, verbose=False):
+def _inference_test(model, backend, available_idtypes, concrete_input_shapes, oranks, verbose=False):
     success_idtypes = list()
     success_odtypes = set()
 
@@ -225,13 +225,15 @@ def rewrite_op_dtype(ops: List[AbsOpBase], diff=False, backend=None, verbose=Fal
         else:
             success_idtypes, success_odtypes = _inference_test(
                 model, backend, available_idtypes, concrete_input_shapes, op.out_ranks,
-                verbose, print_failures, node_t)
+                verbose)
 
         reset_node_t(node_t, success_idtypes, success_odtypes,
                      verbose=verbose or print_failures)
 
         if len(success_idtypes) != 0 and len(success_odtypes) != 0:
             ret_ops.append(node_t)
+        elif verbose or print_failures:
+            print('=====> [Failure] exclude op', node_t)
 
         if make_cache:
             cache_dict[str(node_t)] = (success_idtypes, success_odtypes)
