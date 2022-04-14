@@ -258,7 +258,7 @@ class SymbolNet(nn.Module):
         self.check_intermediate_numeric = last_check_intermediate_numeric
         return sat_inputs
 
-    def grad_input_gen(self, max_iter=10, init_tensors=None, margin=10, base='center', use_cuda=False) -> Optional[List[torch.Tensor]]:
+    def grad_input_gen(self, max_iter=1000, init_tensors=None, margin=10, base='center', use_cuda=False) -> Optional[List[torch.Tensor]]:
         if init_tensors is None:
             init_tensors = self.get_random_inps(
                 margin, base, use_cuda=use_cuda)
@@ -567,12 +567,12 @@ class SimpleGenerator:
         self.abstract_graph.nodes[shuffled_placeholder[0]
                                   ]['op'] = self.abstract_graph.nodes[shuffled_placeholder[0]]['op'].to_input()
         for holder_idx in shuffled_placeholder[1:]:
-            if random.randint(0, 1):
-                self.abstract_graph.nodes[holder_idx]['op'] = self.abstract_graph.nodes[holder_idx]['op'].to_const(
-                )
-            else:
-                self.abstract_graph.nodes[holder_idx]['op'] = self.abstract_graph.nodes[holder_idx]['op'].to_input(
-                )
+            # if random.randint(0, 1):
+            #     self.abstract_graph.nodes[holder_idx]['op'] = self.abstract_graph.nodes[holder_idx]['op'].to_const(
+            #     )
+            # else:
+            self.abstract_graph.nodes[holder_idx]['op'] = self.abstract_graph.nodes[holder_idx]['op'].to_input(
+            )
 
     def check_arith_ref(self, var):
         SanityCheck.true(isinstance(
@@ -1462,6 +1462,7 @@ if __name__ == '__main__':
         raise ValueError(f'Unknown input gen {args.input_gen}')
 
     ed_time = time.time()
+    print('self.invalid_found_last=', net.invalid_found_last)
     print('Time to generate inputs: {:.3f}s'.format(ed_time - input_st))
 
     stats = {

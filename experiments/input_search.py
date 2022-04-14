@@ -126,8 +126,7 @@ if __name__ == '__main__':
         for init_tensors in init_tensor_samples:
             try_times_grad += 1
             try:
-                sat_inputs = net.grad_input_gen(
-                    init_tensors=init_tensors, use_cuda=args.use_cuda)
+                sat_inputs = net.grad_input_gen(use_cuda=args.use_cuda)
             except RuntimeError as e:
                 if 'element 0 of tensors does not require grad and does not have a grad_fn' in str(e):
                     # means some op are not differentiable.
