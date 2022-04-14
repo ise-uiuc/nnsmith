@@ -8,6 +8,7 @@ import math
 import textwrap
 
 import networkx as nx
+from dtype_test import rewrite_op_dtype
 import torch
 from torch import nn
 import numpy as np
@@ -66,7 +67,7 @@ class SymbolNet(nn.Module):
         self.inp_id_cnt = 0
         self.n_vulnerable_op = 0
 
-        self.using_cuda = None # not sure
+        self.using_cuda = None  # not sure
 
         # keep track of layers and weights so that the tracing can work properly
         self.mlist = nn.ModuleList()
@@ -438,7 +439,8 @@ class SimpleGenerator:
         # <op idx>
         self.placeholders: List[int] = []
         # for all (including newly created tmp) placeholders
-        self.insert_init_ph_node(self.create_placeholder(len(min_dims), dtype=torch.float32 if init_fp else None))
+        self.insert_init_ph_node(self.create_placeholder(
+            len(min_dims), dtype=torch.float32 if init_fp else None))
         self.init_ph_alive = True
         self.forward_prob = 0.5 if forward_prob is None else forward_prob
 
@@ -1361,6 +1363,7 @@ def parse_args():
     parser.add_argument('--use_cuda', action='store_true')
     parser.add_argument('--no_export', action='store_true')
     parser.add_argument('--forward_prob', type=float)
+    parser.add_argument('--diff_can_overwrite', action='store_true')
     return parser.parse_args()
 
 
@@ -1392,6 +1395,14 @@ def random_model_gen(
 if __name__ == '__main__':
     args = parse_args()
 
+    gen_args = {}
+    if args.diff_can_overwrite:
+        __DIFF_CACHE__ = 'config/diff.pkl'
+        differentiable_ops = rewrite_op_dtype(
+            ALL_OP_TYPES, backend=None, diff=True, verbose=True, cache=__DIFF_CACHE__)
+        gen_args['candidates_overwrite'] = differentiable_ops
+        gen_args['init_fp'] = True
+
     strt_time = time.time()
 
     seed = args.seed
@@ -1406,7 +1417,7 @@ if __name__ == '__main__':
     strt_time = time.time()
     gen, solution = random_model_gen(min_dims=args.min_dims, seed=seed, viz_sbs=args.viz_sbs, max_nodes=args.max_nodes,
                                      use_bitvec=args.use_bitvec, timeout=args.timeout, verbose=args.verbose, mode=args.mode,
-                                     limnf=args.limnf, merge_op_v=args.merge_op_v, forward_prob=args.forward_prob)
+                                     limnf=args.limnf, merge_op_v=args.merge_op_v, forward_prob=args.forward_prob, **gen_args)
     print(
         f'{len(solution)} symbols and {len(gen.solver.assertions())} constraints.')
     print(

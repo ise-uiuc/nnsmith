@@ -14,6 +14,9 @@ from tqdm import tqdm
 import time
 import argparse
 import random
+import os
+from nnsmith.export import torch2onnx
+from nnsmith.util import mkdir
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -27,7 +30,12 @@ if __name__ == '__main__':
     parser.add_argument('--verbose', action='store_true')
     parser.add_argument('--output_path', type=str, default='output.onnx')
     parser.add_argument('--mode', type=str, default='random')
+    parser.add_argument('--save_model', type=str,
+                        help='save models to this path')
     args = parser.parse_args()
+
+    if args.save_model is not None:
+        mkdir(args.save_model)
 
     __DIFF_CACHE__ = 'config/diff.pkl'
     differentiable_ops = rewrite_op_dtype(
@@ -74,6 +82,9 @@ if __name__ == '__main__':
             # break # NOTE: uncomment this line to see how serious the issue is.
             if net.n_vulnerable_op > 0:
                 break
+
+        if args.save_model is not None:
+            torch2onnx(net, os.path.join(args.save_model, f'{_}.onnx'))
 
         results['n_nodes'].append(num_op)
         results['model_seed'].append(model_seed)
@@ -134,3 +145,6 @@ if __name__ == '__main__':
         results['grad-time'].append(time.time() - strt_time)
 
     pd.DataFrame(results).to_csv(exp_name, index=False)
+    if args.save_model is not None:
+        os.system(
+            f'cp {exp_name} {os.path.join(args.save_model, "model_info.csv")}')
