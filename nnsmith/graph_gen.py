@@ -8,7 +8,7 @@ import math
 import textwrap
 
 import networkx as nx
-from dtype_test import rewrite_op_dtype
+from nnsmith.dtype_test import rewrite_op_dtype
 import torch
 from torch import nn
 import numpy as np
