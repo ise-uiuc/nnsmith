@@ -258,7 +258,7 @@ class SymbolNet(nn.Module):
         self.check_intermediate_numeric = last_check_intermediate_numeric
         return sat_inputs
 
-    def grad_input_gen(self, max_iter=1000, init_tensors=None, margin=10, base='center', use_cuda=False) -> Optional[List[torch.Tensor]]:
+    def grad_input_gen(self, max_iter=10, init_tensors=None, margin=10, base='center', use_cuda=False) -> Optional[List[torch.Tensor]]:
         if init_tensors is None:
             init_tensors = self.get_random_inps(
                 margin, base, use_cuda=use_cuda)
