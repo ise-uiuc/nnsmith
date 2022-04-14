@@ -26,10 +26,12 @@ if __name__ == '__main__':
     parser.add_argument('--use_cuda', action='store_true')
     parser.add_argument('--verbose', action='store_true')
     parser.add_argument('--output_path', type=str, default='output.onnx')
+    parser.add_argument('--mode', type=str, default='random')
     args = parser.parse_args()
 
     __DIFF_CACHE__ = 'config/diff.pkl'
-    differentiable_ops = rewrite_op_dtype(ALL_OP_TYPES, backend=None, diff=True, verbose=True, cache=__DIFF_CACHE__)
+    differentiable_ops = rewrite_op_dtype(
+        ALL_OP_TYPES, backend=None, diff=True, verbose=True, cache=__DIFF_CACHE__)
     print(differentiable_ops)
 
     exp_seed = args.exp_seed
@@ -58,7 +60,7 @@ if __name__ == '__main__':
     def mknet():
         model_seed = random.getrandbits(32)
         gen, solution = random_model_gen(
-            min_dims=args.min_dims, seed=model_seed, max_nodes=args.max_nodes, 
+            mode=args.mode, min_dims=args.min_dims, seed=model_seed, max_nodes=args.max_nodes,
             timeout=args.timeout, candidates_overwrite=differentiable_ops, init_fp=True)
         gen.viz('debug.png')
         net = SymbolNet(gen.abstract_graph, solution, verbose=args.verbose,
