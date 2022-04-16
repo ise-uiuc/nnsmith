@@ -82,7 +82,7 @@ if __name__ == '__main__':
             # break # NOTE: uncomment this line to see how serious the issue is.
             if net.n_vulnerable_op > 0:
                 break
-
+        print('model_seed=', model_seed)
         if args.save_model is not None:
             torch2onnx(net, os.path.join(args.save_model, f'{_}.onnx'))
 
@@ -98,7 +98,8 @@ if __name__ == '__main__':
                                 * interval).to(dtype=ii.op.shape_var.dtype.value) for ii in net.input_info]
                 init_tensor_samples.append(init_tensors)
         else:
-            init_tensors = net.get_random_inps()
+            init_tensors = net.get_random_inps(
+                use_cuda=args.use_cuda)
             init_tensor_samples.append(init_tensors)
 
         # Test v3

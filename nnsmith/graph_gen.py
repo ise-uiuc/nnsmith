@@ -1399,7 +1399,7 @@ if __name__ == '__main__':
     if args.diff_can_overwrite:
         __DIFF_CACHE__ = 'config/diff.pkl'
         differentiable_ops = rewrite_op_dtype(
-            ALL_OP_TYPES, backend=None, diff=True, verbose=True, cache=__DIFF_CACHE__)
+            ALL_OP_TYPES, backend=None, diff=True, verbose=False, cache=__DIFF_CACHE__)
         gen_args['candidates_overwrite'] = differentiable_ops
         gen_args['init_fp'] = True
 
@@ -1444,12 +1444,25 @@ if __name__ == '__main__':
     if args.input_gen == 'v3' or args.input_gen == 'random':
         with torch.no_grad():
             net.eval()
-            sat_inputs = net.rand_input_gen(use_cuda=args.use_cuda)
+            sat_inputs = net.rand_input_gen(use_cuda=args.use_cuda, seed=seed)
             infer_succ = sat_inputs is not None
     elif args.input_gen == 'grad':
         infer_succ = None  # TODO: are we able to know this?
         try:
-            sat_inputs = net.grad_input_gen(use_cuda=args.use_cuda)
+            sat_inputs = net.grad_input_gen(use_cuda=args.use_cuda, seed=seed)
+        except RuntimeError as e:
+            if 'does not have a grad_fn' in str(e):
+                # means some op are not differentiable.
+                pass
+            else:
+                raise e
+    elif args.input_gen == 'is':  # For input search debugging
+        infer_succ = None  # TODO: are we able to know this?
+        try:
+            init_tensors = net.rand_input_gen(
+                use_cuda=args.use_cuda)
+            sat_inputs = net.grad_input_gen(
+                init_tensors=init_tensors, use_cuda=args.use_cuda)
         except RuntimeError as e:
             if 'does not have a grad_fn' in str(e):
                 # means some op are not differentiable.
