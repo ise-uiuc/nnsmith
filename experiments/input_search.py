@@ -17,6 +17,8 @@ import random
 import os
 from nnsmith.export import torch2onnx
 from nnsmith.util import mkdir
+import cloudpickle
+import networkx as nx
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -76,15 +78,13 @@ if __name__ == '__main__':
         net.eval()
         return net, gen.num_op(), model_seed
 
-    for _ in tqdm(range(args.n_model)):
+    for model_id in tqdm(range(args.n_model)):
         while True:
             net, num_op, model_seed = mknet()
             # break # NOTE: uncomment this line to see how serious the issue is.
             if net.n_vulnerable_op > 0:
                 break
         print('model_seed=', model_seed)
-        if args.save_model is not None:
-            torch2onnx(net, os.path.join(args.save_model, f'{_}.onnx'))
 
         results['n_nodes'].append(num_op)
         results['model_seed'].append(model_seed)
@@ -98,6 +98,10 @@ if __name__ == '__main__':
                                 * interval).to(dtype=ii.op.shape_var.dtype.value) for ii in net.input_info]
                 init_tensor_samples.append(init_tensors)
         else:
+            nseed = (model_seed + 1) % (2 ** 32)
+            random.seed(nseed)
+            np.random.seed(nseed)
+            torch.manual_seed(nseed)
             init_tensors = net.get_random_inps(
                 use_cuda=args.use_cuda)
             init_tensor_samples.append(init_tensors)
@@ -148,6 +152,14 @@ if __name__ == '__main__':
         results['grad-succ'].append(succ_grad)
         results['grad-try'].append(try_times_grad)
         results['grad-time'].append(time.time() - strt_time)
+
+        if args.save_model is not None:
+            torch2onnx(net, os.path.join(args.save_model, f'{model_id}.onnx'))
+            nx.drawing.nx_pydot.to_pydot(net.graph).write_png(os.path.join(
+                args.save_model, f'{model_id}-graph.png'))
+            net.to_picklable()
+            cloudpickle.dump(net, open(os.path.join(
+                args.save_model, f'{model_id}-net.pkl'), 'wb'), protocol=4)
 
     df = pd.DataFrame(results)
     df.to_csv(exp_name, index=False)
