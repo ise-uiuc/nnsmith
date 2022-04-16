@@ -92,9 +92,13 @@ if __name__ == '__main__':
         init_tensor_samples = []
         n_step = args.n_inp_sample
         interval = 1 / n_step
-        for v in np.linspace(-10, 10, n_step):
-            init_tensors = [(v + torch.rand(ii.op.shape_var.shape)
-                            * interval).to(dtype=ii.op.shape_var.dtype.value) for ii in net.input_info]
+        if n_step > 1:
+            for v in np.linspace(-10, 10, n_step):
+                init_tensors = [(v + torch.rand(ii.op.shape_var.shape)
+                                * interval).to(dtype=ii.op.shape_var.dtype.value) for ii in net.input_info]
+                init_tensor_samples.append(init_tensors)
+        else:
+            init_tensors = net.get_random_inps()
             init_tensor_samples.append(init_tensors)
 
         # Test v3
@@ -126,7 +130,8 @@ if __name__ == '__main__':
         for init_tensors in init_tensor_samples:
             try_times_grad += 1
             try:
-                sat_inputs = net.grad_input_gen(use_cuda=args.use_cuda)
+                sat_inputs = net.grad_input_gen(
+                    init_tensors=init_tensors, use_cuda=args.use_cuda)
             except RuntimeError as e:
                 if 'element 0 of tensors does not require grad and does not have a grad_fn' in str(e):
                     # means some op are not differentiable.
@@ -143,7 +148,9 @@ if __name__ == '__main__':
         results['grad-try'].append(try_times_grad)
         results['grad-time'].append(time.time() - strt_time)
 
-    pd.DataFrame(results).to_csv(exp_name, index=False)
+    df = pd.DataFrame(results)
+    df.to_csv(exp_name, index=False)
     if args.save_model is not None:
         os.system(
             f'cp {exp_name} {os.path.join(args.save_model, "model_info.csv")}')
+    print(df.mean())

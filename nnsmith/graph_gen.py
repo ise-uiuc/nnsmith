@@ -567,12 +567,12 @@ class SimpleGenerator:
         self.abstract_graph.nodes[shuffled_placeholder[0]
                                   ]['op'] = self.abstract_graph.nodes[shuffled_placeholder[0]]['op'].to_input()
         for holder_idx in shuffled_placeholder[1:]:
-            # if random.randint(0, 1):
-            #     self.abstract_graph.nodes[holder_idx]['op'] = self.abstract_graph.nodes[holder_idx]['op'].to_const(
-            #     )
-            # else:
-            self.abstract_graph.nodes[holder_idx]['op'] = self.abstract_graph.nodes[holder_idx]['op'].to_input(
-            )
+            if random.randint(0, 1) and os.getenv('NNSMITH_CONST', 'on') != 'off':
+                self.abstract_graph.nodes[holder_idx]['op'] = self.abstract_graph.nodes[holder_idx]['op'].to_const(
+                )
+            else:
+                self.abstract_graph.nodes[holder_idx]['op'] = self.abstract_graph.nodes[holder_idx]['op'].to_input(
+                )
 
     def check_arith_ref(self, var):
         SanityCheck.true(isinstance(
