@@ -523,6 +523,11 @@ class AbsOpBase(ABC):
     def __repr__(self) -> str:
         return self.__class__.__name__
 
+    def numeric_valid(self, outputs, inputs) -> bool:
+        with torch.no_grad():
+            return not any([torch.isnan(out).any() or torch.isinf(
+                out).any() for out in outputs])
+
 
 def concretize(op: AbsOpBase, model: z3.ModelRef) -> AbsOpBase:
     if isinstance(op, Constant) or isinstance(op, Input):
@@ -892,6 +897,7 @@ Div = type('Div', (BcastBinaryOp1,), {
             x.dtype) in DTYPE_INTS else None)})
 # 'torch_loss': lambda self, _, x: torch.where(x.abs() < 1e-3, x.abs(), torch.zeros_like(x))
 
+
 class Pow(BcastBinaryOp):
     in_dtypes = [(i, i) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -900,7 +906,7 @@ class Pow(BcastBinaryOp):
         return torch.pow
 
     def torch_loss(self, a, b):
-        return (a - 1).abs() + torch.where(b > 28., b.abs(), torch.zeros_like(b))
+        return torch.maximum(-a, torch.zeros_like(a)) + torch.where(b > 28., b.abs(), torch.zeros_like(b))
         # Another complicated proposal but not working:
         # See: https://en.cppreference.com/w/c/numeric/math/pow
         # Inf:
@@ -916,6 +922,10 @@ class Pow(BcastBinaryOp):
         #     torch.where(torch.isnan(res),
         #                 torch.where(a > 0, torch.zeros_like(a), a.abs()),
         #                 torch.zeros_like(a)))
+
+    def numeric_valid(self, outputs, inputs) -> bool:
+        with torch.no_grad():
+            return super().numeric_valid(outputs, inputs) and self.torch_loss(*inputs).mean() == 0
 
 
 class ReLU(ElementWiseUnaryOp):
