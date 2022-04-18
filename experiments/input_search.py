@@ -18,6 +18,7 @@ import os
 from nnsmith.export import torch2onnx
 from nnsmith.util import mkdir
 import cloudpickle
+import pickle
 import networkx as nx
 
 if __name__ == '__main__':
@@ -34,15 +35,15 @@ if __name__ == '__main__':
     parser.add_argument('--mode', type=str, default='random')
     parser.add_argument('--save_model', type=str,
                         help='save models to this path')
+    # for reproducibility
     parser.add_argument(
-        '--ref_seed', help='Use seeds from the specified dataframe (saved by this script)')
+        '--load_model', help='Use saved models from specified path')
     args = parser.parse_args()
 
     if args.save_model is not None:
         mkdir(args.save_model)
 
-    ref_seeds = pd.read_csv(args.ref_seed)['model_seed'].astype(int).values
-
+    ref_df = pd.read_csv(os.path.join(args.load_model, 'model_info.csv'))
     __DIFF_CACHE__ = 'config/diff.pkl'
     differentiable_ops = rewrite_op_dtype(
         ALL_OP_TYPES, backend=None, diff=True, verbose=True, cache=__DIFF_CACHE__)
@@ -85,8 +86,14 @@ if __name__ == '__main__':
 
     for model_id in tqdm(range(args.n_model)):
         while True:
-            model_seed = None if ref_seeds is None else ref_seeds[model_id]
-            net, num_op, model_seed = mknet(model_seed)
+            if ref_df is None:
+                net, num_op, model_seed = mknet(None)
+            else:
+                model_seed = ref_df['model_seed'][model_id]
+                net = pickle.load(
+                    open(os.path.join(args.load_model, f'{model_id}-net.pkl'), 'rb'))
+                net.use_gradient = False
+                num_op = ref_df['n_nodes'][model_id]
             # break # NOTE: uncomment this line to see how serious the issue is.
             if net.n_vulnerable_op > 0:
                 break
@@ -141,6 +148,9 @@ if __name__ == '__main__':
         for init_tensors in init_tensor_samples:
             try_times_grad += 1
             try:
+                random.seed(nseed)
+                np.random.seed(nseed)
+                torch.manual_seed(nseed)
                 sat_inputs = net.grad_input_gen(
                     init_tensors=init_tensors, use_cuda=args.use_cuda)
             except RuntimeError as e:
@@ -161,9 +171,10 @@ if __name__ == '__main__':
 
         if args.save_model is not None:
             torch2onnx(net, os.path.join(args.save_model, f'{model_id}.onnx'))
-            nx.drawing.nx_pydot.to_pydot(net.graph).write_png(os.path.join(
-                args.save_model, f'{model_id}-graph.png'))
-            net.to_picklable()
+            if hasattr(net, 'graph'):
+                nx.drawing.nx_pydot.to_pydot(net.graph).write_png(os.path.join(
+                    args.save_model, f'{model_id}-graph.png'))
+                net.to_picklable()
             cloudpickle.dump(net, open(os.path.join(
                 args.save_model, f'{model_id}-net.pkl'), 'wb'), protocol=4)
 
@@ -172,4 +183,6 @@ if __name__ == '__main__':
     if args.save_model is not None:
         os.system(
             f'cp {exp_name} {os.path.join(args.save_model, "model_info.csv")}')
+    with open(os.path.join(args.save_model, 'stats.log'), 'w') as f:
+        f.write(str(df.mean()) + '\n')
     print(df.mean())

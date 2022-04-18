@@ -48,7 +48,7 @@ assert Z3_CONS_FLOPS in [
     'on', 'off'], "NNSMITH_Z3_CONS_FLOPS must be either 'on' or 'off'"
 Z3_CONS_FLOPS = Z3_CONS_FLOPS == 'on'
 
-LOSS_VERSION = 'v2'
+LOSS_VERSION = os.getenv("NNSMITH_LOSS", 'v2')
 
 
 def _op_set_use_cuda(use_cuda):
@@ -935,11 +935,11 @@ class Pow(BcastBinaryOp):
 
     def torch_loss_v2(self, a, b):
         # a >= 0 && b*log(a) <= 20
-        return loss_ge(a, 0) + loss_le(b * torch.where(a <= 1e-40, torch.tensor(math.log(1e-40), dtype=a.dtype), torch.log(a)), 20)
-
-    def numeric_valid(self, outputs, inputs) -> bool:
-        with torch.no_grad():
-            return super().numeric_valid(outputs, inputs) and self.torch_loss(*inputs).max() <= 0
+        l0 = loss_ge(a, 0)
+        l1 = loss_le(b * torch.where(a <= 1e-40,
+                     torch.tensor(math.log(1e-40), dtype=a.dtype), torch.log(a)), 20)
+        # print('l0=', l0.max(), 'l1=', l1.max(), 'a^b=', torch.pow(a, b).max())
+        return l0 + l1
 
 
 class ReLU(ElementWiseUnaryOp):
