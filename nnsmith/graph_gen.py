@@ -314,6 +314,8 @@ class SymbolNet(nn.Module):
             if ii.input_name in kwargs:
                 xs[ii.op.idx] = kwargs[ii.input_name]
         assert all(x is not None for x in xs), xs
+        input_invaid = any(
+            [torch.isnan(x).any() or torch.isinf(x).any() for x in xs])
         local_ref_cnt = self.ref_cnt.copy()
         self.tensors = [None for _ in self.tensors]
         self.invalid_found_last = False
@@ -349,6 +351,9 @@ class SymbolNet(nn.Module):
                 self.invalid_found_last |= not op.numeric_valid(
                     outputs, input_tensors)
                 if self.invalid_found_last and (self.use_gradient and not self.stop_updating_loss):
+                    if input_invaid:
+                        print('[NaN/Inf] in inputs')
+                        return None
                     if self.verbose:
                         for inp_i, inp in enumerate(input_tensors):
                             print(
