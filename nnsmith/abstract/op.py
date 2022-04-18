@@ -936,9 +936,9 @@ class Pow(BcastBinaryOp):
     def torch_loss_v2(self, a, b):
         # a >= 0 && b*log(a) <= 20
         l0 = loss_ge(a, 0)
-        l1 = loss_le(b * torch.where(a <= 1e-40,
-                     torch.tensor(math.log(1e-40), dtype=a.dtype), torch.log(a)), 20)
-        # print('l0=', l0.max(), 'l1=', l1.max(), 'a^b=', torch.pow(a, b).max())
+        l1 = loss_le(
+            b * torch.log(torch.maximum(a, torch.tensor(1e-40, dtype=a.dtype))), 20)
+        # print(f'l0={l0.mean().item()} l1={l1.mean().item()} a^b={torch.pow(a, b).mean().item()} a={a.mean().item()} b={b.mean().item()} torch.log(a)={torch.log(a).mean().item()}')
         return l0 + l1
 
 
