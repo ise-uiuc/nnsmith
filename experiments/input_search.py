@@ -34,10 +34,14 @@ if __name__ == '__main__':
     parser.add_argument('--mode', type=str, default='random')
     parser.add_argument('--save_model', type=str,
                         help='save models to this path')
+    parser.add_argument(
+        '--ref_seed', help='Use seeds from the specified dataframe (saved by this script)')
     args = parser.parse_args()
 
     if args.save_model is not None:
         mkdir(args.save_model)
+
+    ref_seeds = pd.read_csv(args.ref_seed)['model_seed'].astype(int).values
 
     __DIFF_CACHE__ = 'config/diff.pkl'
     differentiable_ops = rewrite_op_dtype(
@@ -67,8 +71,9 @@ if __name__ == '__main__':
         'grad-succ': [],
     }
 
-    def mknet():
-        model_seed = random.getrandbits(32)
+    def mknet(model_seed):
+        if model_seed is None:
+            model_seed = random.getrandbits(32)
         gen, solution = random_model_gen(
             mode=args.mode, min_dims=args.min_dims, seed=model_seed, max_nodes=args.max_nodes,
             timeout=args.timeout, candidates_overwrite=differentiable_ops, init_fp=True)
@@ -80,7 +85,8 @@ if __name__ == '__main__':
 
     for model_id in tqdm(range(args.n_model)):
         while True:
-            net, num_op, model_seed = mknet()
+            model_seed = None if ref_seeds is None else ref_seeds[model_id]
+            net, num_op, model_seed = mknet(model_seed)
             # break # NOTE: uncomment this line to see how serious the issue is.
             if net.n_vulnerable_op > 0:
                 break

@@ -4,6 +4,7 @@ from enum import Enum
 import fnmatch
 from functools import reduce
 import functools
+import math
 import os
 from typing import List, Tuple, Union, Callable, Type
 from inspect import signature
@@ -16,6 +17,7 @@ import z3
 import torch
 
 from nnsmith.error import SanityCheck, ConstraintCheck
+from nnsmith.abstract.loss_func import *
 # Recommended resources: https://theory.stanford.edu/~nikolaj/programmingz3.html
 # Another plausible tool (Interval Analysis): https://simon-rohou.fr/research/tubex-lib/doc/toctree.html
 # Please follow the PyTorch API conventions: https://pytorch.org/docs/stable/nn.html
@@ -45,6 +47,8 @@ Z3_CONS_FLOPS = os.getenv("NNSMITH_Z3_CONS_FLOPS", 'on')
 assert Z3_CONS_FLOPS in [
     'on', 'off'], "NNSMITH_Z3_CONS_FLOPS must be either 'on' or 'off'"
 Z3_CONS_FLOPS = Z3_CONS_FLOPS == 'on'
+
+LOSS_VERSION = 'v2'
 
 
 def _op_set_use_cuda(use_cuda):
@@ -528,6 +532,13 @@ class AbsOpBase(ABC):
             return not any([torch.isnan(out).any() or torch.isinf(
                 out).any() for out in outputs])
 
+    def torch_loss(self, *args, **kwargs):
+        if LOSS_VERSION == 'v1':
+            return self.torch_loss_v1(*args, **kwargs)
+        if LOSS_VERSION == 'v2':
+            return self.torch_loss_v2(*args, **kwargs)
+        raise ValueError('Unknown loss version {}'.format(LOSS_VERSION))
+
 
 def concretize(op: AbsOpBase, model: z3.ModelRef) -> AbsOpBase:
     if isinstance(op, Constant) or isinstance(op, Input):
@@ -895,7 +906,6 @@ Div = type('Div', (BcastBinaryOp1,), {
     'torch': lambda self:
         lambda x, y: torch.div(x, y, rounding_mode='floor' if DType(
             x.dtype) in DTYPE_INTS else None)})
-# 'torch_loss': lambda self, _, x: torch.where(x.abs() < 1e-3, x.abs(), torch.zeros_like(x))
 
 
 class Pow(BcastBinaryOp):
@@ -905,7 +915,7 @@ class Pow(BcastBinaryOp):
     def torch(self):
         return torch.pow
 
-    def torch_loss(self, a, b):
+    def torch_loss_v1(self, a, b):
         return torch.maximum(-a, torch.zeros_like(a)) + torch.where(b > 28., b.abs(), torch.zeros_like(b))
         # Another complicated proposal but not working:
         # See: https://en.cppreference.com/w/c/numeric/math/pow
@@ -923,9 +933,13 @@ class Pow(BcastBinaryOp):
         #                 torch.where(a > 0, torch.zeros_like(a), a.abs()),
         #                 torch.zeros_like(a)))
 
+    def torch_loss_v2(self, a, b):
+        # a >= 0 && b*log(a) <= 20
+        return loss_ge(a, 0) + loss_le(b * torch.where(a <= 1e-40, torch.tensor(math.log(1e-40), dtype=a.dtype), torch.log(a)), 20)
+
     def numeric_valid(self, outputs, inputs) -> bool:
         with torch.no_grad():
-            return super().numeric_valid(outputs, inputs) and self.torch_loss(*inputs).mean() == 0
+            return super().numeric_valid(outputs, inputs) and self.torch_loss(*inputs).max() <= 0
 
 
 class ReLU(ElementWiseUnaryOp):
@@ -1035,8 +1049,11 @@ class Asin(TrigonometricOp):
     def torch(self):
         return torch.asin
 
-    def torch_loss(self, x):
+    def torch_loss_v1(self, x):
         return torch.where(x.abs() > 1, x.abs() - 1, torch.zeros_like(x))
+
+    def torch_loss_v2(self, x):
+        return loss_le(x.abs(), 1)
 
 
 class Acos(TrigonometricOp):
@@ -1049,8 +1066,11 @@ class Acos(TrigonometricOp):
     def torch(self):
         return torch.acos
 
-    def torch_loss(self, x):
+    def torch_loss_v1(self, x):
         return torch.where(x.abs() > 1, x.abs(), torch.zeros_like(x))
+
+    def torch_loss_v2(self, x):
+        return loss_le(x.abs(), 1)
 
 
 class Tan(TrigonometricOp):
@@ -1129,9 +1149,12 @@ class Sqrt(ElementWiseUnaryOp):
     def torch(self):
         return torch.sqrt
 
-    def torch_loss(self, x):
+    def torch_loss_v1(self, x):
         # return torch.max(torch.tensor(0.), x) - 0.
         return torch.where(x <= 0, 1. - x, torch.zeros_like(x))
+
+    def torch_loss_v2(self, x):
+        return loss_ge(x, 0)
 
 
 class Log2(ElementWiseUnaryOp):
@@ -1144,8 +1167,11 @@ class Log2(ElementWiseUnaryOp):
     def torch(self):
         return torch.log2
 
-    def torch_loss(self, x):
+    def torch_loss_v1(self, x):
         return torch.where(x <= 0, 1. - x, torch.zeros_like(x))
+
+    def torch_loss_v2(self, x):
+        return loss_ge(x, 1e-40)
 
 
 class Neg(ElementWiseUnaryOp):
