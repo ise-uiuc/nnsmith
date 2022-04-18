@@ -258,7 +258,7 @@ class SymbolNet(nn.Module):
         self.check_intermediate_numeric = last_check_intermediate_numeric
         return sat_inputs
 
-    def grad_input_gen(self, max_iter=100, init_tensors=None, margin=10, base='center', use_cuda=False) -> Optional[List[torch.Tensor]]:
+    def grad_input_gen(self, max_iter=int(os.getenv('NNSMITH_GRAD_ITER', 100)), init_tensors=None, margin=10, base='center', use_cuda=False) -> Optional[List[torch.Tensor]]:
         if init_tensors is None:
             init_tensors = self.get_random_inps(
                 margin, base, use_cuda=use_cuda)
@@ -353,6 +353,7 @@ class SymbolNet(nn.Module):
                 if self.invalid_found_last and (self.use_gradient and not self.stop_updating_loss):
                     if input_invaid:
                         print('[NaN/Inf] in inputs')
+                        print(xs)
                         return None
                     if self.verbose:
                         for inp_i, inp in enumerate(input_tensors):

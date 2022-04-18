@@ -1,12 +1,17 @@
 import torch
 
 
+def smoothed_relu(x):
+    # return torch.where(x < 0, torch.exp(x) - 1, x)
+    return torch.nn.LeakyReLU(0.1)(x)
+
+
 def loss_ge_zero(x):
-    return torch.nn.LeakyReLU(0.1)(-x)
+    return smoothed_relu(-x)
 
 
 def loss_le_zero(x):
-    return torch.nn.LeakyReLU(0.1)(x)
+    return smoothed_relu(x)
 
 
 loss_lt_zero = loss_le_zero
