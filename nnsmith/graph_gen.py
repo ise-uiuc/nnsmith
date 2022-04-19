@@ -626,7 +626,7 @@ class SimpleGenerator:
             if cres == z3.unsat:
                 print(f'Unsat core: {self.solver.unsat_core()}')
         if cres == z3.sat:
-            if timeout is None:
+            if timeout is not None:
                 self.solver.check(*assumptions)
             self.last_soln = self.solver.model()
         return cres
