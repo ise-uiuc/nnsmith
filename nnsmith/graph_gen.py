@@ -353,7 +353,6 @@ class SymbolNet(nn.Module):
                 if self.invalid_found_last and (self.use_gradient and not self.stop_updating_loss):
                     if input_invaid:
                         print('[NaN/Inf] in inputs')
-                        print(xs)
                         return None
                     if self.verbose:
                         for inp_i, inp in enumerate(input_tensors):
@@ -362,7 +361,7 @@ class SymbolNet(nn.Module):
 
                     ConstraintCheck.true(hasattr(
                         op, 'torch_loss'), f'op={op} has no `torch_loss` but produces NaN or INF!')
-                    try: # Support legacy models without Div implemented
+                    try:  # Support legacy models without Div implemented
                         vul_op_loss = op.torch_loss(*input_tensors)
                     except Exception as e:
                         traceback.print_exc()
@@ -1457,19 +1456,6 @@ if __name__ == '__main__':
         infer_succ = None  # TODO: are we able to know this?
         try:
             sat_inputs = net.grad_input_gen(use_cuda=args.use_cuda, seed=seed)
-        except RuntimeError as e:
-            if 'does not have a grad_fn' in str(e):
-                # means some op are not differentiable.
-                pass
-            else:
-                raise e
-    elif args.input_gen == 'is':  # For input search debugging
-        infer_succ = None  # TODO: are we able to know this?
-        try:
-            init_tensors = net.rand_input_gen(
-                use_cuda=args.use_cuda)
-            sat_inputs = net.grad_input_gen(
-                init_tensors=init_tensors, use_cuda=args.use_cuda)
         except RuntimeError as e:
             if 'does not have a grad_fn' in str(e):
                 # means some op are not differentiable.

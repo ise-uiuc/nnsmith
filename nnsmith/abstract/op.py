@@ -921,7 +921,7 @@ class Pow(BcastBinaryOp):
         return torch.pow
 
     def torch_loss_v1(self, a, b):
-        return torch.maximum(-a, torch.zeros_like(a)) + torch.where(b > 28., b.abs(), torch.zeros_like(b))
+        return (a - 1).abs() + torch.where(b > 28., b.abs(), torch.zeros_like(b))
         # Another complicated proposal but not working:
         # See: https://en.cppreference.com/w/c/numeric/math/pow
         # Inf:

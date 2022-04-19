@@ -74,9 +74,8 @@ if __name__ == '__main__':
         'grad-succ': [],
     }
 
-    def mknet(model_seed):
-        if model_seed is None:
-            model_seed = random.getrandbits(32)
+    def mknet():
+        model_seed = random.getrandbits(32)
         gen, solution = random_model_gen(
             mode=args.mode, min_dims=args.min_dims, seed=model_seed, max_nodes=args.max_nodes,
             timeout=args.timeout, candidates_overwrite=differentiable_ops, init_fp=True)
@@ -89,7 +88,7 @@ if __name__ == '__main__':
     for model_id in tqdm(range(args.n_model)):
         while True:
             if ref_df is None:
-                net, num_op, model_seed = mknet(None)
+                net, num_op, model_seed = mknet()
             else:
                 model_seed = ref_df['model_seed'][model_id]
                 net = pickle.load(
