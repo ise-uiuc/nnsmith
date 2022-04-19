@@ -78,6 +78,14 @@ python experiments/input_search.py --max_nodes 10 --n_model 100 --n_inp_sample 1
 
 # visualization
 python experiments/plot_inp_search.py
+
+# debug 
+## run with models saved
+python experiments/input_search.py --max_nodes 10 --n_model 100 --n_inp_sample 1 --root /path/to/save/model
+## to reproduce a specific model
+python -u debugging/grad.py /path/to/<model_id>-net.pkl <model_seed>
+## to reproduce all models
+python experiments/input_search.py --max_nodes 10 --n_model 100 --n_inp_sample 1 --load /path/to/save/model
 ```
 
 ## Notes

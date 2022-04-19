@@ -94,4 +94,4 @@ def mkdir(dir, yes=False):
         else:
             shutil.rmtree(dir)
 
-    os.mkdir(dir)
+    os.makedirs(dir)

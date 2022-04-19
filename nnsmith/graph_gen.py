@@ -258,7 +258,7 @@ class SymbolNet(nn.Module):
         self.check_intermediate_numeric = last_check_intermediate_numeric
         return sat_inputs
 
-    def grad_input_gen(self, max_iter=10, init_tensors=None, margin=10, base='center', use_cuda=False) -> Optional[List[torch.Tensor]]:
+    def grad_input_gen(self, max_iter=int(os.getenv('NNSMITH_GRAD_ITER', 100)), init_tensors=None, margin=10, base='center', use_cuda=False) -> Optional[List[torch.Tensor]]:
         if init_tensors is None:
             init_tensors = self.get_random_inps(
                 margin, base, use_cuda=use_cuda)
@@ -314,6 +314,8 @@ class SymbolNet(nn.Module):
             if ii.input_name in kwargs:
                 xs[ii.op.idx] = kwargs[ii.input_name]
         assert all(x is not None for x in xs), xs
+        input_invaid = any(
+            [torch.isnan(x).any() or torch.isinf(x).any() for x in xs])
         local_ref_cnt = self.ref_cnt.copy()
         self.tensors = [None for _ in self.tensors]
         self.invalid_found_last = False
@@ -346,12 +348,11 @@ class SymbolNet(nn.Module):
             self._check_out_dtype(outputs, node_id, op)
 
             if self.check_intermediate_numeric or (self.use_gradient and not self.stop_updating_loss):
-                with torch.no_grad():
-                    invalid_mask = [torch.isnan(out).any() or torch.isinf(
-                        out).any() for out in outputs]
-
-                self.invalid_found_last |= any(invalid_mask)
+                self.invalid_found_last |= not op.numeric_valid(outputs)
                 if self.invalid_found_last and (self.use_gradient and not self.stop_updating_loss):
+                    if input_invaid:
+                        print('[NaN/Inf] in inputs')
+                        return None
                     if self.verbose:
                         for inp_i, inp in enumerate(input_tensors):
                             print(
@@ -359,7 +360,13 @@ class SymbolNet(nn.Module):
 
                     ConstraintCheck.true(hasattr(
                         op, 'torch_loss'), f'op={op} has no `torch_loss` but produces NaN or INF!')
-                    vul_op_loss = op.torch_loss(*input_tensors)
+                    # TODO: some less vulnerable ops (like Mul) may also trigger Inf and will crash the process.
+                    # Given its low chance of happening, ignore it for now.
+                    try:
+                        vul_op_loss = op.torch_loss(*input_tensors)
+                    except Exception as e:
+                        traceback.print_exc()
+                        vul_op_loss = torch.tensor(1., requires_grad=True)
                     print(
                         f'[NaN/Inf] in outputs ~ {op} ~ id {node_id} :: {vul_op_loss.min().data:.3f} ~ {vul_op_loss.max().data:.3f}')
 
@@ -567,7 +574,7 @@ class SimpleGenerator:
         self.abstract_graph.nodes[shuffled_placeholder[0]
                                   ]['op'] = self.abstract_graph.nodes[shuffled_placeholder[0]]['op'].to_input()
         for holder_idx in shuffled_placeholder[1:]:
-            if random.randint(0, 1):
+            if random.randint(0, 1) and os.getenv('NNSMITH_CONST', 'off') != 'off':
                 self.abstract_graph.nodes[holder_idx]['op'] = self.abstract_graph.nodes[holder_idx]['op'].to_const(
                 )
             else:
@@ -1399,7 +1406,7 @@ if __name__ == '__main__':
     if args.diff_can_overwrite:
         __DIFF_CACHE__ = 'config/diff.pkl'
         differentiable_ops = rewrite_op_dtype(
-            ALL_OP_TYPES, backend=None, diff=True, verbose=True, cache=__DIFF_CACHE__)
+            ALL_OP_TYPES, backend=None, diff=True, verbose=False, cache=__DIFF_CACHE__)
         gen_args['candidates_overwrite'] = differentiable_ops
         gen_args['init_fp'] = True
 
@@ -1462,6 +1469,7 @@ if __name__ == '__main__':
         raise ValueError(f'Unknown input gen {args.input_gen}')
 
     ed_time = time.time()
+    print('self.invalid_found_last=', net.invalid_found_last)
     print('Time to generate inputs: {:.3f}s'.format(ed_time - input_st))
 
     stats = {
