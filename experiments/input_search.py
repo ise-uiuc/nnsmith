@@ -101,6 +101,20 @@ if __name__ == '__main__':
                 break
         print('model_seed=', model_seed)
 
+        if args.save_model is not None:  # save the original model before modified by grad-search
+            try:
+                torch2onnx(net, os.path.join(
+                    args.save_model, f'{model_id}.onnx'))
+            except Exception as e:
+                print(e)
+                print('Failed to convert to onnx')
+            if hasattr(net, 'graph'):
+                nx.drawing.nx_pydot.to_pydot(net.graph).write_png(os.path.join(
+                    args.save_model, f'{model_id}-graph.png'))
+                net.to_picklable()
+            cloudpickle.dump(net, open(os.path.join(
+                args.save_model, f'{model_id}-net.pkl'), 'wb'), protocol=4)
+
         results['n_nodes'].append(num_op)
         results['model_seed'].append(model_seed)
 
@@ -171,20 +185,6 @@ if __name__ == '__main__':
         results['grad-succ'].append(succ_grad)
         results['grad-try'].append(try_times_grad)
         results['grad-time'].append(time.time() - strt_time)
-
-        if args.save_model is not None:
-            try:
-                torch2onnx(net, os.path.join(
-                    args.save_model, f'{model_id}.onnx'))
-            except Exception as e:
-                print(e)
-                print('Failed to convert to onnx')
-            if hasattr(net, 'graph'):
-                nx.drawing.nx_pydot.to_pydot(net.graph).write_png(os.path.join(
-                    args.save_model, f'{model_id}-graph.png'))
-                net.to_picklable()
-            cloudpickle.dump(net, open(os.path.join(
-                args.save_model, f'{model_id}-net.pkl'), 'wb'), protocol=4)
 
     df = pd.DataFrame(results)
     df.to_csv(exp_name, index=False)
