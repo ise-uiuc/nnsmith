@@ -1450,12 +1450,12 @@ if __name__ == '__main__':
     if args.input_gen == 'v3' or args.input_gen == 'random':
         with torch.no_grad():
             net.eval()
-            sat_inputs = net.rand_input_gen(use_cuda=args.use_cuda, seed=seed)
+            sat_inputs = net.rand_input_gen(use_cuda=args.use_cuda)
             infer_succ = sat_inputs is not None
     elif args.input_gen == 'grad':
         infer_succ = None  # TODO: are we able to know this?
         try:
-            sat_inputs = net.grad_input_gen(use_cuda=args.use_cuda, seed=seed)
+            sat_inputs = net.grad_input_gen(use_cuda=args.use_cuda)
         except RuntimeError as e:
             if 'does not have a grad_fn' in str(e):
                 # means some op are not differentiable.
