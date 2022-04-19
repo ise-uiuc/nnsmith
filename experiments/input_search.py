@@ -4,6 +4,7 @@ simply generate a bunch of models and see if the can find viable inputs.
 
 from multiprocessing import Process
 import shutil
+import traceback
 import uuid
 from nnsmith.graph_gen import random_model_gen, SymbolNet
 from nnsmith.dtype_test import rewrite_op_dtype
@@ -51,7 +52,11 @@ def mknets(args):
     }
     for model_id in tqdm(range(args.n_model)):
         while True:
-            net, num_op, model_seed = mknet(args, differentiable_ops)
+            try:
+                net, num_op, model_seed = mknet(args, differentiable_ops)
+            except:
+                traceback.print_exc()
+                continue
             # break # NOTE: uncomment this line to see how serious the issue is.
             if net.n_vulnerable_op > 0:
                 break
@@ -110,7 +115,7 @@ if __name__ == '__main__':
     if args.load is None:
         p = Process(target=mknets, args=(args,))
         p.start()
-        p.wait()
+        p.join()
         args.load = args.root
 
     ref_df = pd.read_csv(os.path.join(
