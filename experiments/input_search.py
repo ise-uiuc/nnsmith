@@ -191,6 +191,6 @@ if __name__ == '__main__':
     if args.save_model is not None:
         os.system(
             f'cp {exp_name} {os.path.join(args.save_model, "model_info.csv")}')
-    with open(os.path.join(args.save_model, 'stats.log'), 'w') as f:
-        f.write(str(df.mean()) + '\n')
+        with open(os.path.join(args.save_model, 'stats.log'), 'w') as f:
+            f.write(str(df.mean()) + '\n')
     print(df.mean())
