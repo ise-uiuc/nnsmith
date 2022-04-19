@@ -348,8 +348,7 @@ class SymbolNet(nn.Module):
             self._check_out_dtype(outputs, node_id, op)
 
             if self.check_intermediate_numeric or (self.use_gradient and not self.stop_updating_loss):
-                self.invalid_found_last |= not op.numeric_valid(
-                    outputs, input_tensors)
+                self.invalid_found_last |= not op.numeric_valid(outputs)
                 if self.invalid_found_last and (self.use_gradient and not self.stop_updating_loss):
                     if input_invaid:
                         print('[NaN/Inf] in inputs')
