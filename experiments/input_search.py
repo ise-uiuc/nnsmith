@@ -31,7 +31,6 @@ def mknet(args, differentiable_ops):
     gen, solution = random_model_gen(
         mode=args.mode, min_dims=args.min_dims, seed=model_seed, max_nodes=args.max_nodes,
         timeout=args.timeout, candidates_overwrite=differentiable_ops, init_fp=True)
-    gen.viz('debug.png')
     net = SymbolNet(gen.abstract_graph, solution, verbose=args.verbose,
                     alive_shapes=gen.alive_shapes)
     net.eval()
