@@ -361,7 +361,9 @@ class SymbolNet(nn.Module):
 
                     ConstraintCheck.true(hasattr(
                         op, 'torch_loss'), f'op={op} has no `torch_loss` but produces NaN or INF!')
-                    try:  # Support legacy models without Div implemented
+                    # TODO: some less vulnerable ops (like Mul) may also trigger Inf and will crash the process.
+                    # Given its low chance of happening, ignore it for now.
+                    try:
                         vul_op_loss = op.torch_loss(*input_tensors)
                     except Exception as e:
                         traceback.print_exc()
