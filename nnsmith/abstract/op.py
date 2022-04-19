@@ -15,6 +15,7 @@ import warnings
 # Import z3 ahead of torch (See https://github.com/Z3Prover/z3/issues/5656)
 import z3
 import torch
+from torch import Tensor
 
 from nnsmith.error import SanityCheck, ConstraintCheck
 from nnsmith.abstract.loss_func import *
@@ -532,12 +533,16 @@ class AbsOpBase(ABC):
             return not any([torch.isnan(out).any() or torch.isinf(
                 out).any() for out in outputs])
 
-    def torch_loss(self, *args, **kwargs):
+    def torch_loss(self, *args, **kwargs) -> Tuple[Tensor]:
         if LOSS_VERSION == 'v1':
-            return self.torch_loss_v1(*args, **kwargs)
-        if LOSS_VERSION == 'v2':
-            return self.torch_loss_v2(*args, **kwargs)
-        raise ValueError('Unknown loss version {}'.format(LOSS_VERSION))
+            ret = self.torch_loss_v1(*args, **kwargs)
+        elif LOSS_VERSION == 'v2':
+            ret = self.torch_loss_v2(*args, **kwargs)
+        else:
+            raise ValueError('Unknown loss version {}'.format(LOSS_VERSION))
+        if not isinstance(ret, tuple):
+            ret = (ret, )
+        return ret
 
 
 def concretize(op: AbsOpBase, model: z3.ModelRef) -> AbsOpBase:
@@ -921,7 +926,7 @@ class Pow(BcastBinaryOp):
         return torch.pow
 
     def torch_loss_v1(self, a, b):
-        return (a - 1).abs() + torch.where(b > 28., b.abs(), torch.zeros_like(b))
+        return ((a - 1).abs(), torch.where(b > 28., b.abs(), torch.zeros_like(b)))
         # Another complicated proposal but not working:
         # See: https://en.cppreference.com/w/c/numeric/math/pow
         # Inf:
@@ -943,8 +948,7 @@ class Pow(BcastBinaryOp):
         l0 = loss_ge(a, 0)
         l1 = loss_le(
             b * torch.log(torch.maximum(a, torch.tensor(1e-40, dtype=a.dtype))), 20)
-        # print(f'l0={l0.mean().item()} l1={l1.mean().item()} a^b={torch.pow(a, b).mean().item()} a={a.mean().item()} b={b.mean().item()} torch.log(a)={torch.log(a).mean().item()}')
-        return l0 + l1
+        return (l0, l1)
 
 
 class ReLU(ElementWiseUnaryOp):

@@ -141,7 +141,7 @@ if __name__ == '__main__':
             open(os.path.join(args.load, f'model/{model_id}-net.pkl'), 'rb'))
         net.use_gradient = False
         num_op = ref_df['n_nodes'][model_id]
-        print('model_seed=', model_seed)
+        print('model_id', model_id, 'model_seed=', model_seed)
 
         results['n_nodes'].append(num_op)
         results['model_seed'].append(model_seed)

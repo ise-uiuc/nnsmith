@@ -182,10 +182,28 @@ class SymbolNet(nn.Module):
         self.alive_shapes = None
         del self.graph
 
+    def get_params(self):
+        return sum([i['params'] for i in self.optimizer.param_groups], [])
+
     def backward(self):
         if self.loss is not None:
             self.optimizer.zero_grad()
-            self.loss.backward()
+            params = self.get_params()
+            grads = [[] for _ in params]
+            for l in self.loss:
+                l.backward(retain_graph=True)
+                with torch.no_grad():
+                    grad_vec = torch.cat(
+                        [p.grad.data.view(-1) if p.grad is not None else torch.zeros(1) for p in params])
+                    norm = torch.norm(grad_vec).item()
+                    for i, p in enumerate(params):
+                        if p.grad is not None:
+                            grads[i].append(p.grad.data.clone() / norm)
+                    self.optimizer.zero_grad()
+            with torch.no_grad():
+                for i, p in enumerate(params):
+                    if p.grad is not None:
+                        p.grad.data = sum(grads[i])
             torch.nn.utils.clip_grad_norm_(self.parameters(), 1e-1)
             self.optimizer.step()
 
@@ -348,6 +366,10 @@ class SymbolNet(nn.Module):
             self._check_out_dtype(outputs, node_id, op)
 
             if self.check_intermediate_numeric or (self.use_gradient and not self.stop_updating_loss):
+                try:
+                    vul_op_loss = op.torch_loss(*input_tensors)
+                except Exception as e:
+                    vul_op_loss = ()
                 self.invalid_found_last |= not op.numeric_valid(
                     outputs, input_tensors)
                 if self.invalid_found_last and (self.use_gradient and not self.stop_updating_loss):
@@ -359,22 +381,18 @@ class SymbolNet(nn.Module):
                             print(
                                 f'[inp]@{inp_i} :: {inp.min().data:.5f} ~ {inp.max().data:.5f}')
 
-                    ConstraintCheck.true(hasattr(
-                        op, 'torch_loss'), f'op={op} has no `torch_loss` but produces NaN or INF!')
+                    if not hasattr(op, 'torch_loss'):
+                        print(
+                            f'[Warning] op={op} has no `torch_loss` but produces NaN or INF!')
                     # TODO: some less vulnerable ops (like Mul) may also trigger Inf and will crash the process.
                     # Given its low chance of happening, ignore it for now.
-                    try:
-                        vul_op_loss = op.torch_loss(*input_tensors)
-                    except Exception as e:
-                        traceback.print_exc()
-                        vul_op_loss = torch.tensor(1., requires_grad=True)
                     print(
-                        f'[NaN/Inf] in outputs ~ {op} ~ id {node_id} :: {vul_op_loss.min().data:.3f} ~ {vul_op_loss.max().data:.3f}')
+                        f'[NaN/Inf] in outputs ~ {op} ~ id {node_id} :: {vul_op_loss[0].min().data:.3f} ~ {vul_op_loss[0].max().data:.3f}')
 
                     if self.loss is None:
-                        self.loss = vul_op_loss.mean()
+                        self.loss = [l.mean() for l in vul_op_loss]
                     else:
-                        self.loss += vul_op_loss.mean()
+                        self.loss.extend(l.mean() for l in vul_op_loss)
                     self.stop_updating_loss = True
                     return outputs
 
