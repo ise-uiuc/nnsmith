@@ -903,9 +903,14 @@ class LegacyConstant4D(Constant):
 
 # FIXME: Div will cause fuzzing crash.
 Div = type('Div', (BcastBinaryOp1,), {
-    'torch': lambda self:
-        lambda x, y: torch.div(x, y, rounding_mode='floor' if DType(
-            x.dtype) in DTYPE_INTS else None)})
+    'torch': (lambda self:
+              lambda x, y: torch.div(x, y, rounding_mode='floor' if DType(
+                  x.dtype) in DTYPE_INTS else None)),
+    'torch_loss_v1': (lambda self, x, y: torch.maximum(
+        torch.zeros_like(y), torch.abs(y) - 1e-20)),
+    'torch_loss_v2': (lambda self, x, y: loss_ge(torch.abs(y), 1e-20))
+}
+)
 
 
 class Pow(BcastBinaryOp):

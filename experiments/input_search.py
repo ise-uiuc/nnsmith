@@ -42,8 +42,10 @@ if __name__ == '__main__':
 
     if args.save_model is not None:
         mkdir(args.save_model)
-
-    ref_df = pd.read_csv(os.path.join(args.load_model, 'model_info.csv'))
+    if args.load_model is not None:
+        ref_df = pd.read_csv(os.path.join(args.load_model, 'model_info.csv'))
+    else:
+        ref_df = None
     __DIFF_CACHE__ = 'config/diff.pkl'
     differentiable_ops = rewrite_op_dtype(
         ALL_OP_TYPES, backend=None, diff=True, verbose=True, cache=__DIFF_CACHE__)
@@ -148,6 +150,7 @@ if __name__ == '__main__':
         for init_tensors in init_tensor_samples:
             try_times_grad += 1
             try:
+                nseed = (model_seed + 1) % (2 ** 32)
                 random.seed(nseed)
                 np.random.seed(nseed)
                 torch.manual_seed(nseed)
@@ -170,7 +173,12 @@ if __name__ == '__main__':
         results['grad-time'].append(time.time() - strt_time)
 
         if args.save_model is not None:
-            torch2onnx(net, os.path.join(args.save_model, f'{model_id}.onnx'))
+            try:
+                torch2onnx(net, os.path.join(
+                    args.save_model, f'{model_id}.onnx'))
+            except Exception as e:
+                print(e)
+                print('Failed to convert to onnx')
             if hasattr(net, 'graph'):
                 nx.drawing.nx_pydot.to_pydot(net.graph).write_png(os.path.join(
                     args.save_model, f'{model_id}-graph.png'))
