@@ -528,21 +528,10 @@ class AbsOpBase(ABC):
     def __repr__(self) -> str:
         return self.__class__.__name__
 
-    def numeric_valid(self, outputs, inputs) -> bool:
+    def numeric_valid(self, outputs) -> bool:
         with torch.no_grad():
             return not any([torch.isnan(out).any() or torch.isinf(
                 out).any() for out in outputs])
-
-    def torch_loss(self, *args, **kwargs) -> Tuple[Tensor]:
-        if LOSS_VERSION == 'v1':
-            ret = self.torch_loss_v1(*args, **kwargs)
-        elif LOSS_VERSION == 'v2':
-            ret = self.torch_loss_v2(*args, **kwargs)
-        else:
-            raise ValueError('Unknown loss version {}'.format(LOSS_VERSION))
-        if not isinstance(ret, tuple):
-            ret = (ret, )
-        return ret
 
 
 def concretize(op: AbsOpBase, model: z3.ModelRef) -> AbsOpBase:
@@ -911,9 +900,7 @@ Div = type('Div', (BcastBinaryOp1,), {
     'torch': (lambda self:
               lambda x, y: torch.div(x, y, rounding_mode='floor' if DType(
                   x.dtype) in DTYPE_INTS else None)),
-    'torch_loss_v1': (lambda self, x, y: torch.maximum(
-        torch.zeros_like(y), torch.abs(y) - 1e-20)),
-    'torch_loss_v2': (lambda self, x, y: loss_ge(torch.abs(y), 1e-20))
+    'torch_loss': (lambda self, x, y: loss_ge(torch.abs(y), 1e-20))
 }
 )
 
@@ -925,23 +912,12 @@ class Pow(BcastBinaryOp):
     def torch(self):
         return torch.pow
 
-    def torch_loss_v1(self, a, b):
-        return ((a - 1).abs(), torch.where(b > 28., b.abs(), torch.zeros_like(b)))
-        # Another complicated proposal but not working:
-        # See: https://en.cppreference.com/w/c/numeric/math/pow
-        # Inf:
-        #   a > 1, b is too big => b should be smaller.
-        #   a = 0, b < 0 => a should be bigger.
-        # Nan: a < 0, 0 < b < 1 => either a should be positive or |b| should be bigger.
-        # res = torch.pow(a, b)
-        # return torch.where(
-        #     torch.isinf(res),
-        #     torch.where(b > 32.,
-        #                 b,
-        #                 torch.where(a == 0., a, )),
-        #     torch.where(torch.isnan(res),
-        #                 torch.where(a > 0, torch.zeros_like(a), a.abs()),
-        #                 torch.zeros_like(a)))
+    def torch_loss(self, a, b):
+        # a >= 0 && b*log(a) <= 20
+        l0 = loss_ge(a, 0)
+        l1 = loss_le(
+            b * torch.log(torch.maximum(a, torch.tensor(1e-40, dtype=a.dtype))), 20)
+        return l0 + l1
 
     def torch_loss_v2(self, a, b):
         # a >= 0 && b*log(a) <= 20
@@ -1058,8 +1034,8 @@ class Asin(TrigonometricOp):
     def torch(self):
         return torch.asin
 
-    def torch_loss_v1(self, x):
-        return torch.where(x.abs() > 1, x.abs() - 1, torch.zeros_like(x))
+    def torch_loss(self, x):
+        return loss_le(x.abs(), 1)
 
     def torch_loss_v2(self, x):
         return loss_le(x.abs(), 1)
@@ -1075,8 +1051,8 @@ class Acos(TrigonometricOp):
     def torch(self):
         return torch.acos
 
-    def torch_loss_v1(self, x):
-        return torch.where(x.abs() > 1, x.abs(), torch.zeros_like(x))
+    def torch_loss(self, x):
+        return loss_le(x.abs(), 1)
 
     def torch_loss_v2(self, x):
         return loss_le(x.abs(), 1)
@@ -1158,9 +1134,8 @@ class Sqrt(ElementWiseUnaryOp):
     def torch(self):
         return torch.sqrt
 
-    def torch_loss_v1(self, x):
-        # return torch.max(torch.tensor(0.), x) - 0.
-        return torch.where(x <= 0, 1. - x, torch.zeros_like(x))
+    def torch_loss(self, x):
+        return loss_ge(x, 0)
 
     def torch_loss_v2(self, x):
         return loss_ge(x, 0)
@@ -1176,8 +1151,8 @@ class Log2(ElementWiseUnaryOp):
     def torch(self):
         return torch.log2
 
-    def torch_loss_v1(self, x):
-        return torch.where(x <= 0, 1. - x, torch.zeros_like(x))
+    def torch_loss(self, x):
+        return loss_ge(x, 1e-40)
 
     def torch_loss_v2(self, x):
         return loss_ge(x, 1e-40)

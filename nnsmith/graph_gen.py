@@ -303,7 +303,8 @@ class SymbolNet(nn.Module):
 
             try:
                 _ = self(*inputs)
-            except ConstraintError as _:
+            except ConstraintError as e:
+                print(e)
                 break
 
             if self.invalid_found_last:  # need_to_train
@@ -370,20 +371,17 @@ class SymbolNet(nn.Module):
                     vul_op_loss = op.torch_loss(*input_tensors)
                 except Exception as e:
                     vul_op_loss = ()
-                self.invalid_found_last |= not op.numeric_valid(
-                    outputs, input_tensors)
+                self.invalid_found_last |= not op.numeric_valid(outputs)
                 if self.invalid_found_last and (self.use_gradient and not self.stop_updating_loss):
-                    if input_invaid:
-                        print('[NaN/Inf] in inputs')
-                        return None
+                    ConstraintCheck.true(
+                        not input_invaid, f'[NaN/Inf] in inputs')
                     if self.verbose:
                         for inp_i, inp in enumerate(input_tensors):
                             print(
                                 f'[inp]@{inp_i} :: {inp.min().data:.5f} ~ {inp.max().data:.5f}')
 
-                    if not hasattr(op, 'torch_loss'):
-                        print(
-                            f'[Warning] op={op} has no `torch_loss` but produces NaN or INF!')
+                    ConstraintCheck.true(hasattr(
+                        op, 'torch_loss'), f'op={op} has no `torch_loss` but produces NaN or INF!')
                     # TODO: some less vulnerable ops (like Mul) may also trigger Inf and will crash the process.
                     # Given its low chance of happening, ignore it for now.
                     print(
@@ -652,7 +650,7 @@ class SimpleGenerator:
             if cres == z3.unsat:
                 print(f'Unsat core: {self.solver.unsat_core()}')
         if cres == z3.sat:
-            if timeout is None:
+            if timeout is not None:
                 self.solver.check(*assumptions)
             self.last_soln = self.solver.model()
         return cres
