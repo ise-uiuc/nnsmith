@@ -285,7 +285,8 @@ class SymbolNet(nn.Module):
 
             try:
                 _ = self(*inputs)
-            except ConstraintError as _:
+            except ConstraintError as e:
+                print(e)
                 break
 
             if self.invalid_found_last:  # need_to_train
@@ -350,9 +351,8 @@ class SymbolNet(nn.Module):
             if self.check_intermediate_numeric or (self.use_gradient and not self.stop_updating_loss):
                 self.invalid_found_last |= not op.numeric_valid(outputs)
                 if self.invalid_found_last and (self.use_gradient and not self.stop_updating_loss):
-                    if input_invaid:
-                        print('[NaN/Inf] in inputs')
-                        return None
+                    ConstraintCheck.true(
+                        not input_invaid, f'[NaN/Inf] in inputs')
                     if self.verbose:
                         for inp_i, inp in enumerate(input_tensors):
                             print(
