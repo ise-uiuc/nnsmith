@@ -37,7 +37,11 @@ def mknet(args, differentiable_ops):
     return net, gen.num_op(), model_seed
 
 
-def mknets(args):
+def mknets(args, exp_seed):
+    np.random.seed(exp_seed)
+    random.seed(exp_seed)
+    torch.manual_seed(exp_seed)
+
     model_path = os.path.join(args.root, 'model')
     if not os.path.exists(model_path):
         os.makedirs(model_path)
@@ -106,16 +110,16 @@ if __name__ == '__main__':
     if exp_seed is None:
         exp_seed = random.getrandbits(32)
     print(f"Using seed {exp_seed}")
-    np.random.seed(exp_seed)
-    random.seed(exp_seed)
-    torch.manual_seed(exp_seed)
-
     # generate models
     if args.load is None:
-        p = Process(target=mknets, args=(args,))
+        p = Process(target=mknets, args=(args, exp_seed))
         p.start()
         p.join()
         args.load = args.root
+
+    np.random.seed(exp_seed)
+    random.seed(exp_seed)
+    torch.manual_seed(exp_seed)
 
     ref_df = pd.read_csv(os.path.join(
         args.load, 'model_info.csv'))  # load models
@@ -140,7 +144,7 @@ if __name__ == '__main__':
             open(os.path.join(args.load, f'model/{model_id}-net.pkl'), 'rb'))
         net.use_gradient = False
         num_op = ref_df['n_nodes'][model_id]
-        print('model_seed=', model_seed)
+        print('model_id=', model_id, 'model_seed=', model_seed)
 
         results['n_nodes'].append(num_op)
         results['model_seed'].append(model_seed)
