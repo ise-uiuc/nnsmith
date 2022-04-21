@@ -533,6 +533,7 @@ class AbsOpBase(ABC):
 
 def concretize(op: AbsOpBase, model: Optional[z3.ModelRef]) -> AbsOpBase:
     if isinstance(op, Constant) or isinstance(op, Input):
+        assert not hasattr(op, 'torch_loss')
         ret_op = deepcopy(op)
         values = []
 
@@ -563,7 +564,7 @@ def concretize(op: AbsOpBase, model: Optional[z3.ModelRef]) -> AbsOpBase:
     for idx in symbolic_idx:
         values[idx] = model.eval(values[idx]).as_long()
 
-    concrete_op = op.__class__(*values)
+    concrete_op = globals()[op.__class__.__name__](*values)
     concrete_op.inp_ranks = op.inp_ranks
     concrete_op.out_ranks = op.out_ranks
     concrete_op.same_inp_dims = op.same_inp_dims

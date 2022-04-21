@@ -35,6 +35,8 @@ if __name__ == '__main__':
 
     results = {}
     net, model_seed = pickle.load(open(args.net, 'rb')), args.model_seed
+    net = SymbolNet(net.concrete_graph, None, megabyte_lim=net.megabyte_lim)
+    net.eval()
     print('model_seed=', model_seed)
 
     init_tensor_samples = []
