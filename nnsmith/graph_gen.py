@@ -190,21 +190,22 @@ class SymbolNet(nn.Module):
         if self.loss is not None:
             self.optimizer.zero_grad()
             params = self.get_params()
-            grads = [[] for _ in params]
+            grads = [0 for _ in params]
             for l in self.loss:
+                self.optimizer.zero_grad(True)
                 l.backward(retain_graph=True)
                 with torch.no_grad():
                     grad_vec = torch.cat(
                         [p.grad.data.view(-1) if p.grad is not None else torch.zeros(1) for p in params])
                     norm = torch.norm(grad_vec).item()
+                    del grad_vec
                     for i, p in enumerate(params):
                         if p.grad is not None:
-                            grads[i].append(p.grad.data.clone() / norm)
-                    self.optimizer.zero_grad()
+                            grads[i] = grads[i] + p.grad.data / norm
             with torch.no_grad():
                 for i, p in enumerate(params):
                     if p.grad is not None:
-                        p.grad.data = sum(grads[i])
+                        p.grad.data = grads[i]
             torch.nn.utils.clip_grad_norm_(self.parameters(), 1e-1)
             self.optimizer.step()
 
