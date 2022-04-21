@@ -6,7 +6,7 @@ from functools import reduce
 import functools
 import math
 import os
-from typing import List, Tuple, Union, Callable, Type
+from typing import List, Optional, Tuple, Union, Callable, Type
 from inspect import signature
 import random
 import itertools
@@ -534,7 +534,7 @@ class AbsOpBase(ABC):
                 out).any() for out in outputs])
 
 
-def concretize(op: AbsOpBase, model: z3.ModelRef) -> AbsOpBase:
+def concretize(op: AbsOpBase, model: Optional[z3.ModelRef]) -> AbsOpBase:
     if isinstance(op, Constant) or isinstance(op, Input):
         ret_op = deepcopy(op)
         values = []
@@ -554,7 +554,8 @@ def concretize(op: AbsOpBase, model: z3.ModelRef) -> AbsOpBase:
         # input is a variable list.
         key = list(construct_param_dict.keys())[0]
         values = list(getattr(op, key))
-        symbolic_idx = list(range(len(values)))
+        symbolic_idx = [i for i in range(
+            len(values)) if isinstance(values[i], z3.ExprRef)]
     else:
         for idx, key in enumerate(construct_param_dict):
             param = getattr(op, key)
