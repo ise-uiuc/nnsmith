@@ -142,6 +142,9 @@ if __name__ == '__main__':
         model_seed = ref_df['model_seed'][model_id]
         net = pickle.load(
             open(os.path.join(args.load, f'model/{model_id}-net.pkl'), 'rb'))
+        net = SymbolNet(net.concrete_graph, None,
+                        verbose=args.verbose, megabyte_lim=net.megabyte_lim)
+        net.eval()
         net.use_gradient = False
         num_op = ref_df['n_nodes'][model_id]
         print('model_id=', model_id, 'model_seed=', model_seed)

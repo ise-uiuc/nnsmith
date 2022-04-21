@@ -137,31 +137,32 @@ class SymbolNet(nn.Module):
                     InputInfo(op=op, oid=output_idx[0], node_id=node_id, input_name=f'i{op.idx}'))
 
             # concretize shapevars
-            ishape_indices = self.graph.nodes[node_id]['ishape_indices']
-            shape_indices = self.graph.nodes[node_id]['shape_indices']
-            for shape_idx in shape_indices:
-                shape = self.alive_shapes[shape_idx][1].shape
-                dtype = self.alive_shapes[shape_idx][1].dtype
-                shape = [model.eval(i).as_long() if isinstance(
-                    i, z3.ExprRef) else i for i in shape]
-                assert shape_idx not in shape_vars, f"{shape_idx} already exists"
-                shape_vars[shape_idx] = ShapeVar(shape, dtype)
-            self.concrete_graph.nodes[node_id]['in_svs'] = [
-                shape_vars[i] for i in ishape_indices]
-            self.concrete_graph.nodes[node_id]['out_svs'] = [
-                shape_vars[i] for i in shape_indices]
-            # ensure n_floats and flops within limit
-            tmp_inp = [shape_vars[i] for i in ishape_indices]
-            op.shape_fn(tmp_inp)
-            op_nfl = op.n_floats(tmp_inp)
-            if self.verbose:
-                print(f"op: {op} nfloats: {op_nfl}")
-            n_floats += op_nfl
-            assert n_floats * 8 <= megabyte_lim * 1024 * \
-                1024, f'Current number of elements ({n_floats/1024/1024}m) exceeded memory limit ({megabyte_lim} MB) Current op: {op}'
-            if FLOPS_LIM is not None:
-                assert op.flops(
-                    tmp_inp) < FLOPS_LIM, f'Current number of flops ({op.flops(tmp_inp)}m) exceeded limit ({FLOPS_LIM} m). Current op: {op}'
+            if self.alive_shapes is not None:
+                ishape_indices = self.graph.nodes[node_id]['ishape_indices']
+                shape_indices = self.graph.nodes[node_id]['shape_indices']
+                for shape_idx in shape_indices:
+                    shape = self.alive_shapes[shape_idx][1].shape
+                    dtype = self.alive_shapes[shape_idx][1].dtype
+                    shape = [model.eval(i).as_long() if isinstance(
+                        i, z3.ExprRef) else i for i in shape]
+                    assert shape_idx not in shape_vars, f"{shape_idx} already exists"
+                    shape_vars[shape_idx] = ShapeVar(shape, dtype)
+                self.concrete_graph.nodes[node_id]['in_svs'] = [
+                    shape_vars[i] for i in ishape_indices]
+                self.concrete_graph.nodes[node_id]['out_svs'] = [
+                    shape_vars[i] for i in shape_indices]
+                # ensure n_floats and flops within limit
+                tmp_inp = [shape_vars[i] for i in ishape_indices]
+                op.shape_fn(tmp_inp)
+                op_nfl = op.n_floats(tmp_inp)
+                if self.verbose:
+                    print(f"op: {op} nfloats: {op_nfl}")
+                n_floats += op_nfl
+                assert n_floats * 8 <= megabyte_lim * 1024 * \
+                    1024, f'Current number of elements ({n_floats/1024/1024}m) exceeded memory limit ({megabyte_lim} MB) Current op: {op}'
+                if FLOPS_LIM is not None:
+                    assert op.flops(
+                        tmp_inp) < FLOPS_LIM, f'Current number of flops ({op.flops(tmp_inp)}m) exceeded limit ({FLOPS_LIM} m). Current op: {op}'
 
         if self.verbose:
             print('input_info=', self.input_info)
@@ -1454,6 +1455,7 @@ if __name__ == '__main__':
             sat_inputs = net.rand_input_gen(use_cuda=args.use_cuda)
             infer_succ = sat_inputs is not None
     elif args.input_gen == 'grad':
+        net.eval()
         infer_succ = None  # TODO: are we able to know this?
         try:
             sat_inputs = net.grad_input_gen(use_cuda=args.use_cuda)
