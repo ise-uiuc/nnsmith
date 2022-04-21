@@ -52,6 +52,8 @@ class InputInfo(InputInfoBase):
 
 
 __MB_LIM__ = 6 * 1024
+# weight of gradients for valid op losses
+ALPHA = float(os.getenv("NNSMITH_ALPHA", 0.1))
 
 
 class SymbolNet(nn.Module):
@@ -191,17 +193,24 @@ class SymbolNet(nn.Module):
             self.optimizer.zero_grad()
             params = self.get_params()
             grads = [0 for _ in params]
-            for l in self.loss:
+            for loss_name, l in self.loss:
                 self.optimizer.zero_grad(True)
-                l.backward(retain_graph=True)
+                l.mean().backward(retain_graph=True)
                 with torch.no_grad():
                     grad_vec = torch.cat(
                         [p.grad.data.view(-1) if p.grad is not None else torch.zeros(1) for p in params])
                     norm = torch.norm(grad_vec).item()
+                    if norm == 0:
+                        wt = 0
+                        print('[Warning] Gradient norm is 0 for loss', loss_name)
+                    else:
+                        wt = 1 / norm
                     del grad_vec
+                    if l.max() < 0:  # already valid
+                        wt *= ALPHA
                     for i, p in enumerate(params):
                         if p.grad is not None:
-                            grads[i] = grads[i] + p.grad.data / norm
+                            grads[i] = grads[i] + p.grad.data * wt
             with torch.no_grad():
                 for i, p in enumerate(params):
                     if p.grad is not None:
@@ -390,9 +399,11 @@ class SymbolNet(nn.Module):
                         f'[NaN/Inf] in outputs ~ {op} ~ id {node_id} :: {vul_op_loss[0].min().data:.3f} ~ {vul_op_loss[0].max().data:.3f}')
 
                     if self.loss is None:
-                        self.loss = [l.mean() for l in vul_op_loss]
+                        self.loss = [(f'{op}_{idx}', l)
+                                     for idx, l in enumerate(vul_op_loss)]
                     else:
-                        self.loss.extend(l.mean() for l in vul_op_loss)
+                        self.loss.extend((f'{op}_{idx}', l)
+                                         for idx, l in enumerate(vul_op_loss))
                     self.stop_updating_loss = True
                     return outputs
 
