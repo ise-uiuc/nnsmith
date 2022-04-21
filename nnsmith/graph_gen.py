@@ -395,8 +395,10 @@ class SymbolNet(nn.Module):
                         op, 'torch_loss'), f'op={op} has no `torch_loss` but produces NaN or INF!')
                     # TODO: some less vulnerable ops (like Mul) may also trigger Inf and will crash the process.
                     # Given its low chance of happening, ignore it for now.
+                    msg = ', '.join(
+                        [f'loss_{idx}: {l.min().data:.3f} ~ {l.max().data:.3f}' for idx, l in enumerate(vul_op_loss)])
                     print(
-                        f'[NaN/Inf] in outputs ~ {op} ~ id {node_id} :: {vul_op_loss[0].min().data:.3f} ~ {vul_op_loss[0].max().data:.3f}')
+                        f'[NaN/Inf] in outputs ~ {op} ~ id {node_id} :: {msg}')
 
                     if self.loss is None:
                         self.loss = [(f'{op}_{idx}', l)
