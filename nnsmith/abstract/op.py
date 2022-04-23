@@ -917,7 +917,7 @@ class Pow(BcastBinaryOp):
     def torch_loss(self, a, b):
         # a >= 0 && b*log(a) <= 20
         l0 = loss_ge(a, 0)
-        if torch.all(l0 <= 0):
+        if torch.any(l0 > 0):
             return (l0,)
         l1 = loss_le(
             b * torch.log(torch.maximum(a, torch.tensor(1e-40, dtype=a.dtype))), 20)
