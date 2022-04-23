@@ -1423,12 +1423,15 @@ def random_model_gen(
         timeout=50000,
         verbose=False,
         mode='random',
+        skip=None,
         **kwargs):
 
     GenCls = {
         'random': PureSymbolGen,
         'guided': GuidedGen,
     }[mode]
+    if skip is not None:
+        config_skip_op(skip)
     gen = GenCls(min_dims=min_dims,
                  viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec,
                  **kwargs)
