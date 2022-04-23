@@ -195,7 +195,7 @@ class SymbolNet(nn.Module):
             grads = [0 for _ in params]
             for loss_name, l in self.loss:
                 self.optimizer.zero_grad(True)
-                l.mean().backward(retain_graph=True)
+                l.backward(retain_graph=True)
                 with torch.no_grad():
                     grad_vec = torch.cat(
                         [p.grad.data.view(-1) if p.grad is not None else torch.zeros(1) for p in params])
@@ -400,12 +400,18 @@ class SymbolNet(nn.Module):
                     print(
                         f'[NaN/Inf] in outputs ~ {op} ~ id {node_id} :: {msg}')
 
+                    new_losses = []
+                    for idx, l in enumerate(vul_op_loss):
+                        if (l > 0).sum() > 0:
+                            new_losses.append(
+                                (f'{op}_{idx}_+', torch.sum((l > 0) * l) / (l > 0).sum()))
+                        if (l <= 0).sum() > 0:
+                            new_losses.append(
+                                (f'{op}_{idx}_-', torch.sum((l <= 0) * l) / (l <= 0).sum()))
                     if self.loss is None:
-                        self.loss = [(f'{op}_{idx}', l)
-                                     for idx, l in enumerate(vul_op_loss)]
+                        self.loss = new_losses
                     else:
-                        self.loss.extend((f'{op}_{idx}', l)
-                                         for idx, l in enumerate(vul_op_loss))
+                        self.loss.extend(new_losses)
                     self.stop_updating_loss = True
                     return outputs
 
