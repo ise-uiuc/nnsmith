@@ -206,8 +206,11 @@ class SymbolNet(nn.Module):
                     else:
                         wt = 1 / norm
                     del grad_vec
-                    if l.max() < 0:  # already valid
+                    if l.max() <= 0:  # already valid
                         wt *= ALPHA
+                    else:
+                        ConstraintCheck.true(norm > 0,
+                                             'Gradients are all zero. Cannot make progress.')
                     for i, p in enumerate(params):
                         if p.grad is not None:
                             grads[i] = grads[i] + p.grad.data * wt
@@ -314,14 +317,13 @@ class SymbolNet(nn.Module):
 
             try:
                 _ = self(*inputs)
+                if self.invalid_found_last:  # need_to_train
+                    self.backward()
+                else:
+                    sat_inputs = [v.data for v in inputs]
+                    break
             except ConstraintError as e:
                 print(e)
-                break
-
-            if self.invalid_found_last:  # need_to_train
-                self.backward()
-            else:
-                sat_inputs = [v.data for v in inputs]
                 break
 
         self.stop_training()
@@ -378,9 +380,9 @@ class SymbolNet(nn.Module):
             self._check_out_dtype(outputs, node_id, op)
 
             if self.check_intermediate_numeric or (self.use_gradient and not self.stop_updating_loss):
-                try:
+                if hasattr(op, 'torch_loss'):
                     vul_op_loss = op.torch_loss(*input_tensors)
-                except Exception as e:
+                else:
                     vul_op_loss = ()
                 self.invalid_found_last |= not op.numeric_valid(outputs)
                 if self.invalid_found_last and (self.use_gradient and not self.stop_updating_loss):

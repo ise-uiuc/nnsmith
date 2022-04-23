@@ -3,9 +3,10 @@ import os
 
 
 def smoothed_relu(x):
-    if os.getenv('NNSMITH_LOSS', 'v1') == 'v1':
+    lf = os.getenv('NNSMITH_LOSS', 'v1')
+    if lf == 'v1':
         return torch.nn.ReLU()(x)
-    elif os.getenv('NNSMITH_LOSS', 'v2') == 'v2':
+    elif lf == 'v2':
         mask = x < 0
         a = torch.exp(torch.minimum(x, torch.zeros_like(x))) - 1
         return torch.where(mask, a, x)
