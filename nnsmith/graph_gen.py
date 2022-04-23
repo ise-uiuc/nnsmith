@@ -363,10 +363,9 @@ class SymbolNet(nn.Module):
                         op, 'torch_loss'), f'op={op} has no `torch_loss` but produces NaN or INF!')
                     # TODO: some less vulnerable ops (like Mul) may also trigger Inf and will crash the process.
                     # Given its low chance of happening, ignore it for now.
-                    try:
+                    if hasattr(op, 'torch_loss'):
                         vul_op_loss = op.torch_loss(*input_tensors)
-                    except Exception as e:
-                        traceback.print_exc()
+                    else:
                         vul_op_loss = torch.tensor(1., requires_grad=True)
                     print(
                         f'[NaN/Inf] in outputs ~ {op} ~ id {node_id} :: {vul_op_loss.min().data:.3f} ~ {vul_op_loss.max().data:.3f}')
