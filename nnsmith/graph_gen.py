@@ -1510,8 +1510,6 @@ if __name__ == '__main__':
     net = SymbolNet(gen.abstract_graph, solution, verbose=args.verbose,
                     alive_shapes=gen.alive_shapes, print_grad=args.print_grad)
     print('Initializing SymbolNet time: {}s'.format(time.time() - srt_time))
-    torch2onnx(net, args.output_path, verbose=args.verbose,
-               use_cuda=args.use_cuda)
     import onnx
     onnx.checker.check_model(
         onnx.load(args.output_path), full_check=True)
@@ -1541,7 +1539,6 @@ if __name__ == '__main__':
 
     ed_time = time.time()
     print('self.invalid_found_last=', net.invalid_found_last)
-    print(net(*sat_inputs))
     assert not any(torch.any(torch.isnan(i)) for i in net(*sat_inputs))
     print('Time to generate inputs: {:.3f}s'.format(ed_time - input_st))
 
@@ -1555,16 +1552,16 @@ if __name__ == '__main__':
         'seed': seed,
     }
     pickle.dump(stats, open(args.output_path + '-stats.pkl', 'wb'))
-    print(sat_inputs)
 
     if sat_inputs is not None:
         ret_inputs = {}
         for i, name in enumerate(net.input_spec):
             ret_inputs[name] = sat_inputs[i].cpu().numpy()
         sat_inputs = ret_inputs
-        print(sat_inputs)
     pickle.dump(sat_inputs, open(
         args.output_path + '-sat_inputs.pkl', 'wb'))
+    torch2onnx(net, args.output_path, verbose=args.verbose,
+               use_cuda=args.use_cuda)
 
     net.to_picklable()
     cloudpickle.dump(net, open(args.output_path +
