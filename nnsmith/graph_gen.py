@@ -58,10 +58,11 @@ ALPHA = float(os.getenv("NNSMITH_ALPHA", 0.1))
 
 class SymbolNet(nn.Module):
     def __init__(self, graph: nx.MultiDiGraph, model: z3.ModelRef, verbose=False, alive_shapes: ALIVE_SHAPE_TYPE = None,
-                 record_intermediate=False, use_gradient=False, megabyte_lim=__MB_LIM__):
+                 record_intermediate=False, use_gradient=False, megabyte_lim=__MB_LIM__, print_grad=False):
         super(SymbolNet, self).__init__()
         self.megabyte_lim = megabyte_lim
         self.verbose = verbose
+        self.print_grad = print_grad
         self.tensors = []  # 1) edges; 2) leaf nodes; 3) input -> 0;
         self.ref_cnt = []  # ref cnt -> tensors; erased on 0;
         self.instructions = []  # <Func, <input idx>, <output idx>>
@@ -196,6 +197,11 @@ class SymbolNet(nn.Module):
             for loss_name, l in self.loss:
                 self.optimizer.zero_grad(True)
                 l.backward(retain_graph=True)
+                if self.print_grad:
+                    for name, i in self.interm_grad:
+                        msg = f'{i.grad.min()} ~ {i.grad.max()}' if i.grad is not None else 'None'
+                        print(
+                            f'Iter {self.iter_num} [{loss_name}] {name} grad: {msg}')
                 with torch.no_grad():
                     grad_vec = torch.cat(
                         [p.grad.data.view(-1) if p.grad is not None else torch.zeros(1) for p in params])
@@ -346,6 +352,7 @@ class SymbolNet(nn.Module):
 
     def forward(self, *args, **kwargs):
         # required: input_info, tensors, ref_cnt, instructions, hacked, first_run verbose # alive_shapes, graph
+        self.interm_grad = []
         xs = [None] * len(self.input_info)
         for i in range(len(args)):
             xs[i] = args[i]
@@ -358,6 +365,9 @@ class SymbolNet(nn.Module):
         local_ref_cnt = self.ref_cnt.copy()
         self.tensors = [None for _ in self.tensors]
         self.invalid_found_last = False
+        for i in range(len(xs)):
+            if xs[i].requires_grad:
+                self.interm_grad.append((f'i_{i}', xs[i]))
 
         for ii in self.input_info:
             self.tensors[ii.oid] = xs[ii.op.idx]
@@ -384,6 +394,13 @@ class SymbolNet(nn.Module):
             outputs = inst(*input_tensors)
             if not isinstance(outputs, list):
                 outputs = [outputs]
+            if self.print_grad:
+                if outputs[0].requires_grad:
+                    for i in range(len(outputs)):
+                        outputs[i].retain_grad()
+                        self.interm_grad.append(
+                            (f'#{node_id}_{op}_{i}', outputs[i]))
+
             self._check_out_dtype(outputs, node_id, op)
 
             if self.check_intermediate_numeric or (self.use_gradient and not self.stop_updating_loss):

@@ -27,6 +27,7 @@ if __name__ == '__main__':
                         help='Random seed used for model generation')
     parser.add_argument('--use_cuda', action='store_true')
     parser.add_argument('--verbose', action='store_true')
+    parser.add_argument('--print_grad', action='store_true')
     args = parser.parse_args()
 
     __DIFF_CACHE__ = 'config/diff.pkl'
@@ -37,7 +38,7 @@ if __name__ == '__main__':
     results = {}
     net, model_seed = pickle.load(open(args.net, 'rb')), args.model_seed
     net = SymbolNet(net.concrete_graph, None,
-                    megabyte_lim=net.megabyte_lim, verbose=args.verbose)
+                    megabyte_lim=net.megabyte_lim, verbose=args.verbose, print_grad=args.print_grad)
     net.eval()
     print('model_seed=', model_seed)
 
