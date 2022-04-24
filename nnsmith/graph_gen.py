@@ -232,7 +232,7 @@ class SymbolNet(nn.Module):
                 for i, p in enumerate(params):
                     if p.grad is not None:
                         p.grad.data = grads[i]
-                        if torch.any(p.grad > 0):
+                        if torch.any(p.grad != 0):
                             nonzero = True
             ConstraintCheck.true(nonzero,
                                  'Gradients are all zero. Cannot make progress.')
