@@ -99,6 +99,7 @@ if __name__ == '__main__':
     # for reproducibility
     parser.add_argument(
         '--load', help='Use saved models from specified path passed to --root')
+    parser.add_argument('--print_grad', type=int, default=0)
     args = parser.parse_args()
 
     del_root = False
@@ -144,7 +145,7 @@ if __name__ == '__main__':
         net = pickle.load(
             open(os.path.join(args.load, f'model/{model_id}-net.pkl'), 'rb'))
         net = SymbolNet(net.concrete_graph, None,
-                        verbose=args.verbose, megabyte_lim=net.megabyte_lim)
+                        verbose=args.verbose, megabyte_lim=net.megabyte_lim, print_grad=args.print_grad)
         net.eval()
         net.use_gradient = False
         num_op = ref_df['n_nodes'][model_id]
