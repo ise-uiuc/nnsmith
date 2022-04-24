@@ -916,7 +916,7 @@ class Pow(BcastBinaryOp):
 
     def torch_loss(self, a, b):
         # a >= 0 && b*log(a) <= 20
-        l0 = loss_ge(a, 0)
+        l0 = loss_gt_zero(a)
         if torch.any(l0 > 0):
             return (l0,)
         l1 = loss_le(

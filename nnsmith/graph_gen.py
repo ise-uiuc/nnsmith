@@ -194,7 +194,10 @@ class SymbolNet(nn.Module):
             self.optimizer.zero_grad()
             params = self.get_params()
             grads = [0 for _ in params]
+            cnt = 0
             for loss_name, l in self.loss:
+                if ALPHA == 0 and loss_name.endswith('_-'):
+                    continue
                 self.optimizer.zero_grad(True)
                 l.backward(retain_graph=True)
                 if self.print_grad >= 2:
@@ -211,20 +214,28 @@ class SymbolNet(nn.Module):
                     if norm == 0:
                         wt = 0
                     else:
-                        wt = 1 / norm
+                        if os.getenv('NNSMITH_NORM', 'off') != 'off':
+                            wt = 1 / norm
+                        else:
+                            wt = 1
                     del grad_vec
-                    if l.max() <= 0:  # already valid
+                    if loss_name.endswith('_-'):  # already valid
                         wt *= ALPHA
                     else:
-                        ConstraintCheck.true(norm > 0,
-                                             'Gradients are all zero. Cannot make progress.')
+                        cnt += 1
                     for i, p in enumerate(params):
                         if p.grad is not None:
                             grads[i] = grads[i] + p.grad.data * wt
+            assert cnt == 1, cnt
+            nonzero = False
             with torch.no_grad():
                 for i, p in enumerate(params):
                     if p.grad is not None:
                         p.grad.data = grads[i]
+                        if torch.any(p.grad > 0):
+                            nonzero = True
+            ConstraintCheck.true(nonzero,
+                                 'Gradients are all zero. Cannot make progress.')
             torch.nn.utils.clip_grad_norm_(self.parameters(), 1e-1)
             self.optimizer.step()
 
