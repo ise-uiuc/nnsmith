@@ -27,7 +27,7 @@ if __name__ == '__main__':
                         help='Random seed used for model generation')
     parser.add_argument('--use_cuda', action='store_true')
     parser.add_argument('--verbose', action='store_true')
-    parser.add_argument('--print_grad', action='store_true')
+    parser.add_argument('--print_grad', type=int, default=0)
     args = parser.parse_args()
 
     __DIFF_CACHE__ = 'config/diff.pkl'

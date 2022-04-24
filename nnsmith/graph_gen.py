@@ -58,7 +58,7 @@ ALPHA = float(os.getenv("NNSMITH_ALPHA", 0.1))
 
 class SymbolNet(nn.Module):
     def __init__(self, graph: nx.MultiDiGraph, model: z3.ModelRef, verbose=False, alive_shapes: ALIVE_SHAPE_TYPE = None,
-                 record_intermediate=False, use_gradient=False, megabyte_lim=__MB_LIM__, print_grad=False):
+                 record_intermediate=False, use_gradient=False, megabyte_lim=__MB_LIM__, print_grad=0):
         super(SymbolNet, self).__init__()
         self.megabyte_lim = megabyte_lim
         self.verbose = verbose
@@ -197,7 +197,7 @@ class SymbolNet(nn.Module):
             for loss_name, l in self.loss:
                 self.optimizer.zero_grad(True)
                 l.backward(retain_graph=True)
-                if self.print_grad:
+                if self.print_grad >= 2:
                     for name, i in self.interm_grad:
                         msg = f'{i.grad.min()} ~ {i.grad.max()}' if i.grad is not None else 'None'
                         print(
@@ -394,7 +394,7 @@ class SymbolNet(nn.Module):
             outputs = inst(*input_tensors)
             if not isinstance(outputs, list):
                 outputs = [outputs]
-            if self.print_grad:
+            if self.print_grad >= 2:
                 if outputs[0].requires_grad:
                     for i in range(len(outputs)):
                         outputs[i].retain_grad()
@@ -423,8 +423,9 @@ class SymbolNet(nn.Module):
                     # Given its low chance of happening, ignore it for now.
                     msg = ', '.join(
                         [f'loss_{idx}: {l.min().data:.3f} ~ {l.max().data:.3f}' for idx, l in enumerate(vul_op_loss)])
-                    print(
-                        f'Iter #{self.iter_num} [NaN/Inf] in outputs ~ {op} ~ id {node_id} :: {msg}')
+                    if self.print_grad >= 1:
+                        print(
+                            f'Iter #{self.iter_num} [NaN/Inf] in outputs ~ {op} ~ id {node_id} :: {msg}')
 
                     new_losses = []
                     for idx, l in enumerate(vul_op_loss):
@@ -1436,6 +1437,7 @@ def parse_args():
     parser.add_argument('--no_export', action='store_true')
     parser.add_argument('--forward_prob', type=float)
     parser.add_argument('--diff_can_overwrite', action='store_true')
+    parser.add_argument('--print_grad', type=int, default=0)
     return parser.parse_args()
 
 
@@ -1506,7 +1508,7 @@ if __name__ == '__main__':
     if args.no_export:
         exit(0)
     net = SymbolNet(gen.abstract_graph, solution, verbose=args.verbose,
-                    alive_shapes=gen.alive_shapes)
+                    alive_shapes=gen.alive_shapes, print_grad=args.print_grad)
     print('Initializing SymbolNet time: {}s'.format(time.time() - srt_time))
     torch2onnx(net, args.output_path, verbose=args.verbose,
                use_cuda=args.use_cuda)
@@ -1539,6 +1541,8 @@ if __name__ == '__main__':
 
     ed_time = time.time()
     print('self.invalid_found_last=', net.invalid_found_last)
+    print(net(*sat_inputs))
+    assert not any(torch.any(torch.isnan(i)) for i in net(*sat_inputs))
     print('Time to generate inputs: {:.3f}s'.format(ed_time - input_st))
 
     stats = {
@@ -1551,6 +1555,16 @@ if __name__ == '__main__':
         'seed': seed,
     }
     pickle.dump(stats, open(args.output_path + '-stats.pkl', 'wb'))
+    print(sat_inputs)
+
+    if sat_inputs is not None:
+        ret_inputs = {}
+        for i, name in enumerate(net.input_spec):
+            ret_inputs[name] = sat_inputs[i].cpu().numpy()
+        sat_inputs = ret_inputs
+        print(sat_inputs)
+    pickle.dump(sat_inputs, open(
+        args.output_path + '-sat_inputs.pkl', 'wb'))
 
     net.to_picklable()
     cloudpickle.dump(net, open(args.output_path +
