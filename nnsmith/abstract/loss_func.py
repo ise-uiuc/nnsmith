@@ -22,8 +22,12 @@ def loss_le_zero(x):
     return smoothed_relu(x)
 
 
-loss_lt_zero = loss_le_zero
-loss_gt_zero = loss_ge_zero
+def loss_lt_zero(x):
+    return loss_le(x, -1e-10)
+
+
+def loss_gt_zero(x):
+    return loss_ge(x, 1e-10)
 
 
 def loss_ge(x, y):

@@ -200,9 +200,10 @@ class SymbolNet(nn.Module):
                     grad_vec = torch.cat(
                         [p.grad.data.view(-1) if p.grad is not None else torch.zeros(1) for p in params])
                     norm = torch.norm(grad_vec).item()
+                    ConstraintCheck.true(not math.isnan(norm) and not math.isinf(norm),
+                                         'Gradient norm is NaN or Inf')
                     if norm == 0:
                         wt = 0
-                        print('[Warning] Gradient norm is 0 for loss', loss_name)
                     else:
                         wt = 1 / norm
                     del grad_vec
@@ -316,8 +317,10 @@ class SymbolNet(nn.Module):
 
         sat_inputs = None
         st = time.time()
+        self.iter_num = 0
         while time.time() - st < max_time:
             self.training_reset()
+            self.iter_num += 1
 
             try:
                 _ = self(*inputs)
@@ -404,7 +407,7 @@ class SymbolNet(nn.Module):
                     msg = ', '.join(
                         [f'loss_{idx}: {l.min().data:.3f} ~ {l.max().data:.3f}' for idx, l in enumerate(vul_op_loss)])
                     print(
-                        f'[NaN/Inf] in outputs ~ {op} ~ id {node_id} :: {msg}')
+                        f'Iter #{self.iter_num} [NaN/Inf] in outputs ~ {op} ~ id {node_id} :: {msg}')
 
                     new_losses = []
                     for idx, l in enumerate(vul_op_loss):
@@ -453,7 +456,8 @@ class SimpleGenerator:
             self.op_candidates = [
                 op for op in ALL_OP_TYPES if op not in skip and not op._skip]
         else:
-            self.op_candidates = candidates_overwrite
+            self.op_candidates = [
+                op for op in candidates_overwrite if op not in skip and not op._skip]
 
         if use_bitvec:
             self.solver = z3.SolverFor("QF_UFBV")

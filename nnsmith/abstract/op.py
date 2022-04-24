@@ -902,7 +902,7 @@ Div = type('Div', (BcastBinaryOp1,), {
     'torch': (lambda self:
               lambda x, y: torch.div(x, y, rounding_mode='floor' if DType(
                   x.dtype) in DTYPE_INTS else None)),
-    'torch_loss': lambda self, x, y: (loss_ge(torch.abs(y), 1e-20),)
+    'torch_loss': lambda self, x, y: (loss_gt_zero(torch.abs(y)),)
 }
 )
 
@@ -1140,7 +1140,7 @@ class Log2(ElementWiseUnaryOp):
         return torch.log2
 
     def torch_loss(self, x):
-        return (loss_ge(x, 1e-40),)
+        return (loss_gt_zero(x),)
 
 
 class Neg(ElementWiseUnaryOp):
