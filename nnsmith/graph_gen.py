@@ -430,10 +430,10 @@ class SymbolNet(nn.Module):
                     for idx, l in enumerate(vul_op_loss):
                         if (l > 0).sum() > 0:
                             new_losses.append(
-                                (f'{op}_{idx}_+', torch.sum((l > 0) * l) / (l > 0).sum()))
+                                (f'{op}_{idx}_+', torch.sum((l > 0) * l)))
                         if (l <= 0).sum() > 0:
                             new_losses.append(
-                                (f'{op}_{idx}_-', torch.sum((l <= 0) * l) / (l <= 0).sum()))
+                                (f'{op}_{idx}_-', torch.sum((l <= 0) * l)))
                     if self.loss is None:
                         self.loss = new_losses
                     else:
