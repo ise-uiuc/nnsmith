@@ -53,7 +53,7 @@ class InputInfo(InputInfoBase):
 
 __MB_LIM__ = 6 * 1024
 # weight of gradients for valid op losses
-ALPHA = float(os.getenv("NNSMITH_ALPHA", 0.1))
+ALPHA = float(os.getenv("NNSMITH_ALPHA", 0))
 
 
 class SymbolNet(nn.Module):
