@@ -292,6 +292,13 @@ class SymbolNet(nn.Module):
             try:
                 _ = self(*inputs)
             except ConstraintError as e:
+                if "[NaN] in model inputs!" in str(e) or "[Inf] in model inputs!" in str(e):
+                    # flush NaN/Inf in inputs
+                    with torch.no_grad():
+                        for inp in inputs:
+                            inp.copy_(torch.where(
+                                inp.isnan(), torch.rand_like(inp), inp))
+                    continue
                 print(e)
                 break
 
@@ -321,8 +328,10 @@ class SymbolNet(nn.Module):
             if ii.input_name in kwargs:
                 xs[ii.op.idx] = kwargs[ii.input_name]
         assert all(x is not None for x in xs), xs
-        input_invaid = any(
-            [torch.isnan(x).any() or torch.isinf(x).any() for x in xs])
+        ConstraintCheck.true(not any(
+            [torch.isinf(x).any() for x in xs]), f'[Inf] in model inputs!')
+        ConstraintCheck.true(not any(
+            [torch.isnan(x).any() for x in xs]), f'[NaN] in model inputs!')
         local_ref_cnt = self.ref_cnt.copy()
         self.tensors = [None for _ in self.tensors]
         self.invalid_found_last = False
@@ -357,12 +366,10 @@ class SymbolNet(nn.Module):
             if self.check_intermediate_numeric or (self.use_gradient and not self.stop_updating_loss):
                 self.invalid_found_last |= not op.numeric_valid(outputs)
                 if self.invalid_found_last and (self.use_gradient and not self.stop_updating_loss):
-                    ConstraintCheck.true(
-                        not input_invaid, f'[NaN/Inf] in inputs')
-                    if self.verbose:
-                        for inp_i, inp in enumerate(input_tensors):
-                            print(
-                                f'[inp]@{inp_i} :: {inp.min().data:.5f} ~ {inp.max().data:.5f}')
+                    # if self.verbose:
+                    for inp_i, inp in enumerate(input_tensors):
+                        print(
+                            f'[inp]@{inp_i} :: {inp.min().data:.5f} ~ {inp.max().data:.5f}')
 
                     ConstraintCheck.true(hasattr(
                         op, 'torch_loss'), f'op={op} has no `torch_loss` but produces NaN or INF!')

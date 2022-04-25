@@ -1136,7 +1136,7 @@ class Log2(ElementWiseUnaryOp):
         return torch.log2
 
     def torch_loss(self, x):
-        return loss_ge(x, 1e-40)
+        return loss_ge(x, 1e-4)
 
 
 class Neg(ElementWiseUnaryOp):
