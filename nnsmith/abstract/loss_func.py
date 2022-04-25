@@ -3,15 +3,7 @@ import os
 
 
 def smoothed_relu(x):
-    lf = os.getenv('NNSMITH_LOSS', 'v1')
-    if lf == 'v1':
-        return torch.nn.ReLU()(x)
-    elif lf == 'v2':
-        mask = x < 0
-        a = torch.exp(torch.minimum(x, torch.zeros_like(x))) - 1
-        return torch.where(mask, a, x)
-    else:
-        raise ValueError('Unknown loss function: {}'.format(lf))
+    return torch.nn.ReLU()(x)
 
 
 def loss_ge_zero(x):

@@ -53,7 +53,6 @@ class InputInfo(InputInfoBase):
 
 __MB_LIM__ = 6 * 1024
 # weight of gradients for valid op losses
-ALPHA = float(os.getenv("NNSMITH_ALPHA", 0))
 
 
 class SymbolNet(nn.Module):
@@ -196,47 +195,22 @@ class SymbolNet(nn.Module):
     def backward(self):
         if self.loss is not None:
             self._zero_grad()
+            nonzero = False
             params = self.get_params()
-            grads = [0 for _ in params]
-            cnt = 0
+            cur_losses = len([n for n, _ in self.loss if n.endswith('_+')])
+            assert cur_losses == 1, f'cur_losses ({cur_losses}) != 1 loss functions found'
             for loss_name, l in self.loss:
-                if ALPHA == 0 and loss_name.endswith('_-'):
+                if loss_name.endswith('_-'):
                     continue
-                self._zero_grad()
-                l.backward(retain_graph=True)
+                l.backward()
                 if self.print_grad >= 2:
                     for name, i in self.interm_grad:
                         msg = f'{i.grad.min()} ~ {i.grad.max()}' if i.grad is not None else 'None'
                         print(
                             f'Iter {self.iter_num} [{loss_name}] {name} grad: {msg}')
                 with torch.no_grad():
-                    grad_vec = torch.cat(
-                        [p.grad.data.view(-1) if p.grad is not None else torch.zeros(1) for p in params])
-                    norm = torch.norm(grad_vec).item()
-                    ConstraintCheck.true(not math.isnan(norm) and not math.isinf(norm),
-                                         'Gradient norm is NaN or Inf')
-                    if norm == 0:
-                        wt = 0
-                    else:
-                        if os.getenv('NNSMITH_NORM', 'off') != 'off':
-                            wt = 1 / norm
-                        else:
-                            wt = 1
-                    del grad_vec
-                    if loss_name.endswith('_-'):  # already valid
-                        wt *= ALPHA
-                    else:
-                        cnt += 1
                     for i, p in enumerate(params):
-                        if p.grad is not None:
-                            grads[i] = grads[i] + p.grad.data * wt
-            assert cnt == 1, cnt
-            nonzero = False
-            with torch.no_grad():
-                for i, p in enumerate(params):
-                    if p.grad is not None:
-                        p.grad.data = grads[i]
-                        if torch.any(p.grad != 0):
+                        if p.grad is not None and torch.any(p.grad != 0):
                             nonzero = True
             ConstraintCheck.true(nonzero,
                                  'Gradients are all zero. Cannot make progress.')
