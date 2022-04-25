@@ -189,16 +189,20 @@ class SymbolNet(nn.Module):
     def get_params(self):
         return sum([i['params'] for i in self.optimizer.param_groups], [])
 
+    def _zero_grad(self):
+        for p in self.get_params():
+            p.grad = None
+
     def backward(self):
         if self.loss is not None:
-            self.optimizer.zero_grad()
+            self._zero_grad()
             params = self.get_params()
             grads = [0 for _ in params]
             cnt = 0
             for loss_name, l in self.loss:
                 if ALPHA == 0 and loss_name.endswith('_-'):
                     continue
-                self.optimizer.zero_grad(True)
+                self._zero_grad()
                 l.backward(retain_graph=True)
                 if self.print_grad >= 2:
                     for name, i in self.interm_grad:
