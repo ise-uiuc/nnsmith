@@ -6,7 +6,7 @@ from multiprocessing import Process
 import shutil
 import traceback
 import uuid
-from nnsmith.graph_gen import random_model_gen, SymbolNet
+from nnsmith.graph_gen import random_model_gen, SymbolNet, random_tensor
 from nnsmith.dtype_test import rewrite_op_dtype
 from nnsmith.abstract.op import ALL_OP_TYPES
 
@@ -129,9 +129,13 @@ if __name__ == '__main__':
         'model_seed': [],
         'n_nodes': [],
 
-        'v3-time': [],
-        'v3-try': [],
-        'v3-succ': [],
+        'naive-time': [],
+        'naive-try': [],
+        'naive-succ': [],
+
+        'sampling-time': [],
+        'sampling-try': [],
+        'sampling-succ': [],
 
         'grad-time': [],
         'grad-try': [],
@@ -152,63 +156,96 @@ if __name__ == '__main__':
         results['n_nodes'].append(num_op)
         results['model_seed'].append(model_seed)
 
-        init_tensor_samples = []
-        n_step = args.n_inp_sample
-        interval = 1 / n_step
-        if n_step > 1:
-            for v in np.linspace(-10, 10, n_step):
-                init_tensors = [(v + torch.rand(ii.op.shape_var.shape)
-                                * interval).to(dtype=ii.op.shape_var.dtype.value) for ii in net.input_info]
-                init_tensor_samples.append(init_tensors)
-        else:
+        def seedme():
             nseed = (model_seed + 1) % (2 ** 32)
             random.seed(nseed)
             np.random.seed(nseed)
             torch.manual_seed(nseed)
-            init_tensors = net.get_random_inps(
-                use_cuda=args.use_cuda)
-            init_tensor_samples.append(init_tensors)
 
-        # Test v3
+        # ------------------------------------------------------------
+        # Test naive:
+        # how other fuzzers do: just randomly init tensors using torch.random -> 0~1 by `once`
+        seedme()
         strt_time = time.time()
-        succ_v3 = False
-        try_times_v3 = 0
 
         if args.use_cuda:
             net.use_cuda()
 
         net.check_intermediate_numeric = True
         with torch.no_grad():
-            for init_tensors in init_tensor_samples:
-                try_times_v3 += 1
-                _ = net(*init_tensors)
+            _ = net(*net.get_random_inps(base=0,
+                    margin=1, use_cuda=args.use_cuda))
+            results['naive-succ'].append(not net.invalid_found_last)
+
+        results['naive-time'].append(time.time() - strt_time)
+        results['naive-try'].append(1)  # naive method always try once
+        # ------------------------------------------------------------
+
+        # ------------------------------------------------------------
+        # Test sampling:
+        # sync input & weight between `sampling` and `grad`
+        seedme()
+        init_tensor_samples = []
+        for _ in range(args.n_inp_sample):
+            init_tensor_samples.append(net.get_random_inps(
+                base=0, margin=10, use_cuda=args.use_cuda))
+
+        init_weight_samples = []
+        with torch.no_grad():
+            for _ in range(args.n_inp_sample):
+                weight_sample = {}
+                for name, param in net.named_parameters():
+                    weight_sample[name] = random_tensor(
+                        param.shape, dtype=param.dtype, use_cuda=args.use_cuda)
+                init_weight_samples.append(weight_sample)
+
+        def apply_weights(net, weight_sample):
+            with torch.no_grad():
+                for name, param in net.named_parameters():
+                    param.copy_(weight_sample[name])
+
+        if args.use_cuda:
+            net.use_cuda()
+
+        strt_time = time.time()
+        succ_sampling = False
+        try_times_sampling = 0
+
+        net.check_intermediate_numeric = True
+        with torch.no_grad():
+            for inp_sample, w_sample in zip(init_tensor_samples, init_weight_samples):
+                try_times_sampling += 1
+                apply_weights(net, w_sample)
+                _ = net(*inp_sample)
                 if not net.invalid_found_last:
-                    succ_v3 = True
+                    succ_sampling = True
                     break
 
-        results['v3-time'].append(time.time() - strt_time)
-        results['v3-try'].append(try_times_v3)
-        results['v3-succ'].append(succ_v3)
+        results['sampling-time'].append(time.time() - strt_time)
+        results['sampling-try'].append(try_times_sampling)
+        results['sampling-succ'].append(succ_sampling)
+        # ------------------------------------------------------------
 
+        # ------------------------------------------------------------
         # Test grad
-        # If v3 can succeed, grad can succeed too as their initial input are the same.
+        # If sampling can succeed, grad can succeed too as their initial input are the same.
+        seedme()
+
         strt_time = time.time()
         succ_grad = False
         try_times_grad = 0
-        for init_tensors in init_tensor_samples:
+
+        for inp_sample, w_sample in zip(init_tensor_samples, init_weight_samples):
             try_times_grad += 1
             try:
-                nseed = (model_seed + 1) % (2 ** 32)
-                random.seed(nseed)
-                np.random.seed(nseed)
-                torch.manual_seed(nseed)
+                apply_weights(net, w_sample)
                 sat_inputs = net.grad_input_gen(
-                    init_tensors=init_tensors, use_cuda=args.use_cuda)
+                    init_tensors=inp_sample, use_cuda=args.use_cuda)
             except RuntimeError as e:
                 if 'element 0 of tensors does not require grad and does not have a grad_fn' in str(e):
                     # means some op are not differentiable.
-                    succ_grad = succ_v3
-                    try_times_grad = try_times_v3
+                    succ_grad = succ_sampling
+                    try_times_grad = try_times_sampling
                     break
                 raise e
             if sat_inputs is not None:
@@ -219,6 +256,7 @@ if __name__ == '__main__':
         results['grad-succ'].append(succ_grad)
         results['grad-try'].append(try_times_grad)
         results['grad-time'].append(time.time() - strt_time)
+        # --------------------------------------------------------------------
 
     df = pd.DataFrame(results)
     df.to_csv(exp_name, index=False)

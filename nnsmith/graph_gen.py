@@ -54,6 +54,21 @@ class InputInfo(InputInfoBase):
 __MB_LIM__ = 6 * 1024
 
 
+def random_tensor(shape, dtype, margin=10, base=0, use_cuda=False):
+    # center: -margin ~ 0 ~ +margin
+    dev = torch.device('cuda' if use_cuda else 'cpu')
+    if base == 'center':
+        base = -margin / 2
+    else:
+        assert isinstance(base, int) or isinstance(base, float)
+
+    fp_tensor = base + torch.rand(shape, device=dev) * margin
+    if DType.is_float(dtype):
+        return fp_tensor.to(dtype)
+    else:
+        return torch.round(fp_tensor).to(dtype)
+
+
 class SymbolNet(nn.Module):
     def __init__(self, graph: nx.MultiDiGraph, model: z3.ModelRef, verbose=False, alive_shapes: ALIVE_SHAPE_TYPE = None,
                  record_intermediate=False, use_gradient=False, megabyte_lim=__MB_LIM__):
@@ -219,22 +234,12 @@ class SymbolNet(nn.Module):
             SanityCheck.eq(out.dtype, self.alive_shapes[shape_idx][1].dtype.value, msg_head +
                            f'torch dtype ({out.dtype}) != symbolic dtype ({self.alive_shapes[shape_idx][1].dtype.value})')
 
-    def get_random_inps(self, margin=10, base='center', use_cuda=False) -> List[torch.Tensor]:
-        dev = torch.device('cuda' if use_cuda else 'cpu')
-        if base == 'center':
-            base = margin / 2
-        else:
-            assert isinstance(base, int) or isinstance(base, float)
-
+    def get_random_inps(self, margin=10, base=0, use_cuda=False) -> List[torch.Tensor]:
+        # center: -margin ~ 0 ~ +margin
         inputs = []
         for ii in self.input_info:
-            dtype = ii.op.shape_var.dtype.value
-            fp_tensor = base + \
-                torch.rand(ii.op.shape_var.shape, device=dev) * margin
-            if DType.is_float(dtype):
-                inputs.append(fp_tensor.to(dtype))
-            else:
-                inputs.append(torch.round(fp_tensor).to(dtype))
+            inputs.append(random_tensor(ii.op.shape_var.shape,
+                          ii.op.shape_var.dtype.value, margin=margin, base=base, use_cuda=use_cuda))
 
         return inputs
 
@@ -574,7 +579,7 @@ class SimpleGenerator:
         self.abstract_graph.nodes[shuffled_placeholder[0]
                                   ]['op'] = self.abstract_graph.nodes[shuffled_placeholder[0]]['op'].to_input()
         for holder_idx in shuffled_placeholder[1:]:
-            if random.randint(0, 1) and os.getenv('NNSMITH_CONST', 'off') != 'off':
+            if random.randint(0, 1):
                 self.abstract_graph.nodes[holder_idx]['op'] = self.abstract_graph.nodes[holder_idx]['op'].to_const(
                 )
             else:

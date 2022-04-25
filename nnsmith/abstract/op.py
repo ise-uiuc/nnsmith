@@ -757,10 +757,11 @@ Xor = type('Xor', (Logical,), {'torch': lambda self: torch.logical_xor})
 
 
 class StopFoldConst(torch.nn.Module):
-    def __init__(self, data):
+    def __init__(self, data: torch.Tensor):
         super().__init__()
         self.dtype = data.dtype
-        self.param = torch.nn.parameter.Parameter(data, requires_grad=False)
+        self.param = torch.nn.parameter.Parameter(
+            data, requires_grad=data.is_floating_point())
 
     @torch.no_grad()
     def forward(self):
