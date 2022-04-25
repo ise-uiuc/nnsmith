@@ -234,23 +234,23 @@ class SymbolNet(nn.Module):
             SanityCheck.eq(out.dtype, self.alive_shapes[shape_idx][1].dtype.value, msg_head +
                            f'torch dtype ({out.dtype}) != symbolic dtype ({self.alive_shapes[shape_idx][1].dtype.value})')
 
-    def get_random_inps(self, margin=10, base=1, use_cuda=False) -> List[torch.Tensor]:
+    def get_random_inps(self, **kwargs) -> List[torch.Tensor]:
         # center: -margin ~ 0 ~ +margin
         inputs = []
         for ii in self.input_info:
             inputs.append(random_tensor(ii.op.shape_var.shape,
-                          ii.op.shape_var.dtype.value, margin=margin, base=base, use_cuda=use_cuda))
+                          ii.op.shape_var.dtype.value, **kwargs))
 
         return inputs
 
-    def rand_input_gen(self, max_iter=10, margin=10, base=1, use_cuda=False) -> Optional[List[torch.Tensor]]:
+    def rand_input_gen(self, max_iter=10, use_cuda=False, **kwargs) -> Optional[List[torch.Tensor]]:
         last_check_intermediate_numeric = self.check_intermediate_numeric
         self.check_intermediate_numeric = True
 
         sat_inputs = None
 
         for _ in range(max_iter):
-            inputs = self.get_random_inps(margin, base, use_cuda)
+            inputs = self.get_random_inps(**kwargs, use_cuda=use_cuda)
 
             if use_cuda:
                 self.use_cuda()
@@ -264,10 +264,10 @@ class SymbolNet(nn.Module):
         self.check_intermediate_numeric = last_check_intermediate_numeric
         return sat_inputs
 
-    def grad_input_gen(self, max_iter=int(os.getenv('NNSMITH_GRAD_ITER', 100)), init_tensors=None, margin=10, base=1, use_cuda=False) -> Optional[List[torch.Tensor]]:
+    def grad_input_gen(self, max_iter=int(os.getenv('NNSMITH_GRAD_ITER', 100)), init_tensors=None, use_cuda=False, **kwargs) -> Optional[List[torch.Tensor]]:
         if init_tensors is None:
             init_tensors = self.get_random_inps(
-                margin, base, use_cuda=use_cuda)
+                **kwargs, use_cuda=use_cuda)
 
         inputs = []
         for tensor in init_tensors:
