@@ -100,18 +100,21 @@ if __name__ == '__main__':
         '--load', help='Use saved models from specified path passed to --root')
     args = parser.parse_args()
 
-    del_root = False
-    if args.root is None:
-        args.root = 'input_search_root_' + str(uuid.uuid4())
-        del_root = True
-    mkdir(args.root)
-
     exp_seed = args.exp_seed
     if exp_seed is None:
         exp_seed = random.getrandbits(32)
     print(f"Using seed {exp_seed}")
+
     # generate models
-    if args.load is None:
+    del_root = False
+    if args.load is not None:
+        assert args.root is None, "--root and --load are mutually exclusive"
+        args.root = args.load
+    else:  # load is None
+        if args.root is None:
+            args.root = 'input_search_root_' + str(uuid.uuid4())
+            del_root = True
+        mkdir(args.root)
         p = Process(target=mknets, args=(args, exp_seed))
         p.start()
         p.join()
@@ -259,12 +262,9 @@ if __name__ == '__main__':
         # --------------------------------------------------------------------
 
     df = pd.DataFrame(results)
-    df.to_csv(exp_name, index=False)
-    if args.root is not None:
-        os.system(
-            f'cp {exp_name} {os.path.join(args.root, "model_info.csv")}')
-        with open(os.path.join(args.root, 'stats.log'), 'w') as f:
-            f.write(str(df.mean()) + '\n')
+    df.to_csv(os.path.join(args.root, exp_name), index=False)
+    with open(os.path.join(args.root, 'stats.log'), 'w') as f:
+        f.write(str(df.mean()) + '\n')
     print(df.mean())
     if del_root:
         shutil.rmtree(args.root)
