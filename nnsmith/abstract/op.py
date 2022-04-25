@@ -1420,7 +1420,8 @@ class Pad(UnaryOpBase):
 
     def torch(self) -> Callable[..., torch.Tensor]:
         if self.extra_attrs['type'] == 'constant':
-            return lambda x: torch.nn.functional.pad(x, self.padding_list, 'constant', value=0)
+            # 0 easily cause division by zero...
+            return lambda x: torch.nn.functional.pad(x, self.padding_list, 'constant', value=1)
         elif self.extra_attrs['type'] == 'replicate' or self.extra_attrs['type'] == 'reflect':
             return lambda x: torch.nn.functional.pad(x, self.padding_list, self.extra_attrs['type'])
 

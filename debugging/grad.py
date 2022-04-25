@@ -83,8 +83,7 @@ if __name__ == '__main__':
     seedme()
     init_tensor_samples = []
     for _ in range(args.n_inp_sample):
-        init_tensor_samples.append(net.get_random_inps(
-            base=0, margin=10, use_cuda=args.use_cuda))
+        init_tensor_samples.append(net.get_random_inps(use_cuda=args.use_cuda))
 
     init_weight_samples = []
     with torch.no_grad():

@@ -54,7 +54,7 @@ class InputInfo(InputInfoBase):
 __MB_LIM__ = 6 * 1024
 
 
-def random_tensor(shape, dtype, margin=10, base=0, use_cuda=False):
+def random_tensor(shape, dtype, margin=10, base=1, use_cuda=False):
     # center: -margin ~ 0 ~ +margin
     dev = torch.device('cuda' if use_cuda else 'cpu')
     if base == 'center':
@@ -234,7 +234,7 @@ class SymbolNet(nn.Module):
             SanityCheck.eq(out.dtype, self.alive_shapes[shape_idx][1].dtype.value, msg_head +
                            f'torch dtype ({out.dtype}) != symbolic dtype ({self.alive_shapes[shape_idx][1].dtype.value})')
 
-    def get_random_inps(self, margin=10, base=0, use_cuda=False) -> List[torch.Tensor]:
+    def get_random_inps(self, margin=10, base=1, use_cuda=False) -> List[torch.Tensor]:
         # center: -margin ~ 0 ~ +margin
         inputs = []
         for ii in self.input_info:
@@ -243,7 +243,7 @@ class SymbolNet(nn.Module):
 
         return inputs
 
-    def rand_input_gen(self, max_iter=10, margin=10, base='center', use_cuda=False) -> Optional[List[torch.Tensor]]:
+    def rand_input_gen(self, max_iter=10, margin=10, base=1, use_cuda=False) -> Optional[List[torch.Tensor]]:
         last_check_intermediate_numeric = self.check_intermediate_numeric
         self.check_intermediate_numeric = True
 
@@ -264,7 +264,7 @@ class SymbolNet(nn.Module):
         self.check_intermediate_numeric = last_check_intermediate_numeric
         return sat_inputs
 
-    def grad_input_gen(self, max_iter=int(os.getenv('NNSMITH_GRAD_ITER', 100)), init_tensors=None, margin=10, base='center', use_cuda=False) -> Optional[List[torch.Tensor]]:
+    def grad_input_gen(self, max_iter=int(os.getenv('NNSMITH_GRAD_ITER', 100)), init_tensors=None, margin=10, base=1, use_cuda=False) -> Optional[List[torch.Tensor]]:
         if init_tensors is None:
             init_tensors = self.get_random_inps(
                 margin, base, use_cuda=use_cuda)
