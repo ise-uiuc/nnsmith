@@ -27,7 +27,6 @@ import copy
 from nnsmith.error import SanityCheck, ConstraintCheck, ConstraintError
 from nnsmith.export import torch2onnx
 from nnsmith.abstract.op import *
-from nnsmith.abstract.op import __MAX_RANK__ as __MAX_RANK__
 
 
 NNSMITH_LIMNF_V = os.getenv('NNSMITH_LIMNF_V', '0')
@@ -52,6 +51,7 @@ class InputInfo(InputInfoBase):
 
 
 __MB_LIM__ = 6 * 1024
+# weight of gradients for valid op losses
 
 
 def random_tensor(shape, dtype, margin=10, base=1, use_cuda=False):
@@ -71,10 +71,11 @@ def random_tensor(shape, dtype, margin=10, base=1, use_cuda=False):
 
 class SymbolNet(nn.Module):
     def __init__(self, graph: nx.MultiDiGraph, model: z3.ModelRef, verbose=False, alive_shapes: ALIVE_SHAPE_TYPE = None,
-                 record_intermediate=False, use_gradient=False, megabyte_lim=__MB_LIM__):
+                 record_intermediate=False, use_gradient=False, megabyte_lim=__MB_LIM__, print_grad=0):
         super(SymbolNet, self).__init__()
         self.megabyte_lim = megabyte_lim
         self.verbose = verbose
+        self.print_grad = print_grad
         self.tensors = []  # 1) edges; 2) leaf nodes; 3) input -> 0;
         self.ref_cnt = []  # ref cnt -> tensors; erased on 0;
         self.instructions = []  # <Func, <input idx>, <output idx>>
@@ -198,10 +199,35 @@ class SymbolNet(nn.Module):
         self.alive_shapes = None
         del self.graph
 
+    def get_params(self):
+        return sum([i['params'] for i in self.optimizer.param_groups], [])
+
+    def _zero_grad(self):
+        for p in self.get_params():
+            p.grad = None
+
     def backward(self):
         if self.loss is not None:
-            self.optimizer.zero_grad()
-            self.loss.backward()
+            self._zero_grad()
+            nonzero = False
+            params = self.get_params()
+            cur_losses = len([n for n, _ in self.loss if n.endswith('_+')])
+            assert cur_losses == 1, f'cur_losses ({cur_losses}) != 1 loss functions found'
+            for loss_name, l in self.loss:
+                if loss_name.endswith('_-'):
+                    continue
+                l.backward()
+                if self.print_grad >= 2:
+                    for name, i in self.interm_grad:
+                        msg = f'{i.grad.min()} ~ {i.grad.max()}' if i.grad is not None else 'None'
+                        print(
+                            f'Iter {self.iter_num} [{loss_name}] {name} grad: {msg}')
+                with torch.no_grad():
+                    for i, p in enumerate(params):
+                        if p.grad is not None and torch.any(p.grad != 0):
+                            nonzero = True
+            ConstraintCheck.true(nonzero,
+                                 'Gradients are all zero. Cannot make progress.')
             torch.nn.utils.clip_grad_norm_(self.parameters(), 1e-1)
             self.optimizer.step()
 
@@ -264,7 +290,10 @@ class SymbolNet(nn.Module):
         self.check_intermediate_numeric = last_check_intermediate_numeric
         return sat_inputs
 
-    def grad_input_gen(self, max_iter=int(os.getenv('NNSMITH_GRAD_ITER', 100)), init_tensors=None, use_cuda=False, **kwargs) -> Optional[List[torch.Tensor]]:
+    def grad_input_gen(self, max_iter=int(os.getenv('NNSMITH_GRAD_ITER', 100)),
+                       init_tensors=None, use_cuda=False,
+                       max_time=int(os.getenv('NNSMITH_GRAD_TIME', 10)), **kwargs) -> Optional[List[torch.Tensor]]:
+        # TODO: trim the param. max_iter is not used; remove getenv
         if init_tensors is None:
             init_tensors = self.get_random_inps(
                 **kwargs, use_cuda=use_cuda)
@@ -286,11 +315,19 @@ class SymbolNet(nn.Module):
             self.use_cuda()
 
         sat_inputs = None
-        for _ in range(max_iter):
+        st = time.time()
+        self.iter_num = 0
+        while time.time() - st < max_time:
             self.training_reset()
+            self.iter_num += 1
 
             try:
                 _ = self(*inputs)
+                if self.invalid_found_last:  # need_to_train
+                    self.backward()
+                else:
+                    sat_inputs = [v.data for v in inputs]
+                    break
             except ConstraintError as e:
                 if "[NaN] in model inputs!" in str(e) or "[Inf] in model inputs!" in str(e):
                     # flush NaN/Inf in inputs
@@ -300,12 +337,6 @@ class SymbolNet(nn.Module):
                                 inp.isnan(), torch.rand_like(inp), inp))
                     continue
                 print(e)
-                break
-
-            if self.invalid_found_last:  # need_to_train
-                self.backward()
-            else:
-                sat_inputs = [v.data for v in inputs]
                 break
 
         self.stop_training()
@@ -321,6 +352,7 @@ class SymbolNet(nn.Module):
 
     def forward(self, *args, **kwargs):
         # required: input_info, tensors, ref_cnt, instructions, hacked, first_run verbose # alive_shapes, graph
+        self.interm_grad = []
         xs = [None] * len(self.input_info)
         for i in range(len(args)):
             xs[i] = args[i]
@@ -335,6 +367,9 @@ class SymbolNet(nn.Module):
         local_ref_cnt = self.ref_cnt.copy()
         self.tensors = [None for _ in self.tensors]
         self.invalid_found_last = False
+        for i in range(len(xs)):
+            if xs[i].requires_grad:
+                self.interm_grad.append((f'i_{i}', xs[i]))
 
         for ii in self.input_info:
             self.tensors[ii.oid] = xs[ii.op.idx]
@@ -361,31 +396,49 @@ class SymbolNet(nn.Module):
             outputs = inst(*input_tensors)
             if not isinstance(outputs, list):
                 outputs = [outputs]
+            if self.print_grad >= 2:
+                if outputs[0].requires_grad:
+                    for i in range(len(outputs)):
+                        outputs[i].retain_grad()
+                        self.interm_grad.append(
+                            (f'#{node_id}_{op}_{i}', outputs[i]))
+
             self._check_out_dtype(outputs, node_id, op)
 
             if self.check_intermediate_numeric or (self.use_gradient and not self.stop_updating_loss):
+                if hasattr(op, 'torch_loss'):
+                    vul_op_loss = (op.torch_loss(*input_tensors),)
+                else:
+                    vul_op_loss = ()
                 self.invalid_found_last |= not op.numeric_valid(outputs)
                 if self.invalid_found_last and (self.use_gradient and not self.stop_updating_loss):
-                    # if self.verbose:
-                    for inp_i, inp in enumerate(input_tensors):
-                        print(
-                            f'[inp]@{inp_i} :: {inp.min().data:.5f} ~ {inp.max().data:.5f}')
+                    if self.print_grad >= 1:
+                        for inp_i, inp in enumerate(input_tensors):
+                            print(
+                                f'[inp]@{inp_i} :: {inp.min().data:.5f} ~ {inp.max().data:.5f}')
 
                     ConstraintCheck.true(hasattr(
                         op, 'torch_loss'), f'op={op} has no `torch_loss` but produces NaN or INF!')
                     # TODO: some less vulnerable ops (like Mul) may also trigger Inf and will crash the process.
                     # Given its low chance of happening, ignore it for now.
-                    if hasattr(op, 'torch_loss'):
-                        vul_op_loss = op.torch_loss(*input_tensors)
-                    else:
-                        vul_op_loss = torch.tensor(1., requires_grad=True)
-                    print(
-                        f'[NaN/Inf] in outputs ~ {op} ~ id {node_id} :: {vul_op_loss.min().data:.3f} ~ {vul_op_loss.max().data:.3f}')
+                    msg = ', '.join(
+                        [f'loss_{idx}: {l.min().data:.3f} ~ {l.max().data:.3f}' for idx, l in enumerate(vul_op_loss)])
+                    if self.print_grad >= 1:
+                        print(
+                            f'Iter #{self.iter_num} [NaN/Inf] in outputs ~ {op} ~ id {node_id} :: {msg}')
 
+                    new_losses = []
+                    for idx, l in enumerate(vul_op_loss):
+                        if (l > 0).sum() > 0:
+                            new_losses.append(
+                                (f'{op}_{idx}_+', torch.sum((l > 0) * l)))
+                        if (l <= 0).sum() > 0:
+                            new_losses.append(
+                                (f'{op}_{idx}_-', torch.sum((l <= 0) * l)))
                     if self.loss is None:
-                        self.loss = vul_op_loss.mean()
+                        self.loss = new_losses
                     else:
-                        self.loss += vul_op_loss.mean()
+                        self.loss.extend(new_losses)
                     self.stop_updating_loss = True
                     return outputs
 
@@ -421,7 +474,8 @@ class SimpleGenerator:
             self.op_candidates = [
                 op for op in ALL_OP_TYPES if op not in skip and not op._skip]
         else:
-            self.op_candidates = candidates_overwrite
+            self.op_candidates = [
+                op for op in candidates_overwrite if op not in skip and not op._skip]
 
         if use_bitvec:
             self.solver = z3.SolverFor("QF_UFBV")
@@ -1383,6 +1437,7 @@ def parse_args():
     parser.add_argument('--no_export', action='store_true')
     parser.add_argument('--forward_prob', type=float)
     parser.add_argument('--diff_can_overwrite', action='store_true')
+    parser.add_argument('--print_grad', type=int, default=0)
     return parser.parse_args()
 
 
@@ -1395,12 +1450,15 @@ def random_model_gen(
         timeout=50000,
         verbose=False,
         mode='random',
+        skip=None,
         **kwargs):
 
     GenCls = {
         'random': PureSymbolGen,
         'guided': GuidedGen,
     }[mode]
+    if skip is not None:
+        config_skip_op(skip)
     gen = GenCls(min_dims=min_dims,
                  viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec,
                  **kwargs)
@@ -1450,10 +1508,8 @@ if __name__ == '__main__':
     if args.no_export:
         exit(0)
     net = SymbolNet(gen.abstract_graph, solution, verbose=args.verbose,
-                    alive_shapes=gen.alive_shapes)
+                    alive_shapes=gen.alive_shapes, print_grad=args.print_grad)
     print('Initializing SymbolNet time: {}s'.format(time.time() - srt_time))
-    torch2onnx(net, args.output_path, verbose=args.verbose,
-               use_cuda=args.use_cuda)
     import onnx
     onnx.checker.check_model(
         onnx.load(args.output_path), full_check=True)
@@ -1483,6 +1539,7 @@ if __name__ == '__main__':
 
     ed_time = time.time()
     print('self.invalid_found_last=', net.invalid_found_last)
+    assert AbsOpBase.numeric_valid(net(*sat_inputs))
     print('Time to generate inputs: {:.3f}s'.format(ed_time - input_st))
 
     stats = {
@@ -1495,6 +1552,16 @@ if __name__ == '__main__':
         'seed': seed,
     }
     pickle.dump(stats, open(args.output_path + '-stats.pkl', 'wb'))
+
+    if sat_inputs is not None:
+        ret_inputs = {}
+        for i, name in enumerate(net.input_spec):
+            ret_inputs[name] = sat_inputs[i].cpu().numpy()
+        sat_inputs = ret_inputs
+    pickle.dump(sat_inputs, open(
+        args.output_path + '-sat_inputs.pkl', 'wb'))
+    torch2onnx(net, args.output_path, verbose=args.verbose,
+               use_cuda=args.use_cuda)
 
     net.to_picklable()
     cloudpickle.dump(net, open(args.output_path +

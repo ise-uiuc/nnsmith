@@ -30,7 +30,7 @@ def mknet(args, differentiable_ops):
     model_seed = random.getrandbits(32)
     gen, solution = random_model_gen(
         mode=args.mode, min_dims=args.min_dims, seed=model_seed, max_nodes=args.max_nodes,
-        timeout=args.timeout, candidates_overwrite=differentiable_ops, init_fp=True)
+        timeout=args.timeout, candidates_overwrite=differentiable_ops, init_fp=True, skip=args.skip)
     net = SymbolNet(gen.abstract_graph, solution, verbose=args.verbose,
                     alive_shapes=gen.alive_shapes)
     net.eval()
@@ -95,9 +95,11 @@ if __name__ == '__main__':
     parser.add_argument('--mode', type=str, default='random')
     parser.add_argument('--root', type=str,
                         help='save models and results to this path')
+    parser.add_argument('--skip')
     # for reproducibility
     parser.add_argument(
         '--load', help='Use saved models from specified path passed to --root')
+    parser.add_argument('--print_grad', type=int, default=0)
     args = parser.parse_args()
 
     exp_seed = args.exp_seed
@@ -150,7 +152,7 @@ if __name__ == '__main__':
         net = pickle.load(
             open(os.path.join(args.load, f'model/{model_id}-net.pkl'), 'rb'))
         net = SymbolNet(net.concrete_graph, None,
-                        verbose=args.verbose, megabyte_lim=net.megabyte_lim)
+                        verbose=args.verbose, megabyte_lim=net.megabyte_lim, print_grad=args.print_grad)
         net.eval()
         net.use_gradient = False
         num_op = ref_df['n_nodes'][model_id]

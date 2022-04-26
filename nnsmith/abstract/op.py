@@ -15,6 +15,7 @@ import warnings
 # Import z3 ahead of torch (See https://github.com/Z3Prover/z3/issues/5656)
 import z3
 import torch
+from torch import Tensor
 
 from nnsmith.error import SanityCheck, ConstraintCheck
 from nnsmith.abstract.loss_func import *
@@ -525,7 +526,8 @@ class AbsOpBase(ABC):
     def __repr__(self) -> str:
         return self.__class__.__name__
 
-    def numeric_valid(self, outputs) -> bool:
+    @staticmethod
+    def numeric_valid(outputs) -> bool:
         with torch.no_grad():
             return not any([torch.isnan(out).any() or torch.isinf(
                 out).any() for out in outputs])
@@ -900,7 +902,7 @@ Div = type('Div', (BcastBinaryOp1,), {
     'torch': (lambda self:
               lambda x, y: torch.div(x, y, rounding_mode='floor' if DType(
                   x.dtype) in DTYPE_INTS else None)),
-    'torch_loss': (lambda self, x, y: loss_ge(torch.abs(y), 1e-20))
+    'torch_loss': lambda self, x, y: loss_gt_zero(torch.abs(y))
 }
 )
 
@@ -914,10 +916,12 @@ class Pow(BcastBinaryOp):
 
     def torch_loss(self, a, b):
         # a >= 0 && b*log(a) <= 20
-        l0 = loss_ge(a, 0)
+        l0 = loss_gt_zero(a)
+        if torch.any(l0 > 0):
+            return l0
         l1 = loss_le(
             b * torch.log(torch.maximum(a, torch.tensor(1e-40, dtype=a.dtype))), 20)
-        return l0 + l1
+        return l1
 
 
 class ReLU(ElementWiseUnaryOp):
@@ -1136,7 +1140,7 @@ class Log2(ElementWiseUnaryOp):
         return torch.log2
 
     def torch_loss(self, x):
-        return loss_ge(x, 1e-4)
+        return loss_gt_zero(x)
 
 
 class Neg(ElementWiseUnaryOp):

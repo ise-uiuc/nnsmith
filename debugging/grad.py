@@ -22,12 +22,14 @@ if __name__ == '__main__':
     parser.add_argument('model_seed', type=int,
                         help='Random seed used for model generation')
     parser.add_argument('--use_cuda', action='store_true')
+    parser.add_argument('--verbose', action='store_true')
+    parser.add_argument('--print_grad', type=int, default=0)
     parser.add_argument('--n_inp_sample', type=int, default=1)
     args = parser.parse_args()
 
     __DIFF_CACHE__ = 'config/diff.pkl'
     differentiable_ops = rewrite_op_dtype(
-        ALL_OP_TYPES, backend=None, diff=True, verbose=True, cache=__DIFF_CACHE__)
+        ALL_OP_TYPES, backend=None, diff=True, verbose=args.verbose, cache=__DIFF_CACHE__)
     print(differentiable_ops)
 
     results = {
@@ -48,7 +50,8 @@ if __name__ == '__main__':
     }
 
     net, model_seed = pickle.load(open(args.net, 'rb')), args.model_seed
-    net = SymbolNet(net.concrete_graph, None, megabyte_lim=net.megabyte_lim)
+    net = SymbolNet(net.concrete_graph, None,
+                    megabyte_lim=net.megabyte_lim, verbose=args.verbose, print_grad=args.print_grad)
     net.eval()
     print('model_seed=', model_seed)
 
