@@ -27,7 +27,6 @@ import copy
 from nnsmith.error import SanityCheck, ConstraintCheck, ConstraintError
 from nnsmith.export import torch2onnx
 from nnsmith.abstract.op import *
-from nnsmith.abstract.op import __MAX_RANK__ as __MAX_RANK__
 
 
 NNSMITH_LIMNF_V = os.getenv('NNSMITH_LIMNF_V', '0')
@@ -1528,7 +1527,7 @@ if __name__ == '__main__':
 
     ed_time = time.time()
     print('self.invalid_found_last=', net.invalid_found_last)
-    assert not any(torch.any(torch.isnan(i)) for i in net(*sat_inputs))
+    assert AbsOpBase.numeric_valid(net(*sat_inputs))
     print('Time to generate inputs: {:.3f}s'.format(ed_time - input_st))
 
     stats = {

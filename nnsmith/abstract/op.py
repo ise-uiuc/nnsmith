@@ -526,6 +526,7 @@ class AbsOpBase(ABC):
     def __repr__(self) -> str:
         return self.__class__.__name__
 
+    @staticmethod
     def numeric_valid(self, outputs) -> bool:
         with torch.no_grad():
             return not any([torch.isnan(out).any() or torch.isinf(
