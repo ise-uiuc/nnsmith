@@ -901,7 +901,7 @@ Div = type('Div', (BcastBinaryOp1,), {
     'torch': (lambda self:
               lambda x, y: torch.div(x, y, rounding_mode='floor' if DType(
                   x.dtype) in DTYPE_INTS else None)),
-    'torch_loss': lambda self, x, y: (loss_gt_zero(torch.abs(y)),)
+    'torch_loss': lambda self, x, y: loss_gt_zero(torch.abs(y))
 }
 )
 
@@ -920,7 +920,7 @@ class Pow(BcastBinaryOp):
             return (l0,)
         l1 = loss_le(
             b * torch.log(torch.maximum(a, torch.tensor(1e-40, dtype=a.dtype))), 20)
-        return (l1,)
+        return l1
 
 
 class ReLU(ElementWiseUnaryOp):
@@ -1031,7 +1031,7 @@ class Asin(TrigonometricOp):
         return torch.asin
 
     def torch_loss(self, x):
-        return (loss_le(x.abs(), 1),)
+        return loss_le(x.abs(), 1)
 
 
 class Acos(TrigonometricOp):
@@ -1045,7 +1045,7 @@ class Acos(TrigonometricOp):
         return torch.acos
 
     def torch_loss(self, x):
-        return (loss_le(x.abs(), 1),)
+        return loss_le(x.abs(), 1)
 
 
 class Tan(TrigonometricOp):
@@ -1125,7 +1125,7 @@ class Sqrt(ElementWiseUnaryOp):
         return torch.sqrt
 
     def torch_loss(self, x):
-        return (loss_ge(x, 0),)
+        return loss_ge(x, 0)
 
 
 class Log2(ElementWiseUnaryOp):
@@ -1139,7 +1139,7 @@ class Log2(ElementWiseUnaryOp):
         return torch.log2
 
     def torch_loss(self, x):
-        return (loss_gt_zero(x),)
+        return loss_gt_zero(x)
 
 
 class Neg(ElementWiseUnaryOp):

@@ -393,7 +393,7 @@ class SymbolNet(nn.Module):
 
             if self.check_intermediate_numeric or (self.use_gradient and not self.stop_updating_loss):
                 if hasattr(op, 'torch_loss'):
-                    vul_op_loss = op.torch_loss(*input_tensors)
+                    vul_op_loss = (op.torch_loss(*input_tensors),)
                 else:
                     vul_op_loss = ()
                 self.invalid_found_last |= not op.numeric_valid(outputs)
