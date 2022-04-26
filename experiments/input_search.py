@@ -102,21 +102,19 @@ if __name__ == '__main__':
     parser.add_argument('--print_grad', type=int, default=0)
     args = parser.parse_args()
 
+    del_root = False
+    if args.root is None:
+        args.root = 'input_search_root_' + str(uuid.uuid4())
+        del_root = True
+    mkdir(args.root)
+
     exp_seed = args.exp_seed
     if exp_seed is None:
         exp_seed = random.getrandbits(32)
     print(f"Using seed {exp_seed}")
 
     # generate models
-    del_root = False
-    if args.load is not None:
-        assert args.root is None, "--root and --load are mutually exclusive"
-        args.root = args.load
-    else:  # load is None
-        if args.root is None:
-            args.root = 'input_search_root_' + str(uuid.uuid4())
-            del_root = True
-        mkdir(args.root)
+    if args.load is None:  # load is None
         p = Process(target=mknets, args=(args, exp_seed))
         p.start()
         p.join()
