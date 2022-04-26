@@ -527,7 +527,7 @@ class AbsOpBase(ABC):
         return self.__class__.__name__
 
     @staticmethod
-    def numeric_valid(self, outputs) -> bool:
+    def numeric_valid(outputs) -> bool:
         with torch.no_grad():
             return not any([torch.isnan(out).any() or torch.isinf(
                 out).any() for out in outputs])
@@ -759,10 +759,11 @@ Xor = type('Xor', (Logical,), {'torch': lambda self: torch.logical_xor})
 
 
 class StopFoldConst(torch.nn.Module):
-    def __init__(self, data):
+    def __init__(self, data: torch.Tensor):
         super().__init__()
         self.dtype = data.dtype
-        self.param = torch.nn.parameter.Parameter(data, requires_grad=False)
+        self.param = torch.nn.parameter.Parameter(
+            data, requires_grad=data.is_floating_point())
 
     @torch.no_grad()
     def forward(self):
@@ -917,7 +918,7 @@ class Pow(BcastBinaryOp):
         # a >= 0 && b*log(a) <= 20
         l0 = loss_gt_zero(a)
         if torch.any(l0 > 0):
-            return (l0,)
+            return l0
         l1 = loss_le(
             b * torch.log(torch.maximum(a, torch.tensor(1e-40, dtype=a.dtype))), 20)
         return l1
@@ -1423,7 +1424,8 @@ class Pad(UnaryOpBase):
 
     def torch(self) -> Callable[..., torch.Tensor]:
         if self.extra_attrs['type'] == 'constant':
-            return lambda x: torch.nn.functional.pad(x, self.padding_list, 'constant', value=0)
+            # 0 easily cause division by zero...
+            return lambda x: torch.nn.functional.pad(x, self.padding_list, 'constant', value=1)
         elif self.extra_attrs['type'] == 'replicate' or self.extra_attrs['type'] == 'reflect':
             return lambda x: torch.nn.functional.pad(x, self.padding_list, self.extra_attrs['type'])
 

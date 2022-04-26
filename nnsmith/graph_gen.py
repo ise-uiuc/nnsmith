@@ -54,6 +54,21 @@ __MB_LIM__ = 6 * 1024
 # weight of gradients for valid op losses
 
 
+def random_tensor(shape, dtype, margin=10, base=1, use_cuda=False):
+    # center: -margin ~ 0 ~ +margin
+    dev = torch.device('cuda' if use_cuda else 'cpu')
+    if base == 'center':
+        base = -margin / 2
+    else:
+        assert isinstance(base, int) or isinstance(base, float)
+
+    fp_tensor = base + torch.rand(shape, device=dev) * margin
+    if DType.is_float(dtype):
+        return fp_tensor.to(dtype)
+    else:
+        return torch.round(fp_tensor).to(dtype)
+
+
 class SymbolNet(nn.Module):
     def __init__(self, graph: nx.MultiDiGraph, model: z3.ModelRef, verbose=False, alive_shapes: ALIVE_SHAPE_TYPE = None,
                  record_intermediate=False, use_gradient=False, megabyte_lim=__MB_LIM__, print_grad=0):
@@ -245,33 +260,23 @@ class SymbolNet(nn.Module):
             SanityCheck.eq(out.dtype, self.alive_shapes[shape_idx][1].dtype.value, msg_head +
                            f'torch dtype ({out.dtype}) != symbolic dtype ({self.alive_shapes[shape_idx][1].dtype.value})')
 
-    def get_random_inps(self, margin=10, base='center', use_cuda=False) -> List[torch.Tensor]:
-        dev = torch.device('cuda' if use_cuda else 'cpu')
-        if base == 'center':
-            base = margin / 2
-        else:
-            assert isinstance(base, int) or isinstance(base, float)
-
+    def get_random_inps(self, **kwargs) -> List[torch.Tensor]:
+        # center: -margin ~ 0 ~ +margin
         inputs = []
         for ii in self.input_info:
-            dtype = ii.op.shape_var.dtype.value
-            fp_tensor = base + \
-                torch.rand(ii.op.shape_var.shape, device=dev) * margin
-            if DType.is_float(dtype):
-                inputs.append(fp_tensor.to(dtype))
-            else:
-                inputs.append(torch.round(fp_tensor).to(dtype))
+            inputs.append(random_tensor(ii.op.shape_var.shape,
+                          ii.op.shape_var.dtype.value, **kwargs))
 
         return inputs
 
-    def rand_input_gen(self, max_iter=10, margin=10, base='center', use_cuda=False) -> Optional[List[torch.Tensor]]:
+    def rand_input_gen(self, max_iter=10, use_cuda=False, **kwargs) -> Optional[List[torch.Tensor]]:
         last_check_intermediate_numeric = self.check_intermediate_numeric
         self.check_intermediate_numeric = True
 
         sat_inputs = None
 
         for _ in range(max_iter):
-            inputs = self.get_random_inps(margin, base, use_cuda)
+            inputs = self.get_random_inps(**kwargs, use_cuda=use_cuda)
 
             if use_cuda:
                 self.use_cuda()
@@ -286,12 +291,12 @@ class SymbolNet(nn.Module):
         return sat_inputs
 
     def grad_input_gen(self, max_iter=int(os.getenv('NNSMITH_GRAD_ITER', 100)),
-                       init_tensors=None, margin=10, base='center', use_cuda=False,
-                       max_time=int(os.getenv('NNSMITH_GRAD_TIME', 10))) -> Optional[List[torch.Tensor]]:
+                       init_tensors=None, use_cuda=False,
+                       max_time=int(os.getenv('NNSMITH_GRAD_TIME', 10)), **kwargs) -> Optional[List[torch.Tensor]]:
         # TODO: trim the param. max_iter is not used; remove getenv
         if init_tensors is None:
             init_tensors = self.get_random_inps(
-                margin, base, use_cuda=use_cuda)
+                **kwargs, use_cuda=use_cuda)
 
         inputs = []
         for tensor in init_tensors:
@@ -324,6 +329,13 @@ class SymbolNet(nn.Module):
                     sat_inputs = [v.data for v in inputs]
                     break
             except ConstraintError as e:
+                if "[NaN] in model inputs!" in str(e) or "[Inf] in model inputs!" in str(e):
+                    # flush NaN/Inf in inputs
+                    with torch.no_grad():
+                        for inp in inputs:
+                            inp.copy_(torch.where(
+                                inp.isnan(), torch.rand_like(inp), inp))
+                    continue
                 print(e)
                 break
 
@@ -348,8 +360,10 @@ class SymbolNet(nn.Module):
             if ii.input_name in kwargs:
                 xs[ii.op.idx] = kwargs[ii.input_name]
         assert all(x is not None for x in xs), xs
-        input_invaid = any(
-            [torch.isnan(x).any() or torch.isinf(x).any() for x in xs])
+        ConstraintCheck.true(not any(
+            [torch.isinf(x).any() for x in xs]), f'[Inf] in model inputs!')
+        ConstraintCheck.true(not any(
+            [torch.isnan(x).any() for x in xs]), f'[NaN] in model inputs!')
         local_ref_cnt = self.ref_cnt.copy()
         self.tensors = [None for _ in self.tensors]
         self.invalid_found_last = False
@@ -398,9 +412,7 @@ class SymbolNet(nn.Module):
                     vul_op_loss = ()
                 self.invalid_found_last |= not op.numeric_valid(outputs)
                 if self.invalid_found_last and (self.use_gradient and not self.stop_updating_loss):
-                    ConstraintCheck.true(
-                        not input_invaid, f'[NaN/Inf] in inputs')
-                    if self.verbose:
+                    if self.print_grad >= 1:
                         for inp_i, inp in enumerate(input_tensors):
                             print(
                                 f'[inp]@{inp_i} :: {inp.min().data:.5f} ~ {inp.max().data:.5f}')
@@ -628,7 +640,7 @@ class SimpleGenerator:
         self.abstract_graph.nodes[shuffled_placeholder[0]
                                   ]['op'] = self.abstract_graph.nodes[shuffled_placeholder[0]]['op'].to_input()
         for holder_idx in shuffled_placeholder[1:]:
-            if random.randint(0, 1) and os.getenv('NNSMITH_CONST', 'off') != 'off':
+            if random.randint(0, 1):
                 self.abstract_graph.nodes[holder_idx]['op'] = self.abstract_graph.nodes[holder_idx]['op'].to_const(
                 )
             else:
