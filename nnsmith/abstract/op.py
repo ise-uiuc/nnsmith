@@ -49,8 +49,6 @@ assert Z3_CONS_FLOPS in [
     'on', 'off'], "NNSMITH_Z3_CONS_FLOPS must be either 'on' or 'off'"
 Z3_CONS_FLOPS = Z3_CONS_FLOPS == 'on'
 
-LOSS_VERSION = os.getenv("NNSMITH_LOSS", 'v2')
-
 
 def _op_set_use_cuda(use_cuda):
     global _DEV
