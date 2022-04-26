@@ -98,7 +98,7 @@ if __name__ == '__main__':
     parser.add_argument('--skip')
     # for reproducibility
     parser.add_argument(
-        '--load', help='Use saved models from specified path passed to --root')
+        '--result', help='Name of the grad search result csv (exp_name).', default=None)
     parser.add_argument('--print_grad', type=int, default=0)
     args = parser.parse_args()
 
@@ -106,28 +106,32 @@ if __name__ == '__main__':
     if args.root is None:
         args.root = 'input_search_root_' + str(uuid.uuid4())
         del_root = True
-    mkdir(args.root)
 
     exp_seed = args.exp_seed
     if exp_seed is None:
         exp_seed = random.getrandbits(32)
     print(f"Using seed {exp_seed}")
 
-    # generate models
-    if args.load is None:  # load is None
+    # mkdir and generate models if not exists.
+    if not os.path.exists(args.root):
+        mkdir(args.root)
         p = Process(target=mknets, args=(args, exp_seed))
         p.start()
         p.join()
-        args.load = args.root
+    else:
+        print(f"{args.root} exists, skip model generation phase.")
 
     np.random.seed(exp_seed)
     random.seed(exp_seed)
     torch.manual_seed(exp_seed)
 
     ref_df = pd.read_csv(os.path.join(
-        args.load, 'model_info.csv'))  # load models
+        args.root, 'model_info.csv'))  # load models
 
-    exp_name = f'r{exp_seed}-model{args.n_model}-node{args.max_nodes}-inp-search.csv'
+    exp_name = args.result if args.result else f'r{exp_seed}-model{args.n_model}-node{args.max_nodes}-inp-search.csv'
+    if not exp_name.endswith('.csv'):
+        exp_name += '.csv'
+
     results = {
         'model_seed': [],
         'n_nodes': [],
@@ -148,7 +152,7 @@ if __name__ == '__main__':
     for model_id in tqdm(range(args.n_model)):
         model_seed = ref_df['model_seed'][model_id]
         net = pickle.load(
-            open(os.path.join(args.load, f'model/{model_id}-net.pkl'), 'rb'))
+            open(os.path.join(args.root, 'model', f'{model_id}-net.pkl'), 'rb'))
         net = SymbolNet(net.concrete_graph, None,
                         verbose=args.verbose, megabyte_lim=net.megabyte_lim, print_grad=args.print_grad)
         net.eval()
@@ -265,6 +269,7 @@ if __name__ == '__main__':
     df.to_csv(os.path.join(args.root, exp_name), index=False)
     with open(os.path.join(args.root, 'stats.log'), 'w') as f:
         f.write(str(df.mean()) + '\n')
-    print(df.mean())
+    with pd.option_context('display.float_format', '{:0.3f}'.format):
+        print(df.drop('model_seed', axis=1).mean())
     if del_root:
         shutil.rmtree(args.root)
