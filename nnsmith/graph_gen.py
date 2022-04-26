@@ -27,6 +27,7 @@ import copy
 from nnsmith.error import SanityCheck, ConstraintCheck, ConstraintError
 from nnsmith.export import torch2onnx
 from nnsmith.abstract.op import *
+from nnsmith.abstract.op import __MAX_RANK__ as __MAX_RANK__
 
 
 NNSMITH_LIMNF_V = os.getenv('NNSMITH_LIMNF_V', '0')
@@ -334,7 +335,7 @@ class SymbolNet(nn.Module):
                     with torch.no_grad():
                         for inp in inputs:
                             inp.copy_(torch.where(
-                                inp.isnan(), torch.rand_like(inp), inp))
+                                inp.isnan(), torch.rand(*inp.shape).to(inp.dtype).to(inp.device), inp))
                     continue
                 print(e)
                 break
