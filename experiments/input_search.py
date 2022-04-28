@@ -267,7 +267,7 @@ if __name__ == '__main__':
 
     df = pd.DataFrame(results)
     df.to_csv(os.path.join(args.root, exp_name), index=False)
-    with open(os.path.join(args.root, 'stats.log'), 'w') as f:
+    with open(os.path.join(args.root, exp_name + '-stats.log'), 'w') as f:
         f.write(str(df.mean()) + '\n')
     with pd.option_context('display.float_format', '{:0.3f}'.format):
         print(df.drop('model_seed', axis=1).mean())

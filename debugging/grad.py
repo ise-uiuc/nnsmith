@@ -135,17 +135,9 @@ if __name__ == '__main__':
 
     for inp_sample, w_sample in zip(init_tensor_samples, init_weight_samples):
         try_times_grad += 1
-        try:
-            apply_weights(net, w_sample)
-            sat_inputs = net.grad_input_gen(
-                init_tensors=inp_sample, use_cuda=args.use_cuda)
-        except RuntimeError as e:
-            if 'element 0 of tensors does not require grad and does not have a grad_fn' in str(e):
-                # means some op are not differentiable.
-                succ_grad = succ_sampling
-                try_times_grad = try_times_sampling
-                break
-            raise e
+        apply_weights(net, w_sample)
+        sat_inputs = net.grad_input_gen(
+            init_tensors=inp_sample, use_cuda=args.use_cuda)
         if sat_inputs is not None:
             succ_grad = True
             break
