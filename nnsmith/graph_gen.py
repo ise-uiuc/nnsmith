@@ -242,13 +242,16 @@ class SymbolNet(nn.Module):
 
     def enable_training(self, extra_trainable=[]):
         self.use_gradient = True
-        to_train = []
+        self.to_train = []
         for t in extra_trainable:
-            to_train.append(t)
+            self.to_train.append(t)
         for t in self.parameters():
-            to_train.append(t)
-        self.optimizer = torch.optim.Adam(to_train, lr=5e-1)
+            self.to_train.append(t)
+        self.optimizer = torch.optim.Adam(self.to_train, lr=5e-1)
         self.training_reset()
+
+    def reset_optimizer(self):
+        self.optimizer = torch.optim.Adam(self.to_train, lr=5e-1)
 
     def _check_out_dtype(self, outputs, node_id, op):
         if self.alive_shapes is None:
@@ -318,6 +321,7 @@ class SymbolNet(nn.Module):
         sat_inputs = None
         st = time.time()
         self.iter_num = 0
+        self.cur_loss_name = None
         while time.time() - st < max_time:
             self.training_reset()
             self.iter_num += 1
@@ -433,6 +437,7 @@ class SymbolNet(nn.Module):
                         if (l > 0).sum() > 0:
                             new_losses.append(
                                 (f'{op}_{idx}_+', torch.sum((l > 0) * l)))
+                            loss_name = f'{op}_{idx}'
                         if (l <= 0).sum() > 0:
                             new_losses.append(
                                 (f'{op}_{idx}_-', torch.sum((l <= 0) * l)))
@@ -440,6 +445,11 @@ class SymbolNet(nn.Module):
                         self.loss = new_losses
                     else:
                         self.loss.extend(new_losses)
+                    if loss_name != self.cur_loss_name:
+                        self.reset_optimizer()
+                        self.cur_loss_name = loss_name
+                        self.stop_updating_loss = True
+
                     self.stop_updating_loss = True
                     return outputs
 
