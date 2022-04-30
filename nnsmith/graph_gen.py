@@ -335,7 +335,7 @@ class SymbolNet(nn.Module):
                     with torch.no_grad():
                         for inp in inputs:
                             inp.copy_(torch.where(
-                                inp.isnan(), torch.rand(*inp.shape).to(inp.dtype).to(inp.device), inp))
+                                inp.isnan(), torch.rand(size=inp.shape).to(inp.dtype).to(inp.device), inp))
                     continue
                 print(e)
                 break
