@@ -448,7 +448,6 @@ class SymbolNet(nn.Module):
                     if loss_name != self.cur_loss_name:
                         self.reset_optimizer()
                         self.cur_loss_name = loss_name
-                        self.stop_updating_loss = True
 
                     self.stop_updating_loss = True
                     return outputs
