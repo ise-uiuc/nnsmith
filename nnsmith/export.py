@@ -20,6 +20,7 @@ def torch2onnx(model, filename, verbose=False, use_cuda=False, dummy_inputs=None
         dshape = [i for i, v in enumerate(model.input_spec[name]) if v == -1]
         if len(dshape) > 0:
             dynamic_axes[name] = dshape
+    output_names = [f'o{i}' for i in range(model.n_output)]
 
     # TODO: explicitly model outputs.
     # output_names = list(model.output_spec.keys())
@@ -47,10 +48,12 @@ def torch2onnx(model, filename, verbose=False, use_cuda=False, dummy_inputs=None
                 model, tuple(dummy_inputs),
                 filename,
                 input_names=input_names,
-                output_names=[f'o{i}' for i in range(model.n_output)],
+                output_names=output_names,
                 verbose=verbose,
                 dynamic_axes=dynamic_axes,
                 opset_version=14)
+
+    return input_names, output_names
 
 
 if __name__ == "__main__":
