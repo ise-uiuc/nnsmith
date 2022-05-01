@@ -229,7 +229,7 @@ class SymbolNet(nn.Module):
                             nonzero = True
             ConstraintCheck.true(nonzero,
                                  'Gradients are all zero. Cannot make progress.')
-            torch.nn.utils.clip_grad_norm_(self.parameters(), 1e-1)
+            torch.nn.utils.clip_grad_norm_(self.to_train, 1e-1)
             self.optimizer.step()
 
     def training_reset(self):
