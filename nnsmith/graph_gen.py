@@ -358,6 +358,7 @@ class SymbolNet(nn.Module):
     def forward(self, *args, **kwargs):
         # required: input_info, tensors, ref_cnt, instructions, hacked, first_run verbose # alive_shapes, graph
         self.interm_grad = []
+        self.taint = {}
         xs = [None] * len(self.input_info)
         for i in range(len(args)):
             xs[i] = args[i]
@@ -416,31 +417,47 @@ class SymbolNet(nn.Module):
                 else:
                     vul_op_loss = ()
                 self.invalid_found_last |= not op.numeric_valid(outputs)
+
+                # find the earliest unstable op
+                blame = None
+                for i in inps:
+                    if i in self.taint:
+                        blame, blame_op = self.taint[i]
+                        break
+                if blame is None and op.numeric_unstable(outputs):
+                    blame_op = op
+                    blame = vul_op_loss
+
+                # taint the outputs
+                if blame is not None:
+                    for o in outs:
+                        self.taint[o] = blame, blame_op
                 if self.invalid_found_last and (self.use_gradient and not self.stop_updating_loss):
+                    assert blame is not None, op
                     if self.print_grad >= 1:
                         for inp_i, inp in enumerate(input_tensors):
                             print(
                                 f'[inp]@{inp_i} :: {inp.min().data:.5f} ~ {inp.max().data:.5f}')
 
                     ConstraintCheck.true(hasattr(
-                        op, 'torch_loss'), f'op={op} has no `torch_loss` but produces NaN or INF!')
+                        blame_op, 'torch_loss'), f'op={op} blame_op={blame_op} has no `torch_loss` but produces NaN or INF!')
                     # TODO: some less vulnerable ops (like Mul) may also trigger Inf and will crash the process.
                     # Given its low chance of happening, ignore it for now.
                     msg = ', '.join(
                         [f'loss_{idx}: {l.min().data:.3f} ~ {l.max().data:.3f}' for idx, l in enumerate(vul_op_loss)])
                     if self.print_grad >= 1:
                         print(
-                            f'Iter #{self.iter_num} [NaN/Inf] in outputs ~ {op} ~ id {node_id} :: {msg}')
+                            f'Iter #{self.iter_num} [NaN/Inf] in outputs ~ {op} ~ id {node_id} ~ blaming {blame_op} :: {msg}')
 
                     new_losses = []
-                    for idx, l in enumerate(vul_op_loss):
+                    for idx, l in enumerate(blame):
                         if (l > 0).sum() > 0:
                             new_losses.append(
-                                (f'{op}_{idx}_+', torch.sum((l > 0) * l)))
-                            loss_name = f'{op}_{idx}'
+                                (f'{blame_op}_{idx}_+', torch.sum((l > 0) * l)))
+                            loss_name = f'{blame_op}_{idx}'
                         if (l <= 0).sum() > 0:
                             new_losses.append(
-                                (f'{op}_{idx}_-', torch.sum((l <= 0) * l)))
+                                (f'{blame_op}_{idx}_-', torch.sum((l <= 0) * l)))
                     if self.loss is None:
                         self.loss = new_losses
                     else:

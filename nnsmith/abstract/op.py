@@ -526,11 +526,15 @@ class AbsOpBase(ABC):
     def __repr__(self) -> str:
         return self.__class__.__name__
 
-    @staticmethod
-    def numeric_valid(outputs) -> bool:
+    @classmethod
+    def numeric_valid(cls, outputs) -> bool:
         with torch.no_grad():
             return not any([torch.isnan(out).any() or torch.isinf(
                 out).any() for out in outputs])
+
+    @classmethod
+    def numeric_unstable(cls, outputs) -> bool:
+        return not cls.numeric_valid(outputs)
 
 
 def concretize(op: AbsOpBase, model: Optional[z3.ModelRef]) -> AbsOpBase:
@@ -920,8 +924,14 @@ class Pow(BcastBinaryOp):
         if torch.any(l0 > 0):
             return l0
         l1 = loss_le(
-            b * torch.log(torch.maximum(a, torch.tensor(1e-40, dtype=a.dtype))), 20)
+            b * torch.log(torch.maximum(a, torch.tensor(1e-40, dtype=a.dtype))), 40)
         return l1
+
+    @classmethod
+    def numeric_unstable(cls, outputs) -> bool:
+        with torch.no_grad():
+            return any([torch.isnan(out).any() or torch.isinf(
+                out).any() or torch.any(out > math.exp(40)) for out in outputs])
 
 
 class ReLU(ElementWiseUnaryOp):
