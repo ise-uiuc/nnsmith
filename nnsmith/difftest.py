@@ -20,9 +20,8 @@ def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarr
         raise CrashError(err_msg)
 
     if set(obtained.keys()) != set(desired.keys()):
-        print('Key sets differ')
         raise IncorrectResult(
-            f'{obtained_name} v.s. {oracle_name} have different output tensor names')
+            f'{obtained_name} v.s. {oracle_name} have different output tensor names: {set(obtained.keys())} ~ {set(desired.keys())}')
 
     if nan_as_err:
         for index, key in enumerate(obtained):

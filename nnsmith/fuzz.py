@@ -176,8 +176,6 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         self.cur_seed = 'N/A'
         self.cur_node_size = 'N/A'
 
-        self.stage = 'init'
-
         self._PER_MODEL_TIMEOUT_ = _PER_MODEL_TIMEOUT_  # milliseconds
 
         self.rich_profile = {
@@ -222,8 +220,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                 f'\ncur node size: {self.cur_node_size}'
                 f'\nmax node size: {self.max_nodes}',
                 title="Time Left ~ Total Time"),
-            Panel.fit(f'{self.reporter.n_bug}/{len(self.rich_profile["succ_gen"])}'
-                      f'\n{self.stage}',
+            Panel.fit(f'{self.reporter.n_bug}/{len(self.rich_profile["succ_gen"])}',
                       title="Bug/Iter", style="magenta", width=16)
         ]
 
@@ -301,7 +298,11 @@ class FuzzingLoop:  # TODO: Support multiple backends.
 
             return {ina: inp for ina, inp in zip(inames, inputs)}, {ona: out for ona, out in zip(onames, outputs)}
 
-    def difftest(self, onnx_model, oracle_path):
+    def difftest(self, onnx_model, oracle_path, redirect_log=None):
+        if redirect_log is not None:
+            sys.stdout = open(redirect_log, "w")
+            sys.stderr = open(redirect_log, "w")
+
         # get test case (pickle)
         with open(oracle_path, 'rb') as f:
             inputs, outputs = pickle.load(f)
@@ -335,10 +336,10 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             ) as progress:
                 task_fuzz = progress.add_task(
                     '[green]Fuzzing time.', total=self.time_budget)
+                all_tstart = time.time()
                 while time.time() - start_time < self.time_budget:
                     # =================================
                     # Testcase generation phase
-                    self.stage = 'NN Gen.'
                     gen_tstart = time.time()
                     try:
                         with warnings.catch_warnings():  # just shutup.
@@ -355,27 +356,23 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         self.rich_profile['bad_gen'] = np.append(
                             self.rich_profile['bad_gen'], [time.time() - gen_tstart])
                         progress.update(
-                            task_fuzz, completed=time.time() - gen_tstart)
+                            task_fuzz, completed=time.time() - all_tstart)
                         continue
                     # =================================
 
                     # =================================
                     # Model evaluation phase
-                    self.stage = 'Diff. Test'
                     eval_tstart = time.time()
-                    with util.stdout_redirected(log_path, sys.__stdout__), \
-                            util.stdout_redirected(log_path, sys.__stderr__):
-                        p = Process(target=self.difftest,
-                                    args=(onnx_path, oracle_path))
-                        p.start()
-                        p.join()
+                    p = Process(target=self.difftest,
+                                args=(onnx_path, oracle_path, log_path))
+                    p.start()
+                    p.join()
                     self.rich_profile['eval'] = np.append(
                         self.rich_profile['eval'], [time.time() - eval_tstart])
                     # =================================
 
                     if p.exitcode != 0:
                         # failed... report this.
-                        self.stage = 'Record Bug'
                         self.reporter.simple_bug_report(
                             buggy_onnx_path=onnx_path,
                             oracle_path=oracle_path,
@@ -383,7 +380,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         )
 
                     progress.update(
-                        task_fuzz, completed=time.time() - gen_tstart)
+                        task_fuzz, completed=time.time() - all_tstart)
         finally:
             # clean up.
             if os.path.exists(onnx_path):
