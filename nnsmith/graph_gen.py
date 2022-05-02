@@ -422,16 +422,17 @@ class SymbolNet(nn.Module):
                 blame = None
                 for i in inps:
                     if i in self.taint:
-                        blame, blame_op = self.taint[i]
+                        blame, blame_op, blame_op_id = self.taint[i]
                         break
                 if blame is None and op.numeric_unstable(outputs):
                     blame_op = op
                     blame = vul_op_loss
+                    blame_op_id = node_id
 
                 # taint the outputs
                 if blame is not None:
                     for o in outs:
-                        self.taint[o] = blame, blame_op
+                        self.taint[o] = blame, blame_op, blame_op_id
                 if self.invalid_found_last and (self.use_gradient and not self.stop_updating_loss):
                     assert blame is not None, op
                     if self.print_grad >= 1:
@@ -447,17 +448,17 @@ class SymbolNet(nn.Module):
                         [f'loss_{idx}: {l.min().data:.3f} ~ {l.max().data:.3f}' for idx, l in enumerate(vul_op_loss)])
                     if self.print_grad >= 1:
                         print(
-                            f'Iter #{self.iter_num} [NaN/Inf] in outputs ~ {op} ~ id {node_id} ~ blaming {blame_op} :: {msg}')
+                            f'Iter #{self.iter_num} [NaN/Inf] in outputs ~ {op}_{node_id} ~ blaming {blame_op}_{blame_op_id} :: {msg}')
 
                     new_losses = []
                     for idx, l in enumerate(blame):
                         if (l > 0).sum() > 0:
                             new_losses.append(
                                 (f'{blame_op}_{idx}_+', torch.sum((l > 0) * l)))
-                            loss_name = f'{blame_op}_{idx}'
+                            loss_name = f'{blame_op}_{blame_op_id}_{idx}'
                         if (l <= 0).sum() > 0:
                             new_losses.append(
-                                (f'{blame_op}_{idx}_-', torch.sum((l <= 0) * l)))
+                                (f'{blame_op}_{blame_op_id}_{idx}_-', torch.sum((l <= 0) * l)))
                     if self.loss is None:
                         self.loss = new_losses
                     else:
