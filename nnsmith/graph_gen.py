@@ -212,21 +212,17 @@ class SymbolNet(nn.Module):
             self._zero_grad()
             nonzero = False
             params = self.get_params()
-            cur_losses = len([n for n, _ in self.loss if n.endswith('_+')])
-            assert cur_losses == 1, f'cur_losses ({cur_losses}) != 1 loss functions found'
-            for loss_name, l in self.loss:
-                if loss_name.endswith('_-'):
-                    continue
-                l.backward()
-                if self.print_grad >= 2:
-                    for name, i in self.interm_grad:
-                        msg = f'{i.grad.min()} ~ {i.grad.max()}' if i.grad is not None else 'None'
-                        print(
-                            f'Iter {self.iter_num} [{loss_name}] {name} grad: {msg}')
-                with torch.no_grad():
-                    for i, p in enumerate(params):
-                        if p.grad is not None and torch.any(p.grad != 0):
-                            nonzero = True
+            loss_name, l = self.loss
+            l.backward()
+            if self.print_grad >= 2:
+                for name, i in self.interm_grad:
+                    msg = f'{i.grad.min()} ~ {i.grad.max()}' if i.grad is not None else 'None'
+                    print(
+                        f'Iter {self.iter_num} [{loss_name}] {name} grad: {msg}')
+            with torch.no_grad():
+                for i, p in enumerate(params):
+                    if p.grad is not None and torch.any(p.grad != 0):
+                        nonzero = True
             ConstraintCheck.true(nonzero,
                                  'Gradients are all zero. Cannot make progress.')
             torch.nn.utils.clip_grad_norm_(self.to_train, 1e-1)
@@ -413,9 +409,12 @@ class SymbolNet(nn.Module):
 
             if self.check_intermediate_numeric or (self.use_gradient and not self.stop_updating_loss):
                 if hasattr(op, 'torch_loss'):
-                    vul_op_loss = (op.torch_loss(*input_tensors),)
+                    loss = op.torch_loss(*input_tensors)
+                    if not isinstance(loss, tuple):
+                        loss = ('', loss)  # loss sufficx, loss
+                    vul_op_loss = loss
                 else:
-                    vul_op_loss = ()
+                    vul_op_loss = None
                 self.invalid_found_last |= not op.numeric_valid(outputs)
 
                 # find the earliest unstable op
@@ -427,6 +426,9 @@ class SymbolNet(nn.Module):
                 if blame is None and op.numeric_unstable(outputs):
                     blame_op = op
                     blame = vul_op_loss
+                    if vul_op_loss is None:
+                        print(
+                            f'[WARNING] `{op}` produces unstable output but no `torch_loss` is provided.')
                     blame_op_id = node_id
 
                 # taint the outputs
@@ -434,35 +436,26 @@ class SymbolNet(nn.Module):
                     for o in outs:
                         self.taint[o] = blame, blame_op, blame_op_id
                 if self.invalid_found_last and (self.use_gradient and not self.stop_updating_loss):
-                    assert blame is not None, op
                     if self.print_grad >= 1:
                         for inp_i, inp in enumerate(input_tensors):
                             print(
                                 f'[inp]@{inp_i} :: {inp.min().data:.5f} ~ {inp.max().data:.5f}')
 
-                    ConstraintCheck.true(hasattr(
-                        blame_op, 'torch_loss'), f'op={op} blame_op={blame_op} has no `torch_loss` but produces NaN or INF!')
+                    ConstraintCheck.true(
+                        blame is not None, f'op={op} blame_op={blame_op} has no `torch_loss` but produces NaN or INF!')
                     # TODO: some less vulnerable ops (like Mul) may also trigger Inf and will crash the process.
                     # Given its low chance of happening, ignore it for now.
-                    msg = ', '.join(
-                        [f'loss_{idx}: {l.min().data:.3f} ~ {l.max().data:.3f}' for idx, l in enumerate(vul_op_loss)])
+                    loss_suf, l = blame
+                    msg = f'loss_{loss_suf}: {l.min().data:.3f} ~ {l.max().data:.3f}'
                     if self.print_grad >= 1:
                         print(
                             f'Iter #{self.iter_num} [NaN/Inf] in outputs ~ {op}_{node_id} ~ blaming {blame_op}_{blame_op_id} :: {msg}')
 
-                    new_losses = []
-                    for idx, l in enumerate(blame):
-                        if (l > 0).sum() > 0:
-                            new_losses.append(
-                                (f'{blame_op}_{idx}_+', torch.sum((l > 0) * l)))
-                            loss_name = f'{blame_op}_{blame_op_id}_{idx}'
-                        if (l <= 0).sum() > 0:
-                            new_losses.append(
-                                (f'{blame_op}_{blame_op_id}_{idx}_-', torch.sum((l <= 0) * l)))
-                    if self.loss is None:
-                        self.loss = new_losses
-                    else:
-                        self.loss.extend(new_losses)
+                    assert (l > 0).sum() > 0, \
+                        f'`{blame_op}` produces NaN or INF but loss is all negative'
+                    loss_name = f'{blame_op}_{blame_op_id}_{loss_suf}'
+                    assert self.loss is None, 'Multiple loss detected!'
+                    self.loss = loss_name, torch.sum((l > 0) * l)
                     if loss_name != self.cur_loss_name:
                         self.reset_optimizer()
                         self.cur_loss_name = loss_name

@@ -922,10 +922,10 @@ class Pow(BcastBinaryOp):
         # a >= 0 && b*log(a) <= 20
         l0 = loss_gt_zero(a)
         if torch.any(l0 > 0):
-            return l0
+            return ('l0', l0)
         l1 = loss_le(
             b * torch.log(torch.maximum(a, torch.tensor(1e-40, dtype=a.dtype))), 40)
-        return l1
+        return ('l1', l1)
 
     @classmethod
     def numeric_unstable(cls, outputs) -> bool:
