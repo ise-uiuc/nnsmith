@@ -1,15 +1,16 @@
 import random
-import warnings
-from nnsmith.backends import DiffTestBackend
 import pickle
 from pathlib import Path
-from typing import List, Union, Dict, Tuple
+from typing import Dict
 import time
+
 import numpy as np
 from tqdm import tqdm
-from nnsmith import difftest, util, input_gen
 import onnx
 import onnx.checker
+
+from nnsmith import difftest, input_gen
+from nnsmith.backends import DiffTestBackend
 
 
 class CrashExecutor(DiffTestBackend):
@@ -80,41 +81,6 @@ class BackendCreator:
             raise ValueError(f'unknown backend: {name}')
 
 
-def run_backend_single_model(model_path: str, backend: BackendCreator, dump_raw: str, seed: int = None):
-    """This function is for debugging purpose.
-    Run the backend on the same process.
-    Compared to run_backend_single_model_raw_input, this is new version with input gen on the fly
-    """
-    backend = backend()
-    model = DiffTestBackend.get_onnx_proto(model_path)
-    inp_spec = DiffTestBackend.analyze_onnx_io(model)[0]
-    inputs = input_gen.gen_one_input_rngs(
-        inp_spec, None, seed)
-    outputs = backend.predict(model_path, inputs)
-    if dump_raw is not None:
-        pickle.dump(inputs, open(dump_raw + ".input", 'wb'))
-        pickle.dump(outputs, open(dump_raw + ".output", 'wb'))
-    return outputs
-
-
-def run_backend_single_model_raw_input(model_path: str, input_path: str, backend: BackendCreator, dump_raw: str):
-    """This function is for debugging purpose.
-    Run the backend on the same process. gen_input is the index of the input to generate.
-    """
-    backend = backend()
-    if input_path is not None:
-        inputs = pickle.load(Path(input_path).open('rb'))
-        outputs = backend.predict(model_path, inputs)
-    else:
-        outputs = []
-        for inp_path in tqdm(sorted(list(Path(model_path).parent.glob(f'input.*.pkl')))):
-            inputs = pickle.load(inp_path.open('rb'))
-            outputs.append(backend.predict(model_path, inputs))
-    if dump_raw is not None:
-        pickle.dump(outputs, open(dump_raw, 'wb'))
-    return outputs
-
-
 def summarize(outputs: Dict[str, np.ndarray]):
     m = {k + '_mean': np.mean(o) for k, o in outputs.items()}
     # TODO(JK): figure out how to deal with nan
@@ -134,6 +100,7 @@ if __name__ == '__main__':
         '--dump_raw', help='Dumps the raw output to the specified path')
     parser.add_argument('--raw_input', type=str,
                         help='When specified, the model will be fed with the specified input. Otherwise, input will be generated on the fly.')
+    parser.add_argument('--oracle', type=str, help='Path to the oracle')
     parser.add_argument('--seed', type=int,
                         help='to generate random input data')
     parser.add_argument('--cmp_with', type=str, default=None,
@@ -152,21 +119,48 @@ if __name__ == '__main__':
     onnx_model = onnx.load(args.model)
     onnx.checker.check_model(onnx_model, full_check=True)
 
-    def run_backend(bknd, dump_raw):
+    # Step 1: Generate input
+    oracle = None
+    oracle_outputs = None
+    # -- oracle:
+    if args.oracle is not None:
+        print('Using oracle from:', args.oracle)
+        test_inputs, oracle_outputs = pickle.load(Path(args.oracle).open('rb'))
+    # -- raw_input:
+    else:
         if args.raw_input is not None:
-            return run_backend_single_model_raw_input(args.model, args.raw_input, bknd, dump_raw)
+            print('Using raw input pkl file from:', args.raw_input)
+            test_inputs = pickle.load(Path(args.raw_input).open('rb'))
+        # -- randomly generated input:
         else:
-            return run_backend_single_model(args.model, bknd, dump_raw, seed)
+            print('No raw input or oracle found. Generating input on the fly.')
+            inp_spec = DiffTestBackend.analyze_onnx_io(onnx_model)[0]
+            test_inputs = input_gen.gen_one_input_rngs(inp_spec, None, seed)
 
-    outputs = run_backend(BackendCreator(args.backend), args.dump_raw)
-    if input_gen.is_invalid(outputs):
-        print(f'[WARNING] Backend {args.backend} output is invalid')
+    # Step 2: Run backend
+    # -- reference backend:
     if args.cmp_with is not None:
-        oracle = BackendCreator(args.cmp_with)
-        outputs_oracle = run_backend(
-            oracle, None if args.dump_raw is None else args.dump_raw + ".oracle")
-        difftest.assert_allclose(
-            outputs, outputs_oracle, args.backend, args.cmp_with)
-        if input_gen.is_invalid(outputs_oracle):
-            print(f'[WARNING] Backend {args.cmp_with} output is invalid')
+        print(f'Using {args.cmp_with} as the reference backend/oracle')
+        reference_backend = BackendCreator(args.cmp_with)()
+        oracle_outputs = reference_backend.predict(onnx_model, test_inputs)
+        if input_gen.is_invalid(oracle_outputs):
+            print(
+                f'[WARNING] Backend {args.cmp_with} produces nan/inf in output.')
+
+    # -- this backend:
+    this_backend = BackendCreator(args.backend)()
+    this_outputs = this_backend.predict(onnx_model, test_inputs)
+    if input_gen.is_invalid(this_outputs):
+        print(f'[WARNING] Backend {args.backend} produces nan/inf in output.')
+
+    # Step 3: Compare
+    if oracle_outputs is not None:
+        difftest.assert_allclose(this_outputs, oracle_outputs,
+                                 args.backend, args.cmp_with if args.cmp_with else "oracle")
+        print('Differential testing passed!')
+
+    if args.dump_raw is not None:
+        print('Storing (input,output) pair to:', args.dump_raw)
+        pickle.dump((test_inputs, this_outputs), open(args.dump_raw, 'wb'))
+
     print(f'Total time: {time.time() - st}')

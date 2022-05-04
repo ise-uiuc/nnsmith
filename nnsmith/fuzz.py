@@ -25,7 +25,6 @@ import torch
 
 from backend_executor import DummyExecutor
 from nnsmith.abstract.op import ALL_OP_TYPES, AbsOpBase, auto_infer_in_dtypes, config_skip_op
-from nnsmith import util
 from nnsmith.error import NNSmithInternalError, SanityCheck
 from nnsmith.backends import DiffTestBackend
 from nnsmith.difftest import assert_allclose
