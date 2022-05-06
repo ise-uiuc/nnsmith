@@ -242,7 +242,7 @@ class DType(Enum):
     def is_float(dtype):
         if isinstance(dtype, str):
             dtype = DType.from_str(dtype)
-
+        assert isinstance(dtype, DType), type(dtype)
         return dtype in [DType.float32, DType.float64]
 
     @staticmethod
@@ -253,6 +253,11 @@ class DType(Enum):
             'int32': DType.int32,
             'int64': DType.int64,
             'bool': DType.bool,
+            'torch.float32': DType.float32,
+            'torch.float64': DType.float64,
+            'torch.int32': DType.int32,
+            'torch.int64': DType.int64,
+            'torch.bool': DType.bool,
         }[s]
 
     @staticmethod
