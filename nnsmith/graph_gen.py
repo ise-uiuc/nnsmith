@@ -290,9 +290,8 @@ class SymbolNet(nn.Module):
         self.check_intermediate_numeric = last_check_intermediate_numeric
         return sat_inputs
 
-    def grad_input_gen(self, max_iter=int(os.getenv('NNSMITH_GRAD_ITER', 100)),
-                       init_tensors=None, use_cuda=False,
-                       max_time=int(os.getenv('NNSMITH_GRAD_TIME', 10)), **kwargs) -> Optional[List[torch.Tensor]]:
+    def grad_input_gen(self, init_tensors=None, use_cuda=False,
+                       max_time=int(os.getenv('NNSMITH_GRAD_TIME', 1)), **kwargs) -> Optional[List[torch.Tensor]]:
         # TODO: trim the param. max_iter is not used; remove getenv
         if init_tensors is None:
             init_tensors = self.get_random_inps(
