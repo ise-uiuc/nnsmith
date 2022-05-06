@@ -64,7 +64,7 @@ def random_tensor(shape, dtype, margin=10, base=1, use_cuda=False):
         assert isinstance(base, int) or isinstance(base, float)
 
     fp_tensor = base + torch.rand(shape, device=dev) * margin
-    if DType.is_float(dtype):
+    if DType.is_float(str(dtype)):
         return fp_tensor.to(dtype)
     else:
         return torch.round(fp_tensor).to(dtype)
@@ -216,7 +216,7 @@ class SymbolNet(nn.Module):
             l.backward()
             if self.print_grad >= 2:
                 for name, i in self.interm_grad:
-                    msg = f'{i.grad.min()} ~ {i.grad.max()}' if i.grad is not None else 'None'
+                    msg = f'{i.grad.min()} ~ {i.grad.max()} ~ {i.grad.mean()}' if i.grad is not None else 'None'
                     print(
                         f'Iter {self.iter_num} [{loss_name}] {name} grad: {msg}')
             with torch.no_grad():
@@ -372,6 +372,9 @@ class SymbolNet(nn.Module):
         for i in range(len(xs)):
             if xs[i].requires_grad:
                 self.interm_grad.append((f'i_{i}', xs[i]))
+        for i, p in enumerate(self.parameters()):
+            if p.requires_grad:
+                self.interm_grad.append((f'p_{i}', p))
 
         for ii in self.input_info:
             self.tensors[ii.oid] = xs[ii.op.idx]
@@ -389,15 +392,20 @@ class SymbolNet(nn.Module):
                     input_tensors[1] = torch.clip(
                         input_tensors[1], torch.ones(size=[1], dtype=input_tensors[1].dtype, device=input_tensors[1].device))
                 self.hacked[node_id] = cond
+            outputs = inst(*input_tensors)
+            if not isinstance(outputs, list):
+                outputs = [outputs]
             if self.verbose:
                 print(
                     f'--> executing op={op}, node_id={node_id}, inps={inps}, outs={outs}')
                 print('\tinputs=')
-                for i in input_tensors:
+                for inp_i, i in enumerate(input_tensors):
                     print(f'  (shape={i.shape} dtype={i.dtype})')
-            outputs = inst(*input_tensors)
-            if not isinstance(outputs, list):
-                outputs = [outputs]
+                    print(
+                        f'[inp]@{inp_i} :: {i.min().data:.5f} ~ {i.max().data:.5f}')
+                for out_i, o in enumerate(outputs):
+                    print(
+                        f'[out]@{out_i} :: {o.min().data:.5f} ~ {o.max().data:.5f}')
             if self.print_grad >= 2:
                 if outputs[0].requires_grad:
                     for i in range(len(outputs)):
@@ -442,11 +450,11 @@ class SymbolNet(nn.Module):
                                 f'[inp]@{inp_i} :: {inp.min().data:.5f} ~ {inp.max().data:.5f}')
 
                     ConstraintCheck.true(
-                        blame is not None, f'op={op} blame_op={blame_op} has no `torch_loss` but produces NaN or INF!')
+                        blame is not None, f'op={op}_{node_id} blame_op={blame_op}_{blame_op_id} has no `torch_loss` but produces NaN or INF!')
                     # TODO: some less vulnerable ops (like Mul) may also trigger Inf and will crash the process.
                     # Given its low chance of happening, ignore it for now.
                     loss_suf, l = blame
-                    msg = f'loss_{loss_suf}: {l.min().data:.3f} ~ {l.max().data:.3f}'
+                    msg = f'loss_{loss_suf}: {l.min().data:.3f} ~ {l.max().data:.3f} ~ {torch.sum((l > 0) * l).item()}'
                     if self.print_grad >= 1:
                         print(
                             f'Iter #{self.iter_num} [NaN/Inf] in outputs ~ {op}_{node_id} ~ blaming {blame_op}_{blame_op_id} :: {msg}')
