@@ -63,7 +63,7 @@ def random_tensor(shape, dtype, margin=10, base=1, use_cuda=False):
     else:
         assert isinstance(base, int) or isinstance(base, float)
 
-    fp_tensor = base + torch.rand(shape, device=dev) * margin
+    fp_tensor = base + (torch.rand(shape, device=dev) - 0.5) * margin
     if DType.is_float(str(dtype)):
         return fp_tensor.to(dtype)
     else:
@@ -291,7 +291,7 @@ class SymbolNet(nn.Module):
         return sat_inputs
 
     def grad_input_gen(self, init_tensors=None, use_cuda=False,
-                       max_time=int(os.getenv('NNSMITH_GRAD_TIME', 1)), **kwargs) -> Optional[List[torch.Tensor]]:
+                       max_time=float(os.getenv('NNSMITH_GRAD_TIME', 0.5)), **kwargs) -> Optional[List[torch.Tensor]]:
         # TODO: trim the param. max_iter is not used; remove getenv
         if init_tensors is None:
             init_tensors = self.get_random_inps(

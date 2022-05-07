@@ -193,17 +193,19 @@ if __name__ == '__main__':
         # sync input & weight between `sampling` and `grad`
         seedme()
         init_tensor_samples = []
-        for _ in range(args.n_inp_sample):
+        # 5 samples look like: [0, +-1, +-2] + uniform(-0.5, 0.5)
+        for i in range(args.n_inp_sample):
             init_tensor_samples.append(
-                net.get_random_inps(use_cuda=args.use_cuda))
+                net.get_random_inps(base=((i + 1) // 2) * (-1) ** i, margin=1, use_cuda=args.use_cuda))
 
         init_weight_samples = []
         with torch.no_grad():
-            for _ in range(args.n_inp_sample):
+            for i in range(args.n_inp_sample):
                 weight_sample = {}
                 for name, param in net.named_parameters():
                     weight_sample[name] = random_tensor(
-                        param.shape, dtype=param.dtype, use_cuda=args.use_cuda)
+                        param.shape, dtype=param.dtype, use_cuda=args.use_cuda,
+                        base=((i + 1) // 2) * (-1) ** i, margin=1)
                 init_weight_samples.append(weight_sample)
 
         def apply_weights(net, weight_sample):
