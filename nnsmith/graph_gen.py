@@ -55,7 +55,8 @@ __MB_LIM__ = 6 * 1024
 # weight of gradients for valid op losses
 
 
-def random_tensor(shape, dtype, margin=10, base=1, use_cuda=False):
+# Probablistically, sampling at positive domain is beneficial.
+def random_tensor(shape, dtype, margin=4, base=5, use_cuda=False):
     # center: -margin ~ 0 ~ +margin
     dev = torch.device('cuda' if use_cuda else 'cpu')
     if base == 'center':
