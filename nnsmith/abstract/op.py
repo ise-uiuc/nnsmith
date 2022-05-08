@@ -15,7 +15,6 @@ import warnings
 # Import z3 ahead of torch (See https://github.com/Z3Prover/z3/issues/5656)
 import z3
 import torch
-from torch import Tensor
 
 from nnsmith.error import SanityCheck, ConstraintCheck
 from nnsmith.abstract.loss_func import *

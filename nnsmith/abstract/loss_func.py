@@ -1,9 +1,8 @@
 import torch
-import os
 
 
 def smoothed_relu(x):
-    return torch.nn.ReLU()(x)
+    return torch.relu(x)
 
 
 def loss_ge_zero(x):

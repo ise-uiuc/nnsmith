@@ -449,7 +449,7 @@ if __name__ == '__main__':
         skip += ',' + args.skip
     auto_infer_in_dtypes()  # TODO: remove this someday
     if not args.backend.startswith('tvm'):
-        cache_file = f'config/fuzz_{list(backends.keys())[0]}_op_dtype.json'
+        cache_file = f'config/fuzz_{list(backends.keys())[0]}_op_dtype.pkl'
 
         def run():
             rewrite_op_dtype(
