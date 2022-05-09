@@ -18,6 +18,7 @@ import torch
 
 from nnsmith.error import SanityCheck, ConstraintCheck
 from nnsmith.abstract.loss_func import *
+from nnsmith.abstract.proxy_grad import *
 # Recommended resources: https://theory.stanford.edu/~nikolaj/programmingz3.html
 # Another plausible tool (Interval Analysis): https://simon-rohou.fr/research/tubex-lib/doc/toctree.html
 # Please follow the PyTorch API conventions: https://pytorch.org/docs/stable/nn.html
@@ -938,19 +939,6 @@ class Pow(BcastBinaryOp):
                 out).any() or torch.any(out > math.exp(40)) for out in outputs])
 
 
-class ReLU(ElementWiseUnaryOp):
-    # FIXME(JK): ints are somehow not supported in onnxruntime, which we use to gen inputs.
-    # Make it include ints once we use other backends other than onnxruntime.
-    in_dtypes = [(i,) for i in DTYPE_FLOATS]
-    out_dtypes = [(i,) for i in DTYPE_FLOATS]
-
-    def __init__(self):
-        super().__init__()
-
-    def torch(self):
-        return torch.nn.ReLU()
-
-
 class GELU(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -996,17 +984,6 @@ class Sigmoid(ElementWiseUnaryOp):
 
     def torch(self):
         return torch.sigmoid
-
-
-class Floor(ElementWiseUnaryOp):
-    in_dtypes = [(i,) for i in DTYPE_FLOATS]
-    out_dtypes = [(i,) for i in DTYPE_FLOATS]
-
-    def __init__(self):
-        super().__init__()
-
-    def torch(self):
-        return torch.floor
 
 
 class TrigonometricOp(ElementWiseUnaryOp):
@@ -1095,6 +1072,20 @@ class Abs(ElementWiseUnaryOp):
         return torch.abs
 
 
+class ReLU(ElementWiseUnaryOp):
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
+
+    def __init__(self):
+        super().__init__()
+
+    def torch(self):
+        return torch.nn.ReLU()
+
+    def proxy_grad(self):
+        return PGReLU()
+
+
 class Ceil(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -1104,6 +1095,23 @@ class Ceil(ElementWiseUnaryOp):
 
     def torch(self):
         return torch.ceil
+
+    def proxy_grad(self):
+        return PGCeil()
+
+
+class Floor(ElementWiseUnaryOp):
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
+
+    def __init__(self):
+        super().__init__()
+
+    def torch(self):
+        return torch.floor
+
+    def proxy_grad(self):
+        return PGFloor()
 
 
 class Clip(ElementWiseUnaryOp):
@@ -1117,6 +1125,9 @@ class Clip(ElementWiseUnaryOp):
     def torch(self):
         return lambda x: torch.clip(x, self.min, self.max)
 
+    def proxy_grad(self):
+        return PGClip(self.min, self.max)
+
 
 class Round(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -1127,6 +1138,9 @@ class Round(ElementWiseUnaryOp):
 
     def torch(self):
         return torch.round
+
+    def proxy_grad(self):
+        return PGRound()
 
 
 class Sqrt(ElementWiseUnaryOp):

@@ -155,6 +155,10 @@ if __name__ == '__main__':
         'grad-time': [],
         'grad-try': [],
         'grad-succ': [],
+
+        'proxy-time': [],
+        'proxy-try': [],
+        'proxy-succ': [],
     }
 
     with tqdm(range(args.n_model)) as pbar:
@@ -299,6 +303,42 @@ if __name__ == '__main__':
             results['grad-succ'].append(succ_grad)
             results['grad-try'].append(try_times_grad)
             results['grad-time'].append(time.time() - strt_time)
+            # --------------------------------------------------------------------
+
+            # ------------------------------------------------------------
+            # Test grad + proxy
+            # If sampling can succeed, grad can succeed too as their initial input are the same.
+            # Proxy makes some operators differentiable.
+            seedme()
+
+            strt_time = time.time()
+            succ_grad = False
+            try_times_grad = 0
+
+            net.enable_proxy_grad()
+            for inp_sample, w_sample in zip(init_tensor_samples, init_weight_samples):
+                try_times_grad += 1
+                try:
+                    apply_weights(net, w_sample)
+                    sat_inputs = net.grad_input_gen(
+                        init_tensors=inp_sample, use_cuda=args.use_cuda, max_time=args.max_gen_ms / 1000)
+                except RuntimeError as e:
+                    if 'element 0 of tensors does not require grad and does not have a grad_fn' in str(e):
+                        # means some op are not differentiable.
+                        succ_grad = succ_sampling
+                        try_times_grad = try_times_sampling
+                        break
+                    raise e
+                if sat_inputs is not None:
+                    succ_grad = True
+                    break
+                if time.time() - strt_time > args.max_gen_ms / 1000:
+                    break
+
+            # Some operator is not differentiable that will fall back to v3.
+            results['proxy-succ'].append(succ_grad)
+            results['proxy-try'].append(try_times_grad)
+            results['proxy-time'].append(time.time() - strt_time)
             # --------------------------------------------------------------------
 
     df = pd.DataFrame(results)

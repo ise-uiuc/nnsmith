@@ -4,14 +4,18 @@ import torch
 import torch.onnx
 
 from nnsmith.abstract.op import DType, ShapeVar
+from nnsmith.graph_gen import SymbolNet
 
 
 # Torch is actually not an ideal choice for graph generation,
 # as it is based on dynamic graph construction.
-# TODO: Use CUDA to accelerate the export process.
-def torch2onnx(model, filename, verbose=False, use_cuda=False, dummy_inputs=None):
+def torch2onnx(model: SymbolNet, filename, verbose=False, use_cuda=False, dummy_inputs=None):
     """Convert PyTorch model to ONNX format.
     """
+    proxy_enabled = model.proxy_enabled
+    if proxy_enabled:
+        model.disable_proxy_grad()
+
     dev = torch.device('cuda' if use_cuda else 'cpu')
     # Get dynamic axis sizes & input names
     dynamic_axes = {}
@@ -52,6 +56,9 @@ def torch2onnx(model, filename, verbose=False, use_cuda=False, dummy_inputs=None
                 verbose=verbose,
                 dynamic_axes=dynamic_axes,
                 opset_version=14)
+
+    if proxy_enabled:  # Re-enable proxy grad
+        model.enable_proxy_grad()
 
     return input_names, output_names
 

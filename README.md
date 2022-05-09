@@ -190,3 +190,5 @@ pip install onnxruntime-gpu # the order matters; and you have to split the insta
 - [x] Migrate to source-level coverage (more information)
 - [x] Inference in/out detailed data type by direct backend execution.
 - [x] Fix `fuzz.py`
+- [x] Generalize vulnerable operator
+- [x] Proxy gradient

@@ -25,7 +25,6 @@ import os
 import copy
 
 from nnsmith.error import SanityCheck, ConstraintCheck, ConstraintError
-from nnsmith.export import torch2onnx
 from nnsmith.abstract.op import *
 from nnsmith.abstract.op import __MAX_RANK__ as __MAX_RANK__
 
@@ -84,6 +83,9 @@ class SymbolNet(nn.Module):
         self.n_output = 0
         self.inp_id_cnt = 0
         self.n_vulnerable_op = 0
+        # idx of self.instructions that has method `proxy_grad`
+        self.proxy_inst_idx = []
+        self.proxy_enabled_ = False
 
         self.using_cuda = None  # not sure
 
@@ -138,11 +140,13 @@ class SymbolNet(nn.Module):
                     output_idx[out_idx] = tmp_op_output_map[node_id] + out_idx
 
             if not isinstance(op, Input):
-                cur_op = op.torch()
-                if isinstance(cur_op, nn.Module):
-                    self.mlist.append(cur_op)
+                torch_fn = op.torch()
+                if isinstance(torch_fn, nn.Module):
+                    self.mlist.append(torch_fn)
                 self.instructions.append(
-                    (cur_op, input_idx, output_idx, op, node_id))
+                    (torch_fn, input_idx, output_idx, op, node_id))
+                if hasattr(op, 'proxy_grad'):
+                    self.proxy_inst_idx.append(len(self.instructions) - 1)
 
                 if hasattr(op, 'torch_loss'):
                     self.n_vulnerable_op += 1
@@ -200,6 +204,24 @@ class SymbolNet(nn.Module):
     def to_picklable(self):
         self.alive_shapes = None
         del self.graph
+
+    def proxy_enabled(self):
+        return self.proxy_enabled_
+
+    def enable_proxy_grad(self):
+        for i in self.proxy_inst_idx:
+            _, input_idx, output_idx, op, node_id = self.instructions[i]
+            self.instructions[i] = (
+                op.proxy_grad(), input_idx, output_idx, op, node_id)
+
+        self.proxy_enabled_ = True
+
+    def disable_proxy_grad(self):
+        for i in self.proxy_inst_idx:
+            _, input_idx, output_idx, op, node_id = self.instructions[i]
+            self.instructions[i] = (
+                op.torch(), input_idx, output_idx, op, node_id)
+        self.proxy_enabled_ = False
 
     def get_params(self):
         return sum([i['params'] for i in self.optimizer.param_groups], [])
@@ -1499,6 +1521,8 @@ def random_model_gen(
 
 
 if __name__ == '__main__':
+    from nnsmith.export import torch2onnx
+
     args = parse_args()
 
     gen_args = {}
