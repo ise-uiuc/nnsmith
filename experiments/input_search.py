@@ -201,7 +201,7 @@ if __name__ == '__main__':
             for name, param in net.named_parameters():
                 nbytes += param.numel() * param.element_size()
 
-            MEM_FACTOR = 0.5
+            MEM_FACTOR = 0.4
             if nbytes * args.max_sample > MAX_MEM * MEM_FACTOR:
                 max_sample = int(MAX_MEM * MEM_FACTOR / nbytes)
                 print(

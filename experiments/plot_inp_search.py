@@ -70,16 +70,16 @@ if __name__ == '__main__':
     fig.subplots_adjust(hspace=0.1)
 
     for ax in [ax1, ax2]:
-        ax.plot(sampling_time, sampling_succ_rate, markersize=10,
+        ax.plot(sampling_time * 1000, sampling_succ_rate, markersize=10,
                 marker='x', linestyle='--', label='Sampling')
-        ax.plot(grad_time, grad_succ_rate, marker='*', markersize=10,
+        ax.plot(grad_time * 1000, grad_succ_rate, marker='*', markersize=10,
                 linestyle='--', label='Gradient')
-        ax.plot(proxy_time, proxy_succ_rate, marker='^', markersize=10,
+        ax.plot(proxy_time * 1000, proxy_succ_rate, marker='^', markersize=10,
                 linestyle='--', label='Proxy Gradient')
         ax.grid(True, linestyle='--', linewidth=.5)
 
     ax1.set_ylim(.66, 1)
-    ax2.set_ylim(.3, .44)
+    ax2.set_ylim(.29, .43)
 
     ax1.spines.bottom.set_visible(False)
     ax2.spines.top.set_visible(False)
