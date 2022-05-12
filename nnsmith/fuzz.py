@@ -12,18 +12,18 @@ from typing import Dict, Iterable, Union, List
 import socket
 import warnings
 
-# Edge coverage. See https://github.com/ganler/tvm/tree/coverage
 import git
-import rich
+import torch
 import numpy as np
+import networkx as nx
+
+import rich
 from rich.progress import Progress, BarColumn, ProgressColumn
 from rich.panel import Panel
 from rich.console import RenderableType
 from rich.columns import Columns
-import networkx as nx
-import torch
 
-from backend_executor import DummyExecutor
+from nnsmith.backend_executor import DummyExecutor
 from nnsmith.abstract.op import ALL_OP_TYPES, AbsOpBase, auto_infer_in_dtypes, config_skip_op
 from nnsmith.error import NNSmithInternalError, SanityCheck
 from nnsmith.backends import DiffTestBackend
@@ -32,10 +32,8 @@ from nnsmith.graph_gen import random_model_gen, SymbolNet, random_tensor
 from nnsmith.dtype_test import rewrite_op_dtype
 from nnsmith.export import torch2onnx
 
-__COV_DRIVER__ = None
 
 _METADATA_NAME_ = 'meta.txt'
-_COV_BY_TIME_NAME_ = 'cov_by_time.csv'
 
 # NOTE: Currently only engineered for TVM.
 
@@ -92,7 +90,6 @@ class Reporter:  # From Tzer.
                 _log_repo(f, 'TVM', git.Repo(os.getenv('TVM_HOME')))
 
         self.n_bug = 0
-        self.record_coverage_cnt = 0
 
     def report_bug(self, err_type: Exception, buggy_onnx_path: str, buggy_torch_path: str, message: str, stdout: str, stderr: str, graph_path: str, sat_inputs=None):
         dir = f'{type(err_type).__name__}__{self.n_bug}'
@@ -135,12 +132,6 @@ class Reporter:  # From Tzer.
 
         self.n_bug += 1
 
-    def record_coverage(self, fuzz):
-        self.record_coverage_cnt += 1
-        with open(os.path.join(self.report_folder, _COV_BY_TIME_NAME_), 'a') as f:
-            f.write(
-                f'{time.perf_counter() - self.start_time :.2f},{__COV_DRIVER__.get_now()}\n')
-
 
 class CustomProgress(Progress):
     def __init__(self, fuzz_status, columns: List[Union[str, ProgressColumn]], disable=False):
@@ -156,8 +147,8 @@ class CustomProgress(Progress):
 
 
 class FuzzingLoop:  # TODO: Support multiple backends.
-    def __init__(self, backends: Dict[str, DiffTestBackend], mode='random', root=None, time_budget=60 * 60 * 4, max_nodes=10, inp_gen='sampling',
-                 _PER_MODEL_TIMEOUT_=1000, use_bitvec=False, limnf=True, use_cuda=False, yes=False):
+    def __init__(self, backends: Dict[str, DiffTestBackend], mode='random', inp_gen='sampling', root=None,
+                 time_budget=60 * 60 * 4, max_nodes=10, use_bitvec=False, limnf=True, use_cuda=False, yes=False):
         self.root = root
         self.reporter = Reporter(
             report_folder=root, name_hint=list(backends.keys())[0], yes=yes)
@@ -174,8 +165,6 @@ class FuzzingLoop:  # TODO: Support multiple backends.
 
         self.cur_seed = 'N/A'
         self.cur_node_size = 'N/A'
-
-        self._PER_MODEL_TIMEOUT_ = _PER_MODEL_TIMEOUT_  # milliseconds
 
         self.rich_profile = {
             'succ_gen': np.array([]),
@@ -417,31 +406,25 @@ if __name__ == '__main__':
         from nnsmith.backends.tvm_graph import TVMExecutor
         backends = {'tvm-opt': TVMExecutor(opt_level=4),
                     'tvm-debug': TVMExecutor(opt_level=0)}
-        __COV_DRIVER__ = TVMExecutor.coverage_install()
     elif args.backend == 'tvm-cuda':
         from nnsmith.backends.tvm_graph import TVMExecutor
         backends = {'tvm-opt': TVMExecutor(opt_level=4, target="cuda"),
                     'tvm-debug': TVMExecutor(opt_level=0)}
-        __COV_DRIVER__ = TVMExecutor.coverage_install()
     elif args.backend == 'ort':
         from nnsmith.backends.ort_graph import ORTExecutor
         backends = {'ort-opt': ORTExecutor(opt_level=3),
                     'ort-debug': ORTExecutor(opt_level=0)}
-        __COV_DRIVER__ = ORTExecutor.coverage_install()
     elif args.backend == 'trt':
         from nnsmith.backends.trt_graph import TRTBackend
         from nnsmith.backends.tch_graph import TchExecutor
         backends = {'trt-opt': TRTBackend(),
                     'tch-debug': TchExecutor(opt_level=0, dev='cpu')}
-        __COV_DRIVER__ = TRTBackend.coverage_install()
     elif args.backend == 'tch':
         from nnsmith.backends.tch_graph import TchExecutor
         backends = {'tch-opt': TchExecutor(dev='cuda'),
                     'tch-debug': TchExecutor(opt_level=0, dev='cpu')}
-        __COV_DRIVER__ = TchExecutor.coverage_install()
     elif args.backend == 'dummy':  # for debugging
         backends = {'dummy': DummyExecutor()}
-        __COV_DRIVER__ = DummyExecutor.coverage_install()
     else:
         raise NotImplementedError("Other backends not supported yet.")
     skip = 'backend:' + args.backend
@@ -474,7 +457,6 @@ if __name__ == '__main__':
         mode=args.mode,
         time_budget=args.time_budget,
         inp_gen=args.inp_gen,
-        _PER_MODEL_TIMEOUT_=args.gen_timeout,
         use_bitvec=args.use_bitvec,
         limnf=args.limnf,
         use_cuda=args.use_cuda,
