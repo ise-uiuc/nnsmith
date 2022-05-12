@@ -23,6 +23,7 @@ plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--root', type=str, required=True)
+    parser.add_argument('--output', type=str, default='results')
     args = parser.parse_args()
 
     REGEX_PATTERN = '(\d+)-model-(\d+)-node-exp'
@@ -106,5 +107,7 @@ if __name__ == '__main__':
     ax2.set_ylabel('Success Rate', fontweight='bold')
     ax2.yaxis.set_label_coords(0.05, 0.5, transform=fig.transFigure)
 
-    plt.savefig(f'input-search{n_model}-{n_nodes}.pdf')
-    plt.savefig(f'input-search{n_model}-{n_nodes}.png')
+    plt.savefig(os.path.join(
+        args.output, f'input-search{n_model}-{n_nodes}.pdf'))
+    plt.savefig(os.path.join(
+        args.output, f'input-search{n_model}-{n_nodes}.png'))
