@@ -24,6 +24,7 @@ import networkx as nx
 from nnsmith.export import torch2onnx
 from nnsmith.util import mkdir
 from nnsmith.graph_gen import random_model_gen, SymbolNet, random_tensor
+from nnsmith.input_gen import GradSearch, SamplingSearch
 from nnsmith.dtype_test import rewrite_op_dtype
 from nnsmith.abstract.op import ALL_OP_TYPES
 
@@ -93,7 +94,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_nodes', type=int, default=25)
     parser.add_argument('--exp-seed', type=int)
     parser.add_argument('--max_sample', type=int, default=1)
-    parser.add_argument('--max_gen_ms', type=int, default=500)
+    parser.add_argument('--max_time_ms', type=int, default=500)
     parser.add_argument('--n_model', type=int, default=50)
     parser.add_argument('--use_cuda', action='store_true')
     parser.add_argument('--verbose', action='store_true')
@@ -251,24 +252,15 @@ if __name__ == '__main__':
                 net.use_cuda()
 
             strt_time = time.time()
-            succ_sampling = False
-            try_times_sampling = 0
+            searcher = SamplingSearch(
+                net, init_tensor_samples, init_weight_samples, use_cuda=args.use_cuda)
 
-            net.check_intermediate_numeric = True
-            with torch.no_grad():
-                for inp_sample, w_sample in zip(init_tensor_samples, init_weight_samples):
-                    try_times_sampling += 1
-                    apply_weights(net, w_sample)
-                    _ = net(*inp_sample)
-                    if not net.invalid_found_last:
-                        succ_sampling = True
-                        break
-                    if time.time() - strt_time > args.max_gen_ms / 1000:
-                        break
+            n_try, sat_inputs = searcher.search(
+                max_time_ms=args.max_time_ms, max_sample=args.max_sample)
 
             results['sampling-time'].append(time.time() - strt_time)
-            results['sampling-try'].append(try_times_sampling)
-            results['sampling-succ'].append(succ_sampling)
+            results['sampling-try'].append(n_try)
+            results['sampling-succ'].append(sat_inputs is not None)
             # ------------------------------------------------------------
 
             # ------------------------------------------------------------
@@ -277,32 +269,15 @@ if __name__ == '__main__':
             seedme()
 
             strt_time = time.time()
-            succ_grad = False
-            try_times_grad = 0
 
-            for inp_sample, w_sample in zip(init_tensor_samples, init_weight_samples):
-                try_times_grad += 1
-                try:
-                    apply_weights(net, w_sample)
-                    sat_inputs = net.grad_input_gen(
-                        init_tensors=inp_sample, use_cuda=args.use_cuda, max_time=args.max_gen_ms / 1000)
-                except RuntimeError as e:
-                    if 'element 0 of tensors does not require grad and does not have a grad_fn' in str(e):
-                        # means some op are not differentiable.
-                        succ_grad = succ_sampling
-                        try_times_grad = try_times_sampling
-                        break
-                    raise e
-                if sat_inputs is not None:
-                    succ_grad = True
-                    break
-                if time.time() - strt_time > args.max_gen_ms / 1000:
-                    break
+            searcher = GradSearch(
+                net, init_tensor_samples, init_weight_samples, use_cuda=args.use_cuda)
+            n_try, sat_inputs = searcher.search(
+                max_time_ms=args.max_time_ms, max_sample=args.max_sample)
 
-            # Some operator is not differentiable that will fall back to v3.
-            results['grad-succ'].append(succ_grad)
-            results['grad-try'].append(try_times_grad)
             results['grad-time'].append(time.time() - strt_time)
+            results['grad-try'].append(n_try)
+            results['grad-succ'].append(sat_inputs is not None)
             # --------------------------------------------------------------------
 
             # ------------------------------------------------------------
@@ -312,33 +287,16 @@ if __name__ == '__main__':
             seedme()
 
             strt_time = time.time()
-            succ_grad = False
-            try_times_grad = 0
 
             net.enable_proxy_grad()
-            for inp_sample, w_sample in zip(init_tensor_samples, init_weight_samples):
-                try_times_grad += 1
-                try:
-                    apply_weights(net, w_sample)
-                    sat_inputs = net.grad_input_gen(
-                        init_tensors=inp_sample, use_cuda=args.use_cuda, max_time=args.max_gen_ms / 1000)
-                except RuntimeError as e:
-                    if 'element 0 of tensors does not require grad and does not have a grad_fn' in str(e):
-                        # means some op are not differentiable.
-                        succ_grad = succ_sampling
-                        try_times_grad = try_times_sampling
-                        break
-                    raise e
-                if sat_inputs is not None:
-                    succ_grad = True
-                    break
-                if time.time() - strt_time > args.max_gen_ms / 1000:
-                    break
+            searcher = GradSearch(
+                net, init_tensor_samples, init_weight_samples, use_cuda=args.use_cuda)
+            n_try, sat_inputs = searcher.search(
+                max_time_ms=args.max_time_ms, max_sample=args.max_sample)
 
-            # Some operator is not differentiable that will fall back to v3.
-            results['proxy-succ'].append(succ_grad)
-            results['proxy-try'].append(try_times_grad)
             results['proxy-time'].append(time.time() - strt_time)
+            results['proxy-try'].append(n_try)
+            results['proxy-succ'].append(sat_inputs is not None)
             # --------------------------------------------------------------------
 
     df = pd.DataFrame(results)

@@ -11,7 +11,7 @@ import onnx
 
 from nnsmith.abstract.op import ALL_OP_TYPES, ALL_OP_STR2TYPE, AbsOpBase, DType, ShapeVar, concretize, Input, Constant
 from nnsmith.backends import DiffTestBackend
-from nnsmith.input_gen import gen_one_input
+from nnsmith.util import gen_one_input
 
 
 def _differentiable_test(model, available_idtypes, concrete_input_shapes, oranks, verbose=False):

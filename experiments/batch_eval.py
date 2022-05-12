@@ -5,13 +5,15 @@ import numpy as np
 import pickle
 
 from nnsmith.backends import DiffTestBackend
-from nnsmith.input_gen import gen_one_input
+from nnsmith.util import gen_one_input
 import traceback
+
 
 def mcov_write(path):
     if path:
         with open(path + '.pkl', 'wb') as f:
             pickle.dump(backend._coverage_install().get_hitmap(), f)
+
 
 if __name__ == '__main__':
     import argparse
@@ -20,7 +22,8 @@ if __name__ == '__main__':
                         help='List to ONNX model paths')
     parser.add_argument('--backend', type=str, default='tvm',
                         help='One of ort, trt, tvm, and xla')
-    parser.add_argument('--memcov', type=str, default=None, help='Path to store memcov.')
+    parser.add_argument('--memcov', type=str, default=None,
+                        help='Path to store memcov.')
     parser.add_argument('--dev', type=str, default='cpu', help='cpu/gpu')
     parser.add_argument('--seed', type=int, default=233,
                         help='to generate random input data')
@@ -39,7 +42,7 @@ if __name__ == '__main__':
         backend = ORTExecutor(opt_level=3)
     else:
         raise NotImplementedError("Other backends not supported yet.")
-    
+
     if args.memcov:
         assert backend._coverage_install().get_now() is not None, "Memcov unavailable!"
 

@@ -5,11 +5,11 @@ from typing import Dict
 import time
 
 import numpy as np
-from tqdm import tqdm
 import onnx
 import onnx.checker
 
-from nnsmith import difftest, input_gen
+from nnsmith import difftest
+from nnsmith.util import gen_one_input, is_invalid
 from nnsmith.backends import DiffTestBackend
 
 
@@ -135,7 +135,7 @@ if __name__ == '__main__':
         else:
             print('No raw input or oracle found. Generating input on the fly.')
             inp_spec = DiffTestBackend.analyze_onnx_io(onnx_model)[0]
-            test_inputs = input_gen.gen_one_input_rngs(inp_spec, None, seed)
+            test_inputs = gen_one_input_rngs(inp_spec, None, seed)
 
     # Step 2: Run backend
     # -- reference backend:
@@ -143,14 +143,14 @@ if __name__ == '__main__':
         print(f'Using {args.cmp_with} as the reference backend/oracle')
         reference_backend = BackendCreator(args.cmp_with)()
         oracle_outputs = reference_backend.predict(onnx_model, test_inputs)
-        if input_gen.is_invalid(oracle_outputs):
+        if is_invalid(oracle_outputs):
             print(
                 f'[WARNING] Backend {args.cmp_with} produces nan/inf in output.')
 
     # -- this backend:
     this_backend = BackendCreator(args.backend)()
     this_outputs = this_backend.predict(onnx_model, test_inputs)
-    if input_gen.is_invalid(this_outputs):
+    if is_invalid(this_outputs):
         print(f'[WARNING] Backend {args.backend} produces nan/inf in output.')
 
     # Step 3: Compare

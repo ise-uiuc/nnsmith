@@ -3,8 +3,12 @@ from typing import List, Union, Dict, Tuple
 from collections import namedtuple
 import os
 
+import pickle
 import onnx
 import numpy as np
+
+from nnsmith.util import gen_one_input
+
 
 ShapeType = namedtuple('ShapeType', ['shape', 'dtype'])
 
@@ -161,6 +165,27 @@ class DiffTestBackend(ABC):
             inp_analysis_ret[input_node.name] = ShapeType(shape, dtype)
 
         return inp_analysis_ret, out_analysis_names
+
+
+def gen_one_input_rngs(inp_spec: Union[str, Dict], rngs: Union[str, List[Tuple[float, float]], None], seed=None) -> Dict:
+    """
+    Parameters
+    ----------
+    `inp_spec` can be either a string or a dictionary. When it's a string, it's the a path to the ONNX model.
+
+    `rngs` can be 
+    - a list of tuples (low, high).
+    - None, which means no valid range found, this falls back to use low=0, high=1 as a workaroun
+    - a string, which is interpreted as a path to a pickled file.
+    """
+    if rngs is None:
+        rngs = [(0, 1)]
+    elif isinstance(rngs, str):
+        rngs = pickle.load(open(rngs, 'rb'))
+    if isinstance(inp_spec, str):  # in this case the inp_spec is a path to a the model proto
+        inp_spec = DiffTestBackend.analyze_onnx_io(
+            DiffTestBackend.get_onnx_proto(inp_spec))[0]
+    return gen_one_input(inp_spec, *rngs[np.random.randint(len(rngs))], seed)
 
 
 if __name__ == '__main__':
