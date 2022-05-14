@@ -323,7 +323,8 @@ class SymbolNet(nn.Module):
         inputs = []
         for tensor in init_tensors:
             if tensor.data.dtype.is_floating_point:
-                inputs.append(torch.nn.parameter.Parameter(tensor.data))
+                inputs.append(torch.nn.parameter.Parameter(
+                    tensor.data.clone()))
             else:
                 inputs.append(tensor.data)
 

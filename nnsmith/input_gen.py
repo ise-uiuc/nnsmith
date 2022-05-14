@@ -31,8 +31,6 @@ class InputSearchBase(ABC):
         start_time = time.time()
 
         while (max_time_ms is None or time.time() - start_time < max_time_ms / 1000) and n_try < max_sample:
-            n_try += 1
-
             if self.start_weights is not None and n_try < len(self.start_weights):
                 self.apply_weights(self.net, self.start_weights[n_try])
             else:
@@ -52,6 +50,7 @@ class InputSearchBase(ABC):
             if res is not None:
                 sat_inputs = res
                 break
+            n_try += 1
 
         if sat_inputs is not None:
             sat_inputs = {name: inp for name,
