@@ -211,6 +211,7 @@ if __name__ == '__main__':
             else:
                 max_sample = args.max_sample
             # ------------------------------------------------------------
+            seedme()
 
             net.check_intermediate_numeric = True
             with torch.no_grad():
