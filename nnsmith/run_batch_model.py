@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 from nnsmith import util
 from nnsmith.backends import DiffTestBackend
-from nnsmith.backend_executor import BackendCreator, summarize
+from nnsmith.backend_executor import BackendCreator, summarize, gen_one_input_rngs
 
 
 def run_backend(root: str, output_dir: str, backend_creator: BackendCreator, timeout: int, selected_models: List[str] = None, gen_input: int = None):
@@ -37,7 +37,7 @@ def run_backend(root: str, output_dir: str, backend_creator: BackendCreator, tim
                 rngs, input_spec, seed = inp_path
                 # used to filter out false positive due to nan
                 infer_succ = (rngs is not None)
-                inputs = util.gen_one_input_rngs(input_spec, rngs, seed)
+                inputs = gen_one_input_rngs(input_spec, rngs, seed)
             with util.stdout_redirected(f"{out_path}.stdout"), \
                     util.stdout_redirected(f"{out_path}.stderr", sys.stderr):
                 try:  # try block to catch the exception message before the rediction exits

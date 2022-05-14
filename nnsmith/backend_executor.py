@@ -9,8 +9,8 @@ import onnx
 import onnx.checker
 
 from nnsmith import difftest
-from nnsmith.util import gen_one_input, is_invalid
-from nnsmith.backends import DiffTestBackend
+from nnsmith.util import is_invalid
+from nnsmith.backends import DiffTestBackend, gen_one_input_rngs
 
 
 class CrashExecutor(DiffTestBackend):

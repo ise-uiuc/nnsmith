@@ -3,7 +3,7 @@ import time
 
 from tqdm import tqdm
 import torch
-from nnsmith.backends import DiffTestBackend
+from nnsmith.backends import DiffTestBackend, gen_one_input_rngs
 
 
 class TchExecutor(DiffTestBackend):
@@ -46,7 +46,7 @@ def _unittest():
 
         # gen input
         inp_spec = tvm_exe.analyze_onnx_io(onnx_model)[0]
-        inp = input_gen.gen_one_input_rngs(inp_spec, rngs=None)
+        inp = gen_one_input_rngs(inp_spec, rngs=None)
 
         st = time.time()
         tvm_out = tvm_exe.predict(onnx_model, inp)
