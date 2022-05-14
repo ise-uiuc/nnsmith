@@ -242,7 +242,8 @@ class DType(Enum):
     def is_float(dtype):
         if isinstance(dtype, str):
             dtype = DType.from_str(dtype)
-        assert isinstance(dtype, DType), type(dtype)
+        else:
+            dtype = DType(dtype)
         return dtype in [DType.float32, DType.float64]
 
     @staticmethod
