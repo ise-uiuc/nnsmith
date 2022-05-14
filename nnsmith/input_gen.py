@@ -47,10 +47,10 @@ class InputSearchBase(ABC):
                 cur_input = self.net.get_random_inps(use_cuda=self.use_cuda)
 
             res = self.search_one(cur_input, max_time_ms)
+            n_try += 1
             if res is not None:
                 sat_inputs = res
                 break
-            n_try += 1
 
         if sat_inputs is not None:
             sat_inputs = {name: inp for name,
