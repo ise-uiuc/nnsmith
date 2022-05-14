@@ -6,6 +6,7 @@ import torch
 import numpy as np
 
 from nnsmith.graph_gen import SymbolNet, random_tensor
+from nnsmith.abstract.op import DType
 
 
 class InputSearchBase(ABC):
@@ -76,3 +77,28 @@ class GradSearch(InputSearchBase):
     def search_one(self, start_inp, timeout_ms: int = None) -> List[torch.Tensor]:
         return self.net.grad_input_gen(
             init_tensors=start_inp, use_cuda=self.use_cuda, max_time=timeout_ms / 1000)
+
+
+class PracticalHybridSearch(InputSearchBase):
+    def __init__(self, net: SymbolNet, start_inputs=None, start_weights=None, use_cuda=False):
+        super().__init__(net, start_inputs, start_weights, use_cuda)
+
+        self.differentiable = None
+
+        if all([DType.is_float(ii.op.shape_var.dtype.value) for ii in self.net.input_info]):
+            diff_test_inp = (torch.tensor(i, requires_grad=True)
+                             for i in self.net.get_random_inps(use_cuda=self.use_cuda))
+            self.net.forward(*diff_test_inp)
+            self.differentiable = self.net.differentiable
+        else:
+            self.differentiable = False
+
+    def search_one(self, start_inp, timeout_ms: int = None) -> List[torch.Tensor]:
+        # if this model is purely differentiable -> GradSearch
+        # otherwise                              -> SamplingSearch
+        # FIXME: Estimate gradient (e.g., proxy gradient) for non-differentiable inputs.
+
+        if self.differentiable:
+            return GradSearch.search_one(self, start_inp, timeout_ms)
+        else:
+            return SamplingSearch.search_one(self, start_inp, timeout_ms)

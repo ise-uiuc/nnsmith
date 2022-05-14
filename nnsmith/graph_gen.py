@@ -6,14 +6,6 @@ import psutil
 from collections import defaultdict
 import math
 import textwrap
-
-import networkx as nx
-from nnsmith.dtype_test import rewrite_op_dtype
-import torch
-from torch import nn
-import numpy as np
-import uuid
-
 import pickle
 import cloudpickle
 from typing import Dict, NamedTuple, Tuple, List, Optional, Set
@@ -24,6 +16,13 @@ import time
 import os
 import copy
 
+import networkx as nx
+import torch
+from torch import nn
+import numpy as np
+import uuid
+
+from nnsmith.dtype_test import rewrite_op_dtype
 from nnsmith.error import SanityCheck, ConstraintCheck, ConstraintError
 from nnsmith.abstract.op import *
 from nnsmith.abstract.op import __MAX_RANK__ as __MAX_RANK__
@@ -298,17 +297,18 @@ class SymbolNet(nn.Module):
 
         sat_inputs = None
 
-        for _ in range(max_iter):
-            inputs = self.get_random_inps(**kwargs, use_cuda=use_cuda)
+        if use_cuda:
+            self.use_cuda()
 
-            if use_cuda:
-                self.use_cuda()
+        with torch.no_grad():
+            for _ in range(max_iter):
+                inputs = self.get_random_inps(**kwargs, use_cuda=use_cuda)
 
-            self.forward(*inputs)
+                self.forward(*inputs)
 
-            if not self.invalid_found_last:
-                sat_inputs = inputs
-                break
+                if not self.invalid_found_last:
+                    sat_inputs = inputs
+                    break
 
         self.check_intermediate_numeric = last_check_intermediate_numeric
         return sat_inputs
@@ -375,7 +375,7 @@ class SymbolNet(nn.Module):
 
     def forward(self, *args, **kwargs):
         # required: input_info, tensors, ref_cnt, instructions, hacked, first_run verbose # alive_shapes, graph
-        self.interm_grad = []
+        self.differentiable = True
         self.taint = {}
         xs = [None] * len(self.input_info)
         for i in range(len(args)):
@@ -391,12 +391,15 @@ class SymbolNet(nn.Module):
         local_ref_cnt = self.ref_cnt.copy()
         self.tensors = [None for _ in self.tensors]
         self.invalid_found_last = False
-        for i in range(len(xs)):
-            if xs[i].requires_grad:
-                self.interm_grad.append((f'i_{i}', xs[i]))
-        for i, p in enumerate(self.parameters()):
-            if p.requires_grad:
-                self.interm_grad.append((f'p_{i}', p))
+
+        self.interm_grad = []
+        if self.print_grad >= 2:
+            for i in range(len(xs)):
+                if xs[i].requires_grad:
+                    self.interm_grad.append((f'i_{i}', xs[i]))
+            for i, p in enumerate(self.parameters()):
+                if p.requires_grad:
+                    self.interm_grad.append((f'p_{i}', p))
 
         for ii in self.input_info:
             self.tensors[ii.oid] = xs[ii.op.idx]
@@ -417,6 +420,10 @@ class SymbolNet(nn.Module):
             outputs = inst(*input_tensors)
             if not isinstance(outputs, list):
                 outputs = [outputs]
+
+            for out in outputs:
+                self.differentiable &= out.grad_fn is not None
+
             if self.verbose:
                 print(
                     f'--> executing op={op}, node_id={node_id}, inps={inps}, outs={outs}')
@@ -1203,9 +1210,6 @@ class PureSymbolGen(SimpleGenerator):
     def get_symbol_solutions(self) -> List:
         SanityCheck.not_none(self.last_soln)
         return self.last_soln
-        # res = self.solver.check()
-        # assert res == z3.sat, res
-        # return self.solver.model()
 
 
 class Bin:
