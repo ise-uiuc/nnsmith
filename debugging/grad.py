@@ -2,6 +2,8 @@
 simply generate a bunch of models and see if the can find viable inputs.
 """
 
+import psutil
+from nnsmith.input_gen import GradSearch, SamplingSearch
 from nnsmith.graph_gen import random_tensor, SymbolNet
 from nnsmith.dtype_test import rewrite_op_dtype
 from nnsmith.abstract.op import ALL_OP_TYPES
@@ -24,8 +26,14 @@ if __name__ == '__main__':
     parser.add_argument('--use_cuda', action='store_true')
     parser.add_argument('--verbose', action='store_true')
     parser.add_argument('--print_grad', type=int, default=0)
-    parser.add_argument('--n_inp_sample', type=int, default=1)
+    parser.add_argument('--max_sample', type=int, default=1)
+    parser.add_argument('--max_time_ms', type=int, default=500)
+    parser.add_argument(
+        '--mode', choices=['proxy', 'grad', 'all'], default='proxy')
     args = parser.parse_args()
+
+    MAX_MEM = psutil.virtual_memory(
+    ).total if not args.use_cuda else torch.cuda.get_device_properties(0).total_memory
 
     __DIFF_CACHE__ = 'config/diff.pkl'
     differentiable_ops = rewrite_op_dtype(
@@ -47,13 +55,20 @@ if __name__ == '__main__':
         'grad-time': [],
         'grad-try': [],
         'grad-succ': [],
+
+        'proxy-time': [],
+        'proxy-try': [],
+        'proxy-succ': [],
     }
 
     net, model_seed = pickle.load(open(args.net, 'rb')), args.model_seed
     net = SymbolNet(net.concrete_graph, None,
                     megabyte_lim=net.megabyte_lim, verbose=args.verbose, print_grad=args.print_grad)
     net.eval()
-    print('model_seed=', model_seed)
+
+    net.use_gradient = False
+
+    results['model_seed'].append(model_seed)
 
     def seedme():
         nseed = (model_seed + 1) % (2 ** 32)
@@ -70,6 +85,26 @@ if __name__ == '__main__':
     if args.use_cuda:
         net.use_cuda()
 
+    # ------------------------------------------------------------
+    # Estimate model size | avoid OOM
+    nbytes = 0
+    inputs = net.get_random_inps(use_cuda=args.use_cuda)
+    for tensor in inputs:
+        nbytes += tensor.numel() * tensor.element_size()
+    for name, param in net.named_parameters():
+        nbytes += param.numel() * param.element_size()
+
+    MEM_FACTOR = 0.4
+    if nbytes * args.max_sample > MAX_MEM * MEM_FACTOR:
+        max_sample = int(MAX_MEM * MEM_FACTOR / nbytes)
+        print(
+            f'{args.max_sample} x weights require {nbytes * args.max_sample / (1024**3)}GB'
+            f' which is more than what you have. Downgrade to {max_sample} samples.')
+    else:
+        max_sample = args.max_sample
+    # ------------------------------------------------------------
+    seedme()
+
     net.check_intermediate_numeric = True
     with torch.no_grad():
         _ = net(*net.get_random_inps(base=0,
@@ -85,16 +120,20 @@ if __name__ == '__main__':
     # sync input & weight between `sampling` and `grad`
     seedme()
     init_tensor_samples = []
-    for _ in range(args.n_inp_sample):
-        init_tensor_samples.append(net.get_random_inps(use_cuda=args.use_cuda))
+    # 5 samples look like: [0, +-1, +-2] + uniform(-0.5, 0.5)
+    for i in range(max_sample):
+        data = net.get_random_inps(
+            base=((i + 1) // 2) * (-1) ** i, margin=1, use_cuda=args.use_cuda)
+        init_tensor_samples.append(data)
 
     init_weight_samples = []
     with torch.no_grad():
-        for _ in range(args.n_inp_sample):
+        for i in range(max_sample):
             weight_sample = {}
             for name, param in net.named_parameters():
                 weight_sample[name] = random_tensor(
-                    param.shape, dtype=param.dtype, use_cuda=args.use_cuda)
+                    param.shape, dtype=param.dtype, use_cuda=args.use_cuda,
+                    base=((i + 1) // 2) * (-1) ** i, margin=1)
             init_weight_samples.append(weight_sample)
 
     def apply_weights(net, weight_sample):
@@ -106,46 +145,52 @@ if __name__ == '__main__':
         net.use_cuda()
 
     strt_time = time.time()
-    succ_sampling = False
-    try_times_sampling = 0
+    searcher = SamplingSearch(
+        net, init_tensor_samples, init_weight_samples, use_cuda=args.use_cuda)
 
-    net.check_intermediate_numeric = True
-    with torch.no_grad():
-        for inp_sample, w_sample in zip(init_tensor_samples, init_weight_samples):
-            try_times_sampling += 1
-            apply_weights(net, w_sample)
-            _ = net(*inp_sample)
-            if not net.invalid_found_last:
-                succ_sampling = True
-                break
+    n_try, sat_inputs = searcher.search(
+        max_time_ms=args.max_time_ms, max_sample=args.max_sample)
 
     results['sampling-time'].append(time.time() - strt_time)
-    results['sampling-try'].append(try_times_sampling)
-    results['sampling-succ'].append(succ_sampling)
+    results['sampling-try'].append(n_try)
+    results['sampling-succ'].append(sat_inputs is not None)
     # ------------------------------------------------------------
 
     # ------------------------------------------------------------
     # Test grad
     # If sampling can succeed, grad can succeed too as their initial input are the same.
-    seedme()
+    if args.mode == 'all' or args.mode == 'grad':
+        seedme()
 
-    strt_time = time.time()
-    succ_grad = False
-    try_times_grad = 0
+        strt_time = time.time()
 
-    for inp_sample, w_sample in zip(init_tensor_samples, init_weight_samples):
-        try_times_grad += 1
-        apply_weights(net, w_sample)
-        sat_inputs = net.grad_input_gen(
-            init_tensors=inp_sample, use_cuda=args.use_cuda)
-        if sat_inputs is not None:
-            succ_grad = True
-            break
+        searcher = GradSearch(
+            net, init_tensor_samples, init_weight_samples, use_cuda=args.use_cuda)
+        n_try, sat_inputs = searcher.search(
+            max_time_ms=args.max_time_ms, max_sample=args.max_sample)
 
-    # Some operator is not differentiable that will fall back to v3.
-    results['grad-succ'].append(succ_grad)
-    results['grad-try'].append(try_times_grad)
-    results['grad-time'].append(time.time() - strt_time)
+        results['grad-time'].append(time.time() - strt_time)
+        results['grad-try'].append(n_try)
+        results['grad-succ'].append(sat_inputs is not None)
     # --------------------------------------------------------------------
 
+    # ------------------------------------------------------------
+    # Test grad + proxy
+    # If sampling can succeed, grad can succeed too as their initial input are the same.
+    # Proxy makes some operators differentiable.
+    if args.mode == 'all' or args.mode == 'proxy':
+        seedme()
+
+        strt_time = time.time()
+
+        net.enable_proxy_grad()
+        searcher = GradSearch(
+            net, init_tensor_samples, init_weight_samples, use_cuda=args.use_cuda)
+        n_try, sat_inputs = searcher.search(
+            max_time_ms=args.max_time_ms, max_sample=args.max_sample)
+
+        results['proxy-time'].append(time.time() - strt_time)
+        results['proxy-try'].append(n_try)
+        results['proxy-succ'].append(sat_inputs is not None)
+    # --------------------------------------------------------------------
     print(results)
