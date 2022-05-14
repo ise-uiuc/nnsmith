@@ -7,6 +7,9 @@ tmp/
 *.pkl
 *.stderr
 *.stdout
+*.lcov
+*.txt
+*.lz4
 fuzz_report/
 config
 
