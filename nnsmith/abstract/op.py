@@ -1434,8 +1434,8 @@ class Pad(UnaryOpBase):
         for i in range(len(pad) // 2):
             j = len(isv) - 1 - i
             # When using negative padding, neither side should erase more than the original size
-            cons.append(nnsmith_ge(nnsmith_add(pad[i * 2], isv[j]), 0))
-            cons.append(nnsmith_ge(nnsmith_add(
+            cons.append(nnsmith_gt(nnsmith_add(pad[i * 2], isv[j]), 0))
+            cons.append(nnsmith_gt(nnsmith_add(
                 pad[i * 2 + 1], isv[j]), 0))
             cons.append(nnsmith_gt(nnsmith_add(
                 pad[i * 2 + 1], nnsmith_add(pad[i * 2], isv[j])), 0))
