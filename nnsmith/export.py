@@ -9,7 +9,7 @@ from nnsmith.graph_gen import SymbolNet
 
 # Torch is actually not an ideal choice for graph generation,
 # as it is based on dynamic graph construction.
-def torch2onnx(model: SymbolNet, filename, verbose=False, use_cuda=False, dummy_inputs=None):
+def torch2onnx(model: SymbolNet, filename, verbose=False, use_cuda=False, dummy_inputs=None, do_constant_folding=False):
     """Convert PyTorch model to ONNX format.
     """
     proxy_enabled = model.proxy_enabled
@@ -55,7 +55,7 @@ def torch2onnx(model: SymbolNet, filename, verbose=False, use_cuda=False, dummy_
                 output_names=output_names,
                 verbose=verbose,
                 dynamic_axes=dynamic_axes,
-                do_constant_folding=False,
+                do_constant_folding=do_constant_folding,
                 opset_version=14)
 
     if proxy_enabled:  # Re-enable proxy grad

@@ -314,8 +314,11 @@ class SymbolNet(nn.Module):
         return sat_inputs
 
     def grad_input_gen(self, init_tensors=None, use_cuda=False,
-                       max_time=float(os.getenv('NNSMITH_GRAD_TIME', 0.5)), **kwargs) -> Optional[List[torch.Tensor]]:
+                       max_time=None, **kwargs) -> Optional[List[torch.Tensor]]:
         # TODO: trim the param. max_iter is not used; remove getenv
+        if max_time is None:
+            max_time = float(os.getenv('NNSMITH_GRAD_TIME', 0.5))
+
         if init_tensors is None:
             init_tensors = self.get_random_inps(
                 **kwargs, use_cuda=use_cuda)

@@ -370,10 +370,11 @@ class FuzzingLoop:  # TODO: Support multiple backends.
 
                     if p.exitcode != 0:
                         # failed... report this.
+                        to_repro = f'python nnsmith/graph_gen.py --max_nodes {self.max_nodes} --seed {seed} --viz_graph'
                         self.reporter.simple_bug_report(
                             buggy_onnx_path=onnx_path,
                             oracle_path=oracle_path,
-                            message=open(log_path).read(),
+                            message=to_repro + '\n' + open(log_path).read(),
                         )
 
                     progress.update(

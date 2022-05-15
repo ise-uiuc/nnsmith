@@ -74,8 +74,9 @@ class SamplingSearch(InputSearchBase):
 
 class GradSearch(InputSearchBase):
     def search_one(self, start_inp, timeout_ms: int = None) -> List[torch.Tensor]:
+        timeout_s = None if timeout_ms is None else timeout_ms / 1000
         return self.net.grad_input_gen(
-            init_tensors=start_inp, use_cuda=self.use_cuda, max_time=timeout_ms / 1000)
+            init_tensors=start_inp, use_cuda=self.use_cuda, max_time=timeout_s)
 
 
 class PracticalHybridSearch(InputSearchBase):
@@ -85,8 +86,9 @@ class PracticalHybridSearch(InputSearchBase):
         self.differentiable = None
 
         if all([DType.is_float(ii.op.shape_var.dtype.value) for ii in self.net.input_info]):
-            diff_test_inp = (torch.tensor(i, requires_grad=True)
-                             for i in self.net.get_random_inps(use_cuda=self.use_cuda))
+            diff_test_inp = self.net.get_random_inps(use_cuda=self.use_cuda)
+            for item in diff_test_inp:
+                item.requires_grad_()
             self.net.forward(*diff_test_inp)
             self.differentiable = self.net.differentiable
         else:
