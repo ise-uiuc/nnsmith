@@ -26,7 +26,7 @@ class InputSearchBase(ABC):
     def search_one(self, start_inp, timeout_ms: int = None) -> List[torch.Tensor]:
         pass
 
-    def search(self, max_time_ms: int = None, max_sample: int = 1) -> Tuple[int, Tuple[str, np.ndarray]]:
+    def search(self, max_time_ms: int = None, max_sample: int = 1, return_list=False) -> Tuple[int, Tuple[str, np.ndarray]]:
         n_try = 0
         sat_inputs = None
         start_time = time.time()
@@ -53,7 +53,7 @@ class InputSearchBase(ABC):
                 sat_inputs = res
                 break
 
-        if sat_inputs is not None:
+        if sat_inputs is not None and not return_list:
             sat_inputs = {name: inp for name,
                           inp in zip(self.net.input_spec, sat_inputs)}
 

@@ -11,6 +11,7 @@ import shutil
 from typing import Dict, Iterable, Union, List
 import socket
 import warnings
+import traceback
 
 import git
 import torch
@@ -24,12 +25,13 @@ from rich.console import RenderableType
 from rich.columns import Columns
 
 from nnsmith.backend_executor import DummyExecutor
-from nnsmith.abstract.op import ALL_OP_TYPES, AbsOpBase, auto_infer_in_dtypes, config_skip_op
+from nnsmith.abstract.op import ALL_OP_TYPES, auto_infer_in_dtypes, config_skip_op
 from nnsmith.error import NNSmithInternalError, SanityCheck
 from nnsmith.backends import DiffTestBackend
 from nnsmith.difftest import assert_allclose
-from nnsmith.graph_gen import random_model_gen, SymbolNet, random_tensor
+from nnsmith.graph_gen import random_model_gen, SymbolNet
 from nnsmith.dtype_test import rewrite_op_dtype
+from nnsmith.input_gen import PracticalHybridSearch
 from nnsmith.export import torch2onnx
 
 
@@ -171,6 +173,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             'bad_gen': np.array([]),
             'eval': np.array([]),
             'inp_gen': np.array([]),
+            'inp_sat': np.array([], dtype=np.bool8),
         }
 
         self.use_bitvec = use_bitvec
@@ -187,18 +190,21 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             if len(time_arr) == 0:
                 return None
 
-            title_map = {
+            time_title_map = {
                 'succ_gen': 'Successful NN Generation Time',
                 'bad_gen': 'Failed NN Generation Time',
                 'eval': 'Evaluation Time',
                 'inp_gen': 'Input Generation Time',
             }
 
+            if title not in time_title_map:
+                return None
+
             return Panel.fit(f'[green]Fast: {time_arr.min():.3f}s[/green]|'
                              f'[bold]Last: {time_arr[-1]:.3f}s[/bold]\n'
                              f'[red]Slow: {time_arr.max():.3f}s[/red]|'
                              f'[red]Avg: {time_arr.mean():.3f}s',
-                             title=title_map[title] if title in title_map else title)
+                             title=time_title_map[title] if title in time_title_map else title)
 
         panels = [
             Panel.fit(
@@ -223,7 +229,8 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             gen_succ_rate = len(self.rich_profile["succ_gen"]) / (
                 len(self.rich_profile["succ_gen"]) + len(self.rich_profile["bad_gen"]))
         panels.append(
-            f'[green]Generation Succ. Rate = {gen_succ_rate * 100 :.1f}%[/green]')
+            f'[green]NN Gen. Succ. Rate = {gen_succ_rate * 100 :.1f}%[/green]' + '\n' +
+            f'[green]Input/Weight Gen. Succ. Rate = {self.rich_profile["inp_sat"].mean() :.1f}%[/green]')
 
         # split panels by 3
         cols = [Columns(panels[i:i + 3]) for i in range(0, len(panels), 3)]
@@ -231,6 +238,8 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         return cols
 
     def testcase_gen(self, path, seed):
+        gen_tstart = time.time()
+
         if self.mode == 'hybrid':
             mode = random.choice(['random', 'guided'])
         else:
@@ -247,38 +256,39 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         net = SymbolNet(gen.abstract_graph, solution,
                         verbose=False, alive_shapes=gen.alive_shapes)
 
+        gen_time = time.time() - gen_tstart
+        self.rich_profile['succ_gen'] = np.append(
+            self.rich_profile['succ_gen'], [gen_time])
+
+        # Generate Inputs.
+        if self.use_cuda:
+            net.cuda()
+
+        net.enable_proxy_grad()
+        net.eval()  # otherwise BN wants batch > 1
+        searcher = PracticalHybridSearch(net)
+        n_try, sat_inputs = searcher.search(
+            max_time_ms=gen_time * 0.01 * 1000, max_sample=2, return_list=True)
+        net.disable_proxy_grad()
+        self.rich_profile['inp_gen'] = np.append(self.rich_profile['inp_gen'], [
+                                                 time.time() - gen_tstart - gen_time])
+        self.rich_profile['inp_sat'] = np.append(
+            self.rich_profile['inp_sat'], [sat_inputs is not None])
+        # ----------------
+
         with torch.no_grad():
             net.eval()
-            if self.use_cuda:
-                net.cuda()
 
-            # export inputs & outputs.
-            test_inputs = net.get_random_inps(use_cuda=self.use_cuda)
-            outputs = net(*test_inputs)
+            test_inputs = sat_inputs if sat_inputs else net.get_random_inps(
+                use_cuda=self.use_cuda)
 
-            if not AbsOpBase.numeric_valid(outputs) and self.inp_gen is not None:
-                # use sampling.
-                inpgen_tstart = time.time()
-                net.check_intermediate_numeric = True
-                for _ in range(3):
-                    # renew weights.
-                    for name, param in net.named_parameters():
-                        param.copy_(random_tensor(
-                            param.shape, dtype=param.dtype, use_cuda=self.use_cuda))
-                    # renew inputs
-                    test_inputs = net.get_random_inps(
-                        use_cuda=self.use_cuda)
-                    outputs = net(*test_inputs)
-
-                    if AbsOpBase.numeric_valid(outputs):
-                        break
-                self.rich_profile['inp_gen'] = np.append(
-                    self.rich_profile['inp_gen'], [time.time() - inpgen_tstart])
+            outputs = net.forward(*test_inputs)
 
             inames, onames = torch2onnx(
-                net, path, verbose=False, use_cuda=self.use_cuda)
+                net, path, verbose=False, use_cuda=self.use_cuda, dummy_inputs=test_inputs)
 
             inputs = [t.cpu().numpy() for t in test_inputs]
+
             if isinstance(outputs, torch.Tensor):
                 outputs = [outputs.cpu().numpy()]
             else:
@@ -336,11 +346,10 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                             inps, outs = self.testcase_gen(onnx_path, seed)
                             with open(oracle_path, 'wb') as f:
                                 pickle.dump((inps, outs), f)  # store oracle.
-                            self.rich_profile['succ_gen'] = np.append(
-                                self.rich_profile['succ_gen'], [time.time() - gen_tstart])
                     except Exception as e:
                         print(f'Fail when seed={seed}')
                         print(e)  # Skip a few errors.
+                        traceback.print_exc()
                         self.rich_profile['bad_gen'] = np.append(
                             self.rich_profile['bad_gen'], [time.time() - gen_tstart])
                         progress.update(
