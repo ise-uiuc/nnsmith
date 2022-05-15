@@ -89,6 +89,7 @@ def _inference_test(model, backend, available_idtypes, concrete_input_shapes, or
                     torch.onnx.export(
                         model, tuple(torch_inputs),
                         onnx_model_path,
+                        do_constant_folding=False,
                         opset_version=14)
                     onnx_model = onnx.load(onnx_model_path)
                     input_spec, _ = DiffTestBackend.analyze_onnx_io(

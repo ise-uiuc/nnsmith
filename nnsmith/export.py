@@ -55,6 +55,7 @@ def torch2onnx(model: SymbolNet, filename, verbose=False, use_cuda=False, dummy_
                 output_names=output_names,
                 verbose=verbose,
                 dynamic_axes=dynamic_axes,
+                do_constant_folding=False,
                 opset_version=14)
 
     if proxy_enabled:  # Re-enable proxy grad
