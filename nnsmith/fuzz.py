@@ -268,7 +268,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         net.eval()  # otherwise BN wants batch > 1
         searcher = PracticalHybridSearch(net)
         n_try, sat_inputs = searcher.search(
-            max_time_ms=gen_time * 0.01 * 1000, max_sample=2, return_list=True)
+            max_time_ms=gen_time * 0.02 * 1000, max_sample=2, return_list=True)
         net.disable_proxy_grad()
         self.rich_profile['inp_gen'] = np.append(self.rich_profile['inp_gen'], [
                                                  time.time() - gen_tstart - gen_time])

@@ -1503,7 +1503,7 @@ def random_model_gen(
         max_nodes=5,
         seed=None,
         use_bitvec=False,
-        timeout=50000,
+        timeout=20000,
         verbose=False,
         mode='random',
         skip=None,

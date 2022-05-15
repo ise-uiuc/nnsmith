@@ -1,4 +1,5 @@
 from nnsmith.graph_gen import random_model_gen, SymbolNet
+from nnsmith.input_gen import PracticalHybridSearch
 from nnsmith.export import torch2onnx
 from nnsmith.dtype_test import rewrite_op_dtype
 from nnsmith.abstract.op import ALL_OP_TYPES
@@ -6,31 +7,62 @@ from nnsmith.util import mkdir
 
 from experiments.graphfuzz import GraphFuzz
 
+import pickle
 import os
 import random
 import argparse
 import time
 import warnings
+import tarfile
 
 from tqdm import tqdm
 import torch
-import tarfile
 
 
-def nnsmith_gen_once(path, seed, max_nodes, candidates_overwrite=None, mode='random'):
+def nnsmith_gen_once(path_prefix, seed, max_nodes, candidates_overwrite=None, mode='random'):
     if mode == 'hybrid':
         mode = random.choice(['random', 'guided'])
 
     torch.manual_seed(seed)
+    gen_tstart = time.time()
     gen, solution = random_model_gen(
         min_dims=[1, 3, 48, 48],  # Only rank useful. Dim sizes means nothing.
         seed=seed, max_nodes=max_nodes, candidates_overwrite=candidates_overwrite,
         mode=mode)
     net = SymbolNet(gen.abstract_graph, solution,
                     verbose=False, alive_shapes=gen.alive_shapes)
+    gen_time = time.time() - gen_tstart
+
+    net.enable_proxy_grad()
+    net.eval()  # otherwise BN wants batch > 1
+    searcher = PracticalHybridSearch(net)
+    n_try, sat_inputs = searcher.search(
+        max_time_ms=gen_time * 0.02 * 1000, max_sample=2, return_list=True)
+    net.disable_proxy_grad()
+
     with torch.no_grad():
         net.eval()
-        torch2onnx(net, path, verbose=False, use_cuda=False)
+
+        test_inputs = sat_inputs if sat_inputs else net.get_random_inps(
+            use_cuda=False)
+
+        outputs = net.forward(*test_inputs)
+
+        inames, onames = torch2onnx(
+            net, path_prefix + '.onnx', verbose=False, use_cuda=False, dummy_inputs=test_inputs)
+
+        inputs = [t.cpu().numpy() for t in test_inputs]
+
+        if isinstance(outputs, torch.Tensor):
+            outputs = [outputs.cpu().numpy()]
+        else:
+            outputs = [o.cpu().numpy() for o in outputs]
+
+        input_dict = {ina: inp for ina, inp in zip(inames, inputs)}
+        output_dict = {ona: out for ona, out in zip(onames, outputs)}
+
+        with open(path_prefix + '.pkl', 'wb') as f:
+            pickle.dump((input_dict, output_dict), f)
 
 
 if __name__ == '__main__':
@@ -51,6 +83,7 @@ if __name__ == '__main__':
     torch.manual_seed(args.seed)
 
     if args.ort_cache:
+        print(args.ort_cache)
         if not os.path.exists(args.ort_cache):
             print(f'Please first generate cache! (mkdir config first)')
             print(f'python nnsmith/dtype_test.py --cache {args.ort_cache}')
@@ -77,15 +110,15 @@ if __name__ == '__main__':
     with tqdm(total=args.time_budget) as pbar:
         while time.time() - start_time < args.time_budget:
             seed = random.getrandbits(32)
-            to_name = f'{valid_cnt}.onnx'
 
             tstart = time.time()
             try:
                 with warnings.catch_warnings():  # just shutup.
                     warnings.simplefilter("ignore")
                     nnsmith_gen_once(os.path.join(
-                        args.onnx_dir, to_name), seed, max_nodes=10,
+                        args.onnx_dir, f'{valid_cnt}'), seed, max_nodes=10,
                         candidates_overwrite=candidates_overwrite, mode=args.mode)
+                to_name = f'{valid_cnt}.onnx'
                 label = to_name
                 valid_cnt += 1
                 if args.tar:
