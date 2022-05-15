@@ -3,10 +3,11 @@ import sys
 import random
 import numpy as np
 import pickle
+import traceback
 
 from nnsmith.backends import DiffTestBackend
+from nnsmith.difftest import assert_allclose
 from nnsmith.util import gen_one_input
-import traceback
 
 
 def mcov_write(path):
@@ -51,14 +52,17 @@ if __name__ == '__main__':
         print(f'-> {path}', flush=True, file=sys.stderr)
         onnx_model = DiffTestBackend.get_onnx_proto(path)
         # TODO: Check if needs to run diff test
-        is_diff_test = os.path.exists(path + '.inp.pkl')
+        oracle_path = path.replace('.onnx', '.pkl')
 
         try:
-            if is_diff_test:
-                # path + '.inp.pkl' -> input tensor dictionary
-                # path + '.out.pkl' -> output tensor dictionary (from PyTorch)
-                # Run diff test to verify.
-                pass  # TODO: Implement diff test
+            if os.path.exists(oracle_path):
+                with open(oracle_path, 'rb') as f:
+                    eval_inputs, eval_outputs = pickle.load(f)
+                predicted = backend.predict(onnx_model, eval_inputs)
+                try:
+                    assert_allclose(predicted, eval_outputs)
+                except Exception as e:
+                    pass
             else:
                 input_spec, onames = DiffTestBackend.analyze_onnx_io(
                     onnx_model)
