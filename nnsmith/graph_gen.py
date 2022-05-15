@@ -1475,7 +1475,6 @@ def parse_args():
     parser.add_argument('--viz_sbs', action='store_true',
                         help='visualize the step by step')
     parser.add_argument('--output_path', type=str, default='output.onnx')
-    parser.add_argument('--input_gen', type=str, default='v3')
     parser.add_argument('--seed', type=int)
     parser.add_argument('--verbose', action='store_true')
     parser.add_argument('--use_bitvec', action='store_true')
@@ -1527,6 +1526,7 @@ def random_model_gen(
 
 if __name__ == '__main__':
     from nnsmith.export import torch2onnx
+    from nnsmith.input_gen import PracticalHybridSearch
 
     args = parse_args()
 
@@ -1559,54 +1559,36 @@ if __name__ == '__main__':
         f'{time.time() - strt_time}s to generate a graph w/ {gen.num_op()} operators')
     if args.verbose:
         print('solution:', solution)
-    srt_time = time.time()
+    strt_time = time.time()
     if args.verbose or args.viz_graph:
         gen.viz(args.output_path + '.png')
 
     if args.no_export:
         exit(0)
+
     net = SymbolNet(gen.abstract_graph, solution, verbose=args.verbose,
                     alive_shapes=gen.alive_shapes, print_grad=args.print_grad)
-    print('Initializing SymbolNet time: {}s'.format(time.time() - srt_time))
-    import onnx
-    onnx.checker.check_model(
-        onnx.load(args.output_path), full_check=True)
+    print('Initializing SymbolNet time: {}s'.format(time.time() - strt_time))
+
     input_st = time.time()
 
     sat_inputs = None
-    if args.input_gen == 'v3' or args.input_gen == 'random':
-        with torch.no_grad():
-            net.eval()
-            sat_inputs = net.rand_input_gen(use_cuda=args.use_cuda)
-            infer_succ = sat_inputs is not None
-    elif args.input_gen == 'grad':
-        net.eval()
-        infer_succ = None  # TODO: are we able to know this?
-        try:
-            sat_inputs = net.grad_input_gen(use_cuda=args.use_cuda)
-        except RuntimeError as e:
-            if 'does not have a grad_fn' in str(e):
-                # means some op are not differentiable.
-                pass
-            else:
-                raise e
-    elif args.input_gen == 'none':
-        infer_succ = None
-    else:
-        raise ValueError(f'Unknown input gen {args.input_gen}')
+
+    searcher = PracticalHybridSearch(
+        net, use_cuda=args.use_cuda)
+
+    _, sat_inputs = searcher.search()
 
     ed_time = time.time()
-    print('self.invalid_found_last=', net.invalid_found_last)
-    assert AbsOpBase.numeric_valid(net(*sat_inputs))
+
     print('Time to generate inputs: {:.3f}s'.format(ed_time - input_st))
 
     stats = {
         'gen_succ': True,
-        'infer_succ': infer_succ,
         'elapsed_time': ed_time - strt_time,
         'gen_model_time': input_st - strt_time,
         'infer_domain_time': ed_time - input_st,
-        'sat_inputs': sat_inputs,
+        'infer_succ': sat_inputs is not None,
         'seed': seed,
     }
     pickle.dump(stats, open(args.output_path + '-stats.pkl', 'wb'))
@@ -1614,12 +1596,17 @@ if __name__ == '__main__':
     if sat_inputs is not None:
         ret_inputs = {}
         for i, name in enumerate(net.input_spec):
-            ret_inputs[name] = sat_inputs[i].cpu().numpy()
+            ret_inputs[name] = sat_inputs[name].cpu().numpy()
         sat_inputs = ret_inputs
     pickle.dump(sat_inputs, open(
         args.output_path + '-sat_inputs.pkl', 'wb'))
+
     torch2onnx(net, args.output_path, verbose=args.verbose,
                use_cuda=args.use_cuda)
+
+    import onnx
+    onnx.checker.check_model(
+        onnx.load(args.output_path), full_check=True)
 
     net.to_picklable()
     cloudpickle.dump(net, open(args.output_path +
