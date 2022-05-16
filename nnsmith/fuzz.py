@@ -1,4 +1,5 @@
 from multiprocessing import Process
+import subprocess
 from pathlib import Path
 import pickle
 import sys
@@ -8,7 +9,7 @@ import uuid
 import datetime
 import random
 import shutil
-from typing import Dict, Iterable, Union, List
+from typing import Iterable, Union, List
 import socket
 import warnings
 import traceback
@@ -24,10 +25,8 @@ from rich.panel import Panel
 from rich.console import RenderableType
 from rich.columns import Columns
 
-from nnsmith.backend_executor import DummyExecutor
 from nnsmith.abstract.op import ALL_OP_TYPES, auto_infer_in_dtypes, config_skip_op
-from nnsmith.error import NNSmithInternalError, SanityCheck
-from nnsmith.backends import DiffTestBackend
+from nnsmith.error import NNSmithInternalError
 from nnsmith.difftest import assert_allclose
 from nnsmith.graph_gen import random_model_gen, SymbolNet
 from nnsmith.dtype_test import rewrite_op_dtype
@@ -41,7 +40,7 @@ _METADATA_NAME_ = 'meta.txt'
 
 
 class Reporter:  # From Tzer.
-    def __init__(self, report_folder=None, name_hint='', yes=False) -> None:
+    def __init__(self, report_folder=None, lib_path=None, name_hint='', yes=False) -> None:
         # Checks
         self.start_time = time.perf_counter()
         self.report_folder = report_folder
@@ -93,6 +92,22 @@ class Reporter:  # From Tzer.
 
         self.n_bug = 0
 
+        self.lib_path = os.environ.get('LIB_PATH', lib_path)
+        if self.lib_path is not None:  # Enabling coverage tracing
+            LLVM_MIN = 9
+            LLVM_MAX = 14
+            self.llvm_version = None
+            for i in range(LLVM_MAX, LLVM_MIN - 1, -1):
+                if 0 == os.system(f'which llvm-cov-{i}'):
+                    self.llvm_version = i
+                    break
+            if self.llvm_version is None:
+                assert 0 == os.system(f'which llvm-cov')
+            self.lcov_config = open(os.path.join(
+                self.report_folder, 'stats.csv'), 'w')
+
+            print(f'LLVM VERSION: {self.llvm_version}')
+
     def report_bug(self, err_type: Exception, buggy_onnx_path: str, buggy_torch_path: str, message: str, stdout: str, stderr: str, graph_path: str, sat_inputs=None):
         dir = f'{type(err_type).__name__}__{self.n_bug}'
         os.mkdir(os.path.join(self.report_folder, dir))
@@ -134,6 +149,40 @@ class Reporter:  # From Tzer.
 
         self.n_bug += 1
 
+    def handle_profraw(self, profraw_path, n_models, time_spent):
+        # Use env var: `LIB_PATH` to indicate the lib paths for tracing.
+        if self.lib_path is None:
+            return
+
+        # write
+        lcov_path = profraw_path.replace('.profraw', '.lcov')
+        profdata_path = profraw_path.replace('.profraw', '.profdata')
+
+        if os.path.exists(profraw_path):
+            llvm_profdata = 'llvm-profdata'
+            llvm_cov = 'llvm-cov'
+            if self.llvm_version:
+                llvm_profdata += f'-{self.llvm_version}'
+                llvm_cov += f'-{self.llvm_version}'
+
+            # summary might be useless as it does not consider prior runs.
+            if 0 != os.system(f'{llvm_profdata} merge -sparse {profraw_path} -o {profdata_path}') or \
+                    0 != os.system(f'{llvm_cov} export -instr-profile={profdata_path} -format=lcov {self.lib_path} > {lcov_path}'):
+                print(f'Getting coverage failed!!', file=sys.stderr)
+            else:  # clean temporary files
+                assert 0 == os.system(
+                    f'lz4 {lcov_path} {lcov_path}.lz4')
+
+                self.lcov_config.write(
+                    f'{time_spent},{-1},{n_models},{os.path.basename(lcov_path)}\n')
+                self.lcov_config.flush()
+
+                os.remove(profraw_path)
+                os.remove(profdata_path)
+                os.remove(lcov_path)
+        else:
+            print(f'{profraw_path} does not exist...', file=sys.stderr)
+
 
 class CustomProgress(Progress):
     def __init__(self, fuzz_status, columns: List[Union[str, ProgressColumn]], disable=False):
@@ -149,19 +198,26 @@ class CustomProgress(Progress):
 
 
 class FuzzingLoop:  # TODO: Support multiple backends.
-    def __init__(self, backends: Dict[str, DiffTestBackend], mode='random', inp_gen='sampling', root=None,
-                 time_budget=60 * 60 * 4, max_nodes=10, use_bitvec=False, limnf=True, use_cuda=False, yes=False):
+    def __init__(self, backend: str, mode='random', inp_gen='sampling', root=None,
+                 time_budget=60 * 60 * 4, max_nodes=10, eval_freq=1, use_bitvec=False, limnf=True, use_cuda=False, yes=False):
         self.root = root
         self.reporter = Reporter(
-            report_folder=root, name_hint=list(backends.keys())[0], yes=yes)
+            report_folder=root, name_hint=backend, yes=yes)
         self.mode = mode  # `random` or `guided` or 'hybrid'
         self.inp_gen = inp_gen  # `random` or `grad`
 
-        SanityCheck.gt(len(backends), 0, "Empty backends are not allowed!")
-        self.backends = backends
+        self.backend = backend
 
         self.time_budget = time_budget
         self.max_nodes = max_nodes
+
+        if eval_freq > 1:
+            self.eval_batch = []  # max_size <- eval_freq
+            self.batch_path = os.path.join(root, 'batch')
+            os.mkdir(self.batch_path)
+            self.executed_batches = 0
+
+        self.eval_freq = eval_freq
 
         self.start_time = time.time()
 
@@ -212,6 +268,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                 f'{datetime.timedelta(seconds=self.time_budget)}'
                 f'\ncur seed: {self.cur_seed}'
                 f'\ncur node size: {self.cur_node_size}'
+                f'\n#gen {len(self.rich_profile["succ_gen"]) + len(self.rich_profile["bad_gen"])}'
                 f'\nmax node size: {self.max_nodes}',
                 title="Time Left ~ Total Time"),
             Panel.fit(f'{self.reporter.n_bug}/{len(self.rich_profile["succ_gen"])}',
@@ -230,7 +287,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                 len(self.rich_profile["succ_gen"]) + len(self.rich_profile["bad_gen"]))
         panels.append(
             f'[green]NN Gen. Succ. Rate = {gen_succ_rate * 100 :.1f}%[/green]' + '\n' +
-            f'[green]Input/Weight Gen. Succ. Rate = {self.rich_profile["inp_sat"].mean() :.1f}%[/green]')
+            f'[green]Input/Weight Gen. Succ. Rate = {self.rich_profile["inp_sat"].mean() * 100 :.1f}%[/green]')
 
         # split panels by 3
         cols = [Columns(panels[i:i + 3]) for i in range(0, len(panels), 3)]
@@ -316,8 +373,52 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                 safe_mode=True
             )
 
+    def batch_add(self, onnx_path, oracle_path, force=False):
+        # FIXME: Currently for evaluation purpose, that we don't support logging bug reports.
+        # start batch evaluation.
+        if (len(self.eval_batch) == self.eval_freq or force) and len(self.eval_batch) > 0:
+            # Execute batch evaluation
+            copied_env = os.environ.copy()
+            # Path to store llvm profile.
+            profraw_path = os.path.join(
+                self.root, f'{self.executed_batches}.profraw')
+            copied_env["LLVM_PROFILE_FILE"] = str(profraw_path)
+
+            arguments = [
+                'python', 'experiments/batch_eval.py',
+                '--models', *self.eval_batch,
+                '--backend', self.backend,
+                '--dev', 'cpu'
+            ]
+            print(f'Starting batch evaluation: {arguments}')
+            p = subprocess.Popen(
+                arguments, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=copied_env)
+            p.communicate()  # wait for completion
+
+            self.reporter.handle_profraw(
+                profraw_path=profraw_path,
+                n_models=len(self.eval_batch),
+                time_spent=time.time() - self.last_eval_time)
+
+            # clean folder.
+            self.eval_batch = []
+
+            self.executed_batches += 1
+            self.last_eval_time = time.time()
+        else:
+            target_onnx = os.path.join(
+                self.batch_path, f'{len(self.eval_batch)}.onnx')
+            target_oracle = os.path.join(
+                self.batch_path, f'{len(self.eval_batch)}.pkl')
+
+            shutil.move(onnx_path, target_onnx)
+            shutil.move(oracle_path, target_oracle)
+
+            self.eval_batch.append(target_onnx)
+
     def fuzz(self):
         start_time = time.time()
+        self.last_eval_time = time.time()
 
         onnx_path = f'tmp_{uuid.uuid4()}.onnx'
         oracle_path = f'tmp_{uuid.uuid4()}.oracle.pkl'
@@ -359,28 +460,37 @@ class FuzzingLoop:  # TODO: Support multiple backends.
 
                     # =================================
                     # Model evaluation phase
-                    eval_tstart = time.time()
-                    p = Process(target=self.difftest,
-                                args=(onnx_path, oracle_path, log_path))
-                    p.start()
-                    p.join()
-                    self.rich_profile['eval'] = np.append(
-                        self.rich_profile['eval'], [time.time() - eval_tstart])
-                    # =================================
 
-                    if p.exitcode != 0:
-                        # failed... report this.
-                        to_repro = f'python nnsmith/graph_gen.py --max_nodes {self.max_nodes} --seed {seed} --viz_graph'
-                        self.reporter.simple_bug_report(
-                            buggy_onnx_path=onnx_path,
-                            oracle_path=oracle_path,
-                            message=to_repro + '\n' + open(log_path).read(),
-                        )
+                    if self.eval_freq == 1:
+                        eval_tstart = time.time()
+                        p = Process(target=self.difftest,
+                                    args=(onnx_path, oracle_path, log_path))
+                        p.start()
+                        p.join()
+                        self.rich_profile['eval'] = np.append(
+                            self.rich_profile['eval'], [time.time() - eval_tstart])
+
+                        if p.exitcode != 0:
+                            # failed... report this.
+                            to_repro = f'python nnsmith/graph_gen.py --max_nodes {self.max_nodes} --seed {seed} --viz_graph'
+                            self.reporter.simple_bug_report(
+                                buggy_onnx_path=onnx_path,
+                                oracle_path=oracle_path,
+                                message=to_repro + '\n' +
+                                open(log_path).read(),
+                            )
+                    else:  # batched execution
+                        self.batch_add(onnx_path, oracle_path)
+
+                    # =================================
 
                     progress.update(
                         task_fuzz, completed=time.time() - all_tstart)
         finally:
             # clean up.
+            if self.eval_freq > 1:  # last execution
+                self.batch_add(onnx_path, oracle_path, force=True)
+
             if os.path.exists(onnx_path):
                 os.remove(onnx_path)
                 os.remove(oracle_path)
@@ -400,6 +510,8 @@ if __name__ == '__main__':
                         help='default is None. Can be sampling.')
     parser.add_argument('--gen_timeout', type=int,
                         default=1000, help='in milliseconds')
+    parser.add_argument('--eval_freq', type=int,
+                        default=1, help='(EVALUATION ONLY) for batch processing')
     parser.add_argument('--use_bitvec', action='store_true')
     parser.set_defaults(limnf=True)
     parser.add_argument('--no_limnf', dest='limnf', action='store_false',
@@ -411,43 +523,17 @@ if __name__ == '__main__':
     parser.add_argument('--max_nodes', type=int, default=10)
     args = parser.parse_args()
 
-    backends = None
-    if args.backend == 'tvm':
-        from nnsmith.backends.tvm_graph import TVMExecutor
-        backends = {'tvm-opt': TVMExecutor(opt_level=4),
-                    'tvm-debug': TVMExecutor(opt_level=0)}
-    elif args.backend == 'tvm-cuda':
-        from nnsmith.backends.tvm_graph import TVMExecutor
-        backends = {'tvm-opt': TVMExecutor(opt_level=4, target="cuda"),
-                    'tvm-debug': TVMExecutor(opt_level=0)}
-    elif args.backend == 'ort':
-        from nnsmith.backends.ort_graph import ORTExecutor
-        backends = {'ort-opt': ORTExecutor(opt_level=3),
-                    'ort-debug': ORTExecutor(opt_level=0)}
-    elif args.backend == 'trt':
-        from nnsmith.backends.trt_graph import TRTBackend
-        from nnsmith.backends.tch_graph import TchExecutor
-        backends = {'trt-opt': TRTBackend(),
-                    'tch-debug': TchExecutor(opt_level=0, dev='cpu')}
-    elif args.backend == 'tch':
-        from nnsmith.backends.tch_graph import TchExecutor
-        backends = {'tch-opt': TchExecutor(dev='cuda'),
-                    'tch-debug': TchExecutor(opt_level=0, dev='cpu')}
-    elif args.backend == 'dummy':  # for debugging
-        backends = {'dummy': DummyExecutor()}
-    else:
-        raise NotImplementedError("Other backends not supported yet.")
     skip = 'backend:' + args.backend
     if args.skip is not None:
         skip += ',' + args.skip
     auto_infer_in_dtypes()  # TODO: remove this someday
     if not args.backend.startswith('tvm'):
-        cache_file = f'config/fuzz_{list(backends.keys())[0]}_op_dtype.pkl'
+        cache_file = f'config/fuzz_{args.backend}_op_dtype.pkl'
 
         def run():
             rewrite_op_dtype(
                 ALL_OP_TYPES,
-                backend=list(backends.values())[0],
+                backend=args.backend,
                 cache=cache_file,
                 print_failures=True)
         if not Path(cache_file).exists():
@@ -463,12 +549,13 @@ if __name__ == '__main__':
     config_skip_op(skip)
     fuzzing_loop = FuzzingLoop(
         root=args.root,
-        backends=backends,
+        backend=args.backend,
         mode=args.mode,
         time_budget=args.time_budget,
         inp_gen=args.inp_gen,
         use_bitvec=args.use_bitvec,
         limnf=args.limnf,
+        eval_freq=args.eval_freq,
         use_cuda=args.use_cuda,
         yes=args.y,
         max_nodes=args.max_nodes,

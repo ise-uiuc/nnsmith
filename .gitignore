@@ -10,6 +10,7 @@ tmp/
 *.lcov
 *.txt
 *.lz4
+*.profraw
 fuzz_report/
 config
 
