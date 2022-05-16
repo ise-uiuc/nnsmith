@@ -174,7 +174,6 @@ def analyze_folder(folder, redo=False, max_time=None):
 
     with open(return_write_name, 'wb') as fp:
         pickle.dump(ret, fp)
-        print(ret)
 
 
 if __name__ == '__main__':
