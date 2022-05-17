@@ -94,6 +94,12 @@ class Reporter:  # From Tzer.
 
         self.lib_path = os.environ.get('LIB_PATH', lib_path)
         if self.lib_path is not None:  # Enabling coverage tracing
+            print(f'Using `{self.lib_path}` as the lib path')
+            self.lib_expr = ''
+            for lib in self.lib_path.split():
+                assert os.path.exists(lib), f'{lib} does not exist!'
+                self.lib_expr += f' -object {os.path.realpath(lib)} '
+
             LLVM_MIN = 9
             LLVM_MAX = 14
             self.llvm_version = None
@@ -167,7 +173,7 @@ class Reporter:  # From Tzer.
 
             # summary might be useless as it does not consider prior runs.
             if 0 != os.system(f'{llvm_profdata} merge -sparse {profraw_path} -o {profdata_path}') or \
-                    0 != os.system(f'{llvm_cov} export -instr-profile={profdata_path} -format=lcov {self.lib_path} > {lcov_path}'):
+                    0 != os.system(f'{llvm_cov} export -instr-profile={profdata_path} -format=lcov {self.lib_expr} > {lcov_path}'):
                 print(f'Getting coverage failed!!', file=sys.stderr)
             else:  # clean temporary files
                 assert 0 == os.system(
@@ -393,7 +399,10 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             print(f'Starting batch evaluation: {arguments}')
             p = subprocess.Popen(
                 arguments, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=copied_env)
-            p.communicate()  # wait for completion
+            _, errs = p.communicate()  # wait for completion
+            if p.returncode != 0:
+                print(
+                    f'A batch process exits with non-zero error code: {errs}')
 
             self.reporter.handle_profraw(
                 profraw_path=profraw_path,
@@ -538,7 +547,7 @@ if __name__ == '__main__':
                 print_failures=True)
         if not Path(cache_file).exists():
             Path('config').mkdir(exist_ok=True)
-            print('Warning: Op dtypes config file does not exist. '
+            print(f'Warning: Op dtypes config file `{cache_file}` does not exist. '
                   'Inferring op dtype for the first run...')
             p = Process(target=run)
             p.start()

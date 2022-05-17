@@ -1,6 +1,6 @@
 """Evaluation steps:
 1. Get onnx models:
-    - LEMON: 
+    - LEMON:
         Run LEMON to generate models (https://github.com/ganler/LEMON);
         python experiments/lemon_tf2onnx.py --lemon_output_dir /.../LEMON/lemon_outputs/ --onnx_dir ...
     - NNSMITH: TBD
@@ -229,6 +229,7 @@ if __name__ == '__main__':
                         if not args.keep_raw:
                             os.remove(profraw_path)
                             os.remove(profdata_path)
+                            os.remove(lcov_path)
                 else:
                     print(f'{profraw_path} does not exist...', file=sys.stderr)
 
