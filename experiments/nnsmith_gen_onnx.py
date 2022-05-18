@@ -48,7 +48,7 @@ def nnsmith_gen_once(path_prefix, seed, max_nodes, candidates_overwrite=None, mo
 
         outputs = net.forward(*test_inputs)
 
-        inames, onames = torch2onnx(
+        inames, onames, oidx = torch2onnx(
             net, path_prefix + '.onnx', verbose=False, use_cuda=False, dummy_inputs=test_inputs)
 
         inputs = [t.cpu().numpy() for t in test_inputs]
@@ -59,7 +59,7 @@ def nnsmith_gen_once(path_prefix, seed, max_nodes, candidates_overwrite=None, mo
             outputs = [o.cpu().numpy() for o in outputs]
 
         input_dict = {ina: inp for ina, inp in zip(inames, inputs)}
-        output_dict = {ona: out for ona, out in zip(onames, outputs)}
+        output_dict = {onames[i]: outputs[i] for i in oidx}
 
         with open(path_prefix + '.pkl', 'wb') as f:
             pickle.dump((input_dict, output_dict), f)

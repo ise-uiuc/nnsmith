@@ -347,7 +347,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
 
             outputs = net.forward(*test_inputs)
 
-            inames, onames = torch2onnx(
+            inames, onames, oidx = torch2onnx(
                 net, path, verbose=False, use_cuda=self.use_cuda, dummy_inputs=test_inputs)
 
             inputs = [t.cpu().numpy() for t in test_inputs]
@@ -357,7 +357,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             else:
                 outputs = [o.cpu().numpy() for o in outputs]
 
-            return {ina: inp for ina, inp in zip(inames, inputs)}, {ona: out for ona, out in zip(onames, outputs)}
+            return {ina: inp for ina, inp in zip(inames, inputs)}, {onames[i]: outputs[i] for i in oidx}
 
     def difftest(self, onnx_model, oracle_path, redirect_log=None):
         if redirect_log is not None:
