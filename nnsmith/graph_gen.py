@@ -517,6 +517,11 @@ class SymbolNet(nn.Module):
                 if local_ref_cnt[idx] > 0:  # Will be used.
                     self.tensors[idx] = output
         self.first_run = False
+        outputs = [t for t in self.tensors if t is not None]
+        if os.getenv('DCE') is not None:
+            # random shuffle list
+            random.shuffle(outputs)
+            outputs = outputs[:random.randint(1, len(outputs))]
         return tuple(t for t in self.tensors if t is not None)
 
 
