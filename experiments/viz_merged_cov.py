@@ -64,6 +64,7 @@ class Ploter:
         }
 
         self.axs[0].plot(df[:, 0], df[:, 2], **style_kw)  # cov / time
+        print(f'----> max cov {df[:, 2].max()}')
 
         if not self.one_plot:
             self.axs[1].plot(df[:, 1], df[:, 2], **style_kw)  # cov / iteration
@@ -132,8 +133,8 @@ class Ploter:
             self.axs[1].set_yticklabels([])
             self.axs[1].set_title('Coverage $\\bf{Iteration}$ Efficiency')
             self.axs[1].grid(alpha=0.5)
-            plt.setp(self.axs[1].get_xticklabels(), rotation=30,
-                     horizontalalignment='right')
+            # plt.setp(self.axs[1].get_xticklabels(), rotation=30,
+            #  horizontalalignment='right')
 
             # self.axs[2].set(
             #     xlabel='Time / Second',
