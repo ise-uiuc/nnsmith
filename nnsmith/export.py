@@ -88,7 +88,14 @@ def torch2onnx(model: SymbolNet, filename, verbose=False, use_cuda=False, dummy_
 
     selected_idx = list(range(len(output_names)))
     if os.getenv('NNSMITH_DCE') is not None:
-        selected_idx = create_deadcode_onnx(filename)
+        prob = 1
+        # try float
+        try:
+            dce_prob = float(os.getenv('NNSMITH_DCE'))
+            if random.random() < dce_prob:
+                selected_idx = create_deadcode_onnx(filename)
+        except ValueError:
+            selected_idx = create_deadcode_onnx(filename)
 
     if proxy_enabled:  # Re-enable proxy grad
         model.enable_proxy_grad()
