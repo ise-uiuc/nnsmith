@@ -1,3 +1,4 @@
+import glob
 from multiprocessing import Process
 import subprocess
 from pathlib import Path
@@ -37,6 +38,28 @@ from nnsmith.export import torch2onnx
 _METADATA_NAME_ = 'meta.txt'
 
 # NOTE: Currently only engineered for TVM.
+
+
+def locate_crash_testcase(batch_path):
+    os.path.basename
+    idx = [int(Path(i).stem)
+           for i in glob.glob(os.path.join(batch_path, '*.onnx'))]
+    idx = sorted(idx)[0]  # get the first one
+    return (os.path.join(batch_path, f'{idx}.onnx'), os.path.join(batch_path, f'{idx}.pkl'))
+
+
+def simple_bug_report(report_folder, buggy_onnx_path, oracle_path=None, message='', bug_type='unknown'):
+    n_bug = len(glob.glob(os.path.join(report_folder, 'bug-*')))
+    dir = os.path.join(report_folder, f'bug-{bug_type}-#{n_bug}')
+    os.mkdir(dir)
+    shutil.move(buggy_onnx_path, os.path.join(dir, 'model.onnx'))
+    if oracle_path is not None:
+        shutil.move(oracle_path, os.path.join(dir, 'oracle.pkl'))
+    if message:
+        with open(os.path.join(dir, 'err.txt'), 'w') as f:
+            f.write(message)
+
+# TODO: simplify or delete Reporter. Currently using the above funtcton for reporting bugs.
 
 
 class Reporter:  # From Tzer.
@@ -205,7 +228,8 @@ class CustomProgress(Progress):
 
 class FuzzingLoop:  # TODO: Support multiple backends.
     def __init__(self, backend: str, mode='random', inp_gen='sampling', root=None,
-                 time_budget=60 * 60 * 4, max_nodes=10, eval_freq=1, use_bitvec=False, limnf=True, use_cuda=False, yes=False):
+                 time_budget=60 * 60 * 4, max_nodes=10, eval_freq=1, use_bitvec=False,
+                 limnf=True, use_cuda=False, yes=False, no_progress=False):
         self.root = root
         self.reporter = Reporter(
             report_folder=root, name_hint=backend, yes=yes)
@@ -241,6 +265,8 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         self.use_bitvec = use_bitvec
         self.limnf = limnf
         self.use_cuda = use_cuda
+        self.no_progress = no_progress
+        self.n_bug = 0
 
         rich.print(
             f'[bold yellow]To exit the program: `kill {os.getpid()}`[/bold yellow]')
@@ -277,7 +303,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                 f'\n#gen {len(self.rich_profile["succ_gen"]) + len(self.rich_profile["bad_gen"])}'
                 f'\nmax node size: {self.max_nodes}',
                 title="Time Left ~ Total Time"),
-            Panel.fit(f'{self.reporter.n_bug}/{len(self.rich_profile["succ_gen"])}',
+            Panel.fit(f'{self.n_bug}/{len(self.rich_profile["succ_gen"])}',
                       title="Bug/Iter", style="magenta", width=16)
         ]
 
@@ -320,8 +346,6 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         verbose=False, alive_shapes=gen.alive_shapes)
 
         gen_time = time.time() - gen_tstart
-        self.rich_profile['succ_gen'] = np.append(
-            self.rich_profile['succ_gen'], [gen_time])
 
         # Generate Inputs.
         if self.use_cuda:
@@ -334,7 +358,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             max_time_ms=gen_time * 0.02 * 1000, max_sample=2, return_list=True)
         net.disable_proxy_grad()
         self.rich_profile['inp_gen'] = np.append(self.rich_profile['inp_gen'], [
-                                                 time.time() - gen_tstart - gen_time])
+            time.time() - gen_tstart - gen_time])
         self.rich_profile['inp_sat'] = np.append(
             self.rich_profile['inp_sat'], [sat_inputs is not None])
         # ----------------
@@ -357,7 +381,9 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             else:
                 outputs = [o.cpu().numpy() for o in outputs]
 
-            return {ina: inp for ina, inp in zip(inames, inputs)}, {onames[i]: outputs[i] for i in oidx}
+        self.rich_profile['succ_gen'] = np.append(
+            self.rich_profile['succ_gen'], [gen_time])
+        return {ina: inp for ina, inp in zip(inames, inputs)}, {onames[i]: outputs[i] for i in oidx}
 
     def difftest(self, onnx_model, oracle_path, redirect_log=None):
         if redirect_log is not None:
@@ -380,8 +406,16 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             )
 
     def batch_add(self, onnx_path, oracle_path, force=False):
-        # FIXME: Currently for evaluation purpose, that we don't support logging bug reports.
-        # start batch evaluation.
+        target_onnx = os.path.join(
+            self.batch_path, f'{len(self.eval_batch)}.onnx')
+        target_oracle = os.path.join(
+            self.batch_path, f'{len(self.eval_batch)}.pkl')
+
+        shutil.move(onnx_path, target_onnx)
+        shutil.move(oracle_path, target_oracle)
+        # TODO: consider adding mlist.*.param (they will be generated for large models)
+        self.eval_batch.append(target_onnx)
+
         if (len(self.eval_batch) == self.eval_freq or force) and len(self.eval_batch) > 0:
             # Execute batch evaluation
             copied_env = os.environ.copy()
@@ -394,7 +428,9 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                 'python', 'experiments/batch_eval.py',
                 '--models', *self.eval_batch,
                 '--backend', self.backend,
-                '--dev', 'cpu'
+                '--fuzz_max_nodes', str(self.max_nodes),
+                '--fuzz_seed', str(self.cur_seed),
+                '--fuzz_report_folder', self.root,
             ]
             print(f'Starting batch evaluation: {arguments}')
             p = subprocess.Popen(
@@ -402,7 +438,15 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             _, errs = p.communicate()  # wait for completion
             if p.returncode != 0:
                 print(
-                    f'A batch process exits with non-zero error code: {errs}')
+                    f'A batch process exits with non-zero error code: {errs.decode("utf-8")}')
+                onnx_path, oracle_path = locate_crash_testcase(self.batch_path)
+                msg = "===== stdout =====\n" + \
+                    _.decode("utf-8") + "\n\n===== stderr =====\n" + \
+                    errs.decode("utf-8")
+                simple_bug_report(
+                    self.root, onnx_path, oracle_path, message=msg, bug_type='Crash')
+            self.n_bug = len(glob.glob(os.path.join(
+                self.reporter.report_folder, 'bug-*')))
 
             self.reporter.handle_profraw(
                 profraw_path=profraw_path,
@@ -414,16 +458,6 @@ class FuzzingLoop:  # TODO: Support multiple backends.
 
             self.executed_batches += 1
             self.last_eval_time = time.time()
-        else:
-            target_onnx = os.path.join(
-                self.batch_path, f'{len(self.eval_batch)}.onnx')
-            target_oracle = os.path.join(
-                self.batch_path, f'{len(self.eval_batch)}.pkl')
-
-            shutil.move(onnx_path, target_onnx)
-            shutil.move(oracle_path, target_oracle)
-
-            self.eval_batch.append(target_onnx)
 
     def fuzz(self):
         start_time = time.time()
@@ -440,7 +474,8 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     "[progress.description]{task.description}",
                     BarColumn(),
                     '[progress.percentage]{task.completed:>3.0f}/{task.total}',
-                    '[progress.percentage]{task.percentage:>3.0f}%']
+                    '[progress.percentage]{task.percentage:>3.0f}%'],
+                disable=self.no_progress
             ) as progress:
                 task_fuzz = progress.add_task(
                     '[green]Fuzzing time.', total=self.time_budget)
@@ -469,8 +504,9 @@ class FuzzingLoop:  # TODO: Support multiple backends.
 
                     # =================================
                     # Model evaluation phase
-
                     if self.eval_freq == 1:
+                        raise NotImplementedError(
+                            'For now use --eval_freq with a value>1')
                         eval_tstart = time.time()
                         p = Process(target=self.difftest,
                                     args=(onnx_path, oracle_path, log_path))
@@ -530,6 +566,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_cuda', action='store_true')
     parser.add_argument('-y', action='store_true', help='Yes to all')
     parser.add_argument('--max_nodes', type=int, default=10)
+    parser.add_argument('--no_progress', action='store_true')
     args = parser.parse_args()
 
     skip = 'backend:' + args.backend
@@ -568,5 +605,6 @@ if __name__ == '__main__':
         use_cuda=args.use_cuda,
         yes=args.y,
         max_nodes=args.max_nodes,
+        no_progress=args.no_progress
     )
     fuzzing_loop.fuzz()

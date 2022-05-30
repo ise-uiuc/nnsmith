@@ -135,7 +135,24 @@ def reset_node_t(node_t, success_idtypes, success_odtypes, verbose=False):
     node_t.out_dtypes = success_odtypes
 
 
+def get_backend_executor(backend):
+    if backend == 'tvm':
+        from nnsmith.backends.tvm_graph import TVMExecutor
+        backend = TVMExecutor(opt_level=4)
+    elif backend == 'ort':
+        from nnsmith.backends.ort_graph import ORTExecutor
+        backend = ORTExecutor(opt_level=3)
+    elif backend == 'ort-cpu':
+        from nnsmith.backends.ort_graph import ORTExecutor
+        backend = ORTExecutor(opt_level=3, providers=['CPUExecutionProvider'])
+    else:
+        raise NotImplementedError(f"Backend '{backend}' is not supported yet.")
+    return backend
+
+
 def rewrite_op_dtype(ops: List[AbsOpBase], diff=False, backend=None, verbose=False, cache=None, print_failures=False):
+    if isinstance(backend, str):
+        backend = get_backend_executor(backend)
     ret_ops = []
 
     class TestNet(torch.nn.Module):
