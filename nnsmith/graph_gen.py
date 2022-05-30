@@ -232,7 +232,6 @@ class SymbolNet(nn.Module):
     def backward(self):
         if self.loss is not None:
             self._zero_grad()
-            nonzero = False
             params = self.get_params()
             loss_name, l = self.loss
             l.backward()
@@ -241,12 +240,16 @@ class SymbolNet(nn.Module):
                     msg = f'{i.grad.min()} ~ {i.grad.max()} ~ {i.grad.mean()}' if i.grad is not None else 'None'
                     print(
                         f'Iter {self.iter_num} [{loss_name}] {name} grad: {msg}')
+
+            nonzero = False
             with torch.no_grad():
                 for i, p in enumerate(params):
                     if p.grad is not None and torch.any(p.grad != 0):
                         nonzero = True
+                        break  # As long as there's non-zero grad.
             ConstraintCheck.true(nonzero,
                                  'Gradients are all zero. Cannot make progress.')
+
             torch.nn.utils.clip_grad_norm_(self.to_train, 1e-1)
             self.optimizer.step()
 
