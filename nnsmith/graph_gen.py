@@ -33,6 +33,10 @@ assert NNSMITH_LIMNF_V in ['0', '1']
 NNSMITH_BV_SIZE = os.getenv('NNSMITH_BV_SIZE', '8')
 
 
+__INPUT_FOUND_NAN_MSG__ = '[NaN] in model inputs!'
+__INPUT_FOUND_INF_MSG__ = '[Inf] in model inputs!'
+
+
 class RequiredDimNotFound(Exception):
     pass
 
@@ -235,6 +239,17 @@ class SymbolNet(nn.Module):
             params = self.get_params()
             loss_name, l = self.loss
             l.backward()
+
+            with torch.no_grad():
+                for param in self.parameters():
+                    param.copy_(
+                        torch.where(
+                            param.isnan().logical_or(param.isinf()),
+                            random_tensor(shape=param.shape, dtype=param.dtype).to(
+                                param.device),
+                            param)
+                    )
+
             if self.print_grad >= 2:
                 for name, i in self.interm_grad:
                     msg = f'{i.grad.min()} ~ {i.grad.max()} ~ {i.grad.mean()}' if i.grad is not None else 'None'
@@ -359,12 +374,12 @@ class SymbolNet(nn.Module):
                     sat_inputs = [v.data for v in inputs]
                     break
             except ConstraintError as e:
-                if "[NaN] in model inputs!" in str(e) or "[Inf] in model inputs!" in str(e):
+                if __INPUT_FOUND_INF_MSG__ in str(e) or __INPUT_FOUND_NAN_MSG__ in str(e):
                     # flush NaN/Inf in inputs
                     with torch.no_grad():
                         for inp in inputs:
                             inp.copy_(torch.where(
-                                inp.isnan(), torch.rand(size=inp.shape).to(inp.dtype).to(inp.device), inp))
+                                inp.isnan().logical_or(inp.isinf()), random_tensor(shape=inp.shape, dtype=inp.dtype).to(inp.device), inp))
                     continue
                 print(e)
                 break
@@ -391,14 +406,16 @@ class SymbolNet(nn.Module):
                 xs[ii.op.idx] = kwargs[ii.input_name]
         assert all(x is not None for x in xs), xs
         ConstraintCheck.true(not any(
-            [torch.isinf(x).any() for x in xs]), f'[Inf] in model inputs!')
+            [torch.isinf(x).any() for x in xs]), __INPUT_FOUND_INF_MSG__)
         ConstraintCheck.true(not any(
-            [torch.isnan(x).any() for x in xs]), f'[NaN] in model inputs!')
+            [torch.isnan(x).any() for x in xs]), __INPUT_FOUND_NAN_MSG__)
         local_ref_cnt = self.ref_cnt.copy()
         self.tensors = [None for _ in self.tensors]
         self.invalid_found_last = False
 
         self.interm_grad = []
+
+        # LOG.
         if self.print_grad >= 2:
             for i in range(len(xs)):
                 if xs[i].requires_grad:
@@ -423,6 +440,8 @@ class SymbolNet(nn.Module):
                     input_tensors[1] = torch.clip(
                         input_tensors[1], torch.ones(size=[1], dtype=input_tensors[1].dtype, device=input_tensors[1].device))
                 self.hacked[node_id] = cond
+
+            # REAL FORWARD.
             outputs = inst(*input_tensors)
             if not isinstance(outputs, list):
                 outputs = [outputs]
@@ -430,6 +449,7 @@ class SymbolNet(nn.Module):
             for out in outputs:
                 self.differentiable &= out.grad_fn is not None
 
+            # LOG.
             if self.verbose:
                 print(
                     f'--> executing op={op}, node_id={node_id}, inps={inps}, outs={outs}')
