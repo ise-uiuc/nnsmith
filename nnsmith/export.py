@@ -88,7 +88,6 @@ def torch2onnx(model: SymbolNet, filename, verbose=False, use_cuda=False, dummy_
 
     selected_idx = list(range(len(output_names)))
     if os.getenv('NNSMITH_DCE') is not None:
-        prob = 1
         # try float
         try:
             dce_prob = float(os.getenv('NNSMITH_DCE'))
