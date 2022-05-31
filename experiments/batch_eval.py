@@ -7,6 +7,7 @@ import numpy as np
 import pickle
 import traceback
 
+from nnsmith.error import NumericError, IncorrectResult
 from nnsmith.backends import DiffTestBackend
 from nnsmith.difftest import assert_allclose
 from nnsmith.util import gen_one_input
@@ -77,14 +78,15 @@ if __name__ == '__main__':
                     # continue
                 # failed... report this.
                 to_repro = f'python nnsmith/graph_gen.py --max_nodes {args.fuzz_max_nodes} --seed {args.fuzz_seed} --viz_graph'
-                # TODO: don't report nanerror if input search failed.
-                simple_bug_report(
-                    report_folder=args.fuzz_report_folder,
-                    buggy_onnx_path=path,
-                    oracle_path=oracle_path,
-                    message=to_repro + '\n' + str(e),
-                    bug_type=type(e).__name__,
-                )
+                # TODO: improve by looking at sat_input's validity
+                if not isinstance(e, (IncorrectResult, NumericError)) or all(np.isfinite(v).all() for v in eval_outputs.values()):
+                    simple_bug_report(
+                        report_folder=args.fuzz_report_folder,
+                        buggy_onnx_path=path,
+                        oracle_path=oracle_path,
+                        message=to_repro + '\n' + str(e),
+                        bug_type=type(e).__name__,
+                    )
         else:
             # TODO: Delete if not needed.
             raise NotImplementedError(f'No oracle for {path}')

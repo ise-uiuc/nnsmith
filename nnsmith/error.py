@@ -17,7 +17,7 @@ class IncorrectResult(ModeledError):
     pass
 
 
-class NaNError(ModeledError):
+class NumericError(ModeledError):
     pass
 
 
