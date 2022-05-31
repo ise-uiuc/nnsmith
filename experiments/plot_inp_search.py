@@ -80,7 +80,7 @@ if __name__ == '__main__':
         ax.plot(grad_time * 1000, grad_succ_rate, marker='*', markersize=10,
                 linestyle='--', label='Gradient')
         ax.plot(proxy_time * 1000, proxy_succ_rate, marker='^', markersize=10,
-                linestyle='--', label='Proxy Gradient')
+                linestyle='--', label='Gradient (Proxy Deriv.)')
         ax.grid(True, linestyle='--', linewidth=.5)
 
     ax1.set_ylim(.66, 1)

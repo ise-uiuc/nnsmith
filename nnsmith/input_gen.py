@@ -37,9 +37,9 @@ class InputSearchBase(ABC):
             else:
                 weight_sample = {}
                 with torch.no_grad():
-                    for name, param in self.net.named_parameters():
-                        weight_sample[name] = random_tensor(
-                            param.shape, dtype=param.dtype, use_cuda=self.use_cuda)
+                    for param in self.net.parameters():
+                        param.copy_(random_tensor(
+                            param.shape, dtype=param.dtype, use_cuda=self.use_cuda))
                 self.apply_weights(self.net, weight_sample)
 
             if self.start_inputs is not None and n_try < len(self.start_inputs):
