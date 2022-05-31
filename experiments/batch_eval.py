@@ -28,14 +28,20 @@ if __name__ == '__main__':
                         help='Path to store memcov.')
     parser.add_argument('--seed', type=int, default=233,
                         help='to generate random input data')
-    parser.add_argument('--fuzz_max_nodes', type=int, required=True,
+    parser.add_argument('--fuzz_max_nodes', type=int,
                         help='parameter from fuzzer')
-    parser.add_argument('--fuzz_seed', type=int, required=True,
+    parser.add_argument('--fuzz_seed', type=int,
+                        help='seed parameter from fuzzer')
+    parser.add_argument('--fuzz_report_folder', type=str,
                         help='parameter from fuzzer')
-    parser.add_argument('--fuzz_report_folder', type=str, required=True,
-                        help='parameter from fuzzer')
+    parser.add_argument('--clean_after_eval', action='store_true',
+                        help='rm models/oracle after eval')
     # add fuzz_timeout?
     args = parser.parse_args()
+
+    if args.fuzz_report_folder is None:
+        print(
+            '[WARNING] Bug report is not enabled as fuzzer parameters are not provided.', file=sys.stderr)
 
     # Set global seed
     random.seed(args.seed)
@@ -81,23 +87,27 @@ if __name__ == '__main__':
                 # For simplicity, and we don't want to change `in/out_dtypes`, we just skip it w/o counting time.
                 n_unsupported += 1
                 # continue
-            # failed... report this.
-            to_repro = f'python nnsmith/graph_gen.py --max_nodes {args.fuzz_max_nodes} --seed {args.fuzz_seed} --viz_graph'
 
-            # For inconsistency bugs, we only consisder pure-finite number computation.
-            if not (isinstance(e, IncorrectResult) and all(np.isfinite(v).all() for v in eval_outputs.values())):
-                simple_bug_report(
-                    report_folder=args.fuzz_report_folder,
-                    buggy_onnx_path=path,
-                    oracle_path=oracle_path,
-                    message=to_repro + '\n' + str(e),
-                    bug_type=type(e).__name__,
-                )
+            if args.fuzz_report_folder is not None:
+                # failed... report this.
+                to_repro = f'python nnsmith/graph_gen.py --max_nodes {args.fuzz_max_nodes} --seed {args.fuzz_seed} --viz_graph'
 
-        if os.path.exists(path):
-            # remove after the model is tested. useful for locating the crashed model in the batch.
-            os.unlink(path)
-            os.unlink(oracle_path)
+                # For inconsistency bugs, we only consisder pure-finite number computation.
+                if not (isinstance(e, IncorrectResult) and all(np.isfinite(v).all() for v in eval_outputs.values())):
+                    simple_bug_report(
+                        report_folder=args.fuzz_report_folder,
+                        buggy_onnx_path=path,
+                        oracle_path=oracle_path,
+                        message=to_repro + '\n' + str(e),
+                        bug_type=type(e).__name__,
+                    )
+
+        # remove after the model is tested. useful for locating the crashed model in the batch.
+        if args.clean_after_eval:
+            if os.path.exists(path):
+                os.unlink(path)
+            if os.path.exists(oracle_path):
+                os.unlink(oracle_path)
 
         mcov_write(args.memcov)
 

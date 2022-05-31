@@ -174,7 +174,6 @@ if __name__ == '__main__':
                 'python', 'experiments/batch_eval.py',
                 '--models', *model_batch,
                 '--backend', args.backend,
-                '--dev', args.dev,
                 '--seed', str(seed),
             ]
             if args.memcov:

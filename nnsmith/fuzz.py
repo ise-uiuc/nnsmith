@@ -441,6 +441,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                 '--fuzz_max_nodes', str(self.max_nodes),
                 '--fuzz_seed', str(self.cur_seed),
                 '--fuzz_report_folder', self.root,
+                '--clean_after_eval',  # remove tested files in batch folder.
             ]
             print(f'Starting batch evaluation: {arguments}')
             p = subprocess.Popen(
