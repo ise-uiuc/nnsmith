@@ -2387,6 +2387,7 @@ def config_skip_op(skip_config):
         'tvm': [],
         'tvm-cuda': [],
         'ort': [],
+        'ort-cpu': [],
         'xla': [],
         'tch': [],
         'dummy': [],

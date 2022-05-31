@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarray], obtained_name: str, oracle_name: str,
-                    nan_as_err=True, mismatch_cnt_tol=0.01, safe_mode=False):
+                    nan_as_err=False, mismatch_cnt_tol=0.01, safe_mode=False):
     # when safe_mode is turned on, it will use less memory
     err_msg = ''
     if obtained is None:
@@ -25,14 +25,15 @@ def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarr
     if nan_as_err:
         for index, key in enumerate(obtained):
             err_msg = ''
-            if np.isnan(obtained[key]).any():
-                err_msg += f'{obtained_name} has NaN, '
-            if np.isnan(desired[key]).any():
-                err_msg += f'{oracle_name} has NaN'
-            if err_msg != '':
+            s = {True: 'has no', False: 'has'}
+            obtained_valid = np.isfinite(obtained[key]).all()
+            oracle_valid = np.isfinite(desired[key]).all()
+            err_msg += f'{obtained_name} {s[obtained_valid]} Inf/NaN, '
+            err_msg += f', {oracle_name} {s[oracle_valid]} Inf/NaN'
+            if not obtained_valid or not oracle_valid:
                 err_msg = f'At tensor #{index} named {key}: ' + err_msg
                 # print(err_msg) # Mute.
-                raise NaNError(err_msg)
+                raise NumericError(err_msg)
 
     try:
         index = -1
@@ -184,8 +185,8 @@ if __name__ == '__main__':  # generate bug reports.
                     try:
                         assert_allclose(output, oracle, out_path, oracle_path)
                     except ModeledError as err:
-                        if isinstance(err, (NaNError, IncorrectResult)) and (infer_succ is False or oracle_infer_succ is False):
-                            err = NaNError('Infer domain failed.')
+                        if isinstance(err, (NumericError, IncorrectResult)) and (infer_succ is False or oracle_infer_succ is False):
+                            err = NumericError('Infer domain failed.')
                         item = {
                             'model_idx': model_folder.name,
                             'model_path': str(model_folder / 'model.onnx'),
@@ -212,7 +213,7 @@ if __name__ == '__main__':  # generate bug reports.
         json.dump(report, open(root / 'report.json', 'w'), indent=2)
 
         def _cond(): return ((~df.known) & (~df.unsupported) &
-                             (~df.error.map(lambda x: isinstance(x, NaNError))))
+                             (~df.error.map(lambda x: isinstance(x, NumericError))))
         if len(df) > 0 and len(df[_cond()]) > 0:
             print(
                 f'{len(df[_cond()])} unknown non-unsupported unique differences found!!!')
