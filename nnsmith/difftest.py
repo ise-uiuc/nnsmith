@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarray], obtained_name: str, oracle_name: str,
-                    nan_as_err=True, mismatch_cnt_tol=0.01, safe_mode=False):
+                    nan_as_err=False, mismatch_cnt_tol=0.01, safe_mode=False):
     # when safe_mode is turned on, it will use less memory
     err_msg = ''
     if obtained is None:

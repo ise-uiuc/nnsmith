@@ -1,13 +1,10 @@
-import glob
 import os
-import shutil
 import sys
 import random
 import numpy as np
 import pickle
-import traceback
 
-from nnsmith.error import NumericError, IncorrectResult
+from nnsmith.error import IncorrectResult
 from nnsmith.backends import DiffTestBackend
 from nnsmith.difftest import assert_allclose
 from nnsmith.util import gen_one_input
@@ -62,38 +59,41 @@ if __name__ == '__main__':
         print(f'-> {path}', flush=True, file=sys.stderr)
         onnx_model = DiffTestBackend.get_onnx_proto(path)
         oracle_path = path.replace('.onnx', '.pkl')
+
         if os.path.exists(oracle_path):
             with open(oracle_path, 'rb') as f:
                 eval_inputs, eval_outputs = pickle.load(f)
-            try:
-                predicted = backend.predict(onnx_model, eval_inputs)
-                assert_allclose(predicted, eval_outputs,
-                                args.backend, "PyTorch")
-            except Exception as e:
-                if 'onnxruntime.capi.onnxruntime_pybind11_state.NotImplemented' in str(type(e)) or \
-                        "Unexpected data type for" in str(e):
-                    # OK we hit an unsupported but valid op in ORT.
-                    # For simplicity, and we don't want to change `in/out_dtypes`, we just skip it w/o counting time.
-                    n_unsupported += 1
-                    # continue
-                # failed... report this.
-                to_repro = f'python nnsmith/graph_gen.py --max_nodes {args.fuzz_max_nodes} --seed {args.fuzz_seed} --viz_graph'
-                # TODO: improve by looking at sat_input's validity
-                if not isinstance(e, (IncorrectResult, NumericError)) or all(np.isfinite(v).all() for v in eval_outputs.values()):
-                    simple_bug_report(
-                        report_folder=args.fuzz_report_folder,
-                        buggy_onnx_path=path,
-                        oracle_path=oracle_path,
-                        message=to_repro + '\n' + str(e),
-                        bug_type=type(e).__name__,
-                    )
         else:
-            # TODO: Delete if not needed.
-            raise NotImplementedError(f'No oracle for {path}')
+            print(f'No oracle found for model `{path}`', file=sys.stderr)
             input_spec, onames = DiffTestBackend.analyze_onnx_io(
                 onnx_model)
             eval_inputs = gen_one_input(input_spec, 1, 2)
-            backend.predict(onnx_model, eval_inputs)
+            eval_outputs = None  # No oracle.
+        try:
+            predicted = backend.predict(onnx_model, eval_inputs)
+            if eval_outputs is not None:
+                assert_allclose(predicted, eval_outputs,
+                                args.backend, "PyTorch")
+        except Exception as e:
+            if 'onnxruntime.capi.onnxruntime_pybind11_state.NotImplemented' in str(type(e)) or \
+                    "Unexpected data type for" in str(e):
+                # OK we hit an unsupported but valid op in ORT.
+                # For simplicity, and we don't want to change `in/out_dtypes`, we just skip it w/o counting time.
+                n_unsupported += 1
+                # continue
+            # failed... report this.
+            to_repro = f'python nnsmith/graph_gen.py --max_nodes {args.fuzz_max_nodes} --seed {args.fuzz_seed} --viz_graph'
+
+            # For inconsistency bugs, we only consisder pure-finite number computation.
+            if not (isinstance(e, IncorrectResult) and all(np.isfinite(v).all() for v in eval_outputs.values())):
+                simple_bug_report(
+                    report_folder=args.fuzz_report_folder,
+                    buggy_onnx_path=path,
+                    oracle_path=oracle_path,
+                    message=to_repro + '\n' + str(e),
+                    bug_type=type(e).__name__,
+                )
+
         if os.path.exists(path):
             # remove after the model is tested. useful for locating the crashed model in the batch.
             os.unlink(path)

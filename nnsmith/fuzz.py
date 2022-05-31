@@ -404,11 +404,10 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         for bname in self.backends:
             results = self.backends[bname].predict(onnx_model, inputs)
             assert_allclose(
-                outputs,
                 results,
-                'torch',
+                outputs,
                 bname,
-                nan_as_err=False,
+                'torch',
                 safe_mode=True
             )
 
@@ -517,7 +516,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     # Model evaluation phase
                     if self.eval_freq == 1:
                         raise NotImplementedError(
-                            'For now use --eval_freq with a value>1')
+                            'For now use --eval_freq with a value > 1')
                         eval_tstart = time.time()
                         p = Process(target=self.difftest,
                                     args=(onnx_path, oracle_path, log_path))
