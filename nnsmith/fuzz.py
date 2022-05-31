@@ -3,6 +3,7 @@ from multiprocessing import Process
 import subprocess
 from pathlib import Path
 import pickle
+import cloudpickle
 import sys
 import time
 import os
@@ -58,6 +59,10 @@ def simple_bug_report(report_folder, buggy_onnx_path, oracle_path=None, message=
     if message:
         with open(os.path.join(dir, 'err.txt'), 'w') as f:
             f.write(message)
+    graph_path = buggy_onnx_path[:-len('.onnx')] + '-graph.pkl'
+    G = pickle.load(open(graph_path, 'rb'))
+    nx.drawing.nx_pydot.to_pydot(G).write_png(os.path.join(
+        dir, 'graph.png'))
 
 # TODO: simplify or delete Reporter. Currently using the above funtcton for reporting bugs.
 
@@ -380,7 +385,9 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                 outputs = [outputs.cpu().numpy()]
             else:
                 outputs = [o.cpu().numpy() for o in outputs]
-
+        net.to_picklable()
+        cloudpickle.dump(net.concrete_graph, open(
+            path + '-graph.pkl', 'wb'), protocol=4)
         self.rich_profile['succ_gen'] = np.append(
             self.rich_profile['succ_gen'], [gen_time])
         return {ina: inp for ina, inp in zip(inames, inputs)}, {onames[i]: outputs[i] for i in oidx}
@@ -410,9 +417,13 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             self.batch_path, f'{len(self.eval_batch)}.onnx')
         target_oracle = os.path.join(
             self.batch_path, f'{len(self.eval_batch)}.pkl')
+        target_graph = os.path.join(
+            self.batch_path, f'{len(self.eval_batch)}-graph.pkl')
 
+        graph_path = onnx_path + '-graph.pkl'
         shutil.move(onnx_path, target_onnx)
         shutil.move(oracle_path, target_oracle)
+        shutil.move(graph_path, target_graph)
         # TODO: consider adding mlist.*.param (they will be generated for large models)
         self.eval_batch.append(target_onnx)
 
