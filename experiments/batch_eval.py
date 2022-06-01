@@ -93,7 +93,7 @@ if __name__ == '__main__':
                 to_repro = f'python nnsmith/graph_gen.py --max_nodes {args.fuzz_max_nodes} --seed {args.fuzz_seed} --viz_graph'
 
                 # For inconsistency bugs, we only consisder pure-finite number computation.
-                if not (isinstance(e, IncorrectResult) and all(np.isfinite(v).all() for v in eval_outputs.values())):
+                if not isinstance(e, IncorrectResult) or all(np.isfinite(v).all() for v in eval_outputs.values()):
                     simple_bug_report(
                         report_folder=args.fuzz_report_folder,
                         buggy_onnx_path=path,
