@@ -412,19 +412,21 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             )
 
     def batch_add(self, onnx_path, oracle_path, force=False):
-        target_onnx = os.path.join(
-            self.batch_path, f'{len(self.eval_batch)}.onnx')
-        target_oracle = os.path.join(
-            self.batch_path, f'{len(self.eval_batch)}.pkl')
-        target_graph = os.path.join(
-            self.batch_path, f'{len(self.eval_batch)}-graph.pkl')
 
-        graph_path = onnx_path + '-graph.pkl'
-        shutil.move(onnx_path, target_onnx)
-        shutil.move(oracle_path, target_oracle)
-        shutil.move(graph_path, target_graph)
-        # TODO: consider adding mlist.*.param (they will be generated for large models)
-        self.eval_batch.append(target_onnx)
+        if onnx_path is not None and os.path.exists(onnx_path):
+            target_onnx = os.path.join(
+                self.batch_path, f'{len(self.eval_batch)}.onnx')
+            target_oracle = os.path.join(
+                self.batch_path, f'{len(self.eval_batch)}.pkl')
+            target_graph = os.path.join(
+                self.batch_path, f'{len(self.eval_batch)}-graph.pkl')
+
+            graph_path = onnx_path + '-graph.pkl'
+            shutil.move(onnx_path, target_onnx)
+            shutil.move(oracle_path, target_oracle)
+            shutil.move(graph_path, target_graph)
+            # TODO: consider adding mlist.*.param (they will be generated for large models)
+            self.eval_batch.append(target_onnx)
 
         if (len(self.eval_batch) == self.eval_freq or force) and len(self.eval_batch) > 0:
             # Execute batch evaluation
@@ -543,13 +545,15 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                     progress.update(
                         task_fuzz, completed=time.time() - all_tstart)
         finally:
-            # clean up.
-            if self.eval_freq > 1:  # last execution
-                self.batch_add(onnx_path, oracle_path, force=True)
+            if self.eval_freq > 1:  # last execution :: flush
+                self.batch_add(None, None, force=True)
 
+            # clean up.
             if os.path.exists(onnx_path):
                 os.remove(onnx_path)
+            if os.path.exists(oracle_path):
                 os.remove(oracle_path)
+            if os.path.exists(log_path):
                 os.remove(log_path)
 
 
