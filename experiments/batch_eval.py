@@ -17,6 +17,26 @@ def mcov_write(path):
             pickle.dump(backend._coverage_install().get_hitmap(), f)
 
 
+def verify(backend, backend_name, oracle_name, inputs, oracle=None):
+    unsupported = 0
+    e_ret = predicted = None
+    try:
+        predicted = backend.predict(onnx_model, inputs)
+        if oracle is not None:
+            assert_allclose(predicted, oracle,
+                            backend_name, oracle_name)
+    except Exception as e:
+        e_ret = e
+        if 'onnxruntime.capi.onnxruntime_pybind11_state.NotImplemented' in str(type(e)) or \
+                "Unexpected data type for" in str(e):
+            # OK we hit an unsupported but valid op in ORT.
+            # For simplicity, and we don't want to change `in/out_dtypes`, we just skip it w/o counting time.
+            unsupported = 1
+            e = None
+            # continue
+    return e_ret, unsupported, predicted
+
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
@@ -51,9 +71,11 @@ if __name__ == '__main__':
     if args.backend == 'tvm':
         from nnsmith.backends.tvm_graph import TVMExecutor
         backend = TVMExecutor(opt_level=4)
+        backend_unopt = TVMExecutor(opt_level=0)
     elif args.backend == 'ort':
         from nnsmith.backends.ort_graph import ORTExecutor
         backend = ORTExecutor(opt_level=3)
+        backend_unopt = ORTExecutor(opt_level=0)
     else:
         raise NotImplementedError("Other backends not supported yet.")
 
@@ -75,31 +97,34 @@ if __name__ == '__main__':
                 onnx_model)
             eval_inputs = gen_one_input(input_spec, 1, 2)
             eval_outputs = None  # No oracle.
-        try:
-            predicted = backend.predict(onnx_model, eval_inputs)
-            if eval_outputs is not None:
-                assert_allclose(predicted, eval_outputs,
-                                args.backend, "PyTorch")
-        except Exception as e:
-            if 'onnxruntime.capi.onnxruntime_pybind11_state.NotImplemented' in str(type(e)) or \
-                    "Unexpected data type for" in str(e):
-                # OK we hit an unsupported but valid op in ORT.
-                # For simplicity, and we don't want to change `in/out_dtypes`, we just skip it w/o counting time.
-                n_unsupported += 1
-                # continue
+
+        e_vs_tch, unsup, predicted = verify(
+            backend, args.backend, "PyTorch", eval_inputs, eval_outputs)
+        n_unsupported += unsup
+        if e_vs_tch is not None:  # bug found
+            loc = 'backend_bug'
+            numeric_valid = all(np.isfinite(v).all()
+                                for v in eval_outputs.values())
+            # confirm the location
+            if isinstance(e_vs_tch, IncorrectResult) and numeric_valid:
+                assert predicted is not None, "Predicted is None but IncorrectResult caught!"
+                e_vs_unopt = verify(
+                    backend_unopt, args.backend + "_UnOpt", args.backend, eval_inputs, predicted)[0]
+                if e_vs_unopt is None:
+                    loc = 'torch_bug'
 
             if args.fuzz_report_folder is not None:
                 # failed... report this.
                 to_repro = f'python nnsmith/graph_gen.py --max_nodes {args.fuzz_max_nodes} --seed {args.fuzz_seed} --viz_graph'
 
                 # For inconsistency bugs, we only consisder pure-finite number computation.
-                if not isinstance(e, IncorrectResult) or all(np.isfinite(v).all() for v in eval_outputs.values()):
+                if not isinstance(e_vs_tch, IncorrectResult) or numeric_valid:
                     simple_bug_report(
                         report_folder=args.fuzz_report_folder,
                         buggy_onnx_path=path,
                         oracle_path=oracle_path,
-                        message=to_repro + '\n' + str(e),
-                        bug_type=type(e).__name__,
+                        message=to_repro + '\n' + str(e_vs_tch),
+                        bug_type=loc + "-" + type(e_vs_tch).__name__,
                     )
 
         # remove after the model is tested. useful for locating the crashed model in the batch.
