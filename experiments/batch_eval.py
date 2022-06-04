@@ -102,7 +102,7 @@ if __name__ == '__main__':
             backend, args.backend, "PyTorch", eval_inputs, eval_outputs)
         n_unsupported += unsup
         if e_vs_tch is not None:  # bug found
-            loc = 'backend_bug'
+            loc = 'opt_bug'
             numeric_valid = all(np.isfinite(v).all()
                                 for v in eval_outputs.values())
             # confirm the location
@@ -111,7 +111,7 @@ if __name__ == '__main__':
                 e_vs_unopt = verify(
                     backend_unopt, args.backend + "_UnOpt", args.backend, eval_inputs, predicted)[0]
                 if e_vs_unopt is None:
-                    loc = 'torch_bug'
+                    loc = 'other_bug'
 
             if args.fuzz_report_folder is not None:
                 # failed... report this.

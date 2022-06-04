@@ -51,7 +51,7 @@ def locate_crash_testcase(batch_path):
 
 def simple_bug_report(report_folder, buggy_onnx_path, oracle_path=None, message='', bug_type='unknown'):
     n_bug = len(glob.glob(os.path.join(report_folder, 'bug-*')))
-    dir = os.path.join(report_folder, f'bug-{bug_type}-#{n_bug}')
+    dir = os.path.join(report_folder, f'bug-{bug_type}-{n_bug}')
     os.mkdir(dir)
     shutil.move(buggy_onnx_path, os.path.join(dir, 'model.onnx'))
     if oracle_path is not None:
