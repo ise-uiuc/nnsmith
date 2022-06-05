@@ -1,7 +1,7 @@
 #!/bin/bash
 
 export NMODELS=512
-export NNODES=20
+export NNODES=${1:-20} # use `20` if the first argument is not given.
 export ROOT=$NMODELS-model-$NNODES-node-exp
 
 

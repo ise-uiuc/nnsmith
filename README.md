@@ -8,6 +8,24 @@ Keep active bug tracking and please put bug reports/trackings on this [google sh
 
 ### Coverage Evaluation
 
+#### nnsmith
+
+```shell
+# TVM
+NNSMITH_DCE=0.1 LIB_PATH='../tvm/build/libtvm.so ../tvm/build/libtvm_runtime.so' \
+python nnsmith/fuzz.py --mode guided --time 14400 \
+                       --max_nodes 10 --eval_freq 256 \
+                       --backend tvm --root nnsmith-tvm
+
+# ORT
+NNSMITH_DCE=0.1 LIB_PATH='../onnxruntime/build/Linux/RelWithDebInfo/libonnxruntime_providers_shared.so ../onnxruntime/build/Linux/RelWithDebInfo/libonnxruntime.so' \
+python nnsmith/fuzz.py --mode guided --time 14400 \
+                       --max_nodes 10 --eval_freq 256 \
+                       --backend ort --root nnsmith-ort
+
+python experiments/cov_merge.py -f nnsmith-tvm nnsmith-ort  # generate merged_cov.pkl
+```
+
 #### LEMON
 
 Please prepare ~ 50GB disk space to store LEMON.
@@ -18,7 +36,7 @@ Please prepare ~ 50GB disk space to store LEMON.
 # For TVM
 python experiments/lemon_tf2onnx.py --lemon_output_dir /PATH/TO/LEMON/lemon_outputs/ --onnx_dir lemon-onnx
 python experiments/cov_eval.py --model_dir lemon-onnx    \
-                               --report_folder lemon-cov \
+                               --report_folder lemon-tvm \
                                --backend tvm --lib '../tvm/build/libtvm.so ../tvm/build/libtvm_runtime.so' \
                                --llvm-version 14 # if you compile tvm w/ llvm 14 instrumented on ubuntu.
 # For ORT:
@@ -27,57 +45,78 @@ python experiments/cov_eval.py --model_dir lemon-onnx \
                                --backend ort \
                                --lib '../onnxruntime/build/Linux/RelWithDebInfo/libonnxruntime_providers_shared.so ../onnxruntime/build/Linux/RelWithDebInfo/libonnxruntime.so' \
                                --llvm-version 14
-python experiments/cov_merge.py -f lemon-tvm     # generate merged_cov.pkl
+python experiments/cov_merge.py -f lemon-tvm lemon-ort # generate merged_cov.pkl
 ```
 
-#### nnsmith
+#### GraphFuzz
+
+*The original paper does not give it a name so we call it GraphFuzz for convenience.*
 
 ```shell
-python experiments/nnsmith_gen_onnx.py --onnx_dir nnsmith-onnx
-# Generate models for ONNX spec:
-# python nnsmith/dtype_test.py
-# python experiments/nnsmith_gen_onnx.py --onnx_dir nnsmith-onnx-ort --ort_cache config/ort_cpu_dtype.pkl
-python experiments/cov_eval.py --model_dir nnsmith-onnx    \
-                               --report_folder nnsmith-cov \
+# Make sure ORT dtype support config file is generated.
+python nnsmith/dtype_test.py --cache config/ort_cpu_dtype.pkl
+
+# TVM
+python experiments/graphfuzz.py --time_budget 14400 --onnx_dir /PATH/TO/LEMON/graphfuzz-tvm-onnx
+python experiments/cov_eval.py --model_dir /PATH/TO/LEMON/graphfuzz-tvm-onnx    \
+                               --report_folder graphfuzz-tvm \
                                --backend tvm --lib '../tvm/build/libtvm.so ../tvm/build/libtvm_runtime.so' \
-                               --llvm-version 14 # if you compile tvm w/ llvm 14 instrumented on ubuntu.
-python experiments/cov_merge.py -f nnsmith-tvm     # generate merged_cov.pkl
+                               --llvm-version 14
+
+# ORT
+python experiments/graphfuzz.py --time_budget 14400 --onnx_dir /PATH/TO/LEMON/graphfuzz-ort-onnx --ort_cache config/ort_cpu_dtype.pkl
+python experiments/cov_eval.py --model_dir /PATH/TO/LEMON/graphfuzz-ort-onnx \
+                               --report_folder graphfuzz-ort \
+                               --backend ort \
+                               --lib '../onnxruntime/build/Linux/RelWithDebInfo/libonnxruntime_providers_shared.so ../onnxruntime/build/Linux/RelWithDebInfo/libonnxruntime.so' \
+                               --llvm-version 14
+
+python experiments/cov_merge.py -f graphfuzz-tvm graphfuzz-ort # generate merged_cov.pkl
 ```
+
 
 #### Visualization
 
 ```shell
 mkdir results # Store those files in results
-python experiments/viz_merged_cov.py --folders lemon-tvm nnsmith-tvm GraphFuzz-tvm --tvm # Curves and venn graph.
+# TVM coverage.
+python experiments/viz_merged_cov.py --folders nnsmith-tvm graphfuzz-tvm lemon-tvm --tvm --pdf --tags 'NNSmith' 'GraphFuzz [Luo et al.]' 'LEMON' --venn
+# ORT coverage.
+python experiments/viz_merged_cov.py --folders nnsmith-ort graphfuzz-ort lemon-ort --ort --pdf --tags 'NNSmith' 'GraphFuzz [Luo et al.]' 'LEMON' --venn
 python experiments/onnx_analyzer.py --folders lemon-onnx nnsmith-onnx GraphFuzz-onnx # venn graph ~ #op #edge
 ```
 
 ### Examine a single model
 
 ```shell
-# run <model_path> with tvm-llvm backend with automatically generated input. Input domain is automatically inferred
-python ./nnsmith/backend_executor.py --model <model_path> --backend tvm-llvm
+# run <model_path> with tvm (`--device` = cpu by default) backend with auto generated input.
+python nnsmith/backend_executor.py --model <model_path> --backend tvm
 
-# supply input domain with <domain_path> 
-python ./nnsmith/backend_executor.py --model <model_path> --backend tvm-llvm --raw_input <input_path> --input_domain <domain_path>
+# supply input domain with <domain_path>
+python nnsmith/backend_executor.py --model <model_path> --backend tvm --raw_input <input_path> --input_domain <domain_path>
 
 # supply <input_path> instead of random input generation
-python ./nnsmith/backend_executor.py --model <model_path> --backend tvm-llvm --raw_input <input_path>
+python nnsmith/backend_executor.py --model <model_path> --backend tvm --raw_input <input_path>
 
 # do differential testing against `tvm-debug` backend
-python ./nnsmith/backend_executor.py --model <model_path> --backend tvm-llvm --cmp_with tvm-debug
+python nnsmith/backend_executor.py --model <model_path> --backend tvm --cmp_with tvm-debug
 
 ```
 
 ### Evaluate input searching algorithm
 
 ```shell
-python experiments/input_search.py --max_nodes 10 --n_model 100 --n_inp_sample 1
+# Run experiments.
+bash experiments/input_search_exp.sh 10
+bash experiments/input_search_exp.sh 20
+bash experiments/input_search_exp.sh 30
 
 # visualization
-python experiments/plot_inp_search.py
+python experiments/plot_inp_search_merge.py --root 512-model-10-node-exp \
+                                                   512-model-20-node-exp \
+                                                   512-model-30-node-exp
 
-# debug 
+# debug
 ## run with models saved
 python experiments/input_search.py --max_nodes 10 --n_model 100 --n_inp_sample 1 --root /path/to/save/model
 ## to reproduce a specific model
@@ -101,7 +140,7 @@ python experiments/input_search.py --max_nodes 10 --n_model 100 --n_inp_sample 1
 
 ```shell
 pip uninstall -y onnxruntime onnxruntime-gpu
-pip install onnxruntime 
+pip install onnxruntime
 pip install onnxruntime-gpu # the order matters; and you have to split the install steps;
 ```
 
@@ -111,7 +150,7 @@ pip install onnxruntime-gpu # the order matters; and you have to split the insta
 <details><summary><b>Misc</b> <i>[click to expand]</i></summary>
 <div>
 
-- To quickly install latest TVM on a linux machine (w/ CUDA 10.2 or higher): 
+- To quickly install latest TVM on a linux machine (w/ CUDA 10.2 or higher):
     - `pip install tlcpack-nightly-cu102 -f https://tlcpack.ai/wheels`
     - See also: https://tlcpack.ai/
 
