@@ -1,12 +1,14 @@
+# FIXME: This file is going to be deprecated or fixed.
+
 from subprocess import check_call
 import time
 
 from tqdm import tqdm
 import torch
-from nnsmith.backends import DiffTestBackend, gen_one_input_rngs
+from nnsmith.backends import BackendFactory, gen_one_input_rngs
 
 
-class TchExecutor(DiffTestBackend):
+class TchExecutor(BackendFactory):
     def __init__(self, opt_level=0, dev='cpu'):
         super().__init__()
         self.opt_level = opt_level  # TODO add more opt levels
@@ -34,7 +36,7 @@ class TchExecutor(DiffTestBackend):
 
 
 def _unittest():
-    from nnsmith.backends.tvm_graph import TVMExecutor
+    from nnsmith.backends.tvm_graph import TVMFactory
     from nnsmith.graph_gen import SymbolNet
     from nnsmith import difftest, input_gen
 
@@ -60,14 +62,14 @@ def _unittest():
             tch_out, tvm_out, 'torch', 'tvm', nan_as_err=False)
 
     def test():
-        tvm = TVMExecutor(0, 'llvm')
+        tvm = TVMFactory(0, 'llvm')
         tch = TchExecutor(0, 'cpu')
         for i in tqdm(range(50)):
             check_call(
                 'python -u ./nnsmith/graph_gen.py --max_nodes 10', shell=True)
             compare(tvm, tch)
 
-        tvm = TVMExecutor(0, 'llvm')
+        tvm = TVMFactory(0, 'llvm')
         tch = TchExecutor(0, 'cuda')
         for i in tqdm(range(50)):
             check_call(

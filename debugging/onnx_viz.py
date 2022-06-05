@@ -1,5 +1,5 @@
 from time import time
-from nnsmith.backends import DiffTestBackend
+from nnsmith.backends import BackendFactory
 import tvm
 from tvm import relay
 from tvm.relay.transform.transform import DefuseOps
@@ -257,8 +257,8 @@ if __name__ == '__main__':
     parser.add_argument('--select', type=int, nargs='+',
                         help='select output tensors to visualize')
     args = parser.parse_args()
-    onnx_model = DiffTestBackend.get_onnx_proto(args.model)
-    inp_spec, onames = DiffTestBackend.analyze_onnx_io(onnx_model)
+    onnx_model = BackendFactory.get_onnx_proto(args.model)
+    inp_spec, onames = BackendFactory.analyze_onnx_io(onnx_model)
     shape_dict = {name: inp_spec[name].shape for name in inp_spec}
     mod, params = relay.frontend.from_onnx(
         onnx_model, shape_dict, freeze_params=True)

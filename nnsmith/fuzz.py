@@ -34,7 +34,7 @@ from nnsmith.graph_gen import random_model_gen, SymbolNet
 from nnsmith.dtype_test import rewrite_op_dtype
 from nnsmith.input_gen import PracticalHybridSearch
 from nnsmith.export import torch2onnx
-
+from nnsmith.backends import BackendFactory, mk_factory
 
 _METADATA_NAME_ = 'meta.txt'
 
@@ -50,6 +50,9 @@ def locate_crash_testcase(batch_path):
 
 
 def simple_bug_report(report_folder, buggy_onnx_path, oracle_path=None, message='', bug_type='unknown'):
+    if report_folder is None:
+        return
+
     n_bug = len(glob.glob(os.path.join(report_folder, 'bug-*')))
     dir = os.path.join(report_folder, f'bug-{bug_type}-{n_bug}')
     os.mkdir(dir)
@@ -232,16 +235,16 @@ class CustomProgress(Progress):
 
 
 class FuzzingLoop:  # TODO: Support multiple backends.
-    def __init__(self, backend: str, mode='random', inp_gen='sampling', root=None,
+    def __init__(self, factory: BackendFactory, mode='random', inp_gen='sampling', root=None,
                  time_budget=60 * 60 * 4, max_nodes=10, eval_freq=1, use_bitvec=False,
                  limnf=True, use_cuda=False, yes=False, no_progress=False):
         self.root = root
         self.reporter = Reporter(
-            report_folder=root, name_hint=backend, yes=yes)
+            report_folder=root, name_hint=str(factory), yes=yes)
         self.mode = mode  # `random` or `guided` or 'hybrid'
         self.inp_gen = inp_gen  # `random` or `grad`
 
-        self.backend = backend
+        self.factory = factory
 
         self.time_budget = time_budget
         self.max_nodes = max_nodes
@@ -401,15 +404,15 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         with open(oracle_path, 'rb') as f:
             inputs, outputs = pickle.load(f)
 
-        for bname in self.backends:
-            results = self.backends[bname].predict(onnx_model, inputs)
-            assert_allclose(
-                results,
-                outputs,
-                bname,
-                'torch',
-                safe_mode=True
-            )
+        backend = self.factory.mk_backend(onnx_model)
+        results = backend(inputs)
+        assert_allclose(
+            results,
+            outputs,
+            self.factory.name,
+            'torch',
+            safe_mode=True
+        )
 
     def batch_add(self, onnx_path, oracle_path, force=False):
 
@@ -439,7 +442,8 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             arguments = [
                 'python', 'experiments/batch_eval.py',
                 '--models', *self.eval_batch,
-                '--backend', self.backend,
+                '--backend', self.factory.name,
+                '--device', self.factory.device,
                 '--fuzz_max_nodes', str(self.max_nodes),
                 '--fuzz_seed', str(self.cur_seed),
                 '--fuzz_report_folder', self.root,
@@ -563,11 +567,10 @@ if __name__ == '__main__':
     parser.add_argument('--root', type=str, default='./fuzz_report')
     parser.add_argument('--time_budget', type=int, default=60 * 60 * 4)
     parser.add_argument('--backend', type=str, default='tvm')
+    parser.add_argument('--device', type=str, default='cpu')
     parser.add_argument('--mode', type=str, default='random')
-    parser.add_argument(
-        '--skip', help='Node types to skip. Split by `,`. By default a blacklist for each backend is also appended.', type=str)
     parser.add_argument('--inp_gen', type=str,
-                        help='default is None. Can be sampling.')
+                        help='default is None. Can be hybrid.')
     parser.add_argument('--gen_timeout', type=int,
                         default=1000, help='in milliseconds')
     parser.add_argument('--eval_freq', type=int,
@@ -584,17 +587,17 @@ if __name__ == '__main__':
     parser.add_argument('--no_progress', action='store_true')
     args = parser.parse_args()
 
-    skip = 'backend:' + args.backend
-    if args.skip is not None:
-        skip += ',' + args.skip
     auto_infer_in_dtypes()  # TODO: remove this someday
+
+    factory = mk_factory(args.backend, device=args.device)
+
     if not args.backend.startswith('tvm'):
         cache_file = f'config/fuzz_{args.backend}_op_dtype.pkl'
 
         def run():
             rewrite_op_dtype(
                 ALL_OP_TYPES,
-                backend=args.backend,
+                factory=factory,
                 cache=cache_file,
                 print_failures=True)
         if not Path(cache_file).exists():
@@ -607,10 +610,10 @@ if __name__ == '__main__':
             assert p.exitcode == 0, 'Failed to infer op dtypes'
         print('Reading cache config file:', cache_file)
         run()
-    config_skip_op(skip)
+
     fuzzing_loop = FuzzingLoop(
         root=args.root,
-        backend=args.backend,
+        factory=factory,
         mode=args.mode,
         time_budget=args.time_budget,
         inp_gen=args.inp_gen,

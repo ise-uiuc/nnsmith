@@ -10,7 +10,7 @@ import numpy as np
 import onnx
 
 from nnsmith.abstract.op import ALL_OP_TYPES, ALL_OP_STR2TYPE, AbsOpBase, DType, ShapeVar, concretize, Input, Constant
-from nnsmith.backends import DiffTestBackend
+from nnsmith.backends import BackendFactory
 from nnsmith.util import gen_one_input
 
 
@@ -70,7 +70,7 @@ def _differentiable_test(model, available_idtypes, concrete_input_shapes, oranks
     return success_idtypes, success_odtypes
 
 
-def _inference_test(model, backend, available_idtypes, concrete_input_shapes, oranks, verbose=False):
+def _inference_test(model, factory: BackendFactory, available_idtypes, concrete_input_shapes, oranks, verbose=False):
     success_idtypes = list()
     success_odtypes = set()
 
@@ -92,10 +92,10 @@ def _inference_test(model, backend, available_idtypes, concrete_input_shapes, or
                         do_constant_folding=False,
                         opset_version=14)
                     onnx_model = onnx.load(onnx_model_path)
-                    input_spec, _ = DiffTestBackend.analyze_onnx_io(
+                    input_spec, _ = BackendFactory.analyze_onnx_io(
                         onnx_model)
                     eval_inputs = gen_one_input(input_spec, 1, 1)
-                    backend.predict(onnx_model, eval_inputs)
+                    factory.mk_backend(onnx_model)(eval_inputs)
         except Exception as e:
             if verbose:
                 print(f'=====> [Failure] at {itypes}')
@@ -135,24 +135,7 @@ def reset_node_t(node_t, success_idtypes, success_odtypes, verbose=False):
     node_t.out_dtypes = success_odtypes
 
 
-def get_backend_executor(backend):
-    if backend == 'tvm':
-        from nnsmith.backends.tvm_graph import TVMExecutor
-        backend = TVMExecutor(opt_level=4)
-    elif backend == 'ort':
-        from nnsmith.backends.ort_graph import ORTExecutor
-        backend = ORTExecutor(opt_level=3)
-    elif backend == 'ort-cpu':
-        from nnsmith.backends.ort_graph import ORTExecutor
-        backend = ORTExecutor(opt_level=3, providers=['CPUExecutionProvider'])
-    else:
-        raise NotImplementedError(f"Backend '{backend}' is not supported yet.")
-    return backend
-
-
-def rewrite_op_dtype(ops: List[AbsOpBase], diff=False, backend=None, verbose=False, cache=None, print_failures=False):
-    if isinstance(backend, str):
-        backend = get_backend_executor(backend)
+def rewrite_op_dtype(ops: List[AbsOpBase], diff=False, factory=None, verbose=False, cache=None, print_failures=False):
     ret_ops = []
 
     class TestNet(torch.nn.Module):
@@ -174,7 +157,7 @@ def rewrite_op_dtype(ops: List[AbsOpBase], diff=False, backend=None, verbose=Fal
     make_cache = cache is not None and not os.path.exists(cache)
     reuse_cache = cache is not None and os.path.exists(cache)
 
-    if backend is None and not diff:
+    if factory is None and not diff:
         assert reuse_cache, 'Must provide backend if cache is not provided.'
 
     cache_dict = {}
@@ -242,7 +225,7 @@ def rewrite_op_dtype(ops: List[AbsOpBase], diff=False, backend=None, verbose=Fal
                 model, available_idtypes, concrete_input_shapes, op.out_ranks, verbose)
         else:
             success_idtypes, success_odtypes = _inference_test(
-                model, backend, available_idtypes, concrete_input_shapes, op.out_ranks,
+                model, factory, available_idtypes, concrete_input_shapes, op.out_ranks,
                 verbose)
 
         reset_node_t(node_t, success_idtypes, success_odtypes,
@@ -274,6 +257,7 @@ if __name__ == '__main__':
     import numpy as np
     parser = argparse.ArgumentParser()
     parser.add_argument('--cache', default='config/ort_cpu_dtype.pkl')
+    parser.add_argument('--device', default='cpu')
     parser.add_argument('--seed', default=233, type=int)
     parser.add_argument('--diff', action='store_true')
     args = parser.parse_args()
@@ -285,8 +269,8 @@ if __name__ == '__main__':
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
 
-    from nnsmith.backends.ort_graph import ORTExecutor
-    backend = ORTExecutor(opt_level=3)
+    from nnsmith.backends.ort_graph import ORTFactory
+    backend = ORTFactory(device=args.device)
 
-    rewrite_op_dtype(ALL_OP_TYPES, backend=backend,
+    rewrite_op_dtype(ALL_OP_TYPES, factory=backend,
                      diff=args.diff, verbose=True, cache=args.cache)

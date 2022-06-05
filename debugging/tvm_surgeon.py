@@ -1,4 +1,4 @@
-from nnsmith.backends import DiffTestBackend
+from nnsmith.backends import BackendFactory
 import tvm
 from tvm import relay
 import numpy as np
@@ -35,8 +35,8 @@ class PrintIR:
 
 def from_onnx(model_path, select=None, target="llvm", viz_out=None, print_pass=False, cmp=True, opt_level=4, executor='graph'):
     """Load onnx model and convert it to Relay module."""
-    onnx_model = DiffTestBackend.get_onnx_proto(model_path)
-    inp_spec, onames = DiffTestBackend.analyze_onnx_io(onnx_model)
+    onnx_model = BackendFactory.get_onnx_proto(model_path)
+    inp_spec, onames = BackendFactory.analyze_onnx_io(onnx_model)
     shape_dict = {name: inp_spec[name].shape for name in inp_spec}
     mod, params = relay.frontend.from_onnx(
         onnx_model, shape_dict, freeze_params=True)

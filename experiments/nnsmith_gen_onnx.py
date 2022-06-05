@@ -89,7 +89,7 @@ if __name__ == '__main__':
             print(f'python nnsmith/dtype_test.py --cache {args.ort_cache}')
             exit(1)
         # must pre run this. otherwise using ort will slow down generation.
-        rewrite_op_dtype(ALL_OP_TYPES, backend=None, cache=args.ort_cache)
+        rewrite_op_dtype(ALL_OP_TYPES, factory=None, cache=args.ort_cache)
 
     if args.graphfuzz_ops:
         candidates_overwrite = GraphFuzz.get_available_op_ts()

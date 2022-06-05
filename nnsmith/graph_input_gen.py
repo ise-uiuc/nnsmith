@@ -17,7 +17,7 @@ from tqdm import tqdm
 import torch
 
 from nnsmith.abstract.op import ALL_OP_STR2TYPE, ALL_OP_TYPES, _op_set_use_cuda
-from nnsmith.backends import DiffTestBackend
+from nnsmith.backends import BackendFactory
 from nnsmith.error import SanityCheck
 from nnsmith.graph_gen import SymbolNet, random_model_gen
 from nnsmith.export import torch2onnx
@@ -212,7 +212,7 @@ def gen_model_and_range(
             generated model
         rngs : List[Tuple[float, float]]
             input ranges
-        stats : dict 
+        stats : dict
             statistics
 
     Example usage:
@@ -227,7 +227,7 @@ def gen_model_and_range(
     check_call(f'python -u -m nnsmith.graph_gen --output_path {output_path}'
                f' --seed {seed} --max_nodes {max_node_size} --timeout {max_gen_millisec} --viz_graph --input_gen {input_gen}'
                f'{kwargs_str} 2>&1', shell=True, timeout=max_gen_millisec * 2 / 1000)
-    model = DiffTestBackend.get_onnx_proto(output_path)
+    model = BackendFactory.get_onnx_proto(output_path)
     stats = pickle.load(open(output_path + '-stats.pkl', 'rb'))
     rngs = stats['rngs']
     return model, rngs, stats

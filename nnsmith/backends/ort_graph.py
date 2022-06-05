@@ -1,15 +1,11 @@
 # NOTE: multi-input-output is supported
-from nnsmith.backends import DiffTestBackend
+from nnsmith.backends import BackendFactory
 
 import onnx
 import onnxruntime as ort
 import numpy as np
 import os
 
-PROVIDERS = [
-    'CUDAExecutionProvider',
-    # 'CPUExecutionProvider',
-]
 OPT_LEVELS = [
     ort.GraphOptimizationLevel.ORT_DISABLE_ALL,
     ort.GraphOptimizationLevel.ORT_ENABLE_BASIC,
@@ -18,35 +14,37 @@ OPT_LEVELS = [
 ]
 
 
-class ORTExecutor(DiffTestBackend):
-    def __init__(self, opt_level=3, providers=None):
+class ORTFactory(BackendFactory):
+    def __init__(self, device='cpu', optmax=True):
         """opt_level ranges from 0 to 3, stands for ORT_DISABLE_ALL, ORT_ENABLE_BASIC, ORT_ENABLE_EXTENDED and ORT_ENABLE_ALL.
         See https://onnxruntime.ai/docs/performance/graph-optimizations.html for detail"""
-        super().__init__()
-        self._opt_level = OPT_LEVELS[opt_level]
-        self.providers = providers or PROVIDERS
+        self.name = 'ort'
+        super().__init__(device, optmax)
+        self.opt_level = OPT_LEVELS[-1 if optmax else 0]
+        self.providers = ['CPUExecutionProvider']
+        if device == 'cuda':
+            self.providers.append('CUDAExecutionProvider')
 
-    def get_sess_opt(self):
+    def __repr__(self) -> str:
+        return f'ort-{self.device}-O{self.opt_level}'
+
+    def mk_backend(self, model, **kwargs):
+        onnx_model = self.get_onnx_proto(model)
+
         sess_options = ort.SessionOptions()
-        sess_options.graph_optimization_level = self._opt_level
+        sess_options.graph_optimization_level = self.opt_level
         # https://github.com/microsoft/onnxruntime/issues/8313
         sess_options.intra_op_num_threads = int(os.getenv('NNSMITH_CORES', 0))
-        return sess_options
 
-    def load_model(self, model):
-        if self.cache_hit_or_install(model):
-            return
-        onnx_model = self.get_onnx_proto(model)
-        sess_options = self.get_sess_opt()
-        self.sess = ort.InferenceSession(
+        sess = ort.InferenceSession(
             onnx._serialize(onnx_model), providers=self.providers, sess_options=sess_options)
-        _, self.out_names = self.analyze_onnx_io(onnx_model)
+        _, out_names = self.analyze_onnx_io(onnx_model)
 
-    def predict(self, model, inputs, **kwargs):
-        self.load_model(model)
-        res = self.sess.run(self.out_names, inputs)
+        def closure(inputs):
+            res = sess.run(out_names, inputs)
+            return {n: r for n, r in zip(out_names, res)}
 
-        return {n: r for n, r in zip(self.out_names, res)}
+        return closure
 
     @staticmethod
     def _coverage_install():
@@ -64,12 +62,13 @@ if __name__ == '__main__':
     filename = 'yolov3-tiny.onnx'
     if not os.path.exists(filename):
         filename = wget.download(
-            'https://github.com/hoaquocphan/Tiny_Yolo_v3/raw/master/yolov3-tiny.onnx', out=filename)
-    backend = ORTExecutor()
-    model = DiffTestBackend.get_onnx_proto(filename)
-    input_spec, onames = DiffTestBackend.analyze_onnx_io(model)
+            'https://github.com/onnx/models/raw/main/vision/object_detection_segmentation/tiny-yolov3/model/tiny-yolov3-11.onnx', out=filename)
+    factory = ORTFactory()
+    model = BackendFactory.get_onnx_proto(filename)
+    input_spec, onames = BackendFactory.analyze_onnx_io(model)
     sim_model, check = simplify(
         model, input_shapes={'input_1': [1, 3, 224, 224], 'image_shape': [1, 2]})
-    res = backend.predict(model, {'input_1': np.zeros(
+    backend = factory.mk_backend(model)
+    res = backend({'input_1': np.zeros(
         (1, 3, 224, 224), dtype='float32'), 'image_shape': np.array([[224, 224]], dtype='float32')})
     print(res)

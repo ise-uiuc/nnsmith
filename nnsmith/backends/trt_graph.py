@@ -1,4 +1,5 @@
-from nnsmith.backends import DiffTestBackend
+from yaml import warnings
+from nnsmith.backends import BackendFactory
 
 # See https://docs.nvidia.com/deeplearning/tensorrt/api/python_api/index.html
 import tensorrt as trt
@@ -19,27 +20,38 @@ class HostDeviceMem(object):
         return self.__str__()
 
 
-class TRTBackend(DiffTestBackend):
-    def predict(self, model, inputs, **kwargs):
+class TRTFactory(BackendFactory):
+    def __init__(self, device='cpu', optmax=True):
+        self.name = 'trt'
+        if optmax is False:
+            warnings.warn(
+                "Well, there's no O0 for TensorRT so far...")
+        super().__init__(device, optmax)
+
+    def mk_backend(self, model, **kwargs):
         import pycuda.autoinit
         onnx_model = self.get_onnx_proto(model)
         engine = self.build_engine_onnx(onnx_model)
-        trt_inputs, trt_outputs, trt_bindings, stream, onames, name2idx = self.allocate_buffers(
-            engine)
-        context = engine.create_execution_context()
 
-        for iname in inputs:
-            np.copyto(trt_inputs[name2idx[iname]].host, inputs[iname].astype(
-                trt.nptype(engine.get_binding_dtype(iname))).ravel())
+        def closure(inputs):
+            trt_inputs, trt_outputs, trt_bindings, stream, onames, name2idx = self.allocate_buffers(
+                engine)
+            context = engine.create_execution_context()
 
-        trt_concrete_outputs = self.do_inference_v2(
-            context, bindings=trt_bindings, inputs=trt_inputs, outputs=trt_outputs, stream=stream)
+            for iname in inputs:
+                np.copyto(trt_inputs[name2idx[iname]].host, inputs[iname].astype(
+                    trt.nptype(engine.get_binding_dtype(iname))).ravel())
 
-        return {n: v.reshape(engine.get_binding_shape(n)) for n, v in zip(onames, trt_concrete_outputs)}
+            trt_concrete_outputs = self.do_inference_v2(
+                context, bindings=trt_bindings, inputs=trt_inputs, outputs=trt_outputs, stream=stream)
+
+            return {n: v.reshape(engine.get_binding_shape(n)) for n, v in zip(onames, trt_concrete_outputs)}
+
+        return closure
 
     @staticmethod
     def build_engine_onnx(model_file):
-        onnx_model = DiffTestBackend.get_onnx_proto(model_file)
+        onnx_model = BackendFactory.get_onnx_proto(model_file)
         builder = trt.Builder(trt.Logger(trt.Logger.WARNING))
         network = builder.create_network(1 << (int)(
             trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
@@ -107,12 +119,12 @@ if __name__ == '__main__':
     filename = 'mobilenetv2.onnx'
     if not os.path.exists('mobilenetv2.onnx'):
         filename = wget.download(
-            'https://github.com/onnx/models/raw/master/vision/classification/mobilenet/model/mobilenetv2-7.onnx', out='mobilenetv2.onnx')
-    backend = TRTBackend()
-    sim_model, check = simplify(DiffTestBackend.get_onnx_proto(
+            'https://github.com/onnx/models/raw/main/vision/classification/mobilenet/model/mobilenetv2-7.onnx', out='mobilenetv2.onnx')
+    factory = TRTFactory()
+    sim_model, check = simplify(BackendFactory.get_onnx_proto(
         filename), input_shapes={'input': [1, 3, 224, 224]})
-    output = backend.predict(
-        sim_model, {'input': np.zeros((1, 3, 224, 224))})['output']
+    backend = factory.mk_backend(sim_model)
+    output = backend({'input': np.zeros((1, 3, 224, 224))})['output']
     assert output.shape == (1, 1000), "{} != {}".format(
         output.shape, (1, 1000))
     assert output[0, 233] - (-1.34753) < 1e-3

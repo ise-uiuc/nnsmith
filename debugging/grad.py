@@ -37,7 +37,7 @@ if __name__ == '__main__':
 
     __DIFF_CACHE__ = 'config/diff.pkl'
     differentiable_ops = rewrite_op_dtype(
-        ALL_OP_TYPES, backend=None, diff=True, verbose=args.verbose, cache=__DIFF_CACHE__)
+        ALL_OP_TYPES, factory=None, diff=True, verbose=args.verbose, cache=__DIFF_CACHE__)
     print(differentiable_ops)
 
     results = {

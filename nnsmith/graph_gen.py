@@ -1541,7 +1541,7 @@ if __name__ == '__main__':
     if args.diff_can_overwrite:
         __DIFF_CACHE__ = 'config/diff.pkl'
         differentiable_ops = rewrite_op_dtype(
-            ALL_OP_TYPES, backend=None, diff=True, verbose=False, cache=__DIFF_CACHE__)
+            ALL_OP_TYPES, factory=None, diff=True, verbose=False, cache=__DIFF_CACHE__)
         gen_args['candidates_overwrite'] = differentiable_ops
         gen_args['init_fp'] = True
 

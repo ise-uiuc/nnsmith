@@ -68,7 +68,7 @@ def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarr
 
 
 if __name__ == '__main__':  # generate bug reports.
-    from nnsmith.backend_executor import BackendCreator
+    from nnsmith.backend_executor import FactoryCreator
 
     def known_bug(report: dict, db: List[dict]):
         def same_model_same_stderr(report: dict):
@@ -82,7 +82,7 @@ if __name__ == '__main__':  # generate bug reports.
             return False
 
         def trt_clip_int32(report: dict):
-            return (report['backend'] == BackendCreator.NAME_MAP['trt'] and
+            return (report['backend'] == FactoryCreator.NAME_MAP['trt'] and
                     'INVALID_NODE: Invalid Node - Clip' in report['stdout'])
 
         def tvm_int_mismatch(report: dict):
@@ -102,15 +102,15 @@ if __name__ == '__main__':  # generate bug reports.
 
     def unsupported_feature(report: dict, db: List[dict]):
         def trt_round(report: dict):
-            return (report['backend'] == BackendCreator.NAME_MAP['trt'] and
+            return (report['backend'] == FactoryCreator.NAME_MAP['trt'] and
                     'getPluginCreator could not find plugin: Round version: 1' in report['stderr'])
 
         def trt_general(report: dict):
-            return (report['backend'] == BackendCreator.NAME_MAP['trt'] and
+            return (report['backend'] == FactoryCreator.NAME_MAP['trt'] and
                     'UNSUPPORTED_NODE' in report['stdout'])
 
         def xla_squeeze(report: dict):
-            return (report['backend'] == BackendCreator.NAME_MAP['xla'] and
+            return (report['backend'] == FactoryCreator.NAME_MAP['xla'] and
                     'BackendIsNotSupposedToImplementIt: Squeeze version 13 is not implemented' in report['stderr'])
 
         filters = [trt_round, trt_general, xla_squeeze]

@@ -7,7 +7,7 @@ Here's a few facts:
 4. The key explanantion is in Section III.G "Shapes & parameters Calculator."
     4.1: In additoin to LEMON, they support non-unary operators, ensuring the shape match by:
         a. slicing;
-        b. padding (keeping layers element-wise); 
+        b. padding (keeping layers element-wise);
         c. unsqueezing; (we added this to make GraphFuzz even better)
     4.2: Operators with padding to try to ensure everything is element-wise.
         NOTE: Through the examples, they basically assume input rank is 4 (NCHW).
@@ -276,7 +276,7 @@ if __name__ == "__main__":
             print(f'python nnsmith/dtype_test.py --cache {args.ort_cache}')
             exit(1)
         # must pre run this. otherwise using ort will slow down generation.
-        rewrite_op_dtype(ALL_OP_TYPES, backend=None, cache=args.ort_cache)
+        rewrite_op_dtype(ALL_OP_TYPES, factory=None, cache=args.ort_cache)
 
     gf = GraphFuzz(approx_nop=args.approx_nop,
                    dim_limit=args.dim_limit, try_all=args.try_all)

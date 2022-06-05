@@ -6,10 +6,10 @@ os.environ['TF_XLA_FLAGS'] = "--tf_xla_auto_jit=2 --tf_xla_cpu_global_jit"
 
 # See https://github.com/onnx/onnx-tensorflow/blob/master/doc/API.md
 from onnx_tf.backend import prepare, supports_device
-from nnsmith.backends import DiffTestBackend
+from nnsmith.backends import BackendFactory
 
 
-class XLAExecutor(DiffTestBackend):
+class XLAExecutor(BackendFactory):
     def __init__(self, device: str = 'CPU'):
         """
         Args:
@@ -61,7 +61,7 @@ if __name__ == '__main__':
         filename = wget.download(
             'https://github.com/onnx/models/raw/master/vision/classification/mobilenet/model/mobilenetv2-7.onnx', out='mobilenetv2.onnx')
     backend = XLAExecutor()
-    sim_model, check = simplify(DiffTestBackend.get_onnx_proto(
+    sim_model, check = simplify(BackendFactory.get_onnx_proto(
         filename), input_shapes={'input': [1, 3, 224, 224]})
     output = backend.predict(
         sim_model, {'input': np.zeros((1, 3, 224, 224))})['output']

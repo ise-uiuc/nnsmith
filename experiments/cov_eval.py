@@ -43,6 +43,7 @@ if __name__ == '__main__':
     parser.add_argument('--report_folder', type=str, required=True)
     parser.add_argument('--backend', type=str, default='tvm',
                         help='One of ort, trt, tvm, and xla')
+    parser.add_argument('--device', type=str, default='cpu')
     parser.add_argument('--dp', type=int, default=250,
                         help='# data point you want.')
     parser.add_argument('--dev', type=str, default='cpu', help='cpu/gpu')
@@ -174,6 +175,7 @@ if __name__ == '__main__':
                 'python', 'experiments/batch_eval.py',
                 '--models', *model_batch,
                 '--backend', args.backend,
+                '--device', args.device,
                 '--seed', str(seed),
             ]
             if args.memcov:

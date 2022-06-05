@@ -50,7 +50,7 @@ def mknets(args, exp_seed):
         os.makedirs(model_path)
     __DIFF_CACHE__ = 'config/diff.pkl'
     differentiable_ops = rewrite_op_dtype(
-        ALL_OP_TYPES, backend=None, diff=True, verbose=True, cache=__DIFF_CACHE__)
+        ALL_OP_TYPES, factory=None, diff=True, verbose=True, cache=__DIFF_CACHE__)
     print(differentiable_ops)
     results = {
         'model_seed': [],

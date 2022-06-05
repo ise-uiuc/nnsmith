@@ -1,103 +1,22 @@
 import random
 import pickle
 from pathlib import Path
-from typing import Dict
 import time
 
-import numpy as np
 import onnx
 import onnx.checker
 
 from nnsmith import difftest
 from nnsmith.util import is_invalid
-from nnsmith.backends import DiffTestBackend, gen_one_input_rngs
-
-
-class CrashExecutor(DiffTestBackend):
-    """For testing purposes"""
-
-    def predict(self, *args, **kwargs):
-        assert False
-
-
-class HangExecutor(DiffTestBackend):
-    """For testing purposes"""
-
-    def predict(self, *args, **kwargs):
-        while True:
-            pass
-
-
-class DummyExecutor(DiffTestBackend):
-    """Doing nothing"""
-
-    def predict(self, *args, **kwargs):
-        return {}
-
-
-class BackendCreator:
-    NAME_MAP = {
-        'ort': 'ORTExecutor',
-        'ort-cpu': 'ORTExecutorCPU',
-        'ort-debug': 'ORTExecutorDebug',
-        'tvm-llvm': 'TVMExecutorLLVM',
-        'tvm-debug': 'TVMExecutorDebug',
-        'tvm-cuda': 'TVMExecutor',
-        'xla': 'XLAExecutor',
-        'trt': 'TRTBackend',
-    }
-
-    def __init__(self, name):
-        self.name = name
-        self.dump_name = self.NAME_MAP[name]
-
-    def __call__(self, *args, **kwargs):
-        name = self.name
-        if name == 'ort':
-            from nnsmith.backends.ort_graph import ORTExecutor
-            return ORTExecutor()
-        elif name == 'ort-cpu':
-            from nnsmith.backends.ort_graph import ORTExecutor
-            return ORTExecutor(providers=['CPUExecutionProvider'])
-        elif name == 'ort-debug':
-            from nnsmith.backends.ort_graph import ORTExecutor
-            return ORTExecutor(0)
-        elif name == 'tvm-debug':
-            from nnsmith.backends.tvm_graph import TVMExecutor
-            return TVMExecutor(executor='debug', opt_level=0)
-        elif name == 'tvm-llvm':
-            from nnsmith.backends.tvm_graph import TVMExecutor
-            return TVMExecutor(target='llvm')
-        elif name == 'tvm-cuda':
-            from nnsmith.backends.tvm_graph import TVMExecutor
-            return TVMExecutor(target='cuda')
-        elif name == 'xla':
-            from nnsmith.backends.xla_graph import XLAExecutor
-            return XLAExecutor(device='CUDA')
-        elif name == 'trt':
-            from nnsmith.backends.trt_graph import TRTBackend
-            return TRTBackend()
-        elif name == 'crash':
-            return CrashExecutor()
-        elif name == 'hang':
-            return HangExecutor()
-        else:
-            raise ValueError(f'unknown backend: {name}')
-
-
-def summarize(outputs: Dict[str, np.ndarray]):
-    m = {k + '_mean': np.mean(o) for k, o in outputs.items()}
-    # TODO(JK): figure out how to deal with nan
-    m.update({k + '_nanmean': np.nanmean(o) for k, o in outputs.items()})
-    m.update({k + '_num_nan': np.sum(np.isnan(o)) for k, o in outputs.items()})
-    return m
-
+from nnsmith.backends import BackendFactory, gen_one_input_rngs, mk_factory
 
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--backend', type=str, required=True,
-                        help=f'One of {BackendCreator.NAME_MAP.keys()}')
+                        help=f'One of `tvm`, `ort`, `trt`, and `xla`')
+    parser.add_argument('--device', type=str, default='cpu')
+    parser.add_argument('--optmin', action='store_true')
     parser.add_argument('--model', type=str,
                         help='For debugging purpose: path to onnx model;')
     parser.add_argument(
@@ -138,22 +57,24 @@ if __name__ == '__main__':
         # -- randomly generated input:
         else:
             print('No raw input or oracle found. Generating input on the fly.')
-            inp_spec = DiffTestBackend.analyze_onnx_io(onnx_model)[0]
+            inp_spec = BackendFactory.analyze_onnx_io(onnx_model)[0]
             test_inputs = gen_one_input_rngs(inp_spec, None, seed)
 
     # Step 2: Run backend
     # -- reference backend:
     if args.cmp_with is not None:
         print(f'Using {args.cmp_with} as the reference backend/oracle')
-        reference_backend = BackendCreator(args.cmp_with)()
-        oracle_outputs = reference_backend.predict(onnx_model, test_inputs)
+        ref_backend = mk_factory(
+            args.cmp_with, device=args.device, optmax=not args.optmin).mk_backend(onnx_model)
+        oracle_outputs = ref_backend(test_inputs)
         if is_invalid(oracle_outputs):
             print(
                 f'[WARNING] Backend {args.cmp_with} produces nan/inf in output.')
 
     # -- this backend:
-    this_backend = BackendCreator(args.backend)()
-    this_outputs = this_backend.predict(onnx_model, test_inputs)
+    this_backend = mk_factory(
+        args.backend, device=args.device, optmax=not args.optmin).mk_backend(onnx_model)
+    this_outputs = this_backend(test_inputs)
     if is_invalid(this_outputs):
         print(f'[WARNING] Backend {args.backend} produces nan/inf in output.')
 

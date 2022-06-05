@@ -1,7 +1,7 @@
 # To install tvm with pip:
 # pip install tlcpack-nightly-cu102 -f https://tlcpack.ai/wheels
 
-from nnsmith.backends import DiffTestBackend
+from nnsmith.backends import BackendFactory
 from nnsmith.error import NNSmithInternalError
 
 import tvm
@@ -17,12 +17,15 @@ def list_eq(a, b):
     return True
 
 
-class TVMExecutor(DiffTestBackend):
-    def __init__(self, opt_level=4, target="llvm", executor="graph", **kwargs):
-        super().__init__(**kwargs)
-        self.opt_level = opt_level
-        self.target = tvm.target.Target(target)
-        self.executor = executor
+class TVMFactory(BackendFactory):
+    def __init__(self, device='cpu', optmax=True, executor="graph") -> None:
+        super().__init__(device, optmax)
+        self.opt_level = 4 if optmax else 0
+        self.target = tvm.target.Target('llvm' if device == 'cpu' else 'cuda')
+        self.executor_mode = executor
+
+    def __repr__(self) -> str:
+        return f'tvm-{self.target}-{self.executor_mode}-O{self.opt_level}'
 
     def get_device(self):
         if self.target.export()['kind'] == 'cuda':
@@ -31,18 +34,12 @@ class TVMExecutor(DiffTestBackend):
             return tvm.rocm()
         return tvm.cpu()
 
-    def cvt_result(self, output, out_shape):
+    @staticmethod
+    def cvt_result(output, out_shape):
         """Pack output tensor(s) into a list
         """
         # TODO(jinkun): may not work for nested list / dynamic shape
-# <<<<<<< HEAD
-# Not sure I understand the code below. commenting out for now.
         assert output is not None, "Output should not be None"
-        # output = [r.numpy() for r in output]
-        # if isinstance(out_shape, (tuple, list, tvm.ir.type.TupleType)):
-        #     out_shape = [tuple(r.shape) for r in out_shape.fields]
-        # elif isinstance(out_shape, tvm.ir.tensor_type.TensorType):
-# =======
         if isinstance(output, (tvm.runtime.container.ADT, list)):
             output = [r.numpy() for r in output]
             if isinstance(out_shape, relay.TupleType):
@@ -52,21 +49,16 @@ class TVMExecutor(DiffTestBackend):
             out_shape = [tuple(r.shape) for r in out_shapes]
         elif output is not None:
             output = [output.numpy()]
-# >>>>>>> e569ea8... fix tvm-graph and support disable infer domain in backend_exe
             out_shape = [tuple(out_shape.shape)]
         else:
             raise NNSmithInternalError(
                 f"out_shape is not tuple/list/tensorType but {type(out_shape)}")
         return output, out_shape
 
-    def load_model(self, model):
-        if self.cache_hit_or_install(model):
-            return
-
+    def mk_backend(self, model, **kwargs):
         onnx_model = self.get_onnx_proto(model)
 
         inp_spec, out_names = self.analyze_onnx_io(onnx_model)
-        self.inp_spec, self.out_names = inp_spec, out_names
         shape_dict = {name: inp_spec[name].shape for name in inp_spec}
         for name in shape_dict:
             if len(shape_dict[name]) > 0 and shape_dict[name][0] == -1:  # Freeze batch size
@@ -76,44 +68,24 @@ class TVMExecutor(DiffTestBackend):
         mod, params = relay.frontend.from_onnx(
             onnx_model, shape_dict, freeze_params=True)
         mod = relay.transform.InferType()(mod)
-        self.params = params
-        self.mod = mod  # for debugging purposes
-
-        self.out_shape = mod['main'].ret_type
+        oshape = mod['main'].ret_type
 
         with tvm.transform.PassContext(opt_level=self.opt_level):
             executor = relay.build_module.create_executor(
-                self.executor, mod, self.get_device(), self.target, params
+                self.executor_mode, mod, self.get_device(), self.target, params
             ).evaluate()
-        self.sess = executor
 
-    def predict(self, model, inputs, check_naming=True, **kwargs):
-        self.load_model(model)
-        with tvm.transform.PassContext(opt_level=self.opt_level):
-            output = self.sess(
-                **{iname: inputs[iname].astype(self.inp_spec[iname].dtype) for iname in inputs})
-            output, out_shape = self.cvt_result(output, self.out_shape)
-
-        # with tvm.transform.PassContext(opt_level=self.opt_level):
-        #     lib = relay.build(mod, self.target, params=params)
-        #     m = graph_executor.GraphModule(lib["default"](self.get_device()))
-        #     # set inputs
-        #     for name in inputs:
-        #         m.set_input(name, inputs[name].astype(inp_spec[name].dtype))
-        #     # execute
-        #     m.run()
-        #     # get outputs
-        #     output = m.get_output(0, tvm.nd.empty(out_shape)).asnumpy()
-        if not self.cache:
-            del self.sess
-            del self.mod
-            del self.params
-        output_shape = list(map(lambda x: x.shape, output))
-        if check_naming:
+        def closure(inputs):
+            output = executor(
+                **{iname: inputs[iname].astype(inp_spec[iname].dtype) for iname in inputs})
+            output, out_shape = self.cvt_result(output, oshape)
+            output_shape = list(map(lambda x: x.shape, output))
             assert list_eq(out_shape, output_shape),\
                 f"Shape mismatch between {out_shape} and {output_shape}"
-        # TODO(JK): make sure the order matches (not sure how to do so with TVM)
-        return dict(zip(self.out_names, output))
+            # TODO(JK): make sure the order matches (not sure how to do so with TVM)
+            return dict(zip(out_names, output))
+
+        return closure
 
     @staticmethod
     def _coverage_install():
@@ -136,12 +108,13 @@ if __name__ == '__main__':
             relay.Function([x, y], relay.Tuple([x, y])))
         return to_onnx(mod, {}, 'model')
 
-    backend = TVMExecutor()
+    factory = TVMFactory()
     model = get_model()
-    input_spec, onames = DiffTestBackend.analyze_onnx_io(model)
+    input_spec, onames = BackendFactory.analyze_onnx_io(model)
     sim_model, check = simplify(
         model, input_shapes={'x': [1, 3, 224, 224], 'y': [1, 2]})
-    res = backend.predict(model, {'x': np.zeros(
+    backend = factory.mk_backend(model)
+    res = backend({'x': np.zeros(
         (1, 3, 224, 224), dtype='float32'), 'y': np.array([[1, 2]], dtype='float32')})
     print('test1 pass')
 
@@ -153,12 +126,12 @@ if __name__ == '__main__':
     filename = 'mobilenetv2.onnx'
     if not os.path.exists('mobilenetv2.onnx'):
         filename = wget.download(
-            'https://github.com/onnx/models/raw/master/vision/classification/mobilenet/model/mobilenetv2-7.onnx', out='mobilenetv2.onnx')
-    backend = TVMExecutor()
-    sim_model, check = simplify(DiffTestBackend.get_onnx_proto(
+            'https://github.com/onnx/models/raw/main/vision/classification/mobilenet/model/mobilenetv2-7.onnx', out='mobilenetv2.onnx')
+    factory = TVMFactory()
+    sim_model, check = simplify(BackendFactory.get_onnx_proto(
         filename), input_shapes={'input': [1, 3, 224, 224]})
-    output = backend.predict(
-        sim_model, {'input': np.zeros((1, 3, 224, 224))})['output']
+    backend = factory.mk_backend(sim_model)
+    output = backend({'input': np.zeros((1, 3, 224, 224))})['output']
     assert output.shape == (1, 1000), "{} != {}".format(
         output.shape, (1, 1000))
     assert output[0, 233] - (-1.34753) < 1e-3

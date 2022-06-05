@@ -10,11 +10,11 @@ from queue import Empty
 from tqdm import tqdm
 
 from nnsmith import util
-from nnsmith.backends import DiffTestBackend
-from nnsmith.backend_executor import BackendCreator, summarize, gen_one_input_rngs
+from nnsmith.backends import BackendFactory
+from nnsmith.backend_executor import FactoryCreator, summarize, gen_one_input_rngs
 
 
-def run_backend(root: str, output_dir: str, backend_creator: BackendCreator, timeout: int, selected_models: List[str] = None, gen_input: int = None):
+def run_backend(root: str, output_dir: str, backend_creator: FactoryCreator, timeout: int, selected_models: List[str] = None, gen_input: int = None):
     def run(q: multiprocessing.Queue, r: multiprocessing.Queue):
         backend = backend_creator()
         while True:
@@ -100,8 +100,8 @@ def run_backend(root: str, output_dir: str, backend_creator: BackendCreator, tim
     for model_folder in tqdm(model_folders):
         crashed = False
         model_name = model_folder.name
-        inp_spec = DiffTestBackend.analyze_onnx_io(
-            DiffTestBackend.get_onnx_proto(str(model_folder / f'model.onnx')))[0]
+        inp_spec = BackendFactory.analyze_onnx_io(
+            BackendFactory.get_onnx_proto(str(model_folder / f'model.onnx')))[0]
         if gen_input is None:
             assert len(list(model_folder.glob(f'input.*.pkl'))
                        ) > 0, 'No input data found. Do you want to gen input on the fly but forget to specify gen_input?'
@@ -158,7 +158,7 @@ if __name__ == '__main__':
     if args.root is None and args.select_model is not None:
         raise ValueError('--root is required when --select_model is used')
 
-    bknd = BackendCreator(args.backend)
+    bknd = FactoryCreator(args.backend)
     st = time.time()
     if args.model is None:
         run_backend(args.root, args.output_dir, bknd, args.timeout,
