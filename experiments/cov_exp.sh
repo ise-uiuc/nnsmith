@@ -16,7 +16,7 @@ exp1_t=$(expr `date +%s` - $start_time)
 export LIB_PATH='../onnxruntime/build/Linux/RelWithDebInfo/libonnxruntime_providers_shared.so ../onnxruntime/build/Linux/RelWithDebInfo/libonnxruntime.so'
 start_time=`date +%s`
 python nnsmith/fuzz.py --time 14400 --max_nodes 10 --eval_freq 256 \
-                --mode guided --backend ort --root nnsmith-ort-base
+                --mode random --backend ort --root nnsmith-ort-base
 exp2_t=$(expr `date +%s` - $start_time)
 
 start_time=`date +%s`
