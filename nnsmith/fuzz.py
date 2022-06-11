@@ -569,6 +569,8 @@ if __name__ == '__main__':
     parser.add_argument('--backend', type=str, default='tvm')
     parser.add_argument('--device', type=str, default='cpu')
     parser.add_argument('--mode', type=str, default='random')
+    parser.add_argument(
+        '--skip', help='Node types to skip. Split by `,`. By default a blacklist for each backend is also appended.', type=str)
     parser.add_argument('--inp_gen', type=str,
                         help='default is None. Can be hybrid.')
     parser.add_argument('--gen_timeout', type=int,
@@ -587,6 +589,9 @@ if __name__ == '__main__':
     parser.add_argument('--no_progress', action='store_true')
     args = parser.parse_args()
 
+    skip = 'backend:' + args.backend
+    if args.skip is not None:
+        skip += ',' + args.skip
     auto_infer_in_dtypes()  # TODO: remove this someday
 
     factory = mk_factory(args.backend, device=args.device)
@@ -611,6 +616,7 @@ if __name__ == '__main__':
         print('Reading cache config file:', cache_file)
         run()
 
+    config_skip_op(skip)
     fuzzing_loop = FuzzingLoop(
         root=args.root,
         factory=factory,
