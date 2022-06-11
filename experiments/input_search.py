@@ -196,7 +196,7 @@ if __name__ == '__main__':
             # ------------------------------------------------------------
             # Estimate model size | avoid OOM
             nbytes = 0
-            inputs = net.get_random_inps(use_cuda=args.use_cuda)
+            inputs = net.get_random_inps(use_cuda=args.use_cuda, base=0.5, margin=1)
             for tensor in inputs:
                 nbytes += tensor.numel() * tensor.element_size()
             for name, param in net.named_parameters():

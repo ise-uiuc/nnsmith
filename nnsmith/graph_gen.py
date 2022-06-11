@@ -58,7 +58,7 @@ __MB_LIM__ = 6 * 1024
 
 
 # Probablistically, sampling at positive domain is beneficial.
-def random_tensor(shape, dtype, margin=4, base=5, use_cuda=False):
+def random_tensor(shape, dtype, margin=1, base=0, use_cuda=False):
     # center: -margin ~ 0 ~ +margin
     dev = torch.device('cuda' if use_cuda else 'cpu')
     if base == 'center':
@@ -309,37 +309,11 @@ class SymbolNet(nn.Module):
 
         return inputs
 
-    def rand_input_gen(self, max_iter=10, use_cuda=False, **kwargs) -> Optional[List[torch.Tensor]]:
-        last_check_intermediate_numeric = self.check_intermediate_numeric
-        self.check_intermediate_numeric = True
-
-        sat_inputs = None
-
-        if use_cuda:
-            self.use_cuda()
-
-        with torch.no_grad():
-            for _ in range(max_iter):
-                inputs = self.get_random_inps(**kwargs, use_cuda=use_cuda)
-
-                self.forward(*inputs)
-
-                if not self.invalid_found_last:
-                    sat_inputs = inputs
-                    break
-
-        self.check_intermediate_numeric = last_check_intermediate_numeric
-        return sat_inputs
-
-    def grad_input_gen(self, init_tensors=None, use_cuda=False,
+    def grad_input_gen(self, init_tensors, use_cuda=False,
                        max_time=None, **kwargs) -> Optional[List[torch.Tensor]]:
         # TODO: trim the param. max_iter is not used; remove getenv
         if max_time is None:
             max_time = float(os.getenv('NNSMITH_GRAD_TIME', 0.5))
-
-        if init_tensors is None:
-            init_tensors = self.get_random_inps(
-                **kwargs, use_cuda=use_cuda)
 
         inputs = []
         for tensor in init_tensors:
