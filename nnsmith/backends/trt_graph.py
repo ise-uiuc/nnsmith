@@ -1,4 +1,4 @@
-from yaml import warnings
+import warnings
 from nnsmith.backends import BackendFactory
 
 # See https://docs.nvidia.com/deeplearning/tensorrt/api/python_api/index.html
