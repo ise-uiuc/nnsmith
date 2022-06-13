@@ -58,7 +58,7 @@ __MB_LIM__ = 6 * 1024
 
 
 # Probablistically, sampling at positive domain is beneficial.
-def random_tensor(shape, dtype, margin=1, base=0, use_cuda=False):
+def random_tensor(shape, dtype, margin=4, base=5, use_cuda=False):
     # center: -margin ~ 0 ~ +margin
     dev = torch.device('cuda' if use_cuda else 'cpu')
     if base == 'center':

@@ -30,24 +30,22 @@ class InputSearchBase(ABC):
         n_try = 0
         sat_inputs = None
         start_time = time.time()
-        bases = [((i + 1) // 2) * (-1) ** i for i in range(5)]  # [0, +-1, +-2]
 
         while (max_time_ms is None or time.time() - start_time < max_time_ms / 1000) and n_try < max_sample:
-            base = bases[n_try % len(bases)]
             if self.start_weights is not None and n_try < len(self.start_weights):
                 self.apply_weights(self.net, self.start_weights[n_try])
             else:
                 weight_sample = {}
                 for name, param in self.net.named_parameters():
                     weight_sample[name] = random_tensor(
-                        param.shape, dtype=param.dtype, use_cuda=self.use_cuda, base=base)
+                        param.shape, dtype=param.dtype, use_cuda=self.use_cuda)
                 self.apply_weights(self.net, weight_sample)
 
             if self.start_inputs is not None and n_try < len(self.start_inputs):
                 cur_input = self.start_inputs[n_try]
             else:
                 cur_input = self.net.get_random_inps(
-                    use_cuda=self.use_cuda, base=base)
+                    use_cuda=self.use_cuda)
 
             res = self.search_one(cur_input, max_time_ms)
             n_try += 1
