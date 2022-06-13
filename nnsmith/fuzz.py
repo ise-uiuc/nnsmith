@@ -35,10 +35,9 @@ from nnsmith.dtype_test import rewrite_op_dtype
 from nnsmith.input_gen import PracticalHybridSearch
 from nnsmith.export import torch2onnx
 from nnsmith.backends import BackendFactory, mk_factory
+from nnsmith.interal_naming import onnx2external_data_dir
 
 _METADATA_NAME_ = 'meta.txt'
-
-# NOTE: Currently only engineered for TVM.
 
 
 def locate_crash_testcase(batch_path):
@@ -56,16 +55,24 @@ def simple_bug_report(report_folder, buggy_onnx_path, oracle_path=None, message=
     n_bug = len(glob.glob(os.path.join(report_folder, 'bug-*')))
     dir = os.path.join(report_folder, f'bug-{bug_type}-{n_bug}')
     os.mkdir(dir)
-    shutil.move(buggy_onnx_path, os.path.join(dir, 'model.onnx'))
+    onnx_path_in_report = os.path.join(dir, 'model.onnx')
+    shutil.move(buggy_onnx_path, onnx_path_in_report)
     if oracle_path is not None:
         shutil.move(oracle_path, os.path.join(dir, 'oracle.pkl'))
     if message:
         with open(os.path.join(dir, 'err.txt'), 'w') as f:
             f.write(message)
+
+    onnx_external_data_dir = onnx2external_data_dir(buggy_onnx_path)
+    if os.path.exists(onnx_external_data_dir):
+        shutil.move(onnx_external_data_dir,
+                    onnx2external_data_dir(onnx_path_in_report))
+
     graph_path = buggy_onnx_path[:-len('.onnx')] + '-graph.pkl'
-    G = pickle.load(open(graph_path, 'rb'))
-    nx.drawing.nx_pydot.to_pydot(G).write_png(os.path.join(
-        dir, 'graph.png'))
+    if os.path.exists(graph_path):
+        G = pickle.load(open(graph_path, 'rb'))
+        nx.drawing.nx_pydot.to_pydot(G).write_png(os.path.join(
+            dir, 'graph.png'))
 
 # TODO: simplify or delete Reporter. Currently using the above funtcton for reporting bugs.
 
@@ -170,19 +177,6 @@ class Reporter:  # From Tzer.
         if sat_inputs is not None:
             pickle.dump(sat_inputs, open(os.path.join(
                 self.report_folder, dir, 'sat_inputs.pkl'), 'wb'))
-
-        self.n_bug += 1
-
-    def simple_bug_report(self, buggy_onnx_path, oracle_path=None, message=''):
-        dir = os.path.join(self.report_folder, f'{self.n_bug}-simple')
-        os.mkdir(dir)
-        shutil.move(buggy_onnx_path, os.path.join(dir, 'model.onnx'))
-        if oracle_path is not None:
-            shutil.move(oracle_path, os.path.join(dir, 'oracle.pkl'))
-
-        if message:
-            with open(os.path.join(dir, 'err.txt'), 'w') as f:
-                f.write(message)
 
         self.n_bug += 1
 
@@ -388,6 +382,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                 outputs = [outputs.cpu().numpy()]
             else:
                 outputs = [o.cpu().numpy() for o in outputs]
+
         net.to_picklable()
         cloudpickle.dump(net.concrete_graph, open(
             path + '-graph.pkl', 'wb'), protocol=4)
@@ -428,7 +423,12 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             shutil.move(onnx_path, target_onnx)
             shutil.move(oracle_path, target_oracle)
             shutil.move(graph_path, target_graph)
-            # TODO: consider adding mlist.*.param (they will be generated for large models)
+            mlist_paths = list(Path('.').glob('mlist.*'))
+            if mlist_paths:
+                mlist_dir = onnx2external_data_dir(target_onnx)
+                os.mkdir(mlist_dir)
+                for mlist_path in mlist_paths:
+                    shutil.move(str(mlist_path), mlist_dir)
             self.eval_batch.append(target_onnx)
 
         if (len(self.eval_batch) == self.eval_freq or force) and len(self.eval_batch) > 0:
@@ -566,7 +566,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--root', type=str, default='./fuzz_report')
     parser.add_argument('--time_budget', type=int, default=60 * 60 * 4)
-    parser.add_argument('--backend', type=str, default='tvm')
+    parser.add_argument('--backend', type=str, required=True)
     parser.add_argument('--device', type=str, default='cpu')
     parser.add_argument('--mode', type=str, default='random')
     parser.add_argument(

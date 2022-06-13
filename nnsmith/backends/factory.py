@@ -1,9 +1,13 @@
 from abc import ABC, abstractmethod
 from typing import List, Union, Dict, Tuple
 from collections import namedtuple
+import os
 
 import onnx
+from onnx.external_data_helper import load_external_data_for_model
 import numpy as np
+
+from nnsmith.interal_naming import onnx2external_data_dir
 
 ShapeType = namedtuple('ShapeType', ['shape', 'dtype'])
 
@@ -22,12 +26,16 @@ class BackendFactory(ABC):
 
     @staticmethod
     def get_onnx_proto(model: Union[onnx.ModelProto, str]) -> onnx.ModelProto:
-        if isinstance(model, str):
-            onnx_model = onnx.load(model)
+        if isinstance(model, onnx.ModelProto):
+            return model
         else:
-            assert isinstance(model, onnx.ModelProto)
-            onnx_model = model
-        return onnx_model
+            external_data_dir = onnx2external_data_dir(model)
+            if os.path.exists(external_data_dir):
+                onnx_model = onnx.load(model, load_external_data=False)
+                load_external_data_for_model(onnx_model, external_data_dir)
+            else:
+                onnx_model = onnx.load(model)
+            return onnx_model
 
     @classmethod
     def _coverage_install(cls):
