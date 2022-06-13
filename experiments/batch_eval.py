@@ -106,7 +106,7 @@ if __name__ == '__main__':
                         # RESULT INCONSISTENCY. But need to see if we can narrow it down to an optimzation bug.
                         omin_exec = omin_fac.mk_backend(onnx_model)
                         err_omax_omin = verify(
-                            args.backend + '-omax', args.backend + '-omin', pred_omax, omin_fac(eval_inputs))
+                            args.backend + '-omax', args.backend + '-omin', pred_omax, omin_exec(eval_inputs))
                         if err_omax_omin:
                             # We can confirm this is an optimization bug as O[opt-max] != O[opt-min]
                             report_bug('omin-omax-', err_omax_omin)
