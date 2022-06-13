@@ -14,7 +14,6 @@ ShapeType = namedtuple('ShapeType', ['shape', 'dtype'])
 
 class BackendFactory(ABC):
     def __init__(self, device='cpu', optmax=True):
-        self.name = 'tvm'
         super().__init__()
         self.device = device
         self.optmax = optmax

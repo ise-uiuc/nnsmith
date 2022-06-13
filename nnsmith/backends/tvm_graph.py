@@ -19,6 +19,7 @@ def list_eq(a, b):
 
 class TVMFactory(BackendFactory):
     def __init__(self, device='cpu', optmax=True, executor="graph") -> None:
+        self.name = 'tvm'
         super().__init__(device, optmax)
         self.opt_level = 4 if optmax else 0
         self.target = tvm.target.Target('llvm' if device == 'cpu' else 'cuda')
