@@ -1493,6 +1493,8 @@ class ReflectPad(Pad):
             # per torch's complaint: Padding size should be less than the corresponding input dimension
             cons.append(nnsmith_lt(pad[i * 2], isv[j]))
             cons.append(nnsmith_lt(pad[i * 2 + 1], isv[j]))
+            # same sign to avoid ORT bugs
+            cons.append(nnsmith_ge(pad[i * 2] * pad[i * 2 + 1], 0))
         return cons
 
 
