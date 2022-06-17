@@ -228,10 +228,8 @@ if __name__ == '__main__':
             # sync input & weight between `sampling` and `grad`
             seedme()
             init_tensor_samples = []
-            # 5 samples look like: [0, +-1, +-2] + uniform(-0.5, 0.5)
             for i in range(max_sample):
-                data = net.get_random_inps(
-                    base=((i + 1) // 2) * (-1) ** i, margin=1, use_cuda=args.use_cuda)
+                data = net.get_random_inps(use_cuda=args.use_cuda)
                 init_tensor_samples.append(data)
 
             init_weight_samples = []
@@ -240,8 +238,7 @@ if __name__ == '__main__':
                     weight_sample = {}
                     for name, param in net.named_parameters():
                         weight_sample[name] = random_tensor(
-                            param.shape, dtype=param.dtype, use_cuda=args.use_cuda,
-                            base=((i + 1) // 2) * (-1) ** i, margin=1)
+                            param.shape, dtype=param.dtype, use_cuda=args.use_cuda)
                     init_weight_samples.append(weight_sample)
 
             def apply_weights(net, weight_sample):

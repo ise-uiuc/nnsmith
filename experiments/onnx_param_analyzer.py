@@ -22,6 +22,8 @@ MEDIUM_SIZE = 15
 BIGGER_SIZE = 18
 SUPER_BIG = 22
 
+plt.rcParams.update({"text.usetex": True})
+
 plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
 plt.rc('axes', titlesize=MEDIUM_SIZE)     # fontsize of the axes title
 plt.rc('axes', labelsize=SUPER_BIG)    # fontsize of the x and y labels
@@ -301,7 +303,7 @@ if __name__ == '__main__':
                hatch=HATCHES[idx], edgecolor='k', linewidth=3)
 
     for x, v in zip(base_x, vals.max(axis=0) / vals.min(axis=0)):
-        ax.text(x - bar_width * 0.55, v + 0.15, f'{v:.1f}$\\times$',
+        ax.text(x - bar_width * 0.5, v + 0.15, f'{v:.1f}$\\times$',
                 fontweight='bold', fontsize=MEDIUM_SIZE, fontname='Times New Roman')
 
     ax.get_yaxis().set_ticks([])

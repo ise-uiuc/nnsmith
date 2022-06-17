@@ -3,6 +3,7 @@ import re
 import argparse
 
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 import pandas as pd
 import numpy as np
 
@@ -19,6 +20,7 @@ plt.rc('ytick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
 plt.rc('legend', fontsize=MEDIUM_SIZE)    # legend fontsize
 plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
+plt.rcParams.update({"text.usetex": True})
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -61,12 +63,19 @@ if __name__ == '__main__':
             if f.endswith('.csv') and f != 'model_info.csv':
                 data = pd.read_csv(os.path.join(nsize_folder, f))
 
-                sampling_time.append(data['sampling-time'].mean())
-                sampling_succ_rate.append(data['sampling-succ'].mean())
-                grad_time.append(data['grad-time'].mean())
-                grad_succ_rate.append(data['grad-succ'].mean())
-                proxy_time.append(data['proxy-time'].mean())
-                proxy_succ_rate.append(data['proxy-succ'].mean())
+                # Do not count the slowest iteration (1st iter usually)
+                # as initialization takes some time.
+                idx = data['sampling-time'].to_numpy().argsort()[:-2]
+                sampling_time.append(data['sampling-time'][idx].mean())
+                sampling_succ_rate.append(data['sampling-succ'][idx].mean())
+
+                idx = data['grad-time'].to_numpy().argsort()[:-2]
+                grad_time.append(data['grad-time'][idx].mean())
+                grad_succ_rate.append(data['grad-succ'][idx].mean())
+
+                idx = data['proxy-time'].to_numpy().argsort()[:-2]
+                proxy_time.append(data['proxy-time'][idx].mean())
+                proxy_succ_rate.append(data['proxy-succ'][idx].mean())
             elif f == 'model_info.csv':
                 data = pd.read_csv(os.path.join(nsize_folder, f))
                 gentime = data['gen_time']
@@ -79,7 +88,13 @@ if __name__ == '__main__':
 
     fig, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
 
-    colors = ['b', 'r', 'g']
+    colors = ['dodgerblue', 'violet', 'coral']  # ['b', 'r', 'g']
+    markers = ['1', '.', '+']
+    markercolor = 'k'
+    markersize = 10
+    markeredgewidth = 1.2
+    lw = 1.5
+
     for i in range(3):
         c = colors[i]
         alpha = 1 - 0.36 * i
@@ -88,29 +103,37 @@ if __name__ == '__main__':
         grad_time, grad_succ_rate = grad_res[i]
         proxy_time, proxy_succ_rate = proxy_res[i]
 
-        ax.plot(proxy_time * 1000, proxy_succ_rate,
-                linestyle='-', color=c, alpha=alpha)
-        ax.plot(grad_time * 1000, grad_succ_rate,
-                linestyle=':', color=c, alpha=alpha)
-        ax.plot(sampling_time * 1000, sampling_succ_rate,
-                linestyle='-.', color=c, alpha=alpha)
+        ax.plot(proxy_time * 1000, proxy_succ_rate, marker=markers[0],
+                markeredgecolor=markercolor, markersize=markersize, markeredgewidth=markeredgewidth,
+                linestyle=':', color=c, lw=lw)
+        ax.plot(grad_time * 1000, grad_succ_rate, marker=markers[1],
+                markeredgecolor=markercolor, markersize=markersize, markeredgewidth=markeredgewidth,
+                linestyle=':', color=c, lw=lw)
+        ax.plot(sampling_time * 1000, sampling_succ_rate, marker=markers[2],
+                markeredgecolor=markercolor, markersize=markersize, markeredgewidth=markeredgewidth,
+                linestyle=':', color=c, lw=lw)
 
     ax.grid(True, linestyle=':', linewidth=.5, alpha=0.5)
 
     lines = ax.get_lines()
     legend1 = plt.legend([lines[i] for i in [0, 1, 2]], [
                          "Gradient (Proxy Deriv.)", "Gradient", "Sampling"],
-                         loc=8, bbox_to_anchor=(0.6, 0.), title='Searching Method')
-    legend2 = plt.legend([lines[i] for i in [0, 3, 6]],
-                         node_sizes, loc=4, title='Model Size')
+                         loc='upper right', title='Searching Method')
+
+    patches = []
+    for i in range(3):
+        patches.append(mpatches.Patch(color=colors[i], label=node_sizes[i]))
+    legend2 = plt.legend(
+        handles=patches, loc='center right', bbox_to_anchor=(1, 0.42), title='Model Size')
+
     ax.add_artist(legend1)
     ax.add_artist(legend2)
 
-    ax.set_yticks(np.arange(0.3, 1.1, 0.1))
-    ax.set_ylim(0.3, 1.0)
+    ax.set_yticks(np.arange(0.6, 1.1, 0.1))
+    ax.set_ylim(0.6, 1.0)
 
-    ax.set_xticks(np.arange(0, 26, 5))
-    ax.set_xlim(0, 25)
+    ax.set_xticks(np.arange(0, 31, 5))
+    ax.set_xlim(0, 35)
 
     ax.set_xlabel('Avg. Searching Time (millisecond)', fontweight='bold')
     ax.set_ylabel('Success Rate', fontweight='bold')

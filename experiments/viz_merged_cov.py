@@ -21,6 +21,8 @@ plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
 MIN_FAC = 0.8
 
+plt.rcParams.update({"text.usetex": True})
+
 
 class Ploter:
     def __init__(self, cov_lim=None, use_pdf=False, one_plot=False) -> None:
@@ -31,7 +33,7 @@ class Ploter:
                 1, 2, constrained_layout=True, figsize=(10, 4.5))
         else:
             fig, axs = plt.subplots(
-                1, 1, constrained_layout=True, figsize=(7.5, 6))
+                1, 1, constrained_layout=True, figsize=(7, 5.5))
             axs = [axs]
         self.one_plot = one_plot
         self.fig = fig
@@ -44,14 +46,25 @@ class Ploter:
     def add(self, data, name=None):
         df = np.array(data)
 
-        ALPHA = 0.8
         LW = 2
         MARKER_SIZE = 10
         N_MARKER = 8
-        MARKERS = ['*', 'X', '^', 'd']
-        LS = 'dashed'
-        markevery = int(len(df) / N_MARKER)
+        MARKERS = ['p', 'd', '^', '*']
+        LS = ':'
+        COLORS = ['dodgerblue', 'violet', 'coral']
+
+        # make it even over time
+        markevery = np.zeros_like(df[:, 0], dtype=bool)
+        step = int(df[:, 0].max() / N_MARKER)
+        offset = step
+        for _ in range(N_MARKER):
+            idx = list(map(lambda i: i >= offset, df[:, 0])).index(True)
+            markevery[idx] = True
+            offset += step
+
+        # markevery = int(len(df) / N_MARKER)
         marker = MARKERS[len(self.cov_maxes) % len(MARKERS)]
+        color = COLORS[len(self.cov_maxes) % len(MARKERS)]
 
         # linestyle=LS, marker=marker, markevery=markevery, markersize=MARKER_SIZE, alpha=ALPHA, lw=LW
         style_kw = {
@@ -59,8 +72,10 @@ class Ploter:
             'marker': marker,
             'markevery': markevery,
             'markersize': MARKER_SIZE,
-            'alpha': ALPHA,
-            'lw': LW
+            'lw': LW,
+            'color': color,
+            'markeredgecolor': 'k',
+            'markeredgewidth': 1.5
         }
 
         self.axs[0].plot(df[:, 0], df[:, 2], **style_kw)  # cov / time
@@ -79,8 +94,8 @@ class Ploter:
         else:
             assert not self.legends
 
-    def plot(self, save='cov', cov_type='', cov_lim=None):
-        self.axs[-1].legend(self.legends)
+    def plot(self, save='cov', cov_type='', cov_lim=None, loc=0):
+        self.axs[-1].legend(self.legends, loc=loc)
 
         self.cov_maxes = sorted(self.cov_maxes)
 
@@ -94,15 +109,13 @@ class Ploter:
         cov_max = max(self.cov_maxes)
         cov_min = min(self.cov_maxes)
 
-        top_lim = cov_max + (cov_max - cov_min) * 0.2
+        top_lim = cov_max + (cov_max - cov_min) * 0.21
 
         if cov_lim is not None:
-            self.axs[0].annotate(f"{int(cov_max)} / {int(cov_lim)} ~ $\\bf{{{cov_max / cov_lim * 100 :.1f}\%}}$",
-                                 xy=(self.xspan, cov_max + (top_lim - cov_max) / 2), xycoords="data",
-                                 va="center", ha="right", fontsize=MEDIUM_SIZE,
-                                 bbox=dict(boxstyle="sawtooth", fc="w"))
-        #     self.axs[0].axhline(y=cov_lim, color='r', linestyle='dashdot')
-        #     self.axs[1].axhline(y=cov_lim, color='r', linestyle='dashdot')
+            self.axs[0].annotate(f"$\\frac{{{int(cov_max)}_\\mathrm{{best}}}}{{{int(cov_lim)}_\\mathrm{{total}}}}$ = \\textbf{{{cov_max / cov_lim * 100 :.1f}\%}}",
+                                 xy=(0, cov_max + (top_lim - cov_max) / 2.2), xycoords="data",
+                                 va="center", ha="left", fontsize=MEDIUM_SIZE,
+                                 bbox=dict(boxstyle="round", fc="w"))
 
         if cov_type:
             cov_type += ' '
@@ -122,24 +135,18 @@ class Ploter:
 
         self.axs[0].set(
             xlabel='Time / Second',
-            ylabel=f'# {cov_type}Coverage')
-        self.axs[0].set_title('Coverage $\\bf{Time}$ Efficiency')
-        self.axs[0].grid(alpha=0.5)
+            ylabel=f'\# {cov_type}Coverage')
+        self.axs[0].grid(alpha=0.5, ls=':')
 
         if not self.one_plot:
-            self.axs[1].set(
-                # ylabel=f'# {cov_type}Coverage',
-                xlabel='# Iteration')
-            self.axs[1].set_yticklabels([])
-            self.axs[1].set_title('Coverage $\\bf{Iteration}$ Efficiency')
-            self.axs[1].grid(alpha=0.5)
-            # plt.setp(self.axs[1].get_xticklabels(), rotation=30,
-            #  horizontalalignment='right')
+            # hide title if only one plot.
+            self.axs[0].set_title('Time Efficiency')
 
-            # self.axs[2].set(
-            #     xlabel='Time / Second',
-            #     ylabel='# Iteration')
-            # self.axs[2].set_title('Iteration Speed')
+            self.axs[1].set(
+                xlabel='\# Iteration')
+            self.axs[1].set_yticklabels([])
+            self.axs[1].set_title('Iteration Efficiency')
+            self.axs[1].grid(alpha=0.5, ls=':')
 
         if self.use_pdf:
             self.fig.savefig(save + '.pdf')
@@ -231,7 +238,7 @@ def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag=''
         bf = max(bf, bf_)
 
     branch_ploter.plot(save=os.path.join(
-        folder, target_tag + pass_tag + 'branch_cov'), cov_type='Branch', cov_lim=bf)
+        folder, target_tag + pass_tag + 'branch_cov'), cov_type='Branch', cov_lim=bf, loc=7 if ('ort' in target_tag) else 0)
 
     if not venn:
         return
@@ -358,8 +365,5 @@ if '__main__' == __name__:
     if pass_filter is not None:
         plot_one_round(folder=args.output, data=data,
                        pass_filter=pass_filter, pass_tag='opt_', tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, one_plot=True, gen_time=gen_time, venn=args.venn)
-    if arith_filter is not None:
-        plot_one_round(folder=args.output, data=data,
-                       pass_filter=arith_filter, pass_tag='arith_', tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, gen_time=gen_time, venn=args.venn)
     plot_one_round(folder=args.output, data=data,
                    pass_filter=None, tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, gen_time=gen_time, venn=args.venn)  # no pass
