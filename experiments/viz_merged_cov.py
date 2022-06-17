@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-from matplotlib_venn import venn2, venn3
+from matplotlib_venn import venn2, venn3, _venn3
 import numpy as np
 
 import os
@@ -263,37 +263,40 @@ def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag=''
             v = venn2(subsets=branch_cov_sets, set_labels=[
                 f'$\\bf{{{t}}}$' for t in fuzz_tags], alpha=0.3)
         elif len(branch_cov_sets) == 3:
-            v = venn3(subsets=branch_cov_sets, set_labels=[
-                f'$\\bf{{{t}}}$' for t in fuzz_tags], alpha=0.3)
+            ks = ['100', '010', '110', '001', '101', '011', '111']
+            sets = {}
+            for k, val in zip(ks, _venn3.compute_venn3_subsets(*branch_cov_sets)):
+                sets[k] = val
+            v = venn3(subsets=(7, 7, 3, 7, 3, 3, 5), set_labels=[
+                      f'{t}' for t in fuzz_tags])
 
             for id in ['110', '101', '011']:
                 if v.get_label_by_id(id):
-                    v.get_label_by_id(id).set_text('')
+                    v.get_label_by_id(id).set_text(sets[id])
+                    v.get_patch_by_id(id).set_alpha(0.15)
+                    v.get_label_by_id(id).set_fontsize(MEDIUM_SIZE)
 
-            # v.get_label_by_id("100").set_x(v.get_label_by_id('100').get_position()[0] * 1.05)
-            # v.get_label_by_id("010").set_x(v.get_label_by_id('010').get_position()[0] * 1.3)
-            # v.get_label_by_id("001").set_x(v.get_label_by_id('001').get_position()[0] * 1.2)
-
-            h, l = [], []
-            hatches = ['\\', '.', '*']
-            circles = ['MediumVioletRed', 'SeaGreen', 'Lavender']
+            hatches = ['*', '.', '\\']
+            # circles = ['dodgerblue', 'MediumVioletRed', 'coral', 'white'] # colorful.
+            circles = ['k'] * 4  # chill man!
+            fcolors = ['lightblue', 'violet', 'navajowhite']
             for idx, id in enumerate(['100', '010', '001', '111']):
-                if v.get_label_by_id(id) is None:
+                if sets[id] == 0:
                     continue
-                cnt = int(v.get_label_by_id(id).get_text())
-                v.get_label_by_id(id).set_text('')
+                cnt = sets[id]
+                v.get_label_by_id(id).set_text(f'\\textbf{{{cnt}}}')
+                v.get_label_by_id(id).set_fontsize(BIGGER_SIZE + 4)
+                v.get_patch_by_id(id).set_edgecolor(circles[idx])
                 if id != '111':
-                    v.get_patch_by_id(id).set_alpha(0.5)
                     v.get_patch_by_id(id).set_hatch(hatches[idx])
-                    v.get_patch_by_id(id).set_edgecolor(circles[idx])
-                    v.get_patch_by_id(id).set_linewidth(2)
-                # append patch to handles list
-                h.append(v.get_patch_by_id(id))
-                # append count to labels list
-                l.append(cnt)
+                    v.get_patch_by_id(id).set_facecolor(fcolors[idx])
+                    # v.get_patch_by_id(id).set_linewidth(2)
+                else:
+                    v.get_patch_by_id(id).set_alpha(0.2)
 
-            plt.legend(handles=h, labels=l, title="counts", loc='lower right')
-    plt.title("Venn Diagram of Branch Coverage")
+        for text in v.set_labels:
+            text.set_fontsize(BIGGER_SIZE)
+
     plt.savefig(f'{os.path.join(folder, target_tag + pass_tag + "br_cov_venn")}.png',
                 bbox_inches='tight')
     if pdf:

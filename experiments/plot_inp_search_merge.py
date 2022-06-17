@@ -26,6 +26,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--root', type=str, nargs='+', required=True)
     parser.add_argument('--output', type=str, default='results')
+    parser.add_argument('--rm_slowest', action='store_true',
+                        help='Remove the slowest run')
     args = parser.parse_args()
 
     REGEX_PATTERN = '(\d+)-model-(\d+)-node-exp'
@@ -65,15 +67,17 @@ if __name__ == '__main__':
 
                 # Do not count the slowest iteration (1st iter usually)
                 # as initialization takes some time.
-                idx = data['sampling-time'].to_numpy().argsort()[:-2]
+                last_idx = -2 if args.rm_slowest else -1
+
+                idx = data['sampling-time'].to_numpy().argsort()[:last_idx]
                 sampling_time.append(data['sampling-time'][idx].mean())
                 sampling_succ_rate.append(data['sampling-succ'][idx].mean())
 
-                idx = data['grad-time'].to_numpy().argsort()[:-2]
+                idx = data['grad-time'].to_numpy().argsort()[:last_idx]
                 grad_time.append(data['grad-time'][idx].mean())
                 grad_succ_rate.append(data['grad-succ'][idx].mean())
 
-                idx = data['proxy-time'].to_numpy().argsort()[:-2]
+                idx = data['proxy-time'].to_numpy().argsort()[:last_idx]
                 proxy_time.append(data['proxy-time'][idx].mean())
                 proxy_succ_rate.append(data['proxy-succ'][idx].mean())
             elif f == 'model_info.csv':
@@ -95,6 +99,8 @@ if __name__ == '__main__':
     markeredgewidth = 1.2
     lw = 1.5
 
+    max_time = 0
+
     for i in range(3):
         c = colors[i]
         alpha = 1 - 0.36 * i
@@ -103,15 +109,22 @@ if __name__ == '__main__':
         grad_time, grad_succ_rate = grad_res[i]
         proxy_time, proxy_succ_rate = proxy_res[i]
 
-        ax.plot(proxy_time * 1000, proxy_succ_rate, marker=markers[0],
+        # self *= 1000: sec -> milli
+        sampling_time *= 1000
+        grad_time *= 1000
+        proxy_time *= 1000
+
+        ax.plot(proxy_time, proxy_succ_rate, marker=markers[0],
                 markeredgecolor=markercolor, markersize=markersize, markeredgewidth=markeredgewidth,
                 linestyle=':', color=c, lw=lw)
-        ax.plot(grad_time * 1000, grad_succ_rate, marker=markers[1],
+        ax.plot(grad_time, grad_succ_rate, marker=markers[1],
                 markeredgecolor=markercolor, markersize=markersize, markeredgewidth=markeredgewidth,
                 linestyle=':', color=c, lw=lw)
-        ax.plot(sampling_time * 1000, sampling_succ_rate, marker=markers[2],
+        ax.plot(sampling_time, sampling_succ_rate, marker=markers[2],
                 markeredgecolor=markercolor, markersize=markersize, markeredgewidth=markeredgewidth,
                 linestyle=':', color=c, lw=lw)
+
+        max_time = max(max_time, sampling_time.max())
 
     ax.grid(True, linestyle=':', linewidth=.5, alpha=0.5)
 
@@ -133,7 +146,7 @@ if __name__ == '__main__':
     ax.set_ylim(0.6, 1.0)
 
     ax.set_xticks(np.arange(0, 31, 5))
-    ax.set_xlim(0, 35)
+    ax.set_xlim(0, max_time + 0.5)
 
     ax.set_xlabel('Avg. Searching Time (millisecond)', fontweight='bold')
     ax.set_ylabel('Success Rate', fontweight='bold')
