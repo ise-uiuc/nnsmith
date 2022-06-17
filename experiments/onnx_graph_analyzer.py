@@ -52,9 +52,9 @@ def relay_op_cluster(mod, ignore_arg=False, verbose=False, use_counter=False):
 
             hash_str = f'{arg_type_str}@{attr_str}'
             if verbose:
-                print(f'[DENIG] statement={statement}')
+                print(f'[DEBUG] statement={statement}')
                 print(f'[DEBUG] op_str={op_str}')
-                print(f'[DENIG] arg_type_str={arg_type_str}')
+                print(f'[DEBUG] arg_type_str={arg_type_str}')
                 print(f'[DEBUG] attr_str={attr_str}')
                 print(f'[DEBUG] hash_str={hash_str}')
 

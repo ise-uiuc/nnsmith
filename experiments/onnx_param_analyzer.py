@@ -230,7 +230,8 @@ if __name__ == '__main__':
     #   merge redundancy;
     #      -> param-free element wise ops
     unary_pf_ew = ['abs', 'acos', 'cos', 'asin', 'sin', 'ceil', 'floor', 'log', 'logical_not',
-                   'atan', 'tan', 'erf', 'negative', 'nn.relu', 'round', 'sigmoid', 'sqrt']
+                   'atan', 'tan', 'erf', 'negative', 'nn.relu', 'round', 'sigmoid', 'sqrt', 'clip', 'cast', 'nn.prelu',
+                   'nn.leaky_relu']
     bin_pf_ew = ['add', 'divide', 'equal', 'floor_mod', 'greater', 'multiply', 'subtract',
                  'less', 'logical_and', 'logical_or', 'logical_xor', 'maximum', 'minimum', 'power']
     simple_reduce_ops = ['sum', 'min', 'max', 'mean']
@@ -276,8 +277,8 @@ if __name__ == '__main__':
     vals = np.array(vals)
 
     legends = []
-    HATCHES = ['x', '-', 'X', '*', '|', '-', '.', '/', 'O', 'o', 'x', '\\']
-    COLORS = ['blue', 'orange']
+    HATCHES = ['x', None]
+    COLORS = ['lightblue', 'dodgerblue']
 
     fig, ax = plt.subplots(
         1, 1, constrained_layout=True, figsize=(15, 8))
@@ -296,13 +297,14 @@ if __name__ == '__main__':
 
         x_pos = base_x  # - 0.5 * col_width + (idx + 0.5) * bar_width
         ax.bar(x_pos, pv,
-               width=bar_width, label=tag, yerr=None, color=COLORS[idx], align='center', hatch=HATCHES[idx], alpha=0.35)
+               width=bar_width, label=tag, color=COLORS[idx], align='center',
+               hatch=HATCHES[idx], edgecolor='k', linewidth=3)
 
     for x, v in zip(base_x, vals.max(axis=0) / vals.min(axis=0)):
-        ax.text(x - bar_width * 0.6, v + 0.15, f'{v:.1f}x',
-                fontweight='bold', fontsize=SMALL_SIZE)
+        ax.text(x - bar_width * 0.55, v + 0.15, f'{v:.1f}$\\times$',
+                fontweight='bold', fontsize=MEDIUM_SIZE, fontname='Times New Roman')
 
-    plt.grid(alpha=0.3)
+    ax.get_yaxis().set_ticks([])
     plt.legend(legends)
 
     xticks = []
@@ -313,6 +315,6 @@ if __name__ == '__main__':
     # plt.gcf().subplots_adjust(left=base_x[0] - 1, right=base_x[-1] + 1)
     # fig.subplots_adjust(left=base_x[0] - 1, right=base_x[-1] + 1)
     # plt.xlabel('# Operators in Models w/ Vulnerable Op.', fontweight='bold')
-    plt.ylabel('# Unique Op. Instance', fontweight='bold')
+    plt.ylabel('Unique Operator Instances', fontweight='bold')
     plt.savefig(os.path.join(args.output, 'param_diff.pdf'))
     plt.savefig(os.path.join(args.output, 'param_diff.png'))
