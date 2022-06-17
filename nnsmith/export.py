@@ -74,6 +74,8 @@ def torch2onnx(model: SymbolNet, filename, verbose=False, use_cuda=False, dummy_
         with warnings.catch_warnings():
             warnings.simplefilter(
                 "default" if verbose else "ignore", category=torch.jit.TracerWarning)
+            warnings.simplefilter(
+                "default" if verbose else "ignore", category=UserWarning, append=True)
             model.to(dev)
             model.eval()
             torch.onnx.export(
