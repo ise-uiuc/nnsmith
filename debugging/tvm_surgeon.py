@@ -33,7 +33,8 @@ class PrintIR:
         self.pass_cnt += 1
 
 
-def from_onnx(model_path, select=None, target="llvm", viz_out=None, print_pass=False, cmp=True, opt_level=4, executor='graph'):
+def from_onnx(model_path, select=None, target="llvm", viz_out=None, print_pass=False, cmp=True,
+              opt_level=4, executor='graph', device=None):
     """Load onnx model and convert it to Relay module."""
     onnx_model = BackendFactory.get_onnx_proto(model_path)
     inp_spec, onames = BackendFactory.analyze_onnx_io(onnx_model)
@@ -46,12 +47,12 @@ def from_onnx(model_path, select=None, target="llvm", viz_out=None, print_pass=F
     inp = {name: np.random.uniform(size=shape_dict[name]).astype(
         inp_spec[name].dtype) for name in shape_dict}
     print('-' * 50, 'running opt')
-    with tvm.transform.PassContext(opt_level=4, instruments=[PrintIR()] if print_pass else []):
+    with tvm.transform.PassContext(opt_level=opt_level, instruments=[PrintIR()] if print_pass else []):
         mod, _ = relay.optimize(mod, target=target)
         if viz_out:
             onnx_viz.visualize(mod, viz_out)
         res = relay.build_module.create_executor(
-            'graph', mod, target=target, device=tvm.cuda() if target == 'cuda' else tvm.cpu()).evaluate()(**inp)
+            executor, mod, target=target, device=tvm.cuda() if target == 'cuda' else tvm.cpu()).evaluate()(**inp)
     if cmp:
         print('-' * 50, 'running debug')
         with tvm.transform.PassContext(opt_level=0):
@@ -76,8 +77,9 @@ parser.set_defaults(cmp=True)
 parser.add_argument('--no_cmp', action='store_false', dest='cmp')
 parser.add_argument('-O', '--opt_level', type=int, default=4)
 parser.add_argument('-e', '--executor', type=str, default='graph')
+parser.add_argument('-t', '--target', type=str, default='llvm')
 args = parser.parse_args()
 from_onnx(args.model, select=args.select,
           viz_out=args.viz_out, print_pass=args.print_pass, cmp=args.cmp,
-          opt_level=args.opt_level, executor=args.executor)
+          opt_level=args.opt_level, executor=args.executor, target=args.target)
 print('passed')
