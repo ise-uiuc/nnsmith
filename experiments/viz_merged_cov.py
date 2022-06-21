@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import matplotlib
 from matplotlib_venn import venn2, venn3, _venn3
 import numpy as np
 
@@ -7,21 +8,23 @@ import os
 import pandas as pd
 
 
-SMALL_SIZE = 8
+SMALL_SIZE = 11
 MEDIUM_SIZE = 15
 BIGGER_SIZE = 18
 
 plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
 plt.rc('axes', titlesize=MEDIUM_SIZE)     # fontsize of the axes title
 plt.rc('axes', labelsize=MEDIUM_SIZE)    # fontsize of the x and y labels
-plt.rc('xtick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
-plt.rc('ytick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
+plt.rc('xtick', labelsize=MEDIUM_SIZE)    # fontsize of the tick labels
+plt.rc('ytick', labelsize=MEDIUM_SIZE)    # fontsize of the tick labels
 plt.rc('legend', fontsize=MEDIUM_SIZE)    # legend fontsize
 plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
-MIN_FAC = 0.8
+MIN_FAC_TWO = None
+MIN_FAC_SINGLE = None
 
-plt.rcParams.update({"text.usetex": True})
+plt.rc('text', usetex=True)
+plt.rc('text.latex', preamble=r'\usepackage{xfrac}')
 
 
 class Ploter:
@@ -30,10 +33,10 @@ class Ploter:
         # cov / time, cov / iteration, iteration / time
         if not one_plot:
             fig, axs = plt.subplots(
-                1, 2, constrained_layout=True, figsize=(10, 4.5))
+                1, 2, constrained_layout=True, figsize=(10, 4))
         else:
             fig, axs = plt.subplots(
-                1, 1, constrained_layout=True, figsize=(7, 5.5))
+                1, 1, constrained_layout=True, figsize=(7, 4.8))
             axs = [axs]
         self.one_plot = one_plot
         self.fig = fig
@@ -109,12 +112,15 @@ class Ploter:
         cov_max = max(self.cov_maxes)
         cov_min = min(self.cov_maxes)
 
-        top_lim = cov_max + (cov_max - cov_min) * 0.21
+        top_lim = cov_max + (cov_max - cov_min) * 0.28
 
         if cov_lim is not None:
-            self.axs[0].annotate(f"$\\frac{{{int(cov_max)}_\\mathrm{{best}}}}{{{int(cov_lim)}_\\mathrm{{total}}}}$ = \\textbf{{{cov_max / cov_lim * 100 :.1f}\%}}",
+            ann_size = MEDIUM_SIZE + 2
+            if self.one_plot:
+                ann_size += 5
+            self.axs[0].annotate(f"$\\sfrac{{{int(cov_max)}_\\mathrm{{best}}}}{{{int(cov_lim)}_\\mathrm{{total}}}}$ = \\textbf{{{cov_max / cov_lim * 100 :.1f}\%}}",
                                  xy=(0, cov_max + (top_lim - cov_max) / 2.2), xycoords="data",
-                                 va="center", ha="left", fontsize=MEDIUM_SIZE,
+                                 va="center", ha="left", fontsize=ann_size,
                                  bbox=dict(boxstyle="round", fc="w"))
 
         if cov_type:
@@ -127,10 +133,13 @@ class Ploter:
                 self.axs[1].set_ylim(bottom=self.cov_lim,
                                      top=top_lim)
         else:
-            self.axs[0].set_ylim(bottom=cov_min * MIN_FAC,
-                                 top=top_lim)
             if not self.one_plot:
-                self.axs[1].set_ylim(bottom=cov_min * MIN_FAC,
+                self.axs[0].set_ylim(bottom=cov_min * MIN_FAC_TWO,
+                                     top=top_lim)
+                self.axs[1].set_ylim(bottom=cov_min * MIN_FAC_TWO,
+                                     top=top_lim)
+            else:
+                self.axs[0].set_ylim(bottom=cov_min * MIN_FAC_SINGLE,
                                      top=top_lim)
 
         self.axs[0].set(
@@ -259,6 +268,7 @@ def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag=''
 
     if len(branch_cov_sets) != 1:
         plt.clf()
+        plt.figure(figsize=(4.2, 4.2), constrained_layout=True)
         if len(branch_cov_sets) == 2:
             v = venn2(subsets=branch_cov_sets, set_labels=[
                 f'$\\bf{{{t}}}$' for t in fuzz_tags], alpha=0.3)
@@ -349,10 +359,12 @@ if '__main__' == __name__:
     arith_filter = None
     if args.tvm:
         arith_filter = tvm_arith_filter
-        MIN_FAC = 0.9
+        MIN_FAC_TWO = 0.92
+        MIN_FAC_SINGLE = 0.9
     elif args.ort:
         arith_filter = None
-        MIN_FAC = 0.82
+        MIN_FAC_TWO = 0.82
+        MIN_FAC_SINGLE = 0.7
     else:
         print(f'[WARNING] No pass filter is used (use --tvm or --ort)')
 
