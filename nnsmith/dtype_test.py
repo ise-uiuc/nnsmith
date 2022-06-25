@@ -142,7 +142,7 @@ def reset_node_t(node_t, success_idtypes, success_odtypes, verbose=False):
     node_t.out_dtypes = success_odtypes
 
 
-def rewrite_op_dtype(ops: List[AbsOpBase], diff=False, factory=None, verbose=False, cache=None, print_failures=False):
+def rewrite_op_dtype(ops: List[AbsOpBase], diff=False, factory=None, verbose=False, cache=None, print_failures=False, skip_i64_f64=False):
     ret_ops = []
 
     class TestNet(torch.nn.Module):
@@ -187,6 +187,10 @@ def rewrite_op_dtype(ops: List[AbsOpBase], diff=False, factory=None, verbose=Fal
         if verbose:
             note_print(f'===> Trying {node_t} # {idx}')
         available_idtypes = node_t.in_dtypes
+
+        if skip_i64_f64:  # TensorRT current doest not give a shit for i64/f64
+            available_idtypes = [
+                dt for dt in available_idtypes if DType.float64 not in dt and DType.int64 not in dt]
 
         op_param_n = node_t.get_num_var_param()
         op_params = [z3.Int('v%s-%s' % (idx, k))
@@ -280,4 +284,5 @@ if __name__ == '__main__':
     factory = mk_factory(args.backend, device=args.device)
 
     rewrite_op_dtype(ALL_OP_TYPES, factory=factory,
-                     diff=args.diff, verbose=True, cache=args.cache)
+                     diff=args.diff, verbose=True, cache=args.cache,
+                     skip_i64_f64=('trt' == args.backend))

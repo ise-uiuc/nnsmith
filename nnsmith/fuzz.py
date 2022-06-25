@@ -612,7 +612,8 @@ if __name__ == '__main__':
             ALL_OP_TYPES,
             factory=factory,
             cache=cache_file,
-            print_failures=True)
+            print_failures=True,
+            skip_i64_f64=('trt' == args.backend))
 
     config_skip_op(skip)
     fuzzing_loop = FuzzingLoop(
