@@ -73,8 +73,9 @@ if __name__ == '__main__':
     # -- reference backend:
     if args.cmp_with is not None:
         print(f'Using {args.cmp_with} as the reference backend/oracle')
+        # use optmin for the reference backend
         ref_backend = mk_factory(
-            args.cmp_with, device=args.device, optmax=not args.optmin).mk_backend(onnx_model)
+            args.cmp_with, device=args.device, optmax=False).mk_backend(onnx_model)
         oracle_outputs = ref_backend(test_inputs)
         if is_invalid(oracle_outputs):
             print(
