@@ -21,8 +21,12 @@ class HostDeviceMem(object):
 
 
 class TRTFactory(BackendFactory):
-    def __init__(self, device='cpu', optmax=True):
+    def __init__(self, device='gpu', optmax=True):
         self.name = 'trt'
+        if device != 'gpu':
+            warnings.warn(
+                f"TRT backend only supports GPU. {device} is ignored.")
+            device = 'gpu'
         if optmax is False:
             warnings.warn(
                 "Well, there's no O0 for TensorRT so far...")
