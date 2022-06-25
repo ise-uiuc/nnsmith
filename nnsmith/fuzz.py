@@ -601,22 +601,18 @@ if __name__ == '__main__':
     if not args.backend.startswith('tvm'):
         cache_file = f'config/fuzz_{args.backend}_{args.device}op_dtype.pkl'
 
-        def run():
-            rewrite_op_dtype(
-                ALL_OP_TYPES,
-                factory=factory,
-                cache=cache_file,
-                print_failures=True)
-        if not Path(cache_file).exists():
+        if Path(cache_file).exists():
+            print('Reading cached config file:', cache_file)
+        else:
             Path('config').mkdir(exist_ok=True)
             print(f'Warning: Op dtypes config file `{cache_file}` does not exist. '
                   'Inferring op dtype for the first run...')
-            p = Process(target=run)
-            p.start()
-            p.join()
-            assert p.exitcode == 0, 'Failed to infer op dtypes'
-        print('Reading cache config file:', cache_file)
-        run()
+
+        rewrite_op_dtype(
+            ALL_OP_TYPES,
+            factory=factory,
+            cache=cache_file,
+            print_failures=True)
 
     config_skip_op(skip)
     fuzzing_loop = FuzzingLoop(
