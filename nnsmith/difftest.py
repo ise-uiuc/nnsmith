@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarray], obtained_name: str, oracle_name: str,
-                    nan_as_err=False, mismatch_cnt_tol=0.01, safe_mode=False):
+                    nan_as_err=False, mismatch_cnt_tol=0.01, safe_mode=False, rtol=1e-2, atol=1e-3):
     # when safe_mode is turned on, it will use less memory
     err_msg = ''
     if obtained is None:
@@ -52,14 +52,14 @@ def assert_allclose(obtained: Dict[str, np.ndarray], desired: Dict[str, np.ndarr
                 eq = np.empty_like(ac, bool)
                 for i in range(0, ac.shape[0], STRIDE):
                     eq[i:i + STRIDE] = np.isclose(
-                        ac[i:i + STRIDE], de[i:i + STRIDE], rtol=1e-02, atol=1e-03)
+                        ac[i:i + STRIDE], de[i:i + STRIDE], rtol=rtol, atol=atol)
                 # allow 1% of mismatch elements
                 assert 1 - np.mean(eq) <= mismatch_cnt_tol, \
                     f'{(1-np.mean(eq))*100}% of mismatch'
             else:
-                eq = np.isclose(ac, de, rtol=1e-02, atol=1e-03)
+                eq = np.isclose(ac, de, rtol=rtol, atol=atol)
                 if 1 - np.mean(eq) > mismatch_cnt_tol:  # allow 1% of mismatch elements
-                    testing.assert_allclose(ac, de, rtol=1e-02, atol=1e-03)
+                    testing.assert_allclose(ac, de, rtol=rtol, atol=atol)
             index += 1
     except AssertionError as err:
         # print(err) # Mute.
