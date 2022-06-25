@@ -46,9 +46,18 @@ if __name__ == '__main__':
     oracle = None
     oracle_outputs = None
     # -- oracle:
+    if args.oracle == 'auto':
+        args.oracle = args.model.replace('model.onnx', 'oracle.pkl')
+
     if args.oracle is not None:
         print('Using oracle from:', args.oracle)
-        test_inputs, oracle_outputs = pickle.load(Path(args.oracle).open('rb'))
+        res = pickle.load(Path(args.oracle).open('rb'))
+        test_inputs, oracle_outputs = res[0], res[1]
+        num_must_valid = res[2] if len(res) == 3 else False
+        if not num_must_valid:
+            print('Inputs from oracle might cause NaN/Inf compute.')
+        else:
+            print('Inputs from oracle should be valid.')
     # -- raw_input:
     else:
         if args.raw_input is not None:

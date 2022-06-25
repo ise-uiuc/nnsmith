@@ -388,7 +388,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             path + '-graph.pkl', 'wb'), protocol=4)
         self.rich_profile['succ_gen'] = np.append(
             self.rich_profile['succ_gen'], [gen_time])
-        return {ina: inp for ina, inp in zip(inames, inputs)}, {onames[i]: outputs[i] for i in oidx}
+        return {ina: inp for ina, inp in zip(inames, inputs)}, {onames[i]: outputs[i] for i in oidx}, sat_inputs is not None
 
     def difftest(self, onnx_model, oracle_path, redirect_log=None):
         if redirect_log is not None:
@@ -505,9 +505,11 @@ class FuzzingLoop:  # TODO: Support multiple backends.
                         with warnings.catch_warnings():  # just shutup.
                             warnings.simplefilter("ignore")
                             self.cur_seed = seed = random.getrandbits(32)
-                            inps, outs = self.testcase_gen(onnx_path, seed)
+                            inps, outs, numvalid = self.testcase_gen(
+                                onnx_path, seed)
                             with open(oracle_path, 'wb') as f:
-                                pickle.dump((inps, outs), f)  # store oracle.
+                                # store oracle.
+                                pickle.dump((inps, outs, numvalid), f)
                     except Exception as e:
                         print(f'Fail when seed={seed}')
                         print(e)  # Skip a few errors.
@@ -597,7 +599,7 @@ if __name__ == '__main__':
     factory = mk_factory(args.backend, device=args.device)
 
     if not args.backend.startswith('tvm'):
-        cache_file = f'config/fuzz_{args.backend}_op_dtype.pkl'
+        cache_file = f'config/fuzz_{args.backend}_{args.device}op_dtype.pkl'
 
         def run():
             rewrite_op_dtype(
