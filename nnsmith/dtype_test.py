@@ -3,6 +3,7 @@ import warnings
 import pickle
 import os
 import random
+from termcolor import colored
 
 import z3
 import torch
@@ -10,8 +11,13 @@ import numpy as np
 import onnx
 
 from nnsmith.abstract.op import ALL_OP_TYPES, ALL_OP_STR2TYPE, AbsOpBase, DType, ShapeVar, concretize, Input, Constant
-from nnsmith.backends import BackendFactory
+from nnsmith.backends import BackendFactory, mk_factory
 from nnsmith.util import gen_one_input
+
+
+def succ_print(x): return print(colored(x, 'green'))
+def fail_print(x): return print(colored(x, 'red'))
+def note_print(x): return print(colored(x, 'yellow'))
 
 
 def _differentiable_test(model, available_idtypes, concrete_input_shapes, oranks, verbose=False):
@@ -48,7 +54,7 @@ def _differentiable_test(model, available_idtypes, concrete_input_shapes, oranks
 
         if not differntiable:
             if verbose:
-                print(f'=====> [Undifferntiable] at {itypes}')
+                fail_print(f'=====> [Undifferntiable] at {itypes}')
             continue
 
         otypes = []
@@ -64,7 +70,7 @@ def _differentiable_test(model, available_idtypes, concrete_input_shapes, oranks
         success_idtypes.append(itypes)
         success_odtypes.add(tuple(otypes))
         if verbose:
-            print(f'=====> [Success] {itypes}')
+            succ_print(f'=====> [Success] {itypes}')
     success_odtypes = list(success_odtypes)
 
     return success_idtypes, success_odtypes
@@ -98,13 +104,13 @@ def _inference_test(model, factory: BackendFactory, available_idtypes, concrete_
                     factory.mk_backend(onnx_model)(eval_inputs)
         except Exception as e:
             if verbose:
-                print(f'=====> [Failure] at {itypes}')
+                fail_print(f'=====> [Failure] at {itypes}')
             if 'onnxruntime.capi.onnxruntime_pybind11_state.NotImplemented' in str(type(e)) or \
                     "Unexpected data type for" in str(e):
                 continue
             if 'DiagnosticError: one or more error diagnostics were emitted, please check diagnostic render for output' in str(type(e)):
                 continue
-            print(e)
+            fail_print(e)
 
         success_idtypes.append(itypes)
         otypes = []
@@ -117,7 +123,7 @@ def _inference_test(model, factory: BackendFactory, available_idtypes, concrete_
             otypes[i] = DType.from_str(str(otypes[i]).split('.')[-1])
         success_odtypes.add(tuple(otypes))
         if verbose:
-            print(f'=====> [Success] {itypes}')
+            succ_print(f'=====> [Success] {itypes}')
     success_odtypes = list(success_odtypes)
 
     return success_idtypes, success_odtypes
@@ -128,9 +134,9 @@ def reset_node_t(node_t, success_idtypes, success_odtypes, verbose=False):
         diffi = set(node_t.in_dtypes) - set(success_idtypes)
         diffo = set(node_t.out_dtypes) - set(success_odtypes)
         if len(diffi) > 0:
-            print(f'=====> [Failure] {node_t.__name__}: idtypes: {diffi}')
+            fail_print(f'=====> [Failure] {node_t.__name__}: idtypes: {diffi}')
         if len(diffo) > 0:
-            print(f'=====> [Failure] {node_t.__name__}: odtypes: {diffo}')
+            fail_print(f'=====> [Failure] {node_t.__name__}: odtypes: {diffo}')
 
     node_t.in_dtypes = success_idtypes
     node_t.out_dtypes = success_odtypes
@@ -179,7 +185,7 @@ def rewrite_op_dtype(ops: List[AbsOpBase], diff=False, factory=None, verbose=Fal
             continue
 
         if verbose:
-            print(f'===> Trying {node_t} # {idx}')
+            note_print(f'===> Trying {node_t} # {idx}')
         available_idtypes = node_t.in_dtypes
 
         op_param_n = node_t.get_num_var_param()
@@ -219,7 +225,7 @@ def rewrite_op_dtype(ops: List[AbsOpBase], diff=False, factory=None, verbose=Fal
         model = TestNet(concrete_op)
 
         if verbose:
-            print(f'=====> [Testing] {node_t}')
+            note_print(f'=====> [Testing] {node_t}')
 
         if diff:
             success_idtypes, success_odtypes = _differentiable_test(
@@ -235,7 +241,7 @@ def rewrite_op_dtype(ops: List[AbsOpBase], diff=False, factory=None, verbose=Fal
         if len(success_idtypes) != 0 and len(success_odtypes) != 0:
             ret_ops.append(node_t)
         elif verbose or print_failures:
-            print('=====> [Failure] exclude op', node_t)
+            fail_print('=====> [Failure] exclude op', node_t)
 
         if make_cache:
             cache_dict[str(node_t)] = (success_idtypes, success_odtypes)
@@ -243,7 +249,7 @@ def rewrite_op_dtype(ops: List[AbsOpBase], diff=False, factory=None, verbose=Fal
     if make_cache:
         with open(cache, 'wb') as f:
             if verbose:
-                print(f'Writing cache to {cache}')
+                note_print(f'Writing cache to {cache}')
             pickle.dump(cache_dict, f)
 
     if reuse_cache:
@@ -258,6 +264,7 @@ if __name__ == '__main__':
     import numpy as np
     parser = argparse.ArgumentParser()
     parser.add_argument('--cache', default='config/ort_cpu_dtype.pkl')
+    parser.add_argument('--backend', default='ort')
     parser.add_argument('--device', default='cpu')
     parser.add_argument('--seed', default=233, type=int)
     parser.add_argument('--diff', action='store_true')
@@ -270,8 +277,7 @@ if __name__ == '__main__':
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
 
-    from nnsmith.backends.ort_graph import ORTFactory
-    backend = ORTFactory(device=args.device)
+    factory = mk_factory(args.backend, device=args.device)
 
-    rewrite_op_dtype(ALL_OP_TYPES, factory=backend,
+    rewrite_op_dtype(ALL_OP_TYPES, factory=factory,
                      diff=args.diff, verbose=True, cache=args.cache)
