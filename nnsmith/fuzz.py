@@ -599,7 +599,7 @@ if __name__ == '__main__':
     factory = mk_factory(args.backend, device=args.device)
 
     if not args.backend.startswith('tvm'):
-        cache_file = f'config/fuzz_{args.backend}_{args.device}op_dtype.pkl'
+        cache_file = f'config/fuzz_{args.backend}_{args.device}_op_dtype.pkl'
 
         if Path(cache_file).exists():
             print('Reading cached config file:', cache_file)
