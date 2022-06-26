@@ -753,21 +753,31 @@ class Where(TernaryOpBase):
 
 # bcast binary ops from https://github.com/onnx/onnx/blob/master/docs/Broadcasting.md
 # TODO bitwise_and/or/xor?
-Add = leaf(type('Add', (BcastBinaryOp1,), {'torch': lambda self: torch.add}))
-Sub = leaf(type('Sub', (BcastBinaryOp1,), {'torch': lambda self: torch.sub}))
-Mul = leaf(type('Mul', (BcastBinaryOp1,), {'torch': lambda self: torch.mul}))
+Add = leaf(type('Add', (BcastBinaryOp1,), {
+           'torch': lambda self: torch.add, '__module__': __name__}))
+Sub = leaf(type('Sub', (BcastBinaryOp1,), {
+           'torch': lambda self: torch.sub, '__module__': __name__}))
+Mul = leaf(type('Mul', (BcastBinaryOp1,), {
+           'torch': lambda self: torch.mul, '__module__': __name__}))
 # NOTE(JK): didn't find multi-input version of Max and Min in torch, so assume binary ops
-Max = leaf(type('Max', (BcastBinaryOp1,), {'torch': lambda self: torch.max}))
-Min = leaf(type('Min', (BcastBinaryOp1,), {'torch': lambda self: torch.min}))
+Max = leaf(type('Max', (BcastBinaryOp1,), {
+           'torch': lambda self: torch.max, '__module__': __name__}))
+Min = leaf(type('Min', (BcastBinaryOp1,), {
+           'torch': lambda self: torch.min, '__module__': __name__}))
 
-Equal = leaf(type('Equal', (Comparator,), {'torch': lambda self: torch.eq}))
+Equal = leaf(type('Equal', (Comparator,), {
+             'torch': lambda self: torch.eq, '__module__': __name__}))
 Greater = leaf(type('Greater', (Comparator,), {
-               'torch': lambda self: torch.gt}))
-Less = leaf(type('Less', (Comparator,), {'torch': lambda self: torch.lt}))
+               'torch': lambda self: torch.gt, '__module__': __name__}))
+Less = leaf(type('Less', (Comparator,), {
+            'torch': lambda self: torch.lt, '__module__': __name__}))
 
-And = leaf(type('And', (Logical,), {'torch': lambda self: torch.logical_and}))
-Or = leaf(type('Or', (Logical,), {'torch': lambda self: torch.logical_or}))
-Xor = leaf(type('Xor', (Logical,), {'torch': lambda self: torch.logical_xor}))
+And = leaf(type('And', (Logical,), {
+           'torch': lambda self: torch.logical_and, '__module__': __name__}))
+Or = leaf(type('Or', (Logical,), {
+          'torch': lambda self: torch.logical_or, '__module__': __name__}))
+Xor = leaf(type('Xor', (Logical,), {
+           'torch': lambda self: torch.logical_xor, '__module__': __name__}))
 
 # TODO: support exactly what onnx spec says (e.g., int support in the rhs)
 # lhs_dtypes = (DType.int32, DType.int64, DType.float32, DType.float64)
@@ -919,7 +929,8 @@ Div = leaf(type('Div', (BcastBinaryOp1,), {
     'torch': (lambda self:
               lambda x, y: torch.div(x, y, rounding_mode='floor' if DType(
                   x.dtype) in DTYPE_INTS else None)),
-    'torch_loss': lambda self, x, y: loss_gt_zero(torch.abs(y))
+    'torch_loss': lambda self, x, y: loss_gt_zero(torch.abs(y)),
+    '__module__': __name__
 }
 ))
 
