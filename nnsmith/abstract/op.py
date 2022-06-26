@@ -59,6 +59,15 @@ __MIN_RANK__ = 0
 __MAX_RANK__ = 5
 
 
+ALL_OP_TYPES = []
+
+
+def leaf(cls):
+    if cls not in ALL_OP_TYPES:
+        ALL_OP_TYPES.append(cls)
+    return cls
+
+
 def int_from(start):
     return tuple(range(start, __MAX_RANK__ + 1))
 
@@ -707,6 +716,7 @@ class Logical(BcastBinaryOp):  # logical and or xor
     _bcast_out_dtypes = [DType.bool]
 
 
+@leaf
 class Where(TernaryOpBase):
     bcastable = True
     in_dtypes = [(DType.bool, i, i) for i in DTYPE_NON_BOOLS]
@@ -743,29 +753,26 @@ class Where(TernaryOpBase):
 
 # bcast binary ops from https://github.com/onnx/onnx/blob/master/docs/Broadcasting.md
 # TODO bitwise_and/or/xor?
-Add = type('Add', (BcastBinaryOp1,), {'torch': lambda self: torch.add})
-Sub = type('Sub', (BcastBinaryOp1,), {'torch': lambda self: torch.sub})
-Mul = type('Mul', (BcastBinaryOp1,), {'torch': lambda self: torch.mul})
+Add = leaf(type('Add', (BcastBinaryOp1,), {'torch': lambda self: torch.add}))
+Sub = leaf(type('Sub', (BcastBinaryOp1,), {'torch': lambda self: torch.sub}))
+Mul = leaf(type('Mul', (BcastBinaryOp1,), {'torch': lambda self: torch.mul}))
 # NOTE(JK): didn't find multi-input version of Max and Min in torch, so assume binary ops
-Max = type('Max', (BcastBinaryOp1,), {'torch': lambda self: torch.max})
-Min = type('Min', (BcastBinaryOp1,), {'torch': lambda self: torch.min})
+Max = leaf(type('Max', (BcastBinaryOp1,), {'torch': lambda self: torch.max}))
+Min = leaf(type('Min', (BcastBinaryOp1,), {'torch': lambda self: torch.min}))
 
-Equal = type('Equal', (Comparator,), {'torch': lambda self: torch.eq})
-Greater = type('Greater', (Comparator,), {'torch': lambda self: torch.gt})
-Less = type('Less', (Comparator,), {'torch': lambda self: torch.lt})
+Equal = leaf(type('Equal', (Comparator,), {'torch': lambda self: torch.eq}))
+Greater = leaf(type('Greater', (Comparator,), {
+               'torch': lambda self: torch.gt}))
+Less = leaf(type('Less', (Comparator,), {'torch': lambda self: torch.lt}))
 
-And = type('And', (Logical,), {'torch': lambda self: torch.logical_and})
-Or = type('Or', (Logical,), {'torch': lambda self: torch.logical_or})
-Xor = type('Xor', (Logical,), {'torch': lambda self: torch.logical_xor})
+And = leaf(type('And', (Logical,), {'torch': lambda self: torch.logical_and}))
+Or = leaf(type('Or', (Logical,), {'torch': lambda self: torch.logical_or}))
+Xor = leaf(type('Xor', (Logical,), {'torch': lambda self: torch.logical_xor}))
 
 # TODO: support exactly what onnx spec says (e.g., int support in the rhs)
 # lhs_dtypes = (DType.int32, DType.int64, DType.float32, DType.float64)
 # rhs_dtypes = (DType.int32, DType.int64, DType.float32, DType.float64)
 # Pow.in_dtypes = itertools.product(lhs_dtypes, rhs_dtypes)
-
-# NOTE(JK): For Mean and Sum there is no corresponding torch op, so we ignore them
-# Sum = type('Sum', (BcastBinaryOp,), {'torch': lambda self: torch.sum})
-# Mean = type('Mean', (BcastBinaryOp,), {'torch': lambda self: torch.mean})
 
 
 class StopFoldConst(torch.nn.Module):
@@ -908,15 +915,16 @@ class LegacyConstant4D(Constant):
 
 
 # FIXME: Div will cause fuzzing crash.
-Div = type('Div', (BcastBinaryOp1,), {
+Div = leaf(type('Div', (BcastBinaryOp1,), {
     'torch': (lambda self:
               lambda x, y: torch.div(x, y, rounding_mode='floor' if DType(
                   x.dtype) in DTYPE_INTS else None)),
     'torch_loss': lambda self, x, y: loss_gt_zero(torch.abs(y))
 }
-)
+))
 
 
+@leaf
 class Pow(BcastBinaryOp):
     in_dtypes = [(i, i) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -940,6 +948,7 @@ class Pow(BcastBinaryOp):
                 out).any() or torch.any(out > math.exp(40)) for out in outputs])
 
 
+@leaf
 class GELU(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -951,6 +960,7 @@ class GELU(ElementWiseUnaryOp):
         return torch.nn.GELU()
 
 
+@leaf
 class LeakyReLU(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -965,6 +975,7 @@ class LeakyReLU(ElementWiseUnaryOp):
         return torch.nn.LeakyReLU(self.negative_slope)
 
 
+@leaf
 class PReLU(ElementWiseUnaryOp):
     in_dtypes = [(DType.float32,)]
     out_dtypes = [(DType.float32,)]
@@ -976,6 +987,7 @@ class PReLU(ElementWiseUnaryOp):
         return torch.nn.PReLU(device=_DEV)
 
 
+@leaf
 class Sigmoid(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -991,6 +1003,7 @@ class TrigonometricOp(ElementWiseUnaryOp):
     pass
 
 
+@leaf
 class Sin(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -1002,6 +1015,7 @@ class Sin(TrigonometricOp):
         return torch.sin
 
 
+@leaf
 class Cos(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -1013,6 +1027,7 @@ class Cos(TrigonometricOp):
         return torch.cos
 
 
+@leaf
 class Asin(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -1027,6 +1042,7 @@ class Asin(TrigonometricOp):
         return loss_le(x.abs(), 1)
 
 
+@leaf
 class Acos(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -1041,6 +1057,7 @@ class Acos(TrigonometricOp):
         return loss_le(x.abs(), 1)
 
 
+@leaf
 class Tan(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -1052,6 +1069,7 @@ class Tan(TrigonometricOp):
         return torch.tan
 
 
+@leaf
 class Atan(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -1063,6 +1081,7 @@ class Atan(TrigonometricOp):
         return torch.atan
 
 
+@leaf
 class Abs(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
 
@@ -1073,6 +1092,7 @@ class Abs(ElementWiseUnaryOp):
         return torch.abs
 
 
+@leaf
 class ReLU(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -1087,6 +1107,7 @@ class ReLU(ElementWiseUnaryOp):
         return PGReLU()
 
 
+@leaf
 class Ceil(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -1101,6 +1122,7 @@ class Ceil(ElementWiseUnaryOp):
         return PGCeil()
 
 
+@leaf
 class Floor(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -1115,6 +1137,7 @@ class Floor(ElementWiseUnaryOp):
         return PGFloor()
 
 
+@leaf
 class Clip(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
 
@@ -1130,6 +1153,7 @@ class Clip(ElementWiseUnaryOp):
         return PGClip(self.min, self.max)
 
 
+@leaf
 class Round(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -1144,6 +1168,7 @@ class Round(ElementWiseUnaryOp):
         return PGRound()
 
 
+@leaf
 class Sqrt(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -1158,6 +1183,7 @@ class Sqrt(ElementWiseUnaryOp):
         return loss_ge(x, 0)
 
 
+@leaf
 class Log2(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -1172,6 +1198,7 @@ class Log2(ElementWiseUnaryOp):
         return loss_gt_zero(x)
 
 
+@leaf
 class Neg(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
@@ -1183,6 +1210,7 @@ class Neg(ElementWiseUnaryOp):
         return torch.neg
 
 
+@leaf
 class Softmax(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -1278,11 +1306,13 @@ class Pool2d(UnaryOpBase):
         return [(4, out_shape_var[0].dtype)]
 
 
+@leaf
 class MaxPool2d(Pool2d):
     def torch(self) -> Callable[..., torch.Tensor]:
         return torch.nn.MaxPool2d(kernel_size=(self.kernel_h_size, self.kernel_w_size), stride=self.stride, padding=self.padding)
 
 
+@leaf
 class AvgPool2d(Pool2d):
     # TODO: model more
     # self.extra_attrs['ceil_mode'] = random.choice([False, True])
@@ -1293,6 +1323,7 @@ class AvgPool2d(Pool2d):
         return torch.nn.AvgPool2d(kernel_size=(self.kernel_h_size, self.kernel_w_size), stride=self.stride, padding=self.padding)
 
 
+@leaf
 class Slice(UnaryOpBase):
     # pytorch slice always exported as a stack of single-dim slices, so only model sinlge-dim slice here
     # pytorch slice only supports forward slicing, so only model forward slicing here
@@ -1462,11 +1493,13 @@ class Pad(UnaryOpBase):
         return [(out_shape_var[0].ndims, out_shape_var[0].dtype)]
 
 
+@leaf
 class ConstPad(Pad):
     def __init__(self, *padding_list):
         super().__init__(padding_list, 'constant')
 
 
+@leaf
 class ReplicatePad(Pad):
     num_var_param = _pad_num_var_param(2, max=6)
 
@@ -1476,6 +1509,7 @@ class ReplicatePad(Pad):
         self.out_ranks = [int_range(len(padding_list) // 2 + 1, 4)]
 
 
+@leaf
 class ReflectPad(Pad):
     num_var_param = _pad_num_var_param(2, max=6)
 
@@ -1559,26 +1593,31 @@ class Expand(UnaryOpBase, ABC):
         ]
 
 
+@leaf
 class ExpandLast1(Expand):
     def __init__(self, expand_n: Union[int, z3.ExprRef]):
         super().__init__(expand_last_dim=1, expand_n=expand_n)
 
 
+@leaf
 class ExpandLast2(Expand):
     def __init__(self, expand_n: Union[int, z3.ExprRef]):
         super().__init__(expand_last_dim=2, expand_n=expand_n)
 
 
+@leaf
 class ExpandLast3(Expand):
     def __init__(self, expand_n: Union[int, z3.ExprRef]):
         super().__init__(expand_last_dim=3, expand_n=expand_n)
 
 
+@leaf
 class ExpandLast4(Expand):
     def __init__(self, expand_n: Union[int, z3.ExprRef]):
         super().__init__(expand_last_dim=4, expand_n=expand_n)
 
 
+@leaf
 class BatchNorm2d(ElementWiseUnaryOp):
     in_dtypes = [(DType.float32,)]
     out_dtypes = [(DType.float32,)]
@@ -1599,6 +1638,7 @@ class BatchNorm2d(ElementWiseUnaryOp):
         return torch.nn.BatchNorm2d(num_features=self.nfeat)
 
 
+@leaf
 class NCHWConv2d(UnaryOpBase):
     # FIXME: torch exporter does not support float64, may miss bugs
     in_dtypes = [(DType.float32,)]
@@ -1714,7 +1754,8 @@ def random_group(n, k):
     return ret
 
 
-class ReshapeBase(UnaryOpBase):
+@leaf
+class Reshape(UnaryOpBase):
     num_var_param = int_range(1, 4)
     in_dtypes = [(i,) for i in DTYPE_ALL]
     out_dtypes = [(i,) for i in DTYPE_ALL]
@@ -1843,11 +1884,8 @@ class ReshapeBase(UnaryOpBase):
         return [(-1, out_shape_var[0].dtype)]
 
 
-class Reshape(ReshapeBase):
-    pass
-
-
-class Flatten(ReshapeBase):
+@leaf
+class Flatten(Reshape):
     num_var_param = None
     # Inputs are target shape.
 
@@ -1860,6 +1898,7 @@ class Flatten(ReshapeBase):
         return lambda x: x.flatten().unsqueeze(0)
 
 
+@leaf
 class Transpose(UnaryOpBase):
     in_dtypes = [(i,) for i in DTYPE_ALL]
 
@@ -1929,11 +1968,13 @@ class InterpBase(UnaryOpBase):
         return [(out_shape_var[0].ndims, out_shape_var[0].dtype)]
 
 
+@leaf
 class NearestInterp(InterpBase):
     def torch(self) -> Callable[..., torch.Tensor]:
         return lambda x: torch.nn.functional.interpolate(x, size=self.size, mode='nearest')
 
 
+@leaf
 class LinearInterp(InterpBase):
     num_var_param = [1]
 
@@ -1941,6 +1982,7 @@ class LinearInterp(InterpBase):
         return lambda x: torch.nn.functional.interpolate(x, size=self.size, mode='linear')
 
 
+@leaf
 class BilinearInterp(InterpBase):
     num_var_param = [2]
 
@@ -1948,6 +1990,7 @@ class BilinearInterp(InterpBase):
         return lambda x: torch.nn.functional.interpolate(x, size=self.size, mode='bilinear')
 
 
+@leaf
 class BicubicInterp(InterpBase):
     num_var_param = [2]
 
@@ -1955,6 +1998,7 @@ class BicubicInterp(InterpBase):
         return lambda x: torch.nn.functional.interpolate(x, size=self.size, mode='bicubic')
 
 
+@leaf
 class TrilinearInterp(InterpBase):
     num_var_param = [3]
 
@@ -2002,6 +2046,7 @@ class ReduceBase(UnaryOpBase, ABC):
         return [(self._get_irank(out_shape_var[0].ndims), out_shape_var[0].dtype)]
 
 
+@leaf
 class Squeeze(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_ALL]
 
@@ -2018,6 +2063,7 @@ class Squeeze(ReduceBase):
             return lambda x: x.squeeze()
 
 
+@leaf
 class ReduceSum(ReduceBase):
     # pytorch exporter doesn't support int32
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS if i != DType.int32]
@@ -2029,6 +2075,7 @@ class ReduceSum(ReduceBase):
         return lambda x: x.sum()
 
 
+@leaf
 class ReduceMin(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
@@ -2039,6 +2086,7 @@ class ReduceMin(ReduceBase):
         return lambda x: x.min()
 
 
+@leaf
 class ReduceMax(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
@@ -2049,6 +2097,7 @@ class ReduceMax(ReduceBase):
         return lambda x: x.max()
 
 
+@leaf
 class ReduceMean(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -2059,6 +2108,7 @@ class ReduceMean(ReduceBase):
         return lambda x: x.mean()
 
 
+@leaf
 class ArgMin(ReduceBase):
     # FIXME(JK): ints are somehow not supported in onnxruntime, which we use to gen inputs.
     # Make it include ints once we use other backends other than onnxruntime.
@@ -2075,6 +2125,7 @@ class ArgMin(ReduceBase):
         return [(self._get_irank(out_shape_var[0].ndims), random.choice(self.in_dtypes)[0])]
 
 
+@leaf
 class ArgMax(ReduceBase):
     # FIXME(JK): ints are somehow not supported in onnxruntime, which we use to gen inputs.
     # Make it include ints once we use other backends other than onnxruntime.
@@ -2091,6 +2142,7 @@ class ArgMax(ReduceBase):
         return [(self._get_irank(out_shape_var[0].ndims), random.choice(self.in_dtypes)[0])]
 
 
+@leaf
 class Linear(UnaryOpBase):
     in_dtypes = [(DType.float32,)]
     out_dtypes = [(DType.float32,)]
@@ -2179,6 +2231,7 @@ class Concat(AbsOpBase):
 
 
 # the semantic of `in_dtypes` is not possible dtypes in "max rank". but simply in "rank". don't mess up the definition.
+@leaf
 class Concat1(Concat):
     in_dtypes = [(i,) for i in DTYPE_ALL]
 
@@ -2186,6 +2239,7 @@ class Concat1(Concat):
         super().__init__(1)
 
 
+@leaf
 class Concat2(Concat):
     in_dtypes = [(i, i) for i in DTYPE_ALL]
 
@@ -2193,6 +2247,7 @@ class Concat2(Concat):
         super().__init__(2)
 
 
+@leaf
 class Concat3(Concat):
     in_dtypes = [(i, i, i) for i in DTYPE_ALL]
 
@@ -2200,6 +2255,7 @@ class Concat3(Concat):
         super().__init__(3)
 
 
+@leaf
 class Concat4(Concat):
     in_dtypes = [(i, i, i, i) for i in DTYPE_ALL]
 
@@ -2207,6 +2263,7 @@ class Concat4(Concat):
         super().__init__(4)
 
 
+@leaf
 class Concat5(Concat):
     in_dtypes = [(i, i, i, i, i) for i in DTYPE_ALL]
 
@@ -2242,6 +2299,7 @@ class Cast(ElementWiseUnaryOp, ABC):
         return lambda x: x.to(dtype=self.extra_attrs['to'].value)
 
 
+@leaf
 class CastF32(Cast):
     out_dtypes = [(DType.float32,)]
 
@@ -2249,6 +2307,7 @@ class CastF32(Cast):
         super().__init__(DType.float32)
 
 
+@leaf
 class CastF64(Cast):
     out_dtypes = [(DType.float64,)]
 
@@ -2256,6 +2315,7 @@ class CastF64(Cast):
         super().__init__(DType.float64)
 
 
+@leaf
 class CastI32(Cast):
     out_dtypes = [(DType.int32,)]
 
@@ -2263,6 +2323,7 @@ class CastI32(Cast):
         super().__init__(DType.int32)
 
 
+@leaf
 class CastI64(Cast):
     out_dtypes = [(DType.int64,)]
 
@@ -2270,6 +2331,7 @@ class CastI64(Cast):
         super().__init__(DType.int64)
 
 
+@leaf
 class CastBool(Cast):
     out_dtypes = [(DType.bool,)]
 
@@ -2277,6 +2339,7 @@ class CastBool(Cast):
         super().__init__(DType.bool)
 
 
+@leaf
 class Gemm(TernaryOpBase):
     # https://pytorch.org/docs/stable/generated/torch.addmm.html?highlight=addmm#torch.addmm
     in_dtypes = [(i, i, i) for i in DTYPE_NON_BOOLS]
@@ -2331,39 +2394,6 @@ class Gemm(TernaryOpBase):
         ]
 
 
-def _glob_leaf_op_classes() -> List[Type[AbsOpBase]]:
-    ret = []
-
-    def _glob_leaf_op_classes_rec(cls):
-        nonlocal ret
-        if cls is Input or cls is Constant:
-            return
-        for c in cls.__subclasses__():
-            if c.__subclasses__():
-                _glob_leaf_op_classes_rec(c)
-            else:
-                ret.append(c)
-    _glob_leaf_op_classes_rec(AbsOpBase)
-    return ret
-
-
-def _glob_nonleaf_op_classes() -> List[Type[AbsOpBase]]:
-    ret = []
-
-    def _glob_nonleaf_op_classes_rec(cls):
-        nonlocal ret
-        if cls is Input or cls is Constant:
-            return
-        for c in cls.__subclasses__():
-            if c.__subclasses__():
-                _glob_nonleaf_op_classes_rec(c)
-                ret.append(c)
-    _glob_nonleaf_op_classes_rec(AbsOpBase)
-    return ret
-
-
-ALL_NON_LEAF_OP_TYPES = _glob_nonleaf_op_classes()
-ALL_OP_TYPES = _glob_leaf_op_classes()
 ALL_OP_STR2TYPE = {c.__name__: c for c in ALL_OP_TYPES}
 EXPANDED_OP_V0 = [Cast, Expand, TrigonometricOp,
                   Comparator, Logical, InterpBase]
@@ -2485,7 +2515,6 @@ if __name__ == '__main__':
     # Test shape functions
     print(len(ALL_OP_TYPES), 'operators supported:')
     print(ALL_OP_STR2TYPE.keys())
-    print('Non leaf ops: ', ALL_NON_LEAF_OP_TYPES)
     assert Reshape in ALL_OP_TYPES
     auto_infer_in_dtypes()
 
