@@ -60,15 +60,14 @@ class TRTFactory(BackendFactory):
         network = builder.create_network(1 << (int)(
             trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
         config = builder.create_builder_config()
+        config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 2 << 30)
         parser = trt.OnnxParser(network, trt.Logger(trt.Logger.WARNING))
-
-        config.max_workspace_size = 1 * 1 << 30
         # Load the Onnx model and parse it in order to populate the TensorRT network.
         if not parser.parse(onnx._serialize(onnx_model)):
-            print('ERROR: Failed to parse the ONNX file.')
+            error_msg = ''
             for error in range(parser.num_errors):
-                print(parser.get_error(error))
-            return None
+                error_msg += str(parser.get_error(error))
+            raise RuntimeError(error_msg)
         return builder.build_engine(network, config)
 
     @staticmethod
