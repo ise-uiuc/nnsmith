@@ -88,15 +88,15 @@ if __name__ == '__main__':
     if is_invalid(this_outputs):
         print(f'[WARNING] Backend {args.backend} produces nan/inf in output.')
 
+    if args.dump_raw is not None:
+        print('Storing (input,output,oracle_outputs) pair to:', args.dump_raw)
+        pickle.dump((test_inputs, this_outputs, oracle_outputs),
+                    open(args.dump_raw, 'wb'))
+
     # Step 3: Compare
     if oracle_outputs is not None:
         difftest.assert_allclose(this_outputs, oracle_outputs,
                                  args.backend, args.cmp_with if args.cmp_with else "oracle")
         print('Differential testing passed!')
-
-    if args.dump_raw is not None:
-        print('Storing (input,output,oracle_outputs) pair to:', args.dump_raw)
-        pickle.dump((test_inputs, this_outputs, oracle_outputs),
-                    open(args.dump_raw, 'wb'))
 
     print(f'Total time: {time.time() - st}')
