@@ -29,7 +29,7 @@ from nnsmith.dtype_test import rewrite_op_dtype
 from nnsmith.abstract.op import ALL_OP_TYPES
 
 
-def mknet(args, differentiable_ops):
+def mknet(args, differentiable_ops=None):
     model_seed = random.getrandbits(32)
     gen, solution = random_model_gen(
         mode=args.mode, seed=model_seed, max_nodes=args.max_nodes,
@@ -91,7 +91,7 @@ def mknets(args, exp_seed):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--max_nodes', type=int, default=25)
+    parser.add_argument('--max_nodes', type=int, default=20)
     parser.add_argument('--exp-seed', type=int)
     parser.add_argument('--max_sample', type=int, default=1)
     parser.add_argument('--max_time_ms', type=int, default=500)
@@ -215,7 +215,7 @@ if __name__ == '__main__':
 
             net.check_intermediate_numeric = True
             with torch.no_grad():
-                _ = net(*net.get_random_inps(base=0,
+                _ = net(*net.get_random_inps(base='center',
                         margin=1, use_cuda=args.use_cuda))
                 results['naive-succ'].append(not net.invalid_found_last)
 
