@@ -93,6 +93,7 @@ if __name__ == '__main__':
                 oracle_path=oracle_path,
                 message=to_repro + '\n' + str(exception),
                 bug_type=category + type(exception).__name__,
+                backend=args.backend
             )
 
         try:
