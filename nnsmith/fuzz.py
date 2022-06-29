@@ -48,10 +48,18 @@ def locate_crash_testcase(batch_path):
     return (os.path.join(batch_path, f'{idx}.onnx'), os.path.join(batch_path, f'{idx}.pkl'))
 
 
-def simple_bug_report(report_folder, buggy_onnx_path, oracle_path=None, message='', bug_type='unknown'):
+def is_known(backend, message):
+    s = "[ONNXRuntimeError] : 6 : RUNTIME_EXCEPTION : Exception during initialization: /onnxruntime_src/onnxruntime/core/optimizer/relu_clip_fusion.cc:77 virtual onnxruntime::common::Status onnxruntime::FuseReluClip::Apply(onnxruntime::Graph&, onnxruntime::Node&, onnxruntime::RewriteRule::RewriteRuleEffect&, const onnxruntime::logging::Logger&) const Unexpected data type for Clip 'min' input of 11':"
+    if backend == 'ort' and message.find(s) != -1:
+        return True
+    return False
+
+
+def simple_bug_report(report_folder, buggy_onnx_path, oracle_path=None, message='', bug_type='unknown', backend=None):
     if report_folder is None:
         return
-
+    if is_known(backend, message):
+        return
     n_bug = len(glob.glob(os.path.join(report_folder, 'bug-*')))
     dir = os.path.join(report_folder, f'bug-{bug_type}-{n_bug}')
     os.mkdir(dir)
