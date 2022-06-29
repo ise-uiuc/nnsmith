@@ -2522,7 +2522,7 @@ def auto_infer_in_dtypes(verbose=False):
             op_t.in_dtypes = valid_combs
 
 
-if __name__ == '__main__':
+def main():
     # Test shape functions
     print(len(ALL_OP_TYPES), 'operators supported:')
     print(ALL_OP_STR2TYPE.keys())
@@ -2634,3 +2634,7 @@ if __name__ == '__main__':
     assert concrete_op.kernel_w_size == model[p1].as_long()
     assert concrete_op.stride == model[p2].as_long()
     assert concrete_op.padding == model[p3].as_long()
+
+
+if __name__ == '__main__':
+    main()
