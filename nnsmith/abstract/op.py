@@ -1460,6 +1460,10 @@ class Pad(UnaryOpBase):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
+    def __str__(self) -> str:
+        attr = {'padding_list': self.padding_list}
+        return super().__str__() + ' ' + str(attr)
+
     def __init__(self, padding_list, pad_t):
         super().__init__()
         self.padding_list = padding_list
