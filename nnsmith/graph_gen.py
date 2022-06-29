@@ -108,7 +108,7 @@ class SymbolNet(nn.Module):
 
         tmp_op_output_map = {}  # node id -> output idx in tensors;
         shape_vars = {}
-        n_floats, flops = 0, 0
+        self.n_floats, self.flops = 0, 0
         for node_id in nx.topological_sort(graph):
             n_inp = graph.nodes[node_id]['nin']
             n_out = graph.nodes[node_id]['nout']
@@ -122,6 +122,9 @@ class SymbolNet(nn.Module):
             output_idx = [None] * n_out
             op = concretize(graph.nodes[node_id]['op'], model)
             self.concrete_graph.nodes[node_id]['op'] = op
+            self.concrete_graph.add_node(node_id, op=op, label=textwrap.fill(
+                f'#{node_id} ~ {op}', width=30))
+            self.concretize_svars(node_id, shape_vars, model, op)
 
             # Glob inputs
             for from_node, _, (out_idx, in_idx) in graph.in_edges(node_id, data='operand_idx'):
@@ -135,8 +138,13 @@ class SymbolNet(nn.Module):
                 # create fake output indices
                 output_idx = list(range(
                     tmp_op_output_map[node_id], tmp_op_output_map[node_id] + n_out))
-                for out_idx in output_idx:
+                for op_out_idx, out_idx in enumerate(output_idx):
                     self.ref_cnt[out_idx] += 1
+                    self.concrete_graph.add_node(f'o{self.n_output}')
+                    svar = self.concrete_graph.nodes[node_id]['out_svs'][op_out_idx]
+                    self.concrete_graph.add_edge(
+                        node_id, f'o{self.n_output}', key=str(uuid.uuid1()),
+                        label=f'({op_out_idx},none) <{svar.dtype}>{svar.shape}')
                     self.n_output += 1
             else:
                 for _, _, (out_idx, in_idx) in out_edges:
@@ -161,36 +169,6 @@ class SymbolNet(nn.Module):
                 self.input_info.append(
                     InputInfo(op=op, oid=output_idx[0], node_id=node_id, input_name=f'i{op.idx}'))
 
-            # concretize shapevars
-            if self.alive_shapes is not None:
-                ishape_indices = self.graph.nodes[node_id]['ishape_indices']
-                shape_indices = self.graph.nodes[node_id]['shape_indices']
-                for shape_idx in shape_indices:
-                    shape = self.alive_shapes[shape_idx][1].shape
-                    dtype = self.alive_shapes[shape_idx][1].dtype
-                    shape = [model.eval(i).as_long() if isinstance(
-                        i, z3.ExprRef) else i for i in shape]
-                    assert shape_idx not in shape_vars, f"{shape_idx} already exists"
-                    shape_vars[shape_idx] = ShapeVar(shape, dtype)
-                self.concrete_graph.nodes[node_id]['in_svs'] = [
-                    shape_vars[i] for i in ishape_indices]
-                self.concrete_graph.nodes[node_id]['out_svs'] = [
-                    shape_vars[i] for i in shape_indices]
-                # ensure n_floats and flops within limit
-                tmp_inp = [shape_vars[i] for i in ishape_indices]
-                op.shape_fn(tmp_inp)
-                op_nfl = op.n_floats(tmp_inp)
-                if self.verbose:
-                    print(f"op: {op} nfloats: {op_nfl}")
-                n_floats += op_nfl
-                assert n_floats * 8 <= megabyte_lim * 1024 * \
-                    1024, f'Current number of elements ({n_floats/1024/1024}m) exceeded memory limit ({megabyte_lim} MB) Current op: {op}'
-                if FLOPS_LIM is not None:
-                    assert op.flops(
-                        tmp_inp) < FLOPS_LIM, f'Current number of flops ({op.flops(tmp_inp)}m) exceeded limit ({FLOPS_LIM} m). Current op: {op}'
-                # concretize edge attributes
-                self.concretize_edge(node_id)
-
         if self.verbose:
             print('input_info=', self.input_info)
         self.input_spec = {
@@ -205,6 +183,37 @@ class SymbolNet(nn.Module):
             self.enable_training()
         self.check_intermediate_numeric = False
         self.invalid_found_last = None
+
+    def concretize_svars(self, node_id, shape_vars, model, op):
+        # concretize shapevars
+        if self.alive_shapes is not None:
+            ishape_indices = self.graph.nodes[node_id]['ishape_indices']
+            shape_indices = self.graph.nodes[node_id]['shape_indices']
+            for shape_idx in shape_indices:
+                shape = self.alive_shapes[shape_idx][1].shape
+                dtype = self.alive_shapes[shape_idx][1].dtype
+                shape = [model.eval(i).as_long() if isinstance(
+                    i, z3.ExprRef) else i for i in shape]
+                assert shape_idx not in shape_vars, f"{shape_idx} already exists"
+                shape_vars[shape_idx] = ShapeVar(shape, dtype)
+            self.concrete_graph.nodes[node_id]['in_svs'] = [
+                shape_vars[i] for i in ishape_indices]
+            self.concrete_graph.nodes[node_id]['out_svs'] = [
+                shape_vars[i] for i in shape_indices]
+            # ensure n_floats and flops within limit
+            tmp_inp = [shape_vars[i] for i in ishape_indices]
+            op.shape_fn(tmp_inp)
+            op_nfl = op.n_floats(tmp_inp)
+            if self.verbose:
+                print(f"op: {op} nfloats: {op_nfl}")
+            self.n_floats += op_nfl
+            assert self.n_floats * 8 <= self.megabyte_lim * 1024 * \
+                1024, f'Current number of elements ({self.n_floats/1024/1024}m) exceeded memory limit ({self.megabyte_lim} MB) Current op: {op}'
+            if FLOPS_LIM is not None:
+                assert op.flops(
+                    tmp_inp) < FLOPS_LIM, f'Current number of flops ({op.flops(tmp_inp)}m) exceeded limit ({FLOPS_LIM} m). Current op: {op}'
+            # concretize edge attributes
+            self.concretize_edge(node_id)
 
     def concretize_edge(self, node_id):
         for u, v, key, data in self.concrete_graph.out_edges(node_id, data=True, keys=True):
