@@ -28,6 +28,7 @@ if __name__ == '__main__':
                         help='to generate random input data')
     parser.add_argument('--cmp_with', type=str, default=None,
                         help='the backend to compare with')
+    parser.add_argument('--print_output', action='store_true')
 
     # TODO: Add support for passing backend-specific options
     args = parser.parse_args()
@@ -92,6 +93,17 @@ if __name__ == '__main__':
         print('Storing (input,output,oracle_outputs) pair to:', args.dump_raw)
         pickle.dump((test_inputs, this_outputs, oracle_outputs),
                     open(args.dump_raw, 'wb'))
+
+    if args.print_output:
+        print('this_output=', this_outputs)
+        print('oracle_output=', oracle_outputs)
+        try:
+            difftest.assert_allclose(this_outputs, oracle_outputs,
+                                     args.backend, args.cmp_with if args.cmp_with else "oracle",
+                                     atol=0, rtol=0)
+        except Exception as e:
+            print('Errors=')
+            print(e)
 
     # Step 3: Compare
     if oracle_outputs is not None:
