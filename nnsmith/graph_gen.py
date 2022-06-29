@@ -188,6 +188,8 @@ class SymbolNet(nn.Module):
                 if FLOPS_LIM is not None:
                     assert op.flops(
                         tmp_inp) < FLOPS_LIM, f'Current number of flops ({op.flops(tmp_inp)}m) exceeded limit ({FLOPS_LIM} m). Current op: {op}'
+                # concretize edge attributes
+                self.concretize_edge(node_id)
 
         if self.verbose:
             print('input_info=', self.input_info)
@@ -203,6 +205,14 @@ class SymbolNet(nn.Module):
             self.enable_training()
         self.check_intermediate_numeric = False
         self.invalid_found_last = None
+
+    def concretize_edge(self, node_id):
+        for u, v, key, data in self.concrete_graph.out_edges(node_id, data=True, keys=True):
+            out_idx, in_idx = data['operand_idx']
+            shape_idx = data['shape_idx']
+            svar = self.concrete_graph.nodes[node_id]['out_svs'][out_idx]
+            self.concrete_graph.add_edge(
+                u, v, key=key, label=f'{shape_idx}: ({out_idx},{in_idx}) <{svar.dtype}>{svar.shape}')
 
     def to_picklable(self):
         self.alive_shapes = None
@@ -1563,6 +1573,12 @@ if __name__ == '__main__':
     ed_time = time.time()
 
     print('Time to generate inputs: {:.3f}s'.format(ed_time - input_st))
+
+    if args.verbose or args.viz_graph:
+        G = net.concrete_graph
+        nx.drawing.nx_pydot.write_dot(G, 'graph.dot')
+        filename = args.output_path + '-concrete.png'
+        os.system(f'dot -Tpng graph.dot > {filename} && rm graph.dot')
 
     stats = {
         'gen_succ': True,
