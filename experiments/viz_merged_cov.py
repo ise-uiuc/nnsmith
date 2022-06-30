@@ -28,7 +28,7 @@ plt.rc('text.latex', preamble=r'\usepackage{xfrac}')
 
 
 class Ploter:
-    def __init__(self, cov_lim=None, use_pdf=False, one_plot=False) -> None:
+    def __init__(self, cov_lim=None, use_pdf=False, one_plot=False, scale=1) -> None:
         # cov / time, cov / iteration, iteration / time
         if not one_plot:
             fig, axs = plt.subplots(
@@ -44,9 +44,11 @@ class Ploter:
         self.cov_maxes = []
         self.xspan = 0
         self.use_pdf = use_pdf
+        self.scale = scale
 
     def add(self, data, name=None):
         df = np.array(data)
+        df[:, 2] = df[:, 2] / self.scale
 
         LW = 2
         MARKER_SIZE = 10
@@ -82,7 +84,7 @@ class Ploter:
 
         self.axs[0].plot(df[:, 0], df[:, 2], label=name,
                          **style_kw)  # cov / time
-        print(f'----> max cov {df[:, 2].max()}')
+        print(f'----> max cov {df[:, 2].max() * self.scale}')
 
         if not self.one_plot:
             self.axs[1].plot(df[:, 1], df[:, 2], label=name,
@@ -93,7 +95,7 @@ class Ploter:
 
         self.cov_maxes.append(df[:, 2].max())
 
-    def plot(self, save='cov', cov_type='', cov_lim=None, loc=0):
+    def plot(self, save='cov', cov_lim=None, loc=0):
         handles, labels = self.axs[-1].get_legend_handles_labels()
         self.axs[-1].legend(handles[::-1], labels[::-1])
 
@@ -115,13 +117,11 @@ class Ploter:
             ann_size = MEDIUM_SIZE + 2
             if self.one_plot:
                 ann_size += 5
-            self.axs[0].annotate(f"$\\sfrac{{{int(cov_max)}_\\mathrm{{best}}}}{{{int(cov_lim)}_\\mathrm{{total}}}}$ = \\textbf{{{cov_max / cov_lim * 100 :.1f}\%}}",
+            max_cov_unscale = int(cov_max * self.scale)
+            self.axs[0].annotate(f"$\\sfrac{{{max_cov_unscale}_\\mathrm{{best}}}}{{{int(cov_lim)}_\\mathrm{{total}}}}$ = \\textbf{{{max_cov_unscale / cov_lim * 100 :.1f}\%}}",
                                  xy=(0, cov_max + (top_lim - cov_max) / 2.2), xycoords="data",
                                  va="center", ha="left", fontsize=ann_size,
                                  bbox=dict(boxstyle="round", fc="w"))
-
-        if cov_type:
-            cov_type += ' '
 
         if self.cov_lim is not None:
             self.axs[0].set_ylim(bottom=self.cov_lim,
@@ -139,9 +139,12 @@ class Ploter:
                 self.axs[0].set_ylim(bottom=cov_min * MIN_FAC_SINGLE,
                                      top=top_lim)
 
+        ylabel = '\# Coverage'
+        if self.scale != 1:
+            ylabel = f'\# Coverage ({self.scale} branches)'
         self.axs[0].set(
             xlabel='Time (Second)',
-            ylabel=f'\# {cov_type}Coverage')
+            ylabel=ylabel)
         self.axs[0].grid(alpha=0.5, ls=':')
 
         if not self.one_plot:
@@ -222,8 +225,9 @@ def tvm_arith_filter(fname):
     return 'arith' in fname
 
 
-def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag='', tlimit=None, pdf=False, one_plot=False, pass_tag='', gen_time=None, venn=False):
-    branch_ploter = Ploter(use_pdf=pdf, one_plot=one_plot)
+def plot_one_round(
+        folder, data, pass_filter=None, fuzz_tags=None, target_tag='', tlimit=None, pdf=False, one_plot=False, pass_tag='', gen_time=None, venn=False, scale=1):
+    branch_ploter = Ploter(use_pdf=pdf, one_plot=one_plot, scale=scale)
 
     assert fuzz_tags is not None
     if pass_filter is not None:
@@ -244,7 +248,7 @@ def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag=''
         bf = max(bf, bf_)
 
     branch_ploter.plot(save=os.path.join(
-        folder, target_tag + pass_tag + 'branch_cov'), cov_type='Branch', cov_lim=bf, loc=7 if ('ort' in target_tag) else 0)
+        folder, target_tag + pass_tag + 'branch_cov'), cov_lim=bf, loc=7 if ('ort' in target_tag) else 0)
 
     if not venn:
         return
@@ -377,6 +381,6 @@ if '__main__' == __name__:
 
     if pass_filter is not None:
         plot_one_round(folder=args.output, data=data,
-                       pass_filter=pass_filter, pass_tag='opt_', tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, one_plot=True, gen_time=gen_time, venn=args.venn)
+                       pass_filter=pass_filter, pass_tag='opt_', scale=100, tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, one_plot=True, gen_time=gen_time, venn=args.venn)
     plot_one_round(folder=args.output, data=data,
-                   pass_filter=None, tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, gen_time=gen_time, venn=args.venn)  # no pass
+                   pass_filter=None, tlimit=args.tlimit, scale=1000, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, gen_time=gen_time, venn=args.venn)  # no pass
