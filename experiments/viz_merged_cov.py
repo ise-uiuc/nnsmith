@@ -29,7 +29,6 @@ plt.rc('text.latex', preamble=r'\usepackage{xfrac}')
 
 class Ploter:
     def __init__(self, cov_lim=None, use_pdf=False, one_plot=False) -> None:
-        self.legends = []  # type: ignore
         # cov / time, cov / iteration, iteration / time
         if not one_plot:
             fig, axs = plt.subplots(
@@ -52,7 +51,7 @@ class Ploter:
         LW = 2
         MARKER_SIZE = 10
         N_MARKER = 8
-        MARKERS = ['p', 'd', '^', '*']
+        MARKERS = ['d', '^', 'p', '*']
         LS = ':'
         COLORS = ['dodgerblue', 'violet', 'coral']
 
@@ -81,24 +80,22 @@ class Ploter:
             'markeredgewidth': 1.5
         }
 
-        self.axs[0].plot(df[:, 0], df[:, 2], **style_kw)  # cov / time
+        self.axs[0].plot(df[:, 0], df[:, 2], label=name,
+                         **style_kw)  # cov / time
         print(f'----> max cov {df[:, 2].max()}')
 
         if not self.one_plot:
-            self.axs[1].plot(df[:, 1], df[:, 2], **style_kw)  # cov / iteration
+            self.axs[1].plot(df[:, 1], df[:, 2], label=name,
+                             **style_kw)  # cov / iteration
             # self.axs[2].plot(df[:, 0], df[:, 1], **style_kw)  # iter / time
 
         self.xspan = max(self.xspan, df[-1, 0])
 
         self.cov_maxes.append(df[:, 2].max())
 
-        if name:
-            self.legends.append(name)
-        else:
-            assert not self.legends
-
     def plot(self, save='cov', cov_type='', cov_lim=None, loc=0):
-        self.axs[-1].legend(self.legends, loc=loc)
+        handles, labels = self.axs[-1].get_legend_handles_labels()
+        self.axs[-1].legend(handles[::-1], labels[::-1])
 
         self.cov_maxes = sorted(self.cov_maxes)
 
@@ -143,7 +140,7 @@ class Ploter:
                                      top=top_lim)
 
         self.axs[0].set(
-            xlabel='Time / Second',
+            xlabel='Time (Second)',
             ylabel=f'\# {cov_type}Coverage')
         self.axs[0].grid(alpha=0.5, ls=':')
 
@@ -271,14 +268,15 @@ def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag=''
         plt.figure(figsize=(4.2, 4.2), constrained_layout=True)
         if len(branch_cov_sets) == 2:
             v = venn2(subsets=branch_cov_sets, set_labels=[
-                f'$\\bf{{{t}}}$' for t in fuzz_tags], alpha=0.3)
+                f'{t}' for t in fuzz_tags], alpha=0.3)
         elif len(branch_cov_sets) == 3:
             ks = ['100', '010', '110', '001', '101', '011', '111']
             sets = {}
+            total_covs = [len(s) for s in branch_cov_sets]
             for k, val in zip(ks, _venn3.compute_venn3_subsets(*branch_cov_sets)):
                 sets[k] = val
             v = venn3(subsets=(7, 7, 3, 7, 3, 3, 5), set_labels=[
-                      f'{t}' for t in fuzz_tags])
+                      f'{t}\n({c})' for t, c in zip(fuzz_tags, total_covs)])
 
             for id in ['110', '101', '011']:
                 if v.get_label_by_id(id):
@@ -305,7 +303,7 @@ def plot_one_round(folder, data, pass_filter=None, fuzz_tags=None, target_tag=''
                     v.get_patch_by_id(id).set_alpha(0.2)
 
         for text in v.set_labels:
-            text.set_fontsize(BIGGER_SIZE)
+            text.set_fontsize((MEDIUM_SIZE + BIGGER_SIZE) // 2)
 
     plt.savefig(f'{os.path.join(folder, target_tag + pass_tag + "br_cov_venn")}.png',
                 bbox_inches='tight')
