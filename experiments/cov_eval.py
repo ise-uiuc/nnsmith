@@ -177,6 +177,7 @@ if __name__ == '__main__':
                 '--backend', args.backend,
                 '--device', args.device,
                 '--seed', str(seed),
+                '--fuzz_report_folder', args.report_folder,
             ]
             if args.memcov:
                 arguments += ['--memcov', memcov_path]
