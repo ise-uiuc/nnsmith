@@ -33,7 +33,6 @@ from nnsmith.abstract.proxy_grad import *
 # TODO: add interval analysis for shape dimension size;
 
 ARITH_MAX_WIDTH: int = 64
-_INFERRED = False
 _DEV = torch.device("cpu")
 FLOPS_LIM = os.getenv("NNSMITH_FLOPS_LIM", 'auto')
 if FLOPS_LIM == 'auto':  # use predefined value
@@ -359,8 +358,6 @@ def check_shape_fn(func):
 
 def check_require_fn(func):
     def wrapper_check_require_fn(self, input_shapes: List[ShapeVar]):
-        if not _INFERRED:
-            auto_infer_in_dtypes()
         SanityCheck.eq(len(input_shapes), len(self.inp_ranks), "{} requires {} inputs, but got {}".format(
             self.__class__.__name__,
             len(self.inp_ranks), len(input_shapes)))
@@ -2446,56 +2443,11 @@ def _check_comb(comb: DTypeComb, op: AbsOpBase):
     return True
 
 
-def auto_infer_in_dtypes(verbose=False):
-    global _INFERRED
-    if _INFERRED:
-        return
-    _INFERRED = True
-    _WHITE_LIST = (Input, Expand, NCHWConv2d, Reshape)
-
-    def create_op(op_t: Type[AbsOpBase]):
-        construct_param_dict = signature(op_t.__init__).parameters
-        values = []
-        for key, val in construct_param_dict.items():
-            if key == 'self':
-                continue
-            values.append((key, 1))  # TODO consider type hints?
-        return op_t(**dict(values))
-
-    for op_t in ALL_OP_TYPES:
-        if issubclass(op_t, _WHITE_LIST):
-            continue
-        if op_t.in_dtypes is not None:
-            continue
-        if verbose:
-            print(f'Try auto inferring input dtype spec for `{op_t.__name__}`')
-        valid_combs = None
-        op = create_op(op_t)
-        in_dtype_combs: List[DTypeComb] = itertools.product(
-            DTYPE_ALL, repeat=len(op.inp_ranks))
-        valid_combs = [
-            comb for comb in in_dtype_combs if _check_comb(comb, op)]
-        if len(valid_combs) == 0:
-            raise RuntimeError(
-                f'No valid input dtype combination found for `{op_t.__name__}`')
-
-        if verbose:
-            print('infered result:', valid_combs)
-        if op_t.in_dtypes is not None:
-            # we disable type promotion for bcast binary ops so the difference is fine
-            if verbose and valid_combs != op_t.in_dtypes and not issubclass(op_t, (BcastBinaryOp1, Comparator, Logical)):
-                warnings.warn('Inferred result for `{}` different from given one.\nInferred={}\n, given={}'.format(
-                    op_t.__name__, valid_combs, op_t.in_dtypes))
-        else:
-            op_t.in_dtypes = valid_combs
-
-
 def main():
     # Test shape functions
     print(len(ALL_OP_TYPES), 'operators supported:')
     print(ALL_OP_STR2TYPE.keys())
     assert Reshape in ALL_OP_TYPES
-    auto_infer_in_dtypes()
 
     # Reshape from scalar
     lhs = ShapeVar([], DType.float32)

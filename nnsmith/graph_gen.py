@@ -527,7 +527,6 @@ class SimpleGenerator:
             torch.manual_seed(seed)
         self.verbose = verbose
         self.viz_verbose = viz_verbose
-        auto_infer_in_dtypes(self.verbose)
 
         if candidates_overwrite is None:
             self.op_candidates = [

@@ -27,7 +27,7 @@ from rich.panel import Panel
 from rich.console import RenderableType
 from rich.columns import Columns
 
-from nnsmith.abstract.op import ALL_OP_TYPES, auto_infer_in_dtypes, config_skip_op
+from nnsmith.abstract.op import ALL_OP_TYPES, config_skip_op
 from nnsmith.error import NNSmithInternalError
 from nnsmith.difftest import assert_allclose
 from nnsmith.graph_gen import random_model_gen, SymbolNet
@@ -602,7 +602,6 @@ if __name__ == '__main__':
     skip = 'backend:' + args.backend
     if args.skip is not None:
         skip += ',' + args.skip
-    auto_infer_in_dtypes()  # TODO: remove this someday
 
     factory = mk_factory(args.backend, device=args.device)
 
