@@ -536,6 +536,10 @@ class SimpleGenerator:
             self.op_candidates = [
                 op for op in candidates_overwrite if op not in skip and not op._skip]
 
+        # filter those with no dtype specified
+        self.op_candidates = [
+            op for op in self.op_candidates if op.in_dtypes]
+
         if use_bitvec:
             self.solver = z3.SolverFor("QF_UFBV")
         else:

@@ -15,9 +15,9 @@ from nnsmith.backends import BackendFactory, mk_factory
 from nnsmith.util import gen_one_input
 
 
-def succ_print(x): return print(colored(x, 'green'))
-def fail_print(x): return print(colored(x, 'red'))
-def note_print(x): return print(colored(x, 'yellow'))
+def succ_print(*args): return print(*[colored(x, 'green') for x in args])
+def fail_print(*args): return print(*[colored(x, 'red') for x in args])
+def note_print(*args): return print(*[colored(x, 'yellow') for x in args])
 
 
 def _differentiable_test(model, available_idtypes, concrete_input_shapes, oranks, verbose=False):
@@ -105,12 +105,8 @@ def _inference_test(model, factory: BackendFactory, available_idtypes, concrete_
         except Exception as e:
             if verbose:
                 fail_print(f'=====> [Failure] at {itypes}')
-            if 'onnxruntime.capi.onnxruntime_pybind11_state.NotImplemented' in str(type(e)) or \
-                    "Unexpected data type for" in str(e):
-                continue
-            if 'DiagnosticError: one or more error diagnostics were emitted, please check diagnostic render for output' in str(type(e)):
-                continue
-            fail_print(e)
+                fail_print(e)
+            continue  # any failure is not acceptable.
 
         success_idtypes.append(itypes)
         otypes = []

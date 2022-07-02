@@ -2073,6 +2073,49 @@ class ArgMax(ReduceBase):
         return [(self._get_irank(out_shape_var[0].ndims), random.choice(self.in_dtypes)[0])]
 
 
+class TriBase(UnaryOpBase):
+    in_dtypes = [(i,) for i in DTYPE_ALL]
+    out_dtypes = [(i,) for i in DTYPE_ALL]
+
+    def __init__(self, diagonal: Union[int, z3.ExprRef]):
+        super().__init__()
+        self.diagonal = diagonal
+        # tril is only for 2-D matrix
+        self.inp_ranks = [(2,)]
+        self.out_ranks = [(2,)]
+
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        SanityCheck.eq(len(input_shapes), 1)
+        return [input_shapes[0]]
+
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        return [(2, out_shape_var[0].dtype)]
+
+
+@leaf
+class Tril(TriBase):
+    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+        ConstraintCheck.true(input_shapes[0].ndims == 2)
+        nrow = input_shapes[0].shape[0]
+        ncol = input_shapes[0].shape[1]
+        return [z3.And(self.diagonal >= -nrow, (ncol - 1) >= self.diagonal)]
+
+    def torch(self):
+        return lambda x: x.tril(self.diagonal)
+
+
+@leaf
+class Triu(TriBase):
+    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+        ConstraintCheck.true(input_shapes[0].ndims == 2)
+        nrow = input_shapes[0].shape[0]
+        ncol = input_shapes[0].shape[1]
+        return [z3.And(self.diagonal >= -(nrow - 1), ncol >= self.diagonal)]
+
+    def torch(self):
+        return lambda x: x.triu(self.diagonal)
+
+
 @leaf
 class Linear(UnaryOpBase):
     in_dtypes = [(DType.float32,)]

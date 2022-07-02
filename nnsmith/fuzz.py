@@ -606,22 +606,22 @@ if __name__ == '__main__':
 
     factory = mk_factory(args.backend, device=args.device)
 
-    if not args.backend.startswith('tvm'):
-        cache_file = f'config/fuzz_{args.backend}_{args.device}_op_dtype.pkl'
+    # Use DType Test to find candidates.
+    cache_file = f'config/fuzz_{args.backend}_{args.device}_op_dtype.pkl'
 
-        if Path(cache_file).exists():
-            print('Reading cached config file:', cache_file)
-        else:
-            Path('config').mkdir(exist_ok=True)
-            print(f'Warning: Op dtypes config file `{cache_file}` does not exist. '
-                  'Inferring op dtype for the first run...')
+    if Path(cache_file).exists():
+        print('Reading cached config file:', cache_file)
+    else:
+        Path('config').mkdir(exist_ok=True)
+        print(f'Warning: Op dtypes config file `{cache_file}` does not exist. '
+              'Inferring op dtype for the first run...')
 
-        rewrite_op_dtype(
-            ALL_OP_TYPES,
-            factory=factory,
-            cache=cache_file,
-            print_failures=True,
-            skip_i64_f64=('trt' == args.backend))
+    rewrite_op_dtype(
+        ALL_OP_TYPES,
+        factory=factory,
+        cache=cache_file,
+        print_failures=True,
+        skip_i64_f64=('trt' == args.backend))
 
     config_skip_op(skip)
     fuzzing_loop = FuzzingLoop(
