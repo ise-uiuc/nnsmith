@@ -76,7 +76,8 @@ def _differentiable_test(model, available_idtypes, concrete_input_shapes, oranks
     return success_idtypes, success_odtypes
 
 
-def _inference_test(model, factory: BackendFactory, available_idtypes, concrete_input_shapes, oranks, verbose=False):
+def _inference_test(
+        model, factory: BackendFactory, available_idtypes, concrete_input_shapes, oranks, skip_i64_f64=False, verbose=False):
     success_idtypes = list()
     success_odtypes = set()
 
@@ -108,7 +109,6 @@ def _inference_test(model, factory: BackendFactory, available_idtypes, concrete_
                 fail_print(e)
             continue  # any failure is not acceptable.
 
-        success_idtypes.append(itypes)
         otypes = []
         if len(oranks) == 1:
             otypes = [o.dtype]
@@ -117,7 +117,15 @@ def _inference_test(model, factory: BackendFactory, available_idtypes, concrete_
                 otypes.append(o[i].dtype)
         for i in range(len(otypes)):
             otypes[i] = DType.from_str(str(otypes[i]).split('.')[-1])
-        success_odtypes.add(tuple(otypes))
+
+        otypes = tuple(otypes)  # mark immutable.
+        if skip_i64_f64 and (DType.int64 in (itypes + otypes) or DType.float64 in (itypes + otypes)):
+            note_print(
+                f'=====> [Skip] at {itypes} -> {otypes} contains i64/f64')
+            continue
+
+        success_idtypes.append(itypes)
+        success_odtypes.add(otypes)
         if verbose:
             succ_print(f'=====> [Success] {itypes}')
     success_odtypes = list(success_odtypes)
@@ -184,10 +192,6 @@ def rewrite_op_dtype(ops: List[AbsOpBase], diff=False, factory=None, verbose=Fal
             note_print(f'===> Trying {node_t} # {idx}')
         available_idtypes = node_t.in_dtypes
 
-        if skip_i64_f64:  # TensorRT current doest not give a shit for i64/f64
-            available_idtypes = [
-                dt for dt in available_idtypes if DType.float64 not in dt and DType.int64 not in dt]
-
         op_param_n = node_t.get_num_var_param()
         op_params = [z3.Int('v%s-%s' % (idx, k))
                      for k in range(op_param_n)]
@@ -232,7 +236,7 @@ def rewrite_op_dtype(ops: List[AbsOpBase], diff=False, factory=None, verbose=Fal
                 model, available_idtypes, concrete_input_shapes, op.out_ranks, verbose)
         else:
             success_idtypes, success_odtypes = _inference_test(
-                model, factory, available_idtypes, concrete_input_shapes, op.out_ranks,
+                model, factory, available_idtypes, concrete_input_shapes, op.out_ranks, skip_i64_f64,
                 verbose)
 
         reset_node_t(node_t, success_idtypes, success_odtypes,
