@@ -49,7 +49,7 @@ def locate_crash_testcase(batch_path):
 
 
 def is_known(backend, message):
-    s = "[ONNXRuntimeError] : 6 : RUNTIME_EXCEPTION : Exception during initialization: /onnxruntime_src/onnxruntime/core/optimizer/relu_clip_fusion.cc:77 virtual onnxruntime::common::Status onnxruntime::FuseReluClip::Apply(onnxruntime::Graph&, onnxruntime::Node&, onnxruntime::RewriteRule::RewriteRuleEffect&, const onnxruntime::logging::Logger&) const Unexpected data type for Clip 'min' input of 11"
+    s = "Unexpected data type for Clip 'min' input of 11"
     if backend == 'ort' and message.find(s) != -1:
         return True
     return False
