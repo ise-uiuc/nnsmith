@@ -1270,6 +1270,11 @@ class Pool2d(UnaryOpBase):
             self.padding, nnsmith_div(self.kernel_h_size, 2)))
         cons.append(nnsmith_le(
             self.padding, nnsmith_div(self.kernel_w_size, 2)))
+
+        # TensorRT rejects PRODUCT(pool size) >= 10000
+        cons.append(nnsmith_lt(nnsmith_mul(
+            self.kernel_h_size, self.kernel_w_size), 10000))
+
         # limit FLOPS
         if Z3_CONS_FLOPS:
             cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
