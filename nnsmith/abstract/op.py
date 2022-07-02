@@ -636,26 +636,6 @@ class ElementWiseUnaryOp(UnaryOpBase):
             (out_shape_var[0].ndims, out_shape_var[0].dtype),
         ]
 
-# class ElementWiseBinaryOp(BinaryOpBase):
-#     def __init__(self):
-#         super().__init__()
-#         self.inp_ranks = [-1, -1]
-#         self.same_inp_dims = True
-
-#     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-#         assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
-#         return [input_shapes[0]]
-
-#     def _requires(self, input_shapes):
-#         assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
-#         ret = []
-#         for l, r in zip(input_shapes[0].shape, input_shapes[1].shape):
-#             if isinstance(l, z3.ExprRef) or isinstance(r, z3.ExprRef):
-#                 ret.append(nnsmith_eq(l, r))
-#             else:
-#                 assert l == r
-#         return ret
-
 
 def bcast_rand_ndims(num_svars, target_ndims):
     res = [random.randint(0, target_ndims) for _ in range(num_svars)]
@@ -1261,24 +1241,16 @@ class Pool2d(UnaryOpBase):
         self.out_ranks = [(4,)]  # NCHW
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        is_symbolic_inp = input_shapes[0].constains_symbol() or isinstance(self.kernel_w_size, z3.ExprRef) or isinstance(
-            self.kernel_h_size, z3.ExprRef) or isinstance(self.stride, z3.ExprRef) or isinstance(self.padding, z3.ExprRef)
 
         shape_var = ShapeVar([], dtype=input_shapes[0].dtype)
         # Batch dim: just copy
         shape_var.shape.append(input_shapes[0].shape[0])
         # Output channels
         shape_var.shape.append(input_shapes[0].shape[1])
-        if not is_symbolic_inp:
-            shape_var.shape.append(
-                (input_shapes[0].shape[2] - self.kernel_h_size + 2 * self.padding) // self.stride + 1)
-            shape_var.shape.append(
-                (input_shapes[0].shape[3] - self.kernel_w_size + 2 * self.padding) // self.stride + 1)
-        else:
-            shape_var.shape.append(
-                (nnsmith_div(nnsmith_add(nnsmith_sub(input_shapes[0].shape[2], self.kernel_h_size), 2 * self.padding), self.stride) + 1))
-            shape_var.shape.append(
-                (nnsmith_div(nnsmith_add(nnsmith_sub(input_shapes[0].shape[3], self.kernel_w_size), 2 * self.padding), self.stride) + 1))
+        shape_var.shape.append(
+            (nnsmith_div(nnsmith_add(nnsmith_sub(input_shapes[0].shape[2], self.kernel_h_size), 2 * self.padding), self.stride) + 1))
+        shape_var.shape.append(
+            (nnsmith_div(nnsmith_add(nnsmith_sub(input_shapes[0].shape[3], self.kernel_w_size), 2 * self.padding), self.stride) + 1))
         return [shape_var]
 
     def _requires(self, input_shapes):
@@ -1302,10 +1274,7 @@ class Pool2d(UnaryOpBase):
         if Z3_CONS_FLOPS:
             cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
         for c in cons:
-            if isinstance(c, z3.ExprRef):
-                ret.append(c)
-            else:
-                ConstraintCheck.true(c)
+            ret.append(c)
         return ret
 
     def flops(self, input_shapes):
@@ -1581,21 +1550,13 @@ class Expand(UnaryOpBase, ABC):
         SanityCheck.ge(self.expand_last_dim, 1)
 
         input_shape = input_shapes[0].shape
-        if isinstance(self.expand_n, z3.ExprRef):
-            if self.expand_last_dim <= len(input_shape):  # index valid
-                cons = [
-                    nnsmith_eq(
-                        input_shape[-self.expand_last_dim], 1),
-                    nnsmith_ge(self.expand_n, 1)]
-                return cons
-            return [nnsmith_ge(self.expand_n, 1)]
-        else:
-            # It is also valid to expand to 0. But just too tricky...
-            ConstraintCheck.ge(self.expand_n, 1)
-            if self.expand_last_dim <= len(input_shape):
-                ConstraintCheck.true(input_shape[-self.expand_last_dim] ==
-                                     1 or input_shape[-self.expand_last_dim] == self.expand_n)
-        return []
+        if self.expand_last_dim <= len(input_shape):  # index valid
+            cons = [
+                nnsmith_eq(
+                    input_shape[-self.expand_last_dim], 1),
+                nnsmith_ge(self.expand_n, 1)]
+            return cons
+        return [nnsmith_ge(self.expand_n, 1)]
 
     def torch(self):
         return lambda x: x.expand(*self._shape_fn([ShapeVar.from_torch(x)])[0].shape)
@@ -1681,25 +1642,13 @@ class NCHWConv2d(UnaryOpBase):
         self.out_ranks = [(4,)]  # NC(H,)W
 
     def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        # not symbolic
-        if not isinstance(self.in_channels, z3.ExprRef) and not isinstance(input_shapes[0].shape[1], z3.ExprRef):
-            ConstraintCheck.eq(input_shapes[0].shape[1], self.in_channels)
-
-        is_symbolic_inp = input_shapes[0].constains_symbol() or isinstance(self.kernel_w_size, z3.ExprRef) or isinstance(
-            self.kernel_h_size, z3.ExprRef) or isinstance(self.stride, z3.ExprRef) or isinstance(self.padding, z3.ExprRef)
-
         shape_var = ShapeVar(
             [input_shapes[0].shape[0], self.out_channels], dtype=input_shapes[0].dtype)
-        if not is_symbolic_inp:
-            shape_var.shape.append(
-                (input_shapes[0].shape[2] - self.kernel_h_size + 2 * self.padding) // self.stride + 1)
-            shape_var.shape.append(
-                (input_shapes[0].shape[3] - self.kernel_w_size + 2 * self.padding) // self.stride + 1)
-        else:
-            shape_var.shape.append(
-                (nnsmith_div(nnsmith_add(nnsmith_sub(input_shapes[0].shape[2], self.kernel_h_size), 2 * self.padding), self.stride) + 1))
-            shape_var.shape.append(
-                (nnsmith_div(nnsmith_add(nnsmith_sub(input_shapes[0].shape[3], self.kernel_w_size), 2 * self.padding), self.stride) + 1))
+
+        shape_var.shape.append(
+            (nnsmith_div(nnsmith_add(nnsmith_sub(input_shapes[0].shape[2], self.kernel_h_size), 2 * self.padding), self.stride) + 1))
+        shape_var.shape.append(
+            (nnsmith_div(nnsmith_add(nnsmith_sub(input_shapes[0].shape[3], self.kernel_w_size), 2 * self.padding), self.stride) + 1))
         return [shape_var]
 
     def _requires(self, input_shapes):
@@ -1723,10 +1672,7 @@ class NCHWConv2d(UnaryOpBase):
         if Z3_CONS_FLOPS:
             cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
         for c in cons:
-            if isinstance(c, z3.ExprRef):
-                ret.append(c)
-            else:
-                ConstraintCheck.true(c)
+            ret.append(c)
         return ret
 
     def torch(self):
@@ -1802,43 +1748,12 @@ class Reshape(UnaryOpBase):
             else:
                 accum = nnsmith_mul(accum, v)
 
-        # First see if there's any symbols in the expression
-        symbol_indices = [
-            v for v in input_shapes[0].shape if isinstance(v, z3.ExprRef)]
-        if len(symbol_indices) == 0:
-            shape_var.shape[auto_dim] = reduce(
-                lambda x, y: x * y, input_shapes[0].shape, 1) // accum
-        else:
-            shape_var.shape[auto_dim] = nnsmith_div(reduce(
-                lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape, 1), accum)
+        shape_var.shape[auto_dim] = nnsmith_div(reduce(
+            lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape, 1), accum)
 
         return [shape_var]
 
     def _requires(self, input_shapes):
-        # if int(os.getenv('NNSMITH_GRES', 1)) >= 3:  # TODO(JK): remove this once stablized
-        #     return []
-        # # TODO: How to handle -1 with input shapes?
-        # # If your target shape is concrete, then your output shape's total pixels must be the same as the input shape's.
-        # if -1 not in self.target_shape:
-        #     total_pixels = reduce(
-        #         lambda x, y: nnsmith_mul(x, y), self.target_shape, 1)
-        #     cons = [nnsmith_eq(total_pixels, reduce(
-        #         lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape, 1))]
-        #     if os.getenv('NNSMITH_CONS_RESHAPE', 'on') != 'off':
-        #         # should not be too extreme!
-        #         __DIM_LIMIT__ = 4096
-        #         lim = __DIM_LIMIT__
-        #         for s in self.target_shape[::-1]:
-        #             cons.append(nnsmith_le(s, lim))
-        #             lim //= 2
-        #             lim = max(lim, 1)
-        #     return cons
-        # else:
-        #     # If you use auto mode (specifying -1 for some dimensions), then the total number of input pixels must be exactly divisible by that of the output shape.
-        #     minimul_pixels = reduce(
-        #         lambda x, y: nnsmith_mul(x, y), [v for v in self.target_shape if v != -1], 1)
-        #     return [nnsmith_eq(nnsmith_mod(reduce(lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape, 1), minimul_pixels), 0)]
-
         ret = []
 
         inp = input_shapes[0]
