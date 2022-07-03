@@ -1133,6 +1133,17 @@ class Clip(ElementWiseUnaryOp):
         super().__init__()
         self.min = -1
         self.max = 1
+        self.bias = None
+
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        if self.bias is None:
+            if input_shapes[0].dtype in DTYPE_FLOATS:
+                self.bias = 0.5
+            else:
+                self.bias = 0
+            self.min = self.min - self.bias
+            self.max = self.max + self.bias
+        return super()._shape_fn(input_shapes)
 
     def torch(self):
         return lambda x: torch.clip(x, self.min, self.max)

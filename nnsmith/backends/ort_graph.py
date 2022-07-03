@@ -22,8 +22,11 @@ class ORTFactory(BackendFactory):
         super().__init__(device, optmax)
         self.opt_level = OPT_LEVELS[-1 if optmax else 0]
         self.providers = ['CPUExecutionProvider']
-        if device == 'cuda':
-            self.providers.append('CUDAExecutionProvider')
+        if device in ['cuda', 'gpu']:
+            self.providers = ['CUDAExecutionProvider',
+                              'CPUExecutionProvider']  # ordered by precedence
+        elif device != 'cpu':
+            raise ValueError(f'Unknown device `{device}`')
 
     def __repr__(self) -> str:
         return f'ort-{self.device}-O{self.opt_level}'
