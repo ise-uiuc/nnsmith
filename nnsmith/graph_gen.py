@@ -144,7 +144,7 @@ class SymbolNet(nn.Module):
                     svar = self.concrete_graph.nodes[node_id]['out_svs'][op_out_idx]
                     self.concrete_graph.add_edge(
                         node_id, f'o{self.n_output}', key=str(uuid.uuid1()),
-                        label=f'({op_out_idx},none) <{svar.dtype}>{svar.shape}')
+                        label=f'{op_out_idx}→ {svar.dtype}!{svar.shape}')
                     self.n_output += 1
             else:
                 for _, _, (out_idx, in_idx) in out_edges:
@@ -218,10 +218,9 @@ class SymbolNet(nn.Module):
     def concretize_edge(self, node_id):
         for u, v, key, data in self.concrete_graph.out_edges(node_id, data=True, keys=True):
             out_idx, in_idx = data['operand_idx']
-            shape_idx = data['shape_idx']
             svar = self.concrete_graph.nodes[node_id]['out_svs'][out_idx]
             self.concrete_graph.add_edge(
-                u, v, key=key, label=f'{shape_idx}: ({out_idx},{in_idx}) <{svar.dtype}>{svar.shape}')
+                u, v, key=key, label=f'{out_idx}→{in_idx} {svar.dtype}!{svar.shape}')
 
     def to_picklable(self):
         self.alive_shapes = None
@@ -828,7 +827,7 @@ class SimpleGenerator:
                 pred_nid, succ_nid, key=str(uuid.uuid1()),
                 shape_idx=idx,
                 operand_idx=(out_operand_idx, in_operand_idx),
-                label=f'{idx}: ({out_operand_idx},{in_operand_idx}) <{svar.dtype}>{svar.shape}' if not self.viz_verbose else '')
+                label=f'{out_operand_idx}→{in_operand_idx} {svar.dtype}!{svar.shape}' if not self.viz_verbose else '')
 
         if self.is_viz_sbs:
             self.viz()
@@ -907,7 +906,7 @@ class SimpleGenerator:
                     key=str(uuid.uuid1()),
                     shape_idx=edge_info['shape_idx'],  # reuse old alive shape
                     operand_idx=(out_operand_idx, in_operand_idx),
-                    label=f'{old_edge_idx}: ({out_operand_idx},{in_operand_idx}) <{svar.dtype}>{svar.shape}' if not self.viz_verbose else ''
+                    label=f'{out_operand_idx}→{in_operand_idx} {svar.dtype}!{svar.shape}' if not self.viz_verbose else ''
                 )
                 self.alive_shapes[old_edge_idx] = (
                     op_nx_idx, svar, out_operand_idx)
