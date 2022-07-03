@@ -1626,7 +1626,9 @@ class BatchNorm2d(ElementWiseUnaryOp):
         return [(4, DType.float32)]
 
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
-        return [nnsmith_eq(self.nfeat, input_shapes[0].shape[1])]
+        return [
+            nnsmith_eq(self.nfeat, input_shapes[0].shape[1]),
+            nnsmith_ge(input_shapes[0].shape[0], 2)]  # batch size = 1 -> fail training.
 
     def torch(self) -> Callable[..., torch.Tensor]:
         return torch.nn.BatchNorm2d(num_features=self.nfeat)
