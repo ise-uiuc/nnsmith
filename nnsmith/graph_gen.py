@@ -518,7 +518,7 @@ class SymbolNet(nn.Module):
 
 class SimpleGenerator:
 
-    def __init__(self, min_dims=[1, 3, 48, 48], skip=[Input], viz_sbs=False, megabyte_lim=__MB_LIM__, seed=None, verbose=False, use_bitvec=False,
+    def __init__(self, init_rank=4, skip=[Input], viz_sbs=False, megabyte_lim=__MB_LIM__, seed=None, verbose=False, use_bitvec=False,
                  viz_verbose=False, merge_op_v=None, limnf=True, candidates_overwrite=None, forward_prob=None, init_fp=False):
         if seed is not None:
             np.random.seed(seed)
@@ -559,7 +559,7 @@ class SimpleGenerator:
         self.is_viz_sbs = viz_sbs
 
         self.use_bitvec = use_bitvec
-        self.min_dims = min_dims
+        self.init_rank = init_rank
         self.n_floats = 0
         self.monotonic_placeholder_id = 0
         self.monotonic_nx_node_idx = 0
@@ -574,7 +574,7 @@ class SimpleGenerator:
         self.placeholders: List[int] = []
         # for all (including newly created tmp) placeholders
         self.insert_init_ph_node(self.create_placeholder(
-            len(min_dims), dtype=torch.float32 if init_fp else None))
+            init_rank, dtype=torch.float32 if init_fp else None))
         self.init_ph_alive = True
         self.forward_prob = 0.5 if forward_prob is None else forward_prob
 
@@ -590,9 +590,9 @@ class SimpleGenerator:
             wts[DTYPE_ALL.index(i)] = 2
         return random.choices(DTYPE_ALL, weights=wts)[0]
 
-    def create_placeholder(self, dim, dtype=None):
+    def create_placeholder(self, rank, dtype=None):
         syms = self.new_syms(['v%s_%s' % (
-            self.monotonic_placeholder_id, k) for k in range(dim)])
+            self.monotonic_placeholder_id, k) for k in range(rank)])
         shapevar = ShapeVar(
             shape=syms,
             dtype=dtype if dtype is not None else self.random_dtype())
@@ -630,7 +630,7 @@ class SimpleGenerator:
             return [self.new_sym(name) for name in names]
 
     @ abstractmethod
-    def insert_init_ph_node(self, min_dims, shape=None, dtype=DType.float32) -> ShapeVar:
+    def insert_init_ph_node(self, init_rank, shape=None, dtype=DType.float32) -> ShapeVar:
         raise NotImplementedError
 
     @ abstractmethod
@@ -1472,7 +1472,7 @@ def parse_args():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--max_nodes', type=int, default=10)
-    parser.add_argument('--min_dims', type=list, default=[1, 3, 48, 48])
+    parser.add_argument('--init_rank', type=int, default=4)
     parser.add_argument('--timeout', type=int, default=50000)
     parser.add_argument('--viz_sbs', action='store_true',
                         help='visualize the step by step')
@@ -1499,7 +1499,7 @@ def parse_args():
 
 
 def random_model_gen(
-        min_dims=[1, 3, 48, 48],
+        init_rank=4,
         viz_sbs=False,
         max_nodes=5,
         seed=None,
@@ -1516,7 +1516,7 @@ def random_model_gen(
     }[mode]
     if skip is not None:
         config_skip_op(skip)
-    gen = GenCls(min_dims=min_dims,
+    gen = GenCls(init_rank=init_rank,
                  viz_sbs=viz_sbs, seed=seed, verbose=verbose, use_bitvec=use_bitvec,
                  **kwargs)
     gen.abstract_gen(max_node_size=max_nodes,
@@ -1552,7 +1552,7 @@ if __name__ == '__main__':
         config_skip_op(args.skip)
 
     strt_time = time.time()
-    gen, solution = random_model_gen(min_dims=args.min_dims, seed=seed, viz_sbs=args.viz_sbs, max_nodes=args.max_nodes,
+    gen, solution = random_model_gen(init_rank=args.init_rank, seed=seed, viz_sbs=args.viz_sbs, max_nodes=args.max_nodes,
                                      use_bitvec=args.use_bitvec, timeout=args.timeout, verbose=args.verbose, mode=args.mode,
                                      limnf=args.limnf, merge_op_v=args.merge_op_v, forward_prob=args.forward_prob, **gen_args)
     print(

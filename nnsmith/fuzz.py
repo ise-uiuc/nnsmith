@@ -347,7 +347,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         torch.manual_seed(seed)
         gen, solution = random_model_gen(
             # Only rank useful. Dim sizes means nothing.
-            min_dims=[1, 3, 48, 48],
+            init_rank=4,
             seed=seed, max_nodes=self.max_nodes,
             mode=mode)
         self.cur_node_size = gen.num_op()

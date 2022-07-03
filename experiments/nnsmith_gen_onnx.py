@@ -26,7 +26,7 @@ def nnsmith_gen_once(path_prefix, seed, max_nodes, candidates_overwrite=None, mo
     torch.manual_seed(seed)
     gen_tstart = time.time()
     gen, solution = random_model_gen(
-        min_dims=[1, 3, 48, 48],  # Only rank useful. Dim sizes means nothing.
+        init_rank=4,
         seed=seed, max_nodes=max_nodes, candidates_overwrite=candidates_overwrite,
         mode=mode)
     net = SymbolNet(gen.abstract_graph, solution,
