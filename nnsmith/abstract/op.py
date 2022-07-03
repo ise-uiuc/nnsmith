@@ -1635,6 +1635,74 @@ class BatchNorm2d(ElementWiseUnaryOp):
 
 
 @leaf
+class Conv1d(UnaryOpBase):
+    in_dtypes = [(DType.float32,)]
+    out_dtypes = [(DType.float32,)]
+
+    def __init__(self,
+                 in_channels: Union[int, z3.ExprRef],
+                 out_channels: Union[int, z3.ExprRef],
+                 kernel_size: Union[int, z3.ExprRef],
+                 stride: Union[int, z3.ExprRef],
+                 padding: Union[int, z3.ExprRef],
+                 dilation: Union[int, z3.ExprRef],):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.dilation = dilation
+
+        self.inp_ranks = [(3,)]  # NCL
+        self.out_ranks = [(3,)]  # NCL
+
+    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        shape_var = ShapeVar(
+            [input_shapes[0].shape[0], self.out_channels], dtype=input_shapes[0].dtype)
+        mimic_k = self.kernel_size + \
+            (self.dilation - 1) * (self.kernel_size - 1)
+        shape_var.shape.append(
+            (nnsmith_div(nnsmith_add(nnsmith_sub(input_shapes[0].shape[2], mimic_k), 2 * self.padding), self.stride) + 1))
+
+        return [shape_var]
+
+    def _requires(self, input_shapes):
+        # FIXME: Handling flops.
+        cons = []
+        cons.append(nnsmith_eq(self.in_channels, input_shapes[0].shape[1]))
+        cons.append(nnsmith_ge(self.out_channels, 1))
+        cons.append(nnsmith_ge(self.dilation, 1))
+        mimic_k = self.kernel_size + \
+            (self.dilation - 1) * (self.kernel_size - 1)
+        cons.append(nnsmith_ge(mimic_k, 1))
+        cons.append(nnsmith_ge(self.stride, 1))
+        cons.append(nnsmith_ge(self.padding, 0))
+        cons.append(nnsmith_le(mimic_k,
+                    nnsmith_add(input_shapes[0].shape[2], 2 * self.padding)))
+        # not too extream to avoid torch exporter issue
+        cons.append(nnsmith_le(self.padding, 255))
+        return cons
+
+    def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
+        return [(3, out_shape_var[0].dtype)]
+
+    def __repr__(self) -> str:
+        repr = f'Conv1d({self.in_channels}, {self.out_channels}, k={self.kernel_size}'
+        if not isinstance(self.stride, int) or self.stride != 1:
+            repr += f', s={self.stride}'
+        if not isinstance(self.padding, int) or self.padding != 0:
+            repr += f', p={self.padding}'
+        if not isinstance(self.dilation, int) or self.dilation != 1:
+            repr += f', d={self.dilation}'
+        repr += ')'
+        return repr
+
+    def torch(self):
+        return torch.nn.Conv1d(in_channels=self.in_channels, out_channels=self.out_channels, kernel_size=self.kernel_size, stride=self.stride, padding=self.padding, dilation=self.dilation)
+
+
+@leaf
 class NCHWConv2d(UnaryOpBase):
     # FIXME: torch exporter does not support float64, may miss bugs
     in_dtypes = [(DType.float32,)]
@@ -1681,7 +1749,6 @@ class NCHWConv2d(UnaryOpBase):
 
     def _requires(self, input_shapes):
         cons = []
-        ret = []
         # TODO: Use eager mode for debugging.
         cons.append(nnsmith_eq(self.in_channels, input_shapes[0].shape[1]))
         cons.append(nnsmith_ge(self.out_channels, 1))
@@ -1695,7 +1762,6 @@ class NCHWConv2d(UnaryOpBase):
         cons.append(nnsmith_ge(mimic_kw, 1))
         cons.append(nnsmith_ge(self.stride, 1))
         cons.append(nnsmith_ge(self.padding, 0))
-        # TODO(JK): fix the dialation case for the kernel size constraints.
         cons.append(nnsmith_le(mimic_kh,
                     nnsmith_add(input_shapes[0].shape[2], 2 * self.padding)))
         cons.append(nnsmith_le(mimic_kw,
@@ -1705,9 +1771,7 @@ class NCHWConv2d(UnaryOpBase):
         # limit FLOPS
         if Z3_CONS_FLOPS:
             cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
-        for c in cons:
-            ret.append(c)
-        return ret
+        return cons
 
     def torch(self):
         return torch.nn.Conv2d(self.in_channels, self.out_channels, kernel_size=(self.kernel_h_size, self.kernel_w_size), stride=self.stride,
@@ -1741,7 +1805,7 @@ class NCHWConv2d(UnaryOpBase):
         if not isinstance(self.padding, int) or self.padding != 0:
             repr += f', p={self.padding}'
         if not isinstance(self.dilation_h, int) or self.dilation_h != 1 or self.dilation_w != 1:
-            repr += f', d={self.dilation_h}, {self.dilation_w}'
+            repr += f', d=({self.dilation_h}, {self.dilation_w})'
         repr += ')'
         return repr
 
