@@ -9,8 +9,6 @@ import os
 from typing import List, Optional, Tuple, Union, Callable, Type
 from inspect import signature
 import random
-import itertools
-import warnings
 
 # Import z3 ahead of torch (See https://github.com/Z3Prover/z3/issues/5656)
 import z3
@@ -1640,7 +1638,9 @@ class NCHWConv2d(UnaryOpBase):
                  kernel_h_size: Union[int, z3.ExprRef],
                  kernel_w_size: Union[int, z3.ExprRef],
                  stride: Union[int, z3.ExprRef],
-                 padding: Union[int, z3.ExprRef]):
+                 padding: Union[int, z3.ExprRef],
+                 dilation_h: Union[int, z3.ExprRef],
+                 dilation_w: Union[int, z3.ExprRef],):
         """See https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
         """
         super().__init__()
@@ -1650,6 +1650,8 @@ class NCHWConv2d(UnaryOpBase):
         self.kernel_w_size = kernel_w_size
         self.stride = stride
         self.padding = padding
+        self.dilation_h = dilation_h
+        self.dilation_w = dilation_w
 
         self.inp_ranks = [(4,)]  # NC(H,)W
         self.out_ranks = [(4,)]  # NC(H,)W
@@ -1658,10 +1660,15 @@ class NCHWConv2d(UnaryOpBase):
         shape_var = ShapeVar(
             [input_shapes[0].shape[0], self.out_channels], dtype=input_shapes[0].dtype)
 
+        mimic_kh = self.kernel_h_size + \
+            (self.dilation_h - 1) * (self.kernel_h_size - 1)
+        mimic_kw = self.kernel_w_size + \
+            (self.dilation_w - 1) * (self.kernel_w_size - 1)
+
         shape_var.shape.append(
-            (nnsmith_div(nnsmith_add(nnsmith_sub(input_shapes[0].shape[2], self.kernel_h_size), 2 * self.padding), self.stride) + 1))
+            (nnsmith_div(nnsmith_add(nnsmith_sub(input_shapes[0].shape[2], mimic_kh), 2 * self.padding), self.stride) + 1))
         shape_var.shape.append(
-            (nnsmith_div(nnsmith_add(nnsmith_sub(input_shapes[0].shape[3], self.kernel_w_size), 2 * self.padding), self.stride) + 1))
+            (nnsmith_div(nnsmith_add(nnsmith_sub(input_shapes[0].shape[3], mimic_kw), 2 * self.padding), self.stride) + 1))
         return [shape_var]
 
     def _requires(self, input_shapes):
@@ -1670,15 +1677,21 @@ class NCHWConv2d(UnaryOpBase):
         # TODO: Use eager mode for debugging.
         cons.append(nnsmith_eq(self.in_channels, input_shapes[0].shape[1]))
         cons.append(nnsmith_ge(self.out_channels, 1))
-        cons.append(nnsmith_ge(self.kernel_h_size, 1))
-        cons.append(nnsmith_ge(self.kernel_w_size, 1))
-        # TODO(JK): fix the dialation case for the kernel size constraints.
-        cons.append(nnsmith_le(self.kernel_h_size,
-                    nnsmith_add(input_shapes[0].shape[2], 2 * self.padding)))
-        cons.append(nnsmith_le(self.kernel_w_size,
-                    nnsmith_add(input_shapes[0].shape[3], 2 * self.padding)))
+        cons.append(nnsmith_ge(self.dilation_h, 1))
+        cons.append(nnsmith_ge(self.dilation_w, 1))
+        mimic_kh = self.kernel_h_size + \
+            (self.dilation_h - 1) * (self.kernel_h_size - 1)
+        mimic_kw = self.kernel_w_size + \
+            (self.dilation_w - 1) * (self.kernel_w_size - 1)
+        cons.append(nnsmith_ge(mimic_kh, 1))
+        cons.append(nnsmith_ge(mimic_kw, 1))
         cons.append(nnsmith_ge(self.stride, 1))
         cons.append(nnsmith_ge(self.padding, 0))
+        # TODO(JK): fix the dialation case for the kernel size constraints.
+        cons.append(nnsmith_le(mimic_kh,
+                    nnsmith_add(input_shapes[0].shape[2], 2 * self.padding)))
+        cons.append(nnsmith_le(mimic_kw,
+                    nnsmith_add(input_shapes[0].shape[3], 2 * self.padding)))
         # not too extream to avoid torch exporter issue
         cons.append(nnsmith_le(self.padding, 255))
         # limit FLOPS
@@ -1698,6 +1711,7 @@ class NCHWConv2d(UnaryOpBase):
         return nnsmith_mul(nnsmith_mul(nnsmith_mul(self._shape_fn(input_shapes)[0].nelement(), self.in_channels), self.kernel_h_size), self.kernel_w_size)
 
     def n_floats(self, input_shapes):
+        # FIXME: maybe need to take dilation into account?
         padded_data = ShapeVar(
             input_shapes[0].shape, dtype=input_shapes[0].dtype)
         padded_data.shape[2] = nnsmith_add(
@@ -1711,6 +1725,17 @@ class NCHWConv2d(UnaryOpBase):
 
     def deduct_inp_ranks_and_dtype(self, out_shape_var: List[ShapeVar]) -> List[Tuple[int, DType]]:
         return [(4, out_shape_var[0].dtype)]
+
+    def __repr__(self) -> str:
+        repr = f'Conv2d({self.in_channels}, {self.out_channels}, k=({self.kernel_h_size},{self.kernel_w_size})'
+        if not isinstance(self.stride, int) or self.stride != 1:
+            repr += f', s={self.stride}'
+        if not isinstance(self.padding, int) or self.padding != 0:
+            repr += f', p={self.padding}'
+        if not isinstance(self.dilation_h, int) or self.dilation_h != 1 or self.dilation_w != 1:
+            repr += f', d={self.dilation_h}, {self.dilation_w}'
+        repr += ')'
+        return repr
 
 
 def random_group(n, k):
