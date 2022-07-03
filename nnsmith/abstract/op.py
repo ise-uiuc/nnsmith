@@ -242,7 +242,13 @@ class DType(Enum):
     def __str__(self) -> str:
         s = super().__str__()
         assert s.startswith('DType.'), s
-        return s[len('DType.'):]
+        return {
+            'float32': 'f32',
+            'float64': 'f64',
+            'int32': 'i32',
+            'int64': 'i64',
+            'bool': 'bool',
+        }[s[len('DType.'):]]
 
     @staticmethod
     def is_float(dtype):
