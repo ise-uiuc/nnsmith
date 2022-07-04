@@ -90,7 +90,7 @@ if __name__ == '__main__':
         grad_res.append(sort_by_time(grad_time, grad_succ_rate))
         proxy_res.append(sort_by_time(proxy_time, proxy_succ_rate))
 
-    fig, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(8, 3.6), constrained_layout=True)
 
     colors = ['dodgerblue', 'violet', 'coral']  # ['b', 'r', 'g']
     markers = ['1', '.', '+']
@@ -137,7 +137,7 @@ if __name__ == '__main__':
     for i in range(3):
         patches.append(mpatches.Patch(color=colors[i], label=node_sizes[i]))
     legend2 = plt.legend(
-        handles=patches, loc='center right', bbox_to_anchor=(1, 0.42), title='Model Size')
+        handles=patches, loc='center right', bbox_to_anchor=(1, 0.36), title='Model Size')
 
     ax.add_artist(legend1)
     ax.add_artist(legend2)

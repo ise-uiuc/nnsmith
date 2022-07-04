@@ -239,7 +239,7 @@ if __name__ == '__main__':
     simple_reduce_ops = ['sum', 'min', 'max', 'mean']
     UEW_KEY = '$\\bf unary$ elem.-wise'
     BEW_KEY = '$\\bf bin.$ elem.-wise'
-    REDUCE_KEY = 'simple $\\bf reduce$'
+    REDUCE_KEY = 'common $\\bf reduce$'
     for res in results:
         res['param_map'][UEW_KEY] = Counter()
         for uk in unary_pf_ew:
@@ -283,7 +283,7 @@ if __name__ == '__main__':
     COLORS = ['lightblue', 'dodgerblue']
 
     fig, ax = plt.subplots(
-        1, 1, constrained_layout=True, figsize=(15, 8))
+        1, 1, constrained_layout=True, figsize=(15, 5))
 
     print(mutual_keys)
 
@@ -291,29 +291,35 @@ if __name__ == '__main__':
         param_map = single_res['param_map']
         print(f"{single_res['nfiles']=}")
         padding = int((10 - len(tag)) * 1.2)
-        blank = r' '
+        blank = r'\ '
         legends.append(
             f'{tag + "".join([blank for _ in range(padding)])} (total: {vals[idx].sum()})')
 
+    normalized = vals.max(axis=0) / vals.min(axis=0)
+    indices = np.argsort(normalized)
+
+    for idx, (tag, single_res) in enumerate(zip(args.tags, results)):
         pv = vals[idx] / np.min(vals, axis=0)
 
         x_pos = base_x  # - 0.5 * col_width + (idx + 0.5) * bar_width
-        ax.bar(x_pos, pv,
+        ax.bar(x_pos, pv[indices],
                width=bar_width, label=tag, color=COLORS[idx], align='center',
                hatch=HATCHES[idx], edgecolor='k', linewidth=3)
 
-    for x, v in zip(base_x, vals.max(axis=0) / vals.min(axis=0)):
-        ax.text(x - bar_width * 0.5, v + 0.15, f'{v:.1f}$\\times$',
+    for x, v in zip(base_x, normalized[indices]):
+        ax.text(x - bar_width * 0.5, v + 0.13, f'{v:.1f}$\\times$',
                 fontweight='bold', fontsize=MEDIUM_SIZE, fontname='Times New Roman')
 
     ax.get_yaxis().set_ticks([])
     plt.legend(legends)
 
     xticks = []
-    for k in mutual_keys:
+    for idx in indices:
+        k = mutual_keys[idx]
         xticks.append(k if k.startswith('$') else k.split('.')[-1])
-    plt.xticks(base_x, xticks, rotation=60, ha='right', rotation_mode='anchor')
+    plt.xticks(base_x, xticks, rotation=35, ha='right', rotation_mode='anchor')
     plt.xlim([base_x[0] - 0.5, base_x[-1] + 0.5])
+    plt.ylim([0, normalized.max() + 0.5])
     # plt.gcf().subplots_adjust(left=base_x[0] - 1, right=base_x[-1] + 1)
     # fig.subplots_adjust(left=base_x[0] - 1, right=base_x[-1] + 1)
     # plt.xlabel('# Operators in Models w/ Vulnerable Op.', fontweight='bold')
