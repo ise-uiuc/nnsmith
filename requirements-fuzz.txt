@@ -1,12 +1,6 @@
-torch
-onnx
-z3-solver
+--extra-index-url https://pypi.ngc.nvidia.com
+onnx-tf
 onnxruntime-gpu
-pydot
-gitpython
-pandas==1.3.5
-rich
-networkx
-psutil
-tqdm
-cloudpickle
+nvidia-pyindex
+nvidia-tensorrt
+
