@@ -8,8 +8,8 @@ import os
 import pandas as pd
 
 
-SMALL_SIZE = 11
-MEDIUM_SIZE = 15
+SMALL_SIZE = 10
+MEDIUM_SIZE = 14
 BIGGER_SIZE = 18
 
 plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
@@ -32,10 +32,10 @@ class Ploter:
         # cov / time, cov / iteration, iteration / time
         if not one_plot:
             fig, axs = plt.subplots(
-                1, 2, constrained_layout=True, figsize=(10, 4))
+                1, 2, constrained_layout=True, figsize=(10, 3.3))
         else:
             fig, axs = plt.subplots(
-                1, 1, constrained_layout=True, figsize=(7, 4.8))
+                1, 1, constrained_layout=True, figsize=(7, 3.8))
             axs = [axs]
         self.one_plot = one_plot
         self.fig = fig
@@ -114,7 +114,7 @@ class Ploter:
         top_lim = cov_max + (cov_max - cov_min) * 0.28
 
         if cov_lim is not None:
-            ann_size = MEDIUM_SIZE + 2
+            ann_size = MEDIUM_SIZE + 1
             if self.one_plot:
                 ann_size += 5
             max_cov_unscale = int(cov_max * self.scale)
@@ -269,7 +269,7 @@ def plot_one_round(
 
     if len(branch_cov_sets) != 1:
         plt.clf()
-        plt.figure(figsize=(4.2, 4.2), constrained_layout=True)
+        plt.figure(figsize=(4.5, 3.5), constrained_layout=True)
         if len(branch_cov_sets) == 2:
             v = venn2(subsets=branch_cov_sets, set_labels=[
                 f'{t}' for t in fuzz_tags], alpha=0.3)
@@ -279,14 +279,26 @@ def plot_one_round(
             total_covs = [len(s) for s in branch_cov_sets]
             for k, val in zip(ks, _venn3.compute_venn3_subsets(*branch_cov_sets)):
                 sets[k] = val
-            v = venn3(subsets=(7, 7, 3, 7, 3, 3, 5), set_labels=[
+            v = venn3(subsets=(6, 6, 3, 6, 3, 3, 4.5), set_labels=[
                       f'{t}\n({c})' for t, c in zip(fuzz_tags, total_covs)])
+
+            lb = v.get_label_by_id('A')
+            x, y = lb.get_position()
+            lb.set_position((x - 0.2, y - 0.3))
+
+            lb = v.get_label_by_id('B')
+            x, y = lb.get_position()
+            lb.set_position((x + 0.2, y - 0.3))
+
+            lb = v.get_label_by_id('C')
+            x, y = lb.get_position()
+            lb.set_position((x + 0.6, y + 0.3))
 
             for id in ['110', '101', '011']:
                 if v.get_label_by_id(id):
                     v.get_label_by_id(id).set_text(sets[id])
-                    v.get_patch_by_id(id).set_alpha(0.15)
                     v.get_label_by_id(id).set_fontsize(MEDIUM_SIZE)
+                    v.get_patch_by_id(id).set_alpha(0.15)
 
             hatches = ['*', '.', '\\']
             # circles = ['dodgerblue', 'MediumVioletRed', 'coral', 'white'] # colorful.
@@ -307,7 +319,7 @@ def plot_one_round(
                     v.get_patch_by_id(id).set_alpha(0.2)
 
         for text in v.set_labels:
-            text.set_fontsize((MEDIUM_SIZE + BIGGER_SIZE) // 2)
+            text.set_fontsize(BIGGER_SIZE - 1)
 
     plt.savefig(f'{os.path.join(folder, target_tag + pass_tag + "br_cov_venn")}.png',
                 bbox_inches='tight')
