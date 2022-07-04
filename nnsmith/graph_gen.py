@@ -1306,6 +1306,8 @@ PARAM_CONFIG1 = {
     'NCHWConv2d': {
         'kernel_h_size': _DEFAULT_BIN_CONS,
         'kernel_w_size': _DEFAULT_BIN_CONS,
+        'dilation_h': _DEFAULT_BIN_CONS,
+        'dilation_w': _DEFAULT_BIN_CONS,
         'stride': _DEFAULT_BIN_CONS,
         'padding': _DEFAULT_BIN_CONS + [Bin(0, 1)],
         'out_channels': _DEFAULT_BIN_CONS,
