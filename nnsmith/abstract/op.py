@@ -242,13 +242,16 @@ class DType(Enum):
     def __str__(self) -> str:
         s = super().__str__()
         assert s.startswith('DType.'), s
+        return s[len('DType.'):]
+
+    def short(self) -> str:
         return {
             'float32': 'f32',
             'float64': 'f64',
             'int32': 'i32',
             'int64': 'i64',
             'bool': 'bool',
-        }[s[len('DType.'):]]
+            }[self.__str__()]
 
     @staticmethod
     def is_float(dtype):
@@ -261,6 +264,10 @@ class DType(Enum):
     @staticmethod
     def from_str(s):
         return {
+            'f32': DType.float32,
+            'f64': DType.float64,
+            'i32': DType.int32,
+            'i64': DType.int64,
             'float32': DType.float32,
             'float64': DType.float64,
             'int32': DType.int32,
@@ -278,6 +285,10 @@ class DType(Enum):
         if not isinstance(s, str):
             s = str(s)
         return {
+            'f32': torch.float32,
+            'f64': torch.float64,
+            'i32': torch.int32,
+            'i64': torch.int64,
             'float32': torch.float32,
             'float64': torch.float64,
             'int32': torch.int32,
