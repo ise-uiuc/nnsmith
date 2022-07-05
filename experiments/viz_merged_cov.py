@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import matplotlib
-from matplotlib_venn import venn2, venn3, _venn3
+from matplotlib_venn import venn2, _venn2, venn3, _venn3
 import numpy as np
 
 import os
@@ -17,11 +17,11 @@ plt.rc('axes', titlesize=MEDIUM_SIZE)     # fontsize of the axes title
 plt.rc('axes', labelsize=MEDIUM_SIZE)    # fontsize of the x and y labels
 plt.rc('xtick', labelsize=MEDIUM_SIZE)    # fontsize of the tick labels
 plt.rc('ytick', labelsize=MEDIUM_SIZE)    # fontsize of the tick labels
-plt.rc('legend', fontsize=MEDIUM_SIZE)    # legend fontsize
+plt.rc('legend', fontsize=MEDIUM_SIZE - 1)    # legend fontsize
 plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
 MIN_FAC_TWO = None
-MIN_FAC_SINGLE = None
+MIN_FAC = None
 
 plt.rc('text', usetex=True)
 plt.rc('text.latex', preamble=r'\usepackage{xfrac}')
@@ -30,16 +30,14 @@ plt.rc('text.latex', preamble=r'\usepackage{xfrac}')
 class Ploter:
     def __init__(self, cov_lim=None, use_pdf=False, one_plot=False, scale=1) -> None:
         # cov / time, cov / iteration, iteration / time
-        if not one_plot:
-            fig, axs = plt.subplots(
-                1, 2, constrained_layout=True, figsize=(10, 3.3))
-        else:
-            fig, axs = plt.subplots(
-                1, 1, constrained_layout=True, figsize=(7, 3.8))
-            axs = [axs]
+        fig0, axs0 = plt.subplots(
+            1, 1, constrained_layout=True, figsize=(6, 3.5))
+        fig1, axs1 = plt.subplots(
+            1, 1, constrained_layout=True, figsize=(5, 3))
+
         self.one_plot = one_plot
-        self.fig = fig
-        self.axs = axs
+        self.fig = [fig0, fig1]
+        self.axs = [axs0, axs1]
         self.cov_lim = cov_lim
         self.cov_maxes = []
         self.xspan = 0
@@ -84,20 +82,20 @@ class Ploter:
 
         self.axs[0].plot(df[:, 0], df[:, 2], label=name,
                          **style_kw)  # cov / time
-        print(f'----> max cov {df[:, 2].max() * self.scale}')
+        print(
+            f'----> max cov {df[:, 2].max() * self.scale} + max tests {int(df[:, 1].max())}')
 
-        if not self.one_plot:
-            self.axs[1].plot(df[:, 1], df[:, 2], label=name,
-                             **style_kw)  # cov / iteration
-            # self.axs[2].plot(df[:, 0], df[:, 1], **style_kw)  # iter / time
+        self.axs[1].plot(df[:, 1], df[:, 2], label=name,
+                         **style_kw)  # cov / iteration
 
         self.xspan = max(self.xspan, df[-1, 0])
 
         self.cov_maxes.append(df[:, 2].max())
 
     def plot(self, save='cov', cov_lim=None, loc=0):
-        handles, labels = self.axs[-1].get_legend_handles_labels()
-        self.axs[-1].legend(handles[::-1], labels[::-1])
+        for ax in self.axs:
+            handles, labels = ax.get_legend_handles_labels()
+            ax.legend(handles[::-1], labels[::-1], loc=loc)
 
         self.cov_maxes = sorted(self.cov_maxes)
 
@@ -111,33 +109,26 @@ class Ploter:
         cov_max = max(self.cov_maxes)
         cov_min = min(self.cov_maxes)
 
-        top_lim = cov_max + (cov_max - cov_min) * 0.28
+        top_lim = cov_max + (cov_max - cov_min) * 0.5
 
         if cov_lim is not None:
-            ann_size = MEDIUM_SIZE + 1
-            if self.one_plot:
-                ann_size += 5
+            ann_size = BIGGER_SIZE + 4
             max_cov_unscale = int(cov_max * self.scale)
-            self.axs[0].annotate(f"$\\sfrac{{{max_cov_unscale}_\\mathrm{{best}}}}{{{int(cov_lim)}_\\mathrm{{total}}}}$ = \\textbf{{{max_cov_unscale / cov_lim * 100 :.1f}\%}}",
-                                 xy=(0, cov_max + (top_lim - cov_max) / 2.2), xycoords="data",
+            self.axs[0].annotate(f"$\\sfrac{{{max_cov_unscale}_\\mathbf{{best}}}}{{{int(cov_lim)}_\\mathbf{{max}}}}$ = \\textbf{{{max_cov_unscale / cov_lim * 100 :.1f}\%}}",
+                                 xy=(0, cov_max + (top_lim - cov_max) / 2.25), xycoords="data",
                                  va="center", ha="left", fontsize=ann_size,
                                  bbox=dict(boxstyle="round", fc="w"))
 
         if self.cov_lim is not None:
             self.axs[0].set_ylim(bottom=self.cov_lim,
                                  top=top_lim)
-            if not self.one_plot:
-                self.axs[1].set_ylim(bottom=self.cov_lim,
-                                     top=top_lim)
+            self.axs[1].set_ylim(bottom=self.cov_lim,
+                                 top=top_lim)
         else:
-            if not self.one_plot:
-                self.axs[0].set_ylim(bottom=cov_min * MIN_FAC_TWO,
-                                     top=top_lim)
-                self.axs[1].set_ylim(bottom=cov_min * MIN_FAC_TWO,
-                                     top=top_lim)
-            else:
-                self.axs[0].set_ylim(bottom=cov_min * MIN_FAC_SINGLE,
-                                     top=top_lim)
+            self.axs[0].set_ylim(bottom=cov_min * MIN_FAC,
+                                 top=top_lim)
+            self.axs[1].set_ylim(bottom=cov_min * MIN_FAC,
+                                 top=top_lim)
 
         ylabel = '\# Coverage'
         if self.scale != 1:
@@ -147,19 +138,16 @@ class Ploter:
             ylabel=ylabel)
         self.axs[0].grid(alpha=0.5, ls=':')
 
-        if not self.one_plot:
-            # hide title if only one plot.
-            self.axs[0].set_title('Time Efficiency')
-
-            self.axs[1].set(
-                xlabel='\# Iteration')
-            self.axs[1].set_yticklabels([])
-            self.axs[1].set_title('Iteration Efficiency')
-            self.axs[1].grid(alpha=0.5, ls=':')
+        self.axs[1].set(
+            xlabel='\# Iteration',
+            ylabel=ylabel)
+        self.axs[1].grid(alpha=0.5, ls=':')
 
         if self.use_pdf:
-            self.fig.savefig(save + '.pdf')
-        self.fig.savefig(save + '.png')
+            self.fig[0].savefig(save + '-time.pdf')
+            self.fig[1].savefig(save + '-iter.pdf')
+        self.fig[0].savefig(save + '-time.png')
+        self.fig[1].savefig(save + '-iter.png')
 
 
 def cov_summerize(data, pass_filter=None, tlimit=None, branch_only=True, gen_time=None):
@@ -226,8 +214,8 @@ def tvm_arith_filter(fname):
 
 
 def plot_one_round(
-        folder, data, pass_filter=None, fuzz_tags=None, target_tag='', tlimit=None, pdf=False, one_plot=False, pass_tag='', gen_time=None, venn=False, scale=1):
-    branch_ploter = Ploter(use_pdf=pdf, one_plot=one_plot, scale=scale)
+        folder, data, pass_filter=None, fuzz_tags=None, target_tag='', tlimit=None, pdf=False, pass_tag='', gen_time=None, venn=False, scale=1):
+    branch_ploter = Ploter(use_pdf=pdf, scale=scale)
 
     assert fuzz_tags is not None
     if pass_filter is not None:
@@ -269,11 +257,46 @@ def plot_one_round(
 
     if len(branch_cov_sets) != 1:
         plt.clf()
-        plt.figure(figsize=(4.5, 3.5), constrained_layout=True)
         if len(branch_cov_sets) == 2:
-            v = venn2(subsets=branch_cov_sets, set_labels=[
-                f'{t}' for t in fuzz_tags], alpha=0.3)
+            plt.figure(figsize=(3.5, 2.5), constrained_layout=True)
+            ks = ['10', '11', '01']
+            sets = {}
+            total_covs = [len(s) for s in branch_cov_sets]
+            for k, val in zip(ks, _venn2.compute_venn2_subsets(*branch_cov_sets)):
+                sets[k] = val
+            v = venn2(subsets=(4, 4, 2), set_labels=[
+                      f'{{{t}}}\n({c})' for t, c in zip(fuzz_tags, total_covs)])
+
+            lb = v.get_label_by_id('A')
+            x, y = lb.get_position()
+            lb.set_position((x + 0.02, y + 0.4))
+
+            lb = v.get_label_by_id('B')
+            x, y = lb.get_position()
+            lb.set_position((x, y + 0.4))
+
+            for id in ['11']:
+                if v.get_label_by_id(id):
+                    v.get_label_by_id(id).set_text(sets[id])
+                    v.get_label_by_id(id).set_fontsize(MEDIUM_SIZE)
+                    v.get_patch_by_id(id).set_alpha(0.15)
+                    v.get_patch_by_id(id).set_facecolor('mediumseagreen')
+
+            hatches = ['|', '\\']
+            # circles = ['dodgerblue', 'MediumVioletRed', 'coral', 'white'] # colorful.
+            fcolors = ['lightgreen', 'navajowhite']
+            for idx, id in enumerate(['10', '01']):
+                if sets[id] == 0:
+                    continue
+                cnt = sets[id]
+                v.get_label_by_id(id).set_text(f'\\textbf{{{cnt}}}')
+                v.get_label_by_id(id).set_fontsize(BIGGER_SIZE + 4)
+                v.get_patch_by_id(id).set_edgecolor('gray')
+                v.get_patch_by_id(id).set_hatch(hatches[idx])
+                v.get_patch_by_id(id).set_facecolor(fcolors[idx])
+
         elif len(branch_cov_sets) == 3:
+            plt.figure(figsize=(4.5, 3.5), constrained_layout=True)
             ks = ['100', '010', '110', '001', '101', '011', '111']
             sets = {}
             total_covs = [len(s) for s in branch_cov_sets]
@@ -373,12 +396,10 @@ if '__main__' == __name__:
     arith_filter = None
     if args.tvm:
         arith_filter = tvm_arith_filter
-        MIN_FAC_TWO = 0.92
-        MIN_FAC_SINGLE = 0.9
+        MIN_FAC = 0.87
     elif args.ort:
         arith_filter = None
-        MIN_FAC_TWO = 0.82
-        MIN_FAC_SINGLE = 0.7
+        MIN_FAC = 0.7
     else:
         print(f'[WARNING] No pass filter is used (use --tvm or --ort)')
 
@@ -393,6 +414,6 @@ if '__main__' == __name__:
 
     if pass_filter is not None:
         plot_one_round(folder=args.output, data=data,
-                       pass_filter=pass_filter, pass_tag='opt_', scale=100, tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, one_plot=True, gen_time=gen_time, venn=args.venn)
+                       pass_filter=pass_filter, pass_tag='opt_', scale=100, tlimit=args.tlimit, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, gen_time=gen_time, venn=args.venn)
     plot_one_round(folder=args.output, data=data,
                    pass_filter=None, tlimit=args.tlimit, scale=1000, fuzz_tags=args.tags, target_tag=target_tag, pdf=args.pdf, gen_time=gen_time, venn=args.venn)  # no pass
