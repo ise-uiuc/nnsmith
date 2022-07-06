@@ -259,31 +259,32 @@ def plot_one_round(
         plt.clf()
         if len(branch_cov_sets) == 2:
             plt.figure(figsize=(3.5, 2.5), constrained_layout=True)
-            ks = ['10', '11', '01']
+            ks = ['10', '01', '11']
             sets = {}
             total_covs = [len(s) for s in branch_cov_sets]
             for k, val in zip(ks, _venn2.compute_venn2_subsets(*branch_cov_sets)):
                 sets[k] = val
-            v = venn2(subsets=(4, 4, 2), set_labels=[
+            v = venn2(subsets=(5, 5, 2), set_labels=[
                       f'{{{t}}}\n({c})' for t, c in zip(fuzz_tags, total_covs)])
 
             lb = v.get_label_by_id('A')
             x, y = lb.get_position()
-            lb.set_position((x + 0.02, y + 0.4))
+            lb.set_position((x + 0.07, y + 0.4))
 
             lb = v.get_label_by_id('B')
             x, y = lb.get_position()
-            lb.set_position((x, y + 0.4))
+            lb.set_position((x - 0.07, y + 0.4))
 
             for id in ['11']:
                 if v.get_label_by_id(id):
                     v.get_label_by_id(id).set_text(sets[id])
-                    v.get_label_by_id(id).set_fontsize(MEDIUM_SIZE)
+                    v.get_label_by_id(id).set_fontsize(MEDIUM_SIZE + 2)
                     v.get_patch_by_id(id).set_alpha(0.15)
-                    v.get_patch_by_id(id).set_facecolor('mediumseagreen')
+                    v.get_patch_by_id(id).set_facecolor('royalblue')
 
             hatches = ['|', '\\']
             # circles = ['dodgerblue', 'MediumVioletRed', 'coral', 'white'] # colorful.
+            # fcolors = ['violet', 'navajowhite'] # for binning
             fcolors = ['lightgreen', 'navajowhite']
             for idx, id in enumerate(['10', '01']):
                 if sets[id] == 0:
