@@ -251,7 +251,7 @@ class DType(Enum):
             'int32': 'i32',
             'int64': 'i64',
             'bool': 'bool',
-            }[self.__str__()]
+        }[self.__str__()]
 
     @staticmethod
     def is_float(dtype):
@@ -918,13 +918,9 @@ class LegacyConstant4D(Constant):
 
 # FIXME: Div will cause fuzzing crash.
 Div = leaf(type('Div', (BcastBinaryOp1,), {
-    'torch': (lambda self:
-              lambda x, y: torch.div(x, y, rounding_mode='floor' if DType(
-                  x.dtype) in DTYPE_INTS else None)),
-    'torch_loss': lambda self, x, y: loss_gt_zero(torch.abs(y)),
-    '__module__': __name__
-}
-))
+    'torch': (lambda self: lambda x, y: torch.div(x, y, rounding_mode='floor' if DType(
+        x.dtype) in DTYPE_INTS else None)),
+    'torch_loss': lambda self, x, y: loss_gt_zero(torch.abs(y)), '__module__': __name__}))
 
 
 @leaf
@@ -956,9 +952,6 @@ class GELU(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
-    def __init__(self):
-        super().__init__()
-
     def torch(self):
         return torch.nn.GELU()
 
@@ -983,9 +976,6 @@ class PReLU(ElementWiseUnaryOp):
     in_dtypes = [(DType.float32,)]
     out_dtypes = [(DType.float32,)]
 
-    def __init__(self):
-        super().__init__()
-
     def torch(self):
         return torch.nn.PReLU(device=_DEV)
 
@@ -994,9 +984,6 @@ class PReLU(ElementWiseUnaryOp):
 class Sigmoid(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
-
-    def __init__(self):
-        super().__init__()
 
     def torch(self):
         return torch.sigmoid
@@ -1011,9 +998,6 @@ class Sin(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
-    def __init__(self):
-        super().__init__()
-
     def torch(self):
         return torch.sin
 
@@ -1023,9 +1007,6 @@ class Cos(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
-    def __init__(self):
-        super().__init__()
-
     def torch(self):
         return torch.cos
 
@@ -1034,9 +1015,6 @@ class Cos(TrigonometricOp):
 class Asin(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
-
-    def __init__(self):
-        super().__init__()
 
     def torch(self):
         return torch.asin
@@ -1050,9 +1028,6 @@ class Acos(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
-    def __init__(self):
-        super().__init__()
-
     def torch(self):
         return torch.acos
 
@@ -1065,9 +1040,6 @@ class Tan(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
-    def __init__(self):
-        super().__init__()
-
     def torch(self):
         return torch.tan
 
@@ -1077,9 +1049,6 @@ class Atan(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
-    def __init__(self):
-        super().__init__()
-
     def torch(self):
         return torch.atan
 
@@ -1087,9 +1056,6 @@ class Atan(TrigonometricOp):
 @leaf
 class Abs(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
-
-    def __init__(self):
-        super().__init__()
 
     def torch(self):
         return torch.abs
@@ -1099,9 +1065,6 @@ class Abs(ElementWiseUnaryOp):
 class ReLU(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
-
-    def __init__(self):
-        super().__init__()
 
     def torch(self):
         return torch.nn.ReLU()
@@ -1115,9 +1078,6 @@ class Ceil(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
-    def __init__(self):
-        super().__init__()
-
     def torch(self):
         return torch.ceil
 
@@ -1129,9 +1089,6 @@ class Ceil(ElementWiseUnaryOp):
 class Floor(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
-
-    def __init__(self):
-        super().__init__()
 
     def torch(self):
         return torch.floor
@@ -1172,9 +1129,6 @@ class Round(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
-    def __init__(self):
-        super().__init__()
-
     def torch(self):
         return torch.round
 
@@ -1186,9 +1140,6 @@ class Round(ElementWiseUnaryOp):
 class Sqrt(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
-
-    def __init__(self):
-        super().__init__()
 
     def torch(self):
         return torch.sqrt
@@ -1202,9 +1153,6 @@ class Log2(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
-    def __init__(self):
-        super().__init__()
-
     def torch(self):
         return torch.log2
 
@@ -1216,9 +1164,6 @@ class Log2(ElementWiseUnaryOp):
 class Neg(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
-
-    def __init__(self):
-        super().__init__()
 
     def torch(self):
         return torch.neg
