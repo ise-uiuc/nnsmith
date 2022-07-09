@@ -9,7 +9,7 @@ import numpy as np
 
 
 SMALL_SIZE = 10
-MEDIUM_SIZE = 15
+MEDIUM_SIZE = 13
 BIGGER_SIZE = 18
 
 plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
@@ -90,9 +90,9 @@ if __name__ == '__main__':
         grad_res.append(sort_by_time(grad_time, grad_succ_rate))
         proxy_res.append(sort_by_time(proxy_time, proxy_succ_rate))
 
-    fig, ax = plt.subplots(figsize=(8, 3.6), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(8, 3.2), constrained_layout=True)
 
-    colors = ['dodgerblue', 'violet', 'coral']  # ['b', 'r', 'g']
+    colors = ['dodgerblue', 'violet', 'green']  # ['b', 'r', 'g']
     markers = ['1', '.', '+']
     markercolor = 'k'
     markersize = 10
@@ -116,13 +116,13 @@ if __name__ == '__main__':
 
         ax.plot(proxy_time, proxy_succ_rate, marker=markers[0],
                 markeredgecolor=markercolor, markersize=markersize, markeredgewidth=markeredgewidth,
-                linestyle=':', color=c, lw=lw)
+                linestyle='--', color=c, lw=lw)
         ax.plot(grad_time, grad_succ_rate, marker=markers[1],
                 markeredgecolor=markercolor, markersize=markersize, markeredgewidth=markeredgewidth,
-                linestyle=':', color=c, lw=lw)
+                linestyle='--', color=c, lw=lw)
         ax.plot(sampling_time, sampling_succ_rate, marker=markers[2],
                 markeredgecolor=markercolor, markersize=markersize, markeredgewidth=markeredgewidth,
-                linestyle=':', color=c, lw=lw)
+                linestyle='--', color=c, lw=lw)
 
         max_time = max(max_time, sampling_time.max())
 

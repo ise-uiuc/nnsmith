@@ -18,7 +18,7 @@ import numpy as np
 from onnx_graph_analyzer import analyze_one_relay
 
 SMALL_SIZE = 12
-MEDIUM_SIZE = 15
+MEDIUM_SIZE = 16
 BIGGER_SIZE = 18
 SUPER_BIG = 22
 
@@ -283,7 +283,7 @@ if __name__ == '__main__':
     COLORS = ['lightblue', 'dodgerblue']
 
     fig, ax = plt.subplots(
-        1, 1, constrained_layout=True, figsize=(15, 5))
+        1, 1, constrained_layout=True, figsize=(13, 5))
 
     print(mutual_keys)
 
@@ -307,7 +307,7 @@ if __name__ == '__main__':
                hatch=HATCHES[idx], edgecolor='k', linewidth=3)
 
     for x, v in zip(base_x, normalized[indices]):
-        ax.text(x - bar_width * 0.5, v + 0.13, f'{v:.1f}$\\times$',
+        ax.text(x - bar_width * 0.54, v + 0.13, f'{v:.1f}$\\times$',
                 fontweight='bold', fontsize=MEDIUM_SIZE, fontname='Times New Roman')
 
     ax.get_yaxis().set_ticks([])
@@ -319,7 +319,7 @@ if __name__ == '__main__':
         xticks.append(k if k.startswith('$') else k.split('.')[-1])
     plt.xticks(base_x, xticks, rotation=35, ha='right', rotation_mode='anchor')
     plt.xlim([base_x[0] - 0.5, base_x[-1] + 0.5])
-    plt.ylim([0, normalized.max() + 0.5])
+    plt.ylim([0, normalized.max() + 0.8])
     # plt.gcf().subplots_adjust(left=base_x[0] - 1, right=base_x[-1] + 1)
     # fig.subplots_adjust(left=base_x[0] - 1, right=base_x[-1] + 1)
     # plt.xlabel('# Operators in Models w/ Vulnerable Op.', fontweight='bold')
