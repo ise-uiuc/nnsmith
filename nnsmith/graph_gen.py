@@ -1599,8 +1599,8 @@ if __name__ == '__main__':
         for i, name in enumerate(net.input_spec):
             ret_inputs[name] = sat_inputs[name].cpu().numpy()
         sat_inputs = ret_inputs
-    pickle.dump(sat_inputs, open(
-        args.output_path + '-sat_inputs.pkl', 'wb'))
+        pickle.dump(sat_inputs, open(
+            args.output_path + '-sat_inputs.pkl', 'wb'))
 
     torch2onnx(net, args.output_path, verbose=args.verbose,
                use_cuda=args.use_cuda)
