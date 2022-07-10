@@ -10,8 +10,7 @@ from nnsmith.abstract.op import DType, ShapeVar
 from nnsmith.graph_gen import SymbolNet
 
 
-def create_deadcode_onnx(filename):
-    onnx_model = onnx.load(filename)
+def create_deadcode_onnx(onnx_model, filename):
 
     select_idx = list(range(len(onnx_model.graph.output)))
     random.shuffle(select_idx)
@@ -53,13 +52,6 @@ def torch2onnx(model: SymbolNet, filename, verbose=False, use_cuda=False, dummy_
         if len(dshape) > 0:
             dynamic_axes[name] = dshape
 
-    # TODO: explicitly model outputs.
-    # output_names = list(model.output_spec.keys())
-    # for name in output_names:
-    #     dshape = [i for i, v in enumerate(model.output_spec[name]) if v != -1]
-    #     if len(dshape) > 0:
-    #         dynamic_axes[name] = dshape
-
     # Dummy inputs
     if dummy_inputs is None:
         dummy_inputs = []
@@ -68,6 +60,16 @@ def torch2onnx(model: SymbolNet, filename, verbose=False, use_cuda=False, dummy_
                 size=svar.shape, device=dev).to(dtype=svar.dtype.value))
     if verbose:
         print(f"Generated model:\n{model}")
+
+    dce_prob = os.getenv('NNSMITH_DCE')
+    if dce_prob is not None:
+        do_constant_folding = False
+        try:
+            dce_prob = float(dce_prob)
+        except ValueError:
+            dce_prob = 1.0
+    else:
+        dce_prob = 0.0
 
     with torch.no_grad():
         with warnings.catch_warnings():
@@ -87,21 +89,16 @@ def torch2onnx(model: SymbolNet, filename, verbose=False, use_cuda=False, dummy_
                 opset_version=14)
 
     selected_idx = list(range(model.n_output))
-    if os.getenv('NNSMITH_DCE') is not None:
-        # try float
-        try:
-            dce_prob = float(os.getenv('NNSMITH_DCE'))
-            if random.random() < dce_prob:
-                selected_idx = create_deadcode_onnx(filename)
-        except ValueError:
-            selected_idx = create_deadcode_onnx(filename)
+    onnx_model = onnx.load(filename)
+
+    if random.random() < dce_prob:
+        selected_idx = create_deadcode_onnx(onnx_model, filename)
 
     if proxy_enabled:  # Re-enable proxy grad
         model.enable_proxy_grad()
 
     # get output names.
-    model_onnx = onnx.load(filename)
-    output_names = [node.name for node in model_onnx.graph.output]
+    output_names = [onnx_model.graph.output[i].name for i in selected_idx]
 
     return input_names, output_names, selected_idx
 
