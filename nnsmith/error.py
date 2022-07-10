@@ -21,13 +21,6 @@ class NumericError(ModeledError):
     pass
 
 
-class PerfDegradation(ModeledError):
-    pass
-
-
-class RuntimeFailure(ModeledError):
-    pass
-
 # Timeout...
 
 
