@@ -37,7 +37,7 @@ class PGReLUFunc(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        input, = ctx.saved_tensors
+        (input,) = ctx.saved_tensors
         # let f' = l * x in bound
         # let f' = x out bound
         grad_input = grad_output.clone()
@@ -54,14 +54,23 @@ class PGClipFunc(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        input, = ctx.saved_tensors
+        (input,) = ctx.saved_tensors
         # let f' = l * x in bound
         # let f' = x out bound
         grad_input = grad_output.clone()
-        return torch.where((input > ctx.clip_max).logical_or(input < ctx.clip_min), grad_input * SLOPE, grad_input), None, None
+        return (
+            torch.where(
+                (input > ctx.clip_max).logical_or(input < ctx.clip_min),
+                grad_input * SLOPE,
+                grad_input,
+            ),
+            None,
+            None,
+        )
 
 
 # Modules.
+
 
 class PGCeil(torch.nn.Module):
     def __init__(self):

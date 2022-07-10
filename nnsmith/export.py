@@ -14,7 +14,7 @@ def create_deadcode_onnx(onnx_model, filename):
 
     select_idx = list(range(len(onnx_model.graph.output)))
     random.shuffle(select_idx)
-    select_idx = select_idx[:random.randint(1, len(onnx_model.graph.output))]
+    select_idx = select_idx[: random.randint(1, len(onnx_model.graph.output))]
 
     graph_def = onnx.helper.make_graph(
         nodes=onnx_model.graph.node,  # nodes
@@ -25,25 +25,33 @@ def create_deadcode_onnx(onnx_model, filename):
     )
 
     model_def = onnx.helper.make_model(
-        graph=graph_def, producer_name="nnsmith.deadcode")
+        graph=graph_def, producer_name="nnsmith.deadcode"
+    )
 
     onnx.checker.check_model(model_def)
     onnx.save(model_def, filename)
 
     return select_idx
 
+
 # Torch is actually not an ideal choice for graph generation,
 # as it is based on dynamic graph construction.
 
 
-def torch2onnx(model: SymbolNet, filename, verbose=False, use_cuda=False, dummy_inputs=None, do_constant_folding=True):
-    """Convert PyTorch model to ONNX format.
-    """
+def torch2onnx(
+    model: SymbolNet,
+    filename,
+    verbose=False,
+    use_cuda=False,
+    dummy_inputs=None,
+    do_constant_folding=True,
+):
+    """Convert PyTorch model to ONNX format."""
     proxy_enabled = model.proxy_enabled
     if proxy_enabled:
         model.disable_proxy_grad()
 
-    dev = torch.device('cuda' if use_cuda else 'cpu')
+    dev = torch.device("cuda" if use_cuda else "cpu")
     # Get dynamic axis sizes & input names
     dynamic_axes = {}
     input_names = list(model.input_spec.keys())
@@ -56,12 +64,13 @@ def torch2onnx(model: SymbolNet, filename, verbose=False, use_cuda=False, dummy_
     if dummy_inputs is None:
         dummy_inputs = []
         for _, svar in model.plausible_input_shape.items():
-            dummy_inputs.append(torch.rand(
-                size=svar.shape, device=dev).to(dtype=svar.dtype.value))
+            dummy_inputs.append(
+                torch.rand(size=svar.shape, device=dev).to(dtype=svar.dtype.value)
+            )
     if verbose:
         print(f"Generated model:\n{model}")
 
-    dce_prob = os.getenv('NNSMITH_DCE')
+    dce_prob = os.getenv("NNSMITH_DCE")
     if dce_prob is not None:
         do_constant_folding = False
         try:
@@ -74,19 +83,23 @@ def torch2onnx(model: SymbolNet, filename, verbose=False, use_cuda=False, dummy_
     with torch.no_grad():
         with warnings.catch_warnings():
             warnings.simplefilter(
-                "default" if verbose else "ignore", category=torch.jit.TracerWarning)
+                "default" if verbose else "ignore", category=torch.jit.TracerWarning
+            )
             warnings.simplefilter(
-                "default" if verbose else "ignore", category=UserWarning, append=True)
+                "default" if verbose else "ignore", category=UserWarning, append=True
+            )
             model.to(dev)
             model.eval()
             torch.onnx.export(
-                model, tuple(dummy_inputs),
+                model,
+                tuple(dummy_inputs),
                 filename,
                 input_names=input_names,
                 verbose=verbose,
                 dynamic_axes=dynamic_axes,
                 do_constant_folding=do_constant_folding,
-                opset_version=14)
+                opset_version=14,
+            )
 
     selected_idx = list(range(model.n_output))
     onnx_model = onnx.load(filename)
@@ -104,12 +117,14 @@ def torch2onnx(model: SymbolNet, filename, verbose=False, use_cuda=False, dummy_
 
 
 if __name__ == "__main__":
+
     def test_torch2onnx(net):
         try:
             torch2onnx(net, "test.onnx")
         finally:
             import os
-            if 'NO_DEL' not in os.environ:
+
+            if "NO_DEL" not in os.environ:
                 if os.path.isfile("test.onnx"):
                     os.remove("test.onnx")
 
@@ -117,8 +132,10 @@ if __name__ == "__main__":
         def __init__(self):
             super(DyNet, self).__init__()
             # Following attributes are required to export ONNX model.
-            self.plausible_input_shape = {"i0": ShapeVar(
-                [1, 1, 3]), "i1": ShapeVar([2, 3, 3], dtype=DType.float64)}
+            self.plausible_input_shape = {
+                "i0": ShapeVar([1, 1, 3]),
+                "i1": ShapeVar([2, 3, 3], dtype=DType.float64),
+            }
             self.input_spec = {"i0": [-1, -1, 3], "i1": [2, 3, 3]}
             self.n_output = 2
 
@@ -132,8 +149,10 @@ if __name__ == "__main__":
         def __init__(self):
             super(StaticNet, self).__init__()
             # Following attributes are required to export ONNX model.
-            self.plausible_input_shape = {"i0": ShapeVar(
-                [1, 1, 3]), "i1": ShapeVar([1, 1, 3])}
+            self.plausible_input_shape = {
+                "i0": ShapeVar([1, 1, 3]),
+                "i1": ShapeVar([1, 1, 3]),
+            }
             self.input_spec = {"i0": [1, 1, 3], "i1": [1, 1, 3]}
             self.n_output = 1
 

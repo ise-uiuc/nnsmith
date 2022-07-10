@@ -1,8 +1,9 @@
 import os
 from collections import Counter
+
 # TODO: Ensure XLA is enabled
 # Enable XLA JIT
-os.environ['TF_XLA_FLAGS'] = "--tf_xla_auto_jit=2 --tf_xla_cpu_global_jit"
+os.environ["TF_XLA_FLAGS"] = "--tf_xla_auto_jit=2 --tf_xla_cpu_global_jit"
 
 # See https://github.com/onnx/onnx-tensorflow/blob/master/doc/API.md
 from onnx_tf.backend import prepare, supports_device
@@ -10,7 +11,7 @@ from nnsmith.backends import BackendFactory
 
 
 class XLAExecutor(BackendFactory):
-    def __init__(self, device: str = 'CPU'):
+    def __init__(self, device: str = "CPU"):
         """
         Args:
             device (str, optional): 'CPU' or 'CUDA'. Defaults to 'CPU'.
@@ -23,7 +24,8 @@ class XLAExecutor(BackendFactory):
             return
         # Fix fork error
         assert supports_device(
-            self.device), "Device {} not supported by ONNX-TF".format(self.device)
+            self.device
+        ), "Device {} not supported by ONNX-TF".format(self.device)
         onnx_model = self.get_onnx_proto(model)
         # prepare tf representation
         tf_rep = prepare(onnx_model, device=self.device)
@@ -43,28 +45,36 @@ class XLAExecutor(BackendFactory):
         self.load_model(model)
         tf_rep = self.cvtd_model
         outputs = tf_rep.run(
-            {iname: inputs[iname].astype(self.inp_spec[iname].dtype) for iname in inputs})
+            {
+                iname: inputs[iname].astype(self.inp_spec[iname].dtype)
+                for iname in inputs
+            }
+        )
         assert Counter(self.out_names) == Counter(
-            outputs._fields), "Output names don't match, analyze_onnx_io gives {} but xla returns {}".format(
-                self.out_names, outputs._fields)
+            outputs._fields
+        ), "Output names don't match, analyze_onnx_io gives {} but xla returns {}".format(
+            self.out_names, outputs._fields
+        )
         return {oname: outputs[oname] for oname in self.out_names}
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import wget
     import os
     import numpy as np
     from onnxsim import simplify
 
-    filename = 'mobilenetv2.onnx'
-    if not os.path.exists('mobilenetv2.onnx'):
+    filename = "mobilenetv2.onnx"
+    if not os.path.exists("mobilenetv2.onnx"):
         filename = wget.download(
-            'https://github.com/onnx/models/raw/master/vision/classification/mobilenet/model/mobilenetv2-7.onnx', out='mobilenetv2.onnx')
+            "https://github.com/onnx/models/raw/master/vision/classification/mobilenet/model/mobilenetv2-7.onnx",
+            out="mobilenetv2.onnx",
+        )
     backend = XLAExecutor()
-    sim_model, check = simplify(BackendFactory.get_onnx_proto(
-        filename), input_shapes={'input': [1, 3, 224, 224]})
-    output = backend.predict(
-        sim_model, {'input': np.zeros((1, 3, 224, 224))})['output']
-    assert output.shape == (1, 1000), "{} != {}".format(
-        output.shape, (1, 1000))
+    sim_model, check = simplify(
+        BackendFactory.get_onnx_proto(filename),
+        input_shapes={"input": [1, 3, 224, 224]},
+    )
+    output = backend.predict(sim_model, {"input": np.zeros((1, 3, 224, 224))})["output"]
+    assert output.shape == (1, 1000), "{} != {}".format(output.shape, (1, 1000))
     assert output[0, 233] - (-1.34753) < 1e-3

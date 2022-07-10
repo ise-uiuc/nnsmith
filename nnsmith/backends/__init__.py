@@ -9,24 +9,32 @@ from nnsmith.util import gen_one_input
 from nnsmith.backends.factory import BackendFactory
 
 
-def mk_factory(name, device='cpu', optmax=True, **kwargs):
-    if name == 'ort' or name == 'onnxruntime':
+def mk_factory(name, device="cpu", optmax=True, **kwargs):
+    if name == "ort" or name == "onnxruntime":
         from nnsmith.backends.ort_graph import ORTFactory
+
         return ORTFactory(device=device, optmax=optmax)
-    elif name == 'tvm':
+    elif name == "tvm":
         from nnsmith.backends.tvm_graph import TVMFactory
-        return TVMFactory(device=device, optmax=optmax, executor='graph')
-    elif name == 'xla':
+
+        return TVMFactory(device=device, optmax=optmax, executor="graph")
+    elif name == "xla":
         from nnsmith.backends.xla_graph import XLAExecutor
-        return XLAExecutor(device='CUDA')
-    elif name == 'trt':
+
+        return XLAExecutor(device="CUDA")
+    elif name == "trt":
         from nnsmith.backends.trt_graph import TRTFactory
+
         return TRTFactory()
     else:
-        raise ValueError(f'unknown backend: {name}')
+        raise ValueError(f"unknown backend: {name}")
 
 
-def gen_one_input_rngs(inp_spec: Union[str, Dict], rngs: Union[str, List[Tuple[float, float]], None], seed=None) -> Dict:
+def gen_one_input_rngs(
+    inp_spec: Union[str, Dict],
+    rngs: Union[str, List[Tuple[float, float]], None],
+    seed=None,
+) -> Dict:
     """
     Parameters
     ----------
@@ -40,23 +48,29 @@ def gen_one_input_rngs(inp_spec: Union[str, Dict], rngs: Union[str, List[Tuple[f
     if rngs is None:
         rngs = [(0, 1)]
     elif isinstance(rngs, str):
-        rngs = pickle.load(open(rngs, 'rb'))
-    if isinstance(inp_spec, str):  # in this case the inp_spec is a path to a the model proto
+        rngs = pickle.load(open(rngs, "rb"))
+    if isinstance(
+        inp_spec, str
+    ):  # in this case the inp_spec is a path to a the model proto
         inp_spec = BackendFactory.analyze_onnx_io(
-            BackendFactory.get_onnx_proto(inp_spec))[0]
+            BackendFactory.get_onnx_proto(inp_spec)
+        )[0]
     return gen_one_input(inp_spec, *rngs[np.random.randint(len(rngs))], seed)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import wget
-    filename = 'mobilenetv2.onnx'
-    if not os.path.exists('mobilenetv2.onnx'):
+
+    filename = "mobilenetv2.onnx"
+    if not os.path.exists("mobilenetv2.onnx"):
         filename = wget.download(
-            'https://github.com/onnx/models/raw/master/vision/classification/mobilenet/model/mobilenetv2-7.onnx', out='mobilenetv2.onnx')
+            "https://github.com/onnx/models/raw/master/vision/classification/mobilenet/model/mobilenetv2-7.onnx",
+            out="mobilenetv2.onnx",
+        )
     onnx_model = BackendFactory.get_onnx_proto(filename)
     inp_dict, onames = BackendFactory.analyze_onnx_io(onnx_model)
     assert len(inp_dict) == 1
-    assert 'input' in inp_dict
-    assert inp_dict['input'].shape == [-1, 3, 224, 224]
+    assert "input" in inp_dict
+    assert inp_dict["input"].shape == [-1, 3, 224, 224]
     assert len(onames) == 1
-    assert onames[0] == 'output'
+    assert onames[0] == "output"

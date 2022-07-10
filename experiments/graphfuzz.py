@@ -37,8 +37,21 @@ import torch
 from tqdm import tqdm
 
 from nnsmith.util import mkdir
-from nnsmith.abstract.op import ALL_OP_TYPES, AbsOpBase, Softmax, BatchNorm2d, \
-    Concat, Input, Constant, NCHWConv2d, Pool2d, DType, Div, ElementWiseUnaryOp, BcastBinaryOp
+from nnsmith.abstract.op import (
+    ALL_OP_TYPES,
+    AbsOpBase,
+    Softmax,
+    BatchNorm2d,
+    Concat,
+    Input,
+    Constant,
+    NCHWConv2d,
+    Pool2d,
+    DType,
+    Div,
+    ElementWiseUnaryOp,
+    BcastBinaryOp,
+)
 from nnsmith.dtype_test import rewrite_op_dtype
 
 
@@ -75,14 +88,14 @@ class GraphFuzzNet(torch.nn.Module):
             # dtype match
             if not dtype_match:
                 type_req = random.choice(op.in_dtypes)
-                selected = [tensor.type(DType.torch(t))
-                            for tensor, t in zip(selected, type_req)]
+                selected = [
+                    tensor.type(DType.torch(t)) for tensor, t in zip(selected, type_req)
+                ]
 
             # rank match
             for i_st, st in enumerate(selected):
                 while len(selected[i_st].shape) > len(shape_checker):
-                    selected[i_st] = torch.select(
-                        selected[i_st], dim=0, index=0)
+                    selected[i_st] = torch.select(selected[i_st], dim=0, index=0)
 
                 while len(selected[i_st].shape) < len(shape_checker):
                     selected[i_st] = selected[i_st].unsqueeze(0)
@@ -111,13 +124,18 @@ class GraphFuzzNet(torch.nn.Module):
                             padding.append(0)
                             padding.append(p)
                         selected[i_st] = torch.nn.functional.pad(
-                            selected[i_st], tuple(padding), mode='constant', value=1)
+                            selected[i_st], tuple(padding), mode="constant", value=1
+                        )
 
                     # slicing if too large
                     if need2slice:
                         # must be rank of 4 now.
-                        selected[i_st] = selected[i_st][:shape_checker[0],
-                                                        :shape_checker[1], :shape_checker[2], :shape_checker[3]]
+                        selected[i_st] = selected[i_st][
+                            : shape_checker[0],
+                            : shape_checker[1],
+                            : shape_checker[2],
+                            : shape_checker[3],
+                        ]
 
             if isinstance(op, Div):
                 # avoid float-point errors.
@@ -205,7 +223,9 @@ class GraphFuzz:
                 return iC, iC, kh, kw, s, pad
         return [iC, iC, 1, 1, 1, 0]  # simple fallback
 
-    def __init__(self, approx_nop=10, dim_limit=[5, 5, 224, 224], try_all=False) -> None:
+    def __init__(
+        self, approx_nop=10, dim_limit=[5, 5, 224, 224], try_all=False
+    ) -> None:
         self.available_op_ts = self.get_available_op_ts(try_all=try_all)
         self.base_op_n = approx_nop
         self.dim_limit = dim_limit
@@ -219,8 +239,7 @@ class GraphFuzz:
             input_shape.append(random.randint(1, ls))
 
         ops = []
-        op_ts = [random.choice(self.available_op_ts)
-                 for _ in range(self.base_op_n)]
+        op_ts = [random.choice(self.available_op_ts) for _ in range(self.base_op_n)]
         for op_t in op_ts:
             if op_t is NCHWConv2d:
                 ic, oc, kw, kh, s, pad = self.get_conv2d_params(input_shape)
@@ -234,11 +253,17 @@ class GraphFuzz:
                 ops.append(op_t(input_shape[1]))
             elif issubclass(op_t, Concat):
                 op = op_t()
-                op.extra_attrs['axis'] = random.randint(0, 3)
+                op.extra_attrs["axis"] = random.randint(0, 3)
                 ops.append(op)
             else:
-                ops.append(op_t(*[random.randint(0, 10)
-                           for _ in range(op_t.get_num_var_param())]))
+                ops.append(
+                    op_t(
+                        *[
+                            random.randint(0, 10)
+                            for _ in range(op_t.get_num_var_param())
+                        ]
+                    )
+                )
 
         return ops, input_shape
 
@@ -246,24 +271,23 @@ class GraphFuzz:
         ops, ishape = self.create_random_schedule()
         model = GraphFuzzNet(ops)
         with torch.no_grad():
-            torch.onnx.export(model, torch.randn(ishape),
-                              save_path, opset_version=14)
+            torch.onnx.export(model, torch.randn(ishape), save_path, opset_version=14)
 
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--approx_nop", type=int, default=10)
-    parser.add_argument("--dim_limit", type=int, nargs="+",
-                        default=[5, 5, 224, 224])
-    parser.add_argument('--time_budget', type=int, default=60 * 60 * 4)
+    parser.add_argument("--dim_limit", type=int, nargs="+", default=[5, 5, 224, 224])
+    parser.add_argument("--time_budget", type=int, default=60 * 60 * 4)
     parser.add_argument("--onnx_dir", type=str, default=None)
-    parser.add_argument('--ort_cache', type=str, default=None)
+    parser.add_argument("--ort_cache", type=str, default=None)
     parser.add_argument("--seed", type=int, default=233)
-    parser.add_argument("--try_all", action='store_true')
+    parser.add_argument("--try_all", action="store_true")
     args = parser.parse_args()
 
-    print(f'Using seed {args.seed}')
+    print(f"Using seed {args.seed}")
     random.seed(args.seed)
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -272,18 +296,19 @@ if __name__ == "__main__":
 
     if args.ort_cache:
         if not os.path.exists(args.ort_cache):
-            print(f'Please first generate cache! (mkdir config first)')
-            print(f'python nnsmith/dtype_test.py --cache {args.ort_cache}')
+            print(f"Please first generate cache! (mkdir config first)")
+            print(f"python nnsmith/dtype_test.py --cache {args.ort_cache}")
             exit(1)
         # must pre run this. otherwise using ort will slow down generation.
         rewrite_op_dtype(ALL_OP_TYPES, factory=None, cache=args.ort_cache)
 
-    gf = GraphFuzz(approx_nop=args.approx_nop,
-                   dim_limit=args.dim_limit, try_all=args.try_all)
+    gf = GraphFuzz(
+        approx_nop=args.approx_nop, dim_limit=args.dim_limit, try_all=args.try_all
+    )
 
     # FORMAT: {generation time cost in seconds}, {model relative path}
     # MUST RANK by GENERATION ORDER.
-    config_file = open(os.path.join(args.onnx_dir, 'gentime.csv'), 'w')
+    config_file = open(os.path.join(args.onnx_dir, "gentime.csv"), "w")
 
     start_time = time.time()
     gen_cnt = 0
@@ -292,7 +317,7 @@ if __name__ == "__main__":
     with tqdm(total=args.time_budget) as pbar:
         while time.time() - start_time < args.time_budget:
             seed = random.getrandbits(32)
-            to_name = f'{valid_cnt}.onnx'
+            to_name = f"{valid_cnt}.onnx"
 
             tstart = time.time()
             try:
@@ -302,17 +327,17 @@ if __name__ == "__main__":
                 label = to_name
                 valid_cnt += 1
             except Exception as e:
-                print(f'Fail when seed={seed}')
+                print(f"Fail when seed={seed}")
                 print(e)
-                label = 'FAILURE'
+                label = "FAILURE"
 
             time_diff = time.time() - tstart
-            config_file.write(f'{time_diff:.5f},{label}\n')
+            config_file.write(f"{time_diff:.5f},{label}\n")
 
             gen_cnt += 1
             config_file.flush()
 
             pbar.update(int(time.time() - start_time) - pbar.n)
-            pbar.set_description(f'valid={valid_cnt},fail={gen_cnt-valid_cnt}')
+            pbar.set_description(f"valid={valid_cnt},fail={gen_cnt-valid_cnt}")
             pbar.refresh()
         config_file.close()

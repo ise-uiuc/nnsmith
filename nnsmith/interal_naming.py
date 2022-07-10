@@ -1,4 +1,4 @@
-ONNX_EXTERNAL_DATA_DIR_SUFFIX = '-mlist'
+ONNX_EXTERNAL_DATA_DIR_SUFFIX = "-mlist"
 
 
 def onnx2external_data_dir(onnx_file):

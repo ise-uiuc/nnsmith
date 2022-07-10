@@ -13,7 +13,7 @@ from nnsmith.fuzz import simple_bug_report
 
 def mcov_write(path):
     if path:
-        with open(path + '.pkl', 'wb') as f:
+        with open(path + ".pkl", "wb") as f:
             pickle.dump(omax_fac._coverage_install().get_hitmap(), f)
 
 
@@ -26,32 +26,37 @@ def verify(backend_name, oracle_name, predicted, oracle=None):
     return None
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
-    parser.add_argument('--models', nargs='+', required=True,
-                        help='List to ONNX model paths')
-    parser.add_argument('--backend', type=str,
-                        help='One of ort, trt, tvm, and xla', required=True)
-    parser.add_argument('--device', type=str, default='cpu')
-    parser.add_argument('--memcov', type=str, default=None,
-                        help='Path to store memcov.')
-    parser.add_argument('--seed', type=int, default=233,
-                        help='to generate random input data')
-    parser.add_argument('--fuzz_max_nodes', type=int,
-                        help='parameter from fuzzer')
-    parser.add_argument('--fuzz_seed', type=int,
-                        help='seed parameter from fuzzer')
-    parser.add_argument('--fuzz_report_folder', type=str,
-                        help='parameter from fuzzer')
-    parser.add_argument('--clean_after_eval', action='store_true',
-                        help='rm models/oracle after eval')
+    parser.add_argument(
+        "--models", nargs="+", required=True, help="List to ONNX model paths"
+    )
+    parser.add_argument(
+        "--backend", type=str, help="One of ort, trt, tvm, and xla", required=True
+    )
+    parser.add_argument("--device", type=str, default="cpu")
+    parser.add_argument(
+        "--memcov", type=str, default=None, help="Path to store memcov."
+    )
+    parser.add_argument(
+        "--seed", type=int, default=233, help="to generate random input data"
+    )
+    parser.add_argument("--fuzz_max_nodes", type=int, help="parameter from fuzzer")
+    parser.add_argument("--fuzz_seed", type=int, help="seed parameter from fuzzer")
+    parser.add_argument("--fuzz_report_folder", type=str, help="parameter from fuzzer")
+    parser.add_argument(
+        "--clean_after_eval", action="store_true", help="rm models/oracle after eval"
+    )
     # add fuzz_timeout?
     args = parser.parse_args()
 
     if args.fuzz_report_folder is None:
         print(
-            '[WARNING] Bug report is not enabled as fuzzer parameters are not provided.', file=sys.stderr)
+            "[WARNING] Bug report is not enabled as fuzzer parameters are not provided.",
+            file=sys.stderr,
+        )
 
     # Set global seed
     random.seed(args.seed)
@@ -64,26 +69,25 @@ if __name__ == '__main__':
         assert omax_fac._coverage_install().get_now() is not None, "Memcov unavailable!"
 
     for i, path in enumerate(args.models):
-        print(f'-> {path}', flush=True, file=sys.stderr)
+        print(f"-> {path}", flush=True, file=sys.stderr)
         onnx_model = BackendFactory.get_onnx_proto(path)
-        oracle_path = path.replace('.onnx', '.pkl')
+        oracle_path = path.replace(".onnx", ".pkl")
 
         num_must_valid = False
         if os.path.exists(oracle_path):
-            with open(oracle_path, 'rb') as f:
+            with open(oracle_path, "rb") as f:
                 res = pickle.load(f)
                 eval_inputs = res[0]
                 torch_outputs = res[1]
                 if len(res) == 3:
                     num_must_valid = res[2]
         else:
-            print(f'No oracle found for model `{path}`', file=sys.stderr)
-            input_spec, onames = BackendFactory.analyze_onnx_io(
-                onnx_model)
+            print(f"No oracle found for model `{path}`", file=sys.stderr)
+            input_spec, onames = BackendFactory.analyze_onnx_io(onnx_model)
             eval_inputs = gen_one_input(input_spec, 1, 2)
             torch_outputs = None  # No oracle.
 
-        to_repro = f'python nnsmith/graph_gen.py --max_nodes {args.fuzz_max_nodes} --seed {args.fuzz_seed} --viz_graph'
+        to_repro = f"python nnsmith/graph_gen.py --max_nodes {args.fuzz_max_nodes} --seed {args.fuzz_seed} --viz_graph"
 
         # Convenience function to report bugs.
         def report_bug(category, exception):
@@ -91,38 +95,45 @@ if __name__ == '__main__':
                 report_folder=args.fuzz_report_folder,
                 buggy_onnx_path=path,
                 oracle_path=oracle_path,
-                message=to_repro + '\n' + str(exception),
+                message=to_repro + "\n" + str(exception),
                 bug_type=category + type(exception).__name__,
-                backend=args.backend
+                backend=args.backend,
             )
 
         try:
             omax_exec = omax_fac.mk_backend(onnx_model)
             pred_omax = omax_exec(eval_inputs)
             # We compare results iff NaN/Inf-free as we only consider confident bugs.
-            if num_must_valid and all(np.isfinite(v).all() for v in torch_outputs.values()):
+            if num_must_valid and all(
+                np.isfinite(v).all() for v in torch_outputs.values()
+            ):
                 # FIXME: We assume the oracle is generated by PyTorch (as `fuzz.py`).
                 err_tch_omax = verify(
-                    args.backend + '-omax', 'PyTorch', pred_omax, torch_outputs)
+                    args.backend + "-omax", "PyTorch", pred_omax, torch_outputs
+                )
                 if err_tch_omax:
                     if omin_fac is None:
                         # For TensorRT, there's no O0 option.
-                        report_bug('torch-omax-', err_tch_omax)
+                        report_bug("torch-omax-", err_tch_omax)
                     else:
                         # RESULT INCONSISTENCY. But need to see if we can narrow it down to an optimzation bug.
                         omin_exec = omin_fac.mk_backend(onnx_model)
                         err_omax_omin = verify(
-                            args.backend + '-omax', args.backend + '-omin', pred_omax, omin_exec(eval_inputs))
+                            args.backend + "-omax",
+                            args.backend + "-omin",
+                            pred_omax,
+                            omin_exec(eval_inputs),
+                        )
                         if err_omax_omin:
                             # We can confirm this is an optimization bug as O[opt-max] != O[opt-min]
-                            report_bug('omin-omax-', err_omax_omin)
+                            report_bug("omin-omax-", err_omax_omin)
                         else:
                             # O[opt-max] == O[opt-min]: even opt-min shows the inconsistency.
                             # So the bug might be a fault of `PyTorch` or other parts in the compiler... Human assistant is needed.
-                            report_bug('torch-omax-', err_tch_omax)
+                            report_bug("torch-omax-", err_tch_omax)
         except Exception as e:
             # Well, some error occured (compiler internal err | nnsmith impl error).
-            report_bug('cie-', e)  # Compiler internal error.
+            report_bug("cie-", e)  # Compiler internal error.
 
         # remove after the model is tested. useful for locating the crashed model in the batch.
         if args.clean_after_eval:

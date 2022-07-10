@@ -9,18 +9,20 @@ import numpy as np
 
 from nnsmith.interal_naming import onnx2external_data_dir
 
-ShapeType = namedtuple('ShapeType', ['shape', 'dtype'])
+ShapeType = namedtuple("ShapeType", ["shape", "dtype"])
 
 
 class BackendFactory(ABC):
-    def __init__(self, device='cpu', optmax=True):
+    def __init__(self, device="cpu", optmax=True):
         super().__init__()
         self.device = device
         self.optmax = optmax
         assert self.name, 'Need to add`self.name = "my_backend"` during extension'
 
     @abstractmethod
-    def mk_backend(self, model: Union[onnx.ModelProto, str], **kwargs) -> Dict[str, np.ndarray]:
+    def mk_backend(
+        self, model: Union[onnx.ModelProto, str], **kwargs
+    ) -> Dict[str, np.ndarray]:
         raise NotImplementedError
 
     @staticmethod
@@ -45,8 +47,8 @@ class BackendFactory(ABC):
         try:
             return cls._coverage_install()
         except Exception as e:
-            print(f'Coverage support not implemented: {e}')
-            print(f'Falling back to no coverage support.')
+            print(f"Coverage support not implemented: {e}")
+            print(f"Falling back to no coverage support.")
 
             class FallbackCoverage:
                 @staticmethod
@@ -61,46 +63,48 @@ class BackendFactory(ABC):
 
     @staticmethod
     def dtype_str(id: int) -> str:
-        """See https://deeplearning4j.org/api/latest/onnx/Onnx.TensorProto.DataType.html
-        """
+        """See https://deeplearning4j.org/api/latest/onnx/Onnx.TensorProto.DataType.html"""
         if id == 1:
-            return 'float32'
+            return "float32"
         elif id == 2:
-            return 'uint8'
+            return "uint8"
         elif id == 3:
-            return 'int8'
+            return "int8"
         elif id == 4:
-            return 'uint16'
+            return "uint16"
         elif id == 5:
-            return 'int16'
+            return "int16"
         elif id == 6:
-            return 'int32'
+            return "int32"
         elif id == 7:
-            return 'int64'
+            return "int64"
         elif id == 8:
-            return 'string'
+            return "string"
         elif id == 9:
-            return 'bool'
+            return "bool"
         elif id == 10:
-            return 'float16'
+            return "float16"
         elif id == 11:
-            return 'double'
+            return "double"
         elif id == 12:
-            return 'uint32'
+            return "uint32"
         elif id == 13:
-            return 'uint64'
+            return "uint64"
         elif id == 14:
-            return 'complex64'
+            return "complex64"
         elif id == 15:
-            return 'complex128'
+            return "complex128"
         elif id == 16:
-            return 'bfloat16'
+            return "bfloat16"
         else:
             raise ValueError(
-                f'Unknown dtype id: {id}. See https://deeplearning4j.org/api/latest/onnx/Onnx.TensorProto.DataType.html')
+                f"Unknown dtype id: {id}. See https://deeplearning4j.org/api/latest/onnx/Onnx.TensorProto.DataType.html"
+            )
 
     @staticmethod
-    def analyze_onnx_io(model: onnx.ModelProto) -> Tuple[Dict[str, ShapeType], List[str]]:
+    def analyze_onnx_io(
+        model: onnx.ModelProto,
+    ) -> Tuple[Dict[str, ShapeType], List[str]]:
         """Analyze the input and output shapes of an ONNX model.
 
         Args:
@@ -135,20 +139,19 @@ class BackendFactory(ABC):
             dtype = BackendFactory.dtype_str(tensor_type.elem_type)
 
             # check if it has a shape:
-            if (tensor_type.HasField("shape")):
+            if tensor_type.HasField("shape"):
                 # iterate through dimensions of the shape:
                 for d in tensor_type.shape.dim:
                     # the dimension may have a definite (integer) value or a symbolic identifier or neither:
-                    if (d.HasField("dim_value")):
+                    if d.HasField("dim_value"):
                         shape.append(d.dim_value)  # known dimension
-                    elif (d.HasField("dim_param")):
+                    elif d.HasField("dim_param"):
                         # unknown dimension with symbolic name
                         shape.append(-1)
                     else:
                         shape.append(-1)  # unknown dimension with no name
             else:
-                raise ValueError(
-                    "Input node {} has no shape".format(input_node.name))
+                raise ValueError("Input node {} has no shape".format(input_node.name))
 
             inp_analysis_ret[input_node.name] = ShapeType(shape, dtype)
 

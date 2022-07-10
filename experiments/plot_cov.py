@@ -14,7 +14,7 @@ class Ploter:
         self.cov_lim = cov_lim
 
     def add(self, folder, name=None):
-        path = os.path.join(folder, 'cov_by_time.csv')
+        path = os.path.join(folder, "cov_by_time.csv")
         df = pandas.read_csv(path, usecols=[0, 1], header=None).to_numpy()
 
         self.axs[0].plot(df[:, 0], df[:, 1])  # cov / time
@@ -26,7 +26,7 @@ class Ploter:
         else:
             assert not self.legends
 
-    def plot(self, save='cov'):
+    def plot(self, save="cov"):
         for axs in self.axs:
             axs.legend(self.legends)
         # plt.legend(self.legends)
@@ -35,37 +35,34 @@ class Ploter:
             self.axs[0].set_ylim(bottom=self.cov_lim)
             self.axs[1].set_ylim(bottom=self.cov_lim)
 
-        self.axs[0].set(
-            xlabel='Time / Second',
-            ylabel='# Coverage')
-        self.axs[0].set_title('Coverage $\\bf{Time}$ Efficiency')
+        self.axs[0].set(xlabel="Time / Second", ylabel="# Coverage")
+        self.axs[0].set_title("Coverage $\\bf{Time}$ Efficiency")
 
-        self.axs[1].set(
-            ylabel='# Coverage',
-            xlabel='# Iteration')
-        self.axs[1].set_title('Coverage $\\bf{Iteration}$ Efficiency')
+        self.axs[1].set(ylabel="# Coverage", xlabel="# Iteration")
+        self.axs[1].set_title("Coverage $\\bf{Iteration}$ Efficiency")
 
-        self.axs[2].set(
-            xlabel='Time / Second',
-            ylabel='# Iteration')
-        self.axs[2].set_title('Iteration Speed')
+        self.axs[2].set(xlabel="Time / Second", ylabel="# Iteration")
+        self.axs[2].set_title("Iteration Speed")
 
-        plt.savefig(save + '.pdf')
-        plt.savefig(save + '.png')
+        plt.savefig(save + ".pdf")
+        plt.savefig(save + ".png")
 
 
-if '__main__' == __name__:
+if "__main__" == __name__:
     parser = argparse.ArgumentParser()
-    parser.add_argument('-f', '--folders', type=str,
-                        nargs='+', help='bug report folder')
-    parser.add_argument('-cl', '--cov_lim', type=int,
-                        default=None, help='coverage starting lim')
-    parser.add_argument('--tvmfuzz', type=str, nargs='?',
-                        help='TVMFuzz coverage by time file')
+    parser.add_argument(
+        "-f", "--folders", type=str, nargs="+", help="bug report folder"
+    )
+    parser.add_argument(
+        "-cl", "--cov_lim", type=int, default=None, help="coverage starting lim"
+    )
+    parser.add_argument(
+        "--tvmfuzz", type=str, nargs="?", help="TVMFuzz coverage by time file"
+    )
     args = parser.parse_args()
 
     ploter = Ploter(cov_lim=args.cov_lim)
 
     for f in args.folders:
         ploter.add(f, f)
-    ploter.plot('cov')
+    ploter.plot("cov")
