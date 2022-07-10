@@ -1594,16 +1594,6 @@ if __name__ == '__main__':
         filename = args.output_path + '-concrete.png'
         os.system(f'dot -Tpng graph.dot > {filename} && rm graph.dot')
 
-    stats = {
-        'gen_succ': True,
-        'elapsed_time': ed_time - strt_time,
-        'gen_model_time': input_st - strt_time,
-        'infer_domain_time': ed_time - input_st,
-        'infer_succ': sat_inputs is not None,
-        'seed': seed,
-    }
-    pickle.dump(stats, open(args.output_path + '-stats.pkl', 'wb'))
-
     if sat_inputs is not None:
         ret_inputs = {}
         for i, name in enumerate(net.input_spec):
