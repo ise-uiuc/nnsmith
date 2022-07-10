@@ -37,7 +37,7 @@ def create_deadcode_onnx(filename):
 # as it is based on dynamic graph construction.
 
 
-def torch2onnx(model: SymbolNet, filename, verbose=False, use_cuda=False, dummy_inputs=None, do_constant_folding=False):
+def torch2onnx(model: SymbolNet, filename, verbose=False, use_cuda=False, dummy_inputs=None, do_constant_folding=True):
     """Convert PyTorch model to ONNX format.
     """
     proxy_enabled = model.proxy_enabled
@@ -52,7 +52,6 @@ def torch2onnx(model: SymbolNet, filename, verbose=False, use_cuda=False, dummy_
         dshape = [i for i, v in enumerate(model.input_spec[name]) if v == -1]
         if len(dshape) > 0:
             dynamic_axes[name] = dshape
-    output_names = [f'o{i}' for i in range(model.n_output)]
 
     # TODO: explicitly model outputs.
     # output_names = list(model.output_spec.keys())
@@ -82,13 +81,12 @@ def torch2onnx(model: SymbolNet, filename, verbose=False, use_cuda=False, dummy_
                 model, tuple(dummy_inputs),
                 filename,
                 input_names=input_names,
-                output_names=output_names,
                 verbose=verbose,
                 dynamic_axes=dynamic_axes,
                 do_constant_folding=do_constant_folding,
                 opset_version=14)
 
-    selected_idx = list(range(len(output_names)))
+    selected_idx = list(range(model.n_output))
     if os.getenv('NNSMITH_DCE') is not None:
         # try float
         try:
@@ -100,6 +98,10 @@ def torch2onnx(model: SymbolNet, filename, verbose=False, use_cuda=False, dummy_
 
     if proxy_enabled:  # Re-enable proxy grad
         model.enable_proxy_grad()
+
+    # get output names.
+    model_onnx = onnx.load(filename)
+    output_names = [node.name for node in model_onnx.graph.output]
 
     return input_names, output_names, selected_idx
 

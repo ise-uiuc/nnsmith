@@ -396,7 +396,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             path + '-graph.pkl', 'wb'), protocol=4)
         self.rich_profile['succ_gen'] = np.append(
             self.rich_profile['succ_gen'], [gen_time])
-        return {ina: inp for ina, inp in zip(inames, inputs)}, {onames[i]: outputs[i] for i in oidx}, sat_inputs is not None
+        return {ina: inp for ina, inp in zip(inames, inputs)}, {oname: outputs[i] for oname, i in zip(onames, oidx)}, sat_inputs is not None
 
     def difftest(self, onnx_model, oracle_path, redirect_log=None):
         if redirect_log is not None:

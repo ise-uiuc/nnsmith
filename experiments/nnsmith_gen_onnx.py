@@ -59,7 +59,7 @@ def nnsmith_gen_once(path_prefix, seed, max_nodes, candidates_overwrite=None, mo
             outputs = [o.cpu().numpy() for o in outputs]
 
         input_dict = {ina: inp for ina, inp in zip(inames, inputs)}
-        output_dict = {onames[i]: outputs[i] for i in oidx}
+        output_dict = {oname: outputs[i] for oname, i in zip(onames, oidx)}
 
         with open(path_prefix + '.pkl', 'wb') as f:
             pickle.dump((input_dict, output_dict), f)
