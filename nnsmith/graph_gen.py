@@ -234,7 +234,7 @@ class SymbolNet(nn.Module):
             ]
             # ensure n_floats and flops within limit
             tmp_inp = [shape_vars[i] for i in ishape_indices]
-            op.shape_fn(tmp_inp)
+            op.checked_type_transfer(tmp_inp)
             op_nfl = op.n_floats(tmp_inp)
             if self.verbose:
                 print(f"op: {op} nfloats: {op_nfl}")
@@ -909,7 +909,7 @@ class SimpleGenerator:
     ) -> int:
         if oshapes is None:
             input_shapes = [self.alive_shapes[idx][1] for idx in ishape_indices]
-            oshapes = node.shape_fn(input_shapes)
+            oshapes = node.checked_type_transfer(input_shapes)
 
         succ_nid = self.get_new_node_id()
         if isinstance(node, Placeholder):
@@ -1260,13 +1260,13 @@ class PureSymbolGen(SimpleGenerator):
 
     def try_forward_insert_at(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
         input_shapes = [self.alive_shapes[idx][1] for idx in ishape_indices]
-        constraints = node.requires(input_shapes)
+        constraints = node.checked_requires(input_shapes)
 
         if self.verbose:
             print("---> Trying to solve: ", node, constraints)
 
         # make a copy
-        output_shapes = node.shape_fn(input_shapes)
+        output_shapes = node.checked_type_transfer(input_shapes)
         if self.limnf:
             if NNSMITH_LIMNF_V == "0":
                 tmp_n_floats = nnsmith_add(self.n_floats, node.n_floats(input_shapes))
@@ -1351,8 +1351,8 @@ class PureSymbolGen(SimpleGenerator):
             constraints.extend(ph.out_shape.gt_zero())
 
         input_shapes = [p.out_shape for p in new_inp_placeholders]
-        constraints.extend(node.requires(input_shapes))
-        output_shapes = node.shape_fn(input_shapes)
+        constraints.extend(node.checked_requires(input_shapes))
+        output_shapes = node.checked_type_transfer(input_shapes)
 
         for i, shape in enumerate(output_shapes):
             constraints.extend(shape.eq(occupied_holder_shapes[i]))

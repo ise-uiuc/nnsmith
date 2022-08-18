@@ -254,7 +254,7 @@ def rewrite_op_dtype(
             inputs.append(shape)
             solver.add(*shape.gt_zero())
 
-        solver.add(*op.requires(inputs))
+        solver.add(*op.checked_requires(inputs))
 
         # solve
         assert solver.check() == z3.sat, f"Cannot solve the problem in {node_t}"

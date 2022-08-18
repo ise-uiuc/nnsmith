@@ -598,12 +598,12 @@ class AbsOpBase(ABC):
 
     @abstractmethod  # Overload me!
     # Exception means rejection.
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         raise NotImplementedError
 
     @check_shape_fn  # Public API.
-    def shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        self.last_outs = self._shape_fn(input_shapes)
+    def checked_type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+        self.last_outs = self._type_transfer(input_shapes)
         return self.last_outs
 
     # Overload me!
@@ -622,7 +622,7 @@ class AbsOpBase(ABC):
         raise NotImplementedError
 
     @check_require_fn  # Public API.
-    def requires(self, input_shapes):
+    def checked_requires(self, input_shapes):
         return self._requires(input_shapes)
 
     def n_floats(self, input_shapes: List[ShapeVar]) -> z3.ExprRef:
@@ -722,7 +722,7 @@ class ElementWiseUnaryOp(UnaryOpBase):
         self.inp_ranks = [int_all()]
         self.out_ranks = [int_all()]
 
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         SanityCheck.eq(len(input_shapes), 1)
         return [input_shapes[0]]
 
@@ -751,7 +751,7 @@ class BcastBinaryOp(BinaryOpBase):
         self.same_inp_dims = False
         self.bcastable = True
 
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         tgt_shape = broadcast_shapes(*(ish.shape for ish in input_shapes))
         dtype = (
             input_shapes[0].dtype
@@ -814,7 +814,7 @@ class Where(TernaryOpBase):
         self.same_inp_dtypes = True
         self.bcastable = True
 
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         # assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
         tgt_shape = broadcast_shapes(*(ish.shape for ish in input_shapes))
         dtype = input_shapes[1].dtype
@@ -946,7 +946,7 @@ class Input(AbsOpBase):
         self.inp_ranks = []
         self.out_ranks = [(dim,)]
 
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         SanityCheck.eq(len(input_shapes), 0)
         return [self.shape_var]
 
@@ -971,7 +971,7 @@ class Constant(AbsOpBase):
         self.inp_ranks = []
         self.out_ranks = [(dim,)]
 
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         SanityCheck.eq(len(input_shapes), 0)
         return [self.shape_var]
 
@@ -1288,7 +1288,7 @@ class Clip(ElementWiseUnaryOp):
         self.max = 1
         self.bias = None
 
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         if self.bias is None:
             if input_shapes[0].dtype in DTYPE_FLOATS:
                 self.bias = 0.5
@@ -1296,7 +1296,7 @@ class Clip(ElementWiseUnaryOp):
                 self.bias = 0
             self.min = self.min - self.bias
             self.max = self.max + self.bias
-        return super()._shape_fn(input_shapes)
+        return super()._type_transfer(input_shapes)
 
     def torch(self):
         return lambda x: torch.clip(x, self.min, self.max)
@@ -1389,7 +1389,7 @@ class Pool2d(UnaryOpBase):
         self.inp_ranks = [(4,)]  # NCHW
         self.out_ranks = [(4,)]  # NCHW
 
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
 
         shape_var = ShapeVar([], dtype=input_shapes[0].dtype)
         # Batch dim: just copy
@@ -1460,7 +1460,10 @@ class Pool2d(UnaryOpBase):
 
     def flops(self, input_shapes):
         return nnsmith_mul(
-            nnsmith_mul(self.shape_fn(input_shapes)[0].nelement(), self.kernel_h_size),
+            nnsmith_mul(
+                self.checked_type_transfer(input_shapes)[0].nelement(),
+                self.kernel_h_size,
+            ),
             self.kernel_w_size,
         )
 
@@ -1576,7 +1579,7 @@ class Slice(UnaryOpBase):
         cons.append(nnsmith_le(self.step, dim_s))
         return cons
 
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         inp = input_shapes[0]
         axis = self._get_attrs(inp.ndims)
         s = list(inp.shape)
@@ -1663,7 +1666,7 @@ class Pad(UnaryOpBase):
             )
         return cons
 
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         isv = input_shapes[0].shape
         pad = self.padding_list
         s = list(isv)
@@ -1745,7 +1748,7 @@ class Expand(UnaryOpBase, ABC):
         self.expand_last_dim = expand_last_dim
         self.expand_n = expand_n
 
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         if self.expand_last_dim <= len(input_shapes[0].shape):
             # NOTE: Werid, deepcopy is useless here.
             shape = ShapeVar(
@@ -1786,7 +1789,9 @@ class Expand(UnaryOpBase, ABC):
         return [nnsmith_ge(self.expand_n, 1)]
 
     def torch(self):
-        return lambda x: x.expand(*self._shape_fn([ShapeVar.from_torch(x)])[0].shape)
+        return lambda x: x.expand(
+            *self._type_transfer([ShapeVar.from_torch(x)])[0].shape
+        )
 
     def deduct_inp_ranks_and_dtype(
         self, out_shape_var: List[ShapeVar]
@@ -1875,7 +1880,7 @@ class Conv1d(UnaryOpBase):
         self.inp_ranks = [(3,)]  # NCL
         self.out_ranks = [(3,)]  # NCL
 
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         shape_var = ShapeVar(
             [input_shapes[0].shape[0], self.out_channels], dtype=input_shapes[0].dtype
         )
@@ -1969,7 +1974,7 @@ class NCHWConv2d(UnaryOpBase):
         self.inp_ranks = [(4,)]  # NC(H,)W
         self.out_ranks = [(4,)]  # NC(H,)W
 
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         shape_var = ShapeVar(
             [input_shapes[0].shape[0], self.out_channels], dtype=input_shapes[0].dtype
         )
@@ -2056,7 +2061,7 @@ class NCHWConv2d(UnaryOpBase):
         return nnsmith_mul(
             nnsmith_mul(
                 nnsmith_mul(
-                    self._shape_fn(input_shapes)[0].nelement(), self.in_channels
+                    self._type_transfer(input_shapes)[0].nelement(), self.in_channels
                 ),
                 self.kernel_h_size,
             ),
@@ -2133,7 +2138,7 @@ class Reshape(UnaryOpBase):
         self.out_ranks = [(len(target_shape),)]
         self.target_shape: List[Union[int, z3.ExprRef]] = target_shape
 
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         __MAX_SOLVE_SYMBOL__ = 8
         # otherwise OOM.
         ConstraintCheck.le(
@@ -2259,7 +2264,7 @@ class Transpose(UnaryOpBase):
             ) % (1 + max_dim)
         return self.extra_attrs["dim0"], self.extra_attrs["dim1"]
 
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         dim0, dim1 = self._init_swap_dims(input_shapes[0].shape)
         shape = list(input_shapes[0].shape)
         shape[dim0], shape[dim1] = shape[dim1], shape[dim0]
@@ -2305,7 +2310,7 @@ class InterpBase(UnaryOpBase):
     def _requires(self, input_shapes: List[ShapeVar]):
         return [nnsmith_gt(v, 0) for v in self.size]
 
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         shape = list(input_shapes[0].shape)
         for i in range(len(self.size)):
             shape[-(1 + i)] = self.size[-(1 + i)]
@@ -2387,7 +2392,7 @@ class ReduceBase(UnaryOpBase, ABC):
                 self.extra_attrs["reduce_dim"] = random.randint(0, len(input_shape) - 1)
         return self.extra_attrs["reduce_dim"]
 
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         svar_list = []
         for i, v in enumerate(input_shapes[0].shape):
             if i != self._init_reduce_dim(input_shapes[0].shape):
@@ -2531,7 +2536,7 @@ class TriBase(UnaryOpBase):
         self.inp_ranks = [(2,)]
         self.out_ranks = [(2,)]
 
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         SanityCheck.eq(len(input_shapes), 1)
         return [input_shapes[0]]
 
@@ -2578,7 +2583,7 @@ class Linear(UnaryOpBase):
         # at least one dim. cannot be zranks_all()
         self.out_ranks = [int_from(1)]
 
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         assert len(input_shapes) == 1, "Linear only takes one input, but got {}".format(
             len(input_shapes)
         )
@@ -2646,7 +2651,7 @@ class Concat(AbsOpBase):
                 )
         return cons
 
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         SanityCheck.true(input_shapes[0].ndims > 0)
         axis = self._init_concat_axis(input_shapes)
         os = ShapeVar(input_shapes[0].shape, input_shapes[0].dtype)
@@ -2721,7 +2726,7 @@ class Cast(ElementWiseUnaryOp, ABC):
     def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
         return []
 
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         assert len(input_shapes) == 1
         return [ShapeVar(input_shapes[0].shape, self.extra_attrs["to"])]
 
@@ -2800,7 +2805,7 @@ class Gemm(TernaryOpBase):
 
     def _requires(self, input_shapes: List[ShapeVar]):
         ConstraintCheck.true(input_shapes[0].ndims <= 2)
-        out_shape = self.shape_fn(input_shapes)[0]
+        out_shape = self.checked_type_transfer(input_shapes)[0]
         cons = broadcast_to_cons(input_shapes[0].shape, out_shape.shape)
 
         # matmul constraint
@@ -2811,7 +2816,7 @@ class Gemm(TernaryOpBase):
             cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
         return cons
 
-    def _shape_fn(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
         mat1, mat2 = input_shapes[1], input_shapes[2]
         return [ShapeVar([mat1.shape[0], mat2.shape[1]], input_shapes[0].dtype)]
 
@@ -2922,19 +2927,21 @@ def main():
     lhs = ShapeVar([], DType.float32)
     s = z3.Solver()
     op = Reshape(1)
-    rhs = op.shape_fn([lhs])
+    rhs = op.checked_type_transfer([lhs])
     assert all(rhs[0].eq(ShapeVar([1], DType.float32))), (lhs, rhs)
-    s.add(*op.requires([lhs]))
+    s.add(*op.checked_requires([lhs]))
     assert s.check() == z3.sat
     # Reduce rank 0
     abs_op = Squeeze()
     scalar = ShapeVar.from_torch(torch.tensor(10))
-    assert abs_op.shape_fn([scalar])[0].ndims == 0
-    abs_op.requires([scalar])
+    assert abs_op.checked_type_transfer([scalar])[0].ndims == 0
+    abs_op.checked_requires([scalar])
 
     # ReLU
     lhs = torch.relu(torch.randn(1, 1, 1, 1)).shape
-    rhs = torch.Size(ReLU().shape_fn([ShapeVar([1, 1, 1, 1], DType.float32)])[0].shape)
+    rhs = torch.Size(
+        ReLU().checked_type_transfer([ShapeVar([1, 1, 1, 1], DType.float32)])[0].shape
+    )
     assert lhs == rhs, f"{lhs} != {rhs}"
 
     # Add
@@ -2943,7 +2950,7 @@ def main():
     c = a + b
     assert c.shape == torch.Size(
         Add()
-        .shape_fn(
+        .checked_type_transfer(
             [
                 ShapeVar([2, 3, 4, 5], DType.float32),
                 ShapeVar([2, 3, 4, 5], DType.float32),
@@ -2957,12 +2964,14 @@ def main():
     a = torch.randn(source_shape)
     abs_op = ExpandLast4(expand_n=2)
     assert a.expand(2, 1, *source_shape).shape == torch.Size(
-        abs_op.shape_fn([ShapeVar(source_shape, DType.float32)])[0].shape
+        abs_op.checked_type_transfer([ShapeVar(source_shape, DType.float32)])[0].shape
     )
 
     abs_op = ExpandLast1(expand_n=2)
     rhs = torch.Size(
-        abs_op.shape_fn([ShapeVar(list(source_shape), DType.float32)])[0].shape
+        abs_op.checked_type_transfer([ShapeVar(list(source_shape), DType.float32)])[
+            0
+        ].shape
     )
     lhs = a.expand(4, 2).shape
     assert lhs == rhs, f"{lhs} != {rhs}"
@@ -2974,11 +2983,11 @@ def main():
     assert (
         out.shape
         == NCHWConv2d(3, 3, 3, 4, 1, 1)
-        .shape_fn([ShapeVar(source_shape, DType.float32)])[0]
+        .checked_type_transfer([ShapeVar(source_shape, DType.float32)])[0]
         .torch()
     )
     print(
-        NCHWConv2d(3, 3, 3, 4, 1, 1).shape_fn(
+        NCHWConv2d(3, 3, 3, 4, 1, 1).checked_type_transfer(
             [ShapeVar([2, *z3.Ints("c h w")], DType.float32)]
         )[0]
     )
@@ -2990,7 +2999,7 @@ def main():
     assert (
         a.reshape(*target_shape).shape
         == Reshape(*target_shape)
-        .shape_fn([ShapeVar(source_shape, DType.float32)])[0]
+        .checked_type_transfer([ShapeVar(source_shape, DType.float32)])[0]
         .torch()
     )
 
@@ -2999,10 +3008,12 @@ def main():
         s = z3.Solver()
         v = z3.Ints("a b c d e")
         abs_op = Reshape(*v)
-        cons = abs_op.requires([ShapeVar(source_shape, DType.float32)])
+        cons = abs_op.checked_requires([ShapeVar(source_shape, DType.float32)])
         for c in cons:
             s.add(c)
-        for c in abs_op.shape_fn([ShapeVar(source_shape, DType.float32)])[0].gt_zero():
+        for c in abs_op.checked_type_transfer([ShapeVar(source_shape, DType.float32)])[
+            0
+        ].gt_zero():
             s.add(c)
         assert s.check() == z3.sat
         print(s.model())
@@ -3014,9 +3025,9 @@ def main():
     op = NCHWConv2d(p0, p1, p2, p3, p4, p5)
     s = z3.Solver()
     shape = ShapeVar([1, 3, 224, 224], DType.float32)
-    for c in op.requires([shape]):
+    for c in op.checked_requires([shape]):
         s.add(c)
-    for c in op.shape_fn([shape])[0].gt_zero():
+    for c in op.checked_type_transfer([shape])[0].gt_zero():
         s.add(c)
     assert s.check() == z3.sat
     model = s.model()
@@ -3033,9 +3044,9 @@ def main():
     op = AvgPool2d(p0, p1, p2, p3)
     s = z3.Solver()
     shape = ShapeVar([1, 3, 224, 224], DType.float32)
-    for c in op.requires([shape]):
+    for c in op.checked_requires([shape]):
         s.add(c)
-    for c in op.shape_fn([shape])[0].gt_zero():
+    for c in op.checked_type_transfer([shape])[0].gt_zero():
         s.add(c)
     assert s.check() == z3.sat
     model = s.model()
