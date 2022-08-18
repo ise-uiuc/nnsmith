@@ -6,7 +6,7 @@ import torch
 import torch.onnx
 import onnx
 
-from nnsmith.abstract.op import DType, ShapeVar
+from nnsmith.abstract.op import DType, AbsTensor
 from nnsmith.graph_gen import SymbolNet
 
 
@@ -65,7 +65,7 @@ def torch2onnx(
         dummy_inputs = []
         for _, svar in model.plausible_input_shape.items():
             dummy_inputs.append(
-                torch.rand(size=svar.shape, device=dev).to(dtype=svar.dtype.value)
+                torch.rand(size=svar.shape, device=dev).to(dtype=svar.dtype.torch())
             )
     if verbose:
         print(f"Generated model:\n{model}")
@@ -133,8 +133,8 @@ if __name__ == "__main__":
             super(DyNet, self).__init__()
             # Following attributes are required to export ONNX model.
             self.plausible_input_shape = {
-                "i0": ShapeVar([1, 1, 3]),
-                "i1": ShapeVar([2, 3, 3], dtype=DType.float64),
+                "i0": AbsTensor([1, 1, 3]),
+                "i1": AbsTensor([2, 3, 3], dtype=DType.float64),
             }
             self.input_spec = {"i0": [-1, -1, 3], "i1": [2, 3, 3]}
             self.n_output = 2
@@ -150,8 +150,8 @@ if __name__ == "__main__":
             super(StaticNet, self).__init__()
             # Following attributes are required to export ONNX model.
             self.plausible_input_shape = {
-                "i0": ShapeVar([1, 1, 3]),
-                "i1": ShapeVar([1, 1, 3]),
+                "i0": AbsTensor([1, 1, 3]),
+                "i1": AbsTensor([1, 1, 3]),
             }
             self.input_spec = {"i0": [1, 1, 3], "i1": [1, 1, 3]}
             self.n_output = 1

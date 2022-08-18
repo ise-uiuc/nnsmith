@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from copy import deepcopy
-from enum import Enum
 import fnmatch
 from functools import reduce
 import functools
@@ -10,13 +9,21 @@ from typing import List, Optional, Tuple, Union, Callable, Type
 from inspect import signature
 import random
 
-# Import z3 ahead of torch (See https://github.com/Z3Prover/z3/issues/5656)
 import z3
 import torch
 
 from nnsmith.error import SanityCheck, ConstraintCheck
 from nnsmith.abstract.loss_func import *
 from nnsmith.abstract.proxy_grad import *
+from nnsmith.abstract.dtype import (
+    DType,
+    DTYPE_ALL,
+    DTYPE_NON_BOOLS,
+    DTYPE_FLOATS,
+    DTYPE_INTS,
+)
+from nnsmith.abstract.arith import *
+from nnsmith.abstract.tensor import AbsTensor
 
 # Recommended resources: https://theory.stanford.edu/~nikolaj/programmingz3.html
 # Another plausible tool (Interval Analysis): https://simon-rohou.fr/research/tubex-lib/doc/toctree.html
@@ -28,10 +35,6 @@ from nnsmith.abstract.proxy_grad import *
 # 3. Intra-input shape constraints; e.g., add(x, y) where x.shape() must be equal to y.shape();
 # 4. Extra constraints introduced by individual operators;
 
-# FIXME: Z3 solving is way slower than numerical computing. Try to use exceptions to reject invalid inputs;
-# TODO: add interval analysis for shape dimension size;
-
-ARITH_MAX_WIDTH: int = 64
 _DEV = torch.device("cpu")
 FLOPS_LIM = os.getenv("NNSMITH_FLOPS_LIM", "auto")
 if FLOPS_LIM == "auto":  # use predefined value
@@ -48,11 +51,6 @@ assert Z3_CONS_FLOPS in [
     "off",
 ], "NNSMITH_Z3_CONS_FLOPS must be either 'on' or 'off'"
 Z3_CONS_FLOPS = Z3_CONS_FLOPS == "on"
-
-
-def _op_set_use_cuda(use_cuda):
-    global _DEV
-    _DEV = torch.device("cuda" if use_cuda else "cpu")
 
 
 __MIN_RANK__ = 0
@@ -84,318 +82,6 @@ def int_all():
     return tuple(range(__MIN_RANK__, __MAX_RANK__ + 1))
 
 
-def align_bvs(
-    left: Union[float, int, z3.ExprRef],
-    right: Union[float, int, z3.ExprRef],
-    carry=False,
-    mult=False,
-):
-    left_is_arith = isinstance(left, (int, float, z3.ArithRef))
-    right_is_arith = isinstance(right, (int, float, z3.ArithRef))
-    # If both values are of arithmetic type, we do not need to do anything.
-    if left_is_arith and right_is_arith:
-        return (left, right)
-    # We assume that the width of an arithmetic type is ARITH_MAX_WIDTH.
-    if left_is_arith:
-        if isinstance(left, int):
-            left_size = min(ARITH_MAX_WIDTH, left.bit_length())
-        else:
-            left_size = ARITH_MAX_WIDTH
-    elif isinstance(left, z3.BitVecRef):
-        left_size = left.size()
-    else:
-        raise RuntimeError(f"Unsupported alignment value {left} of type {type(left)}")
-    # We assume that the width of an arithmetic type is ARITH_MAX_WIDTH.
-    if right_is_arith:
-        if isinstance(right, int):
-            right_size = min(ARITH_MAX_WIDTH, right.bit_length())
-        else:
-            right_size = ARITH_MAX_WIDTH
-    elif isinstance(right, z3.BitVecRef):
-        right_size = right.size()
-    else:
-        raise RuntimeError(f"Unsupported alignment value {right} of type {type(right)}")
-    # Extend the bitvector that is smaller with the necessary amount of zeroes.
-    SanityCheck.true(
-        not (carry and mult),
-        "Carry and multiplication extension are mutually exclusive",
-    )
-    SanityCheck.le(
-        left_size,
-        ARITH_MAX_WIDTH,
-        f"Bitvector sizes must not exceed {ARITH_MAX_WIDTH} bits.",
-    )
-    SanityCheck.le(
-        right_size,
-        ARITH_MAX_WIDTH,
-        f"Bitvector sizes must not exceed {ARITH_MAX_WIDTH} bits.",
-    )
-    diff = left_size - right_size
-    if left_is_arith:
-        if diff > 0:
-            right = z3.Concat(z3.BitVecVal(0, diff), right)
-        if isinstance(left, z3.IntNumRef):
-            left = left.as_long()
-        return z3.BitVecVal(left, right.size()), z3.simplify(right)
-    if right_is_arith:
-        if diff < 0:
-            left = z3.Concat(z3.BitVecVal(0, abs(diff)), left)
-        if isinstance(left, z3.IntNumRef):
-            left = left.as_long()
-        return left, z3.BitVecVal(right, left.size())
-    if diff < 0:
-        left = z3.Concat(z3.BitVecVal(0, abs(diff)), left)
-    elif diff > 0:
-        right = z3.Concat(z3.BitVecVal(0, diff), right)
-
-    if carry and max(left_size, right_size) < ARITH_MAX_WIDTH:
-        left = z3.Concat(z3.BitVecVal(0, 1), left)
-        right = z3.Concat(z3.BitVecVal(0, 1), right)
-    if mult:
-        max_val = right.size() + left.size()
-        if max_val >= ARITH_MAX_WIDTH:
-            return (left, right)
-        else:
-            max_val = ARITH_MAX_WIDTH - max_val
-        left = z3.Concat(z3.BitVecVal(0, max_val), left)
-        right = z3.Concat(z3.BitVecVal(0, max_val), right)
-    return (left, right)
-
-
-def nnsmith_mul(
-    left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]
-):
-    left, right = align_bvs(left, right, mult=True)
-    return left * right
-
-
-def nnsmith_add(
-    left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]
-):
-    left, right = align_bvs(left, right, carry=True)
-    return left + right
-
-
-def nnsmith_sub(
-    left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]
-):
-    left, right = align_bvs(left, right)
-    return left - right
-
-
-def nnsmith_eq(
-    left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]
-):
-    left, right = align_bvs(left, right)
-    return left == right
-
-
-def nnsmith_neq(
-    left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]
-):
-    left, right = align_bvs(left, right)
-    return left != right
-
-
-def nnsmith_ge(
-    left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]
-):
-    left, right = align_bvs(left, right)
-    if isinstance(left, z3.BitVecRef) or isinstance(right, z3.BitVecRef):
-        return z3.UGE(left, right)
-    return left >= right
-
-
-def nnsmith_gt(
-    left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]
-):
-    left, right = align_bvs(left, right)
-    if isinstance(left, z3.BitVecRef) or isinstance(right, z3.BitVecRef):
-        return z3.UGT(left, right)
-    return left > right
-
-
-def nnsmith_le(
-    left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]
-):
-    left, right = align_bvs(left, right)
-    if isinstance(left, z3.BitVecRef) or isinstance(right, z3.BitVecRef):
-        return z3.ULE(left, right)
-    return left <= right
-
-
-def nnsmith_lt(
-    left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]
-):
-    left, right = align_bvs(left, right)
-    if isinstance(left, z3.BitVecRef) or isinstance(right, z3.BitVecRef):
-        return z3.ULT(left, right)
-    return left < right
-
-
-def nnsmith_div(
-    left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]
-):
-    left, right = align_bvs(left, right)
-    if isinstance(left, z3.BitVecRef) or isinstance(right, z3.BitVecRef):
-        return z3.UDiv(left, right)
-    if isinstance(left, int) and isinstance(right, int):
-        return left // right
-    return left / right
-
-
-def nnsmith_mod(
-    left: Union[float, int, z3.ExprRef], right: Union[float, int, z3.ExprRef]
-):
-    left, right = align_bvs(left, right)
-    if isinstance(left, z3.BitVecRef) or isinstance(right, z3.BitVecRef):
-        return z3.URem(left, right)
-    return left % right
-
-
-def nnsmith_min(left, right):
-    if isinstance(left, int) and isinstance(right, int):
-        return min(left, right)
-    left, right = align_bvs(left, right)
-    return z3.If(nnsmith_le(left, right), left, right)
-
-
-class DType(Enum):
-    # float16 = 'float16'
-    float32 = torch.float32
-    float64 = torch.float64
-    # int8 = 'int8'
-    # int16 = 'int16'
-    int32 = torch.int32
-    int64 = torch.int64
-    bool = torch.bool
-    # complex64 = 'complex64'
-    # complex128 = 'complex128'
-
-    def __repr__(self) -> str:
-        return self.name
-
-    def __str__(self) -> str:
-        s = super().__str__()
-        assert s.startswith("DType."), s
-        return s[len("DType.") :]
-
-    def short(self) -> str:
-        return {
-            "float32": "f32",
-            "float64": "f64",
-            "int32": "i32",
-            "int64": "i64",
-            "bool": "bool",
-        }[self.__str__()]
-
-    @staticmethod
-    def is_float(dtype):
-        if isinstance(dtype, str):
-            dtype = DType.from_str(dtype)
-        else:
-            dtype = DType(dtype)
-        return dtype in [DType.float32, DType.float64]
-
-    @staticmethod
-    def from_str(s):
-        return {
-            "f32": DType.float32,
-            "f64": DType.float64,
-            "i32": DType.int32,
-            "i64": DType.int64,
-            "float32": DType.float32,
-            "float64": DType.float64,
-            "int32": DType.int32,
-            "int64": DType.int64,
-            "bool": DType.bool,
-            "torch.float32": DType.float32,
-            "torch.float64": DType.float64,
-            "torch.int32": DType.int32,
-            "torch.int64": DType.int64,
-            "torch.bool": DType.bool,
-        }[s]
-
-    @staticmethod
-    def torch(s):
-        if not isinstance(s, str):
-            s = str(s)
-        return {
-            "f32": torch.float32,
-            "f64": torch.float64,
-            "i32": torch.int32,
-            "i64": torch.int64,
-            "float32": torch.float32,
-            "float64": torch.float64,
-            "int32": torch.int32,
-            "int64": torch.int64,
-            "bool": torch.bool,
-        }[s]
-
-
-DTypeComb = Tuple[DType, ...]
-
-DTYPE_ALL = list(DType.__members__.values())
-DTYPE_NON_BOOLS = [dtype for dtype in DTYPE_ALL if dtype != DType.bool]
-DTYPE_FLOATS = [DType.float32, DType.float64]
-DTYPE_INTS = [DType.int32, DType.int64]
-
-
-class ShapeVar:
-    def __init__(
-        self, shape: List[Union[int, z3.ExprRef]], dtype: Union[DType, torch.dtype]
-    ):
-        self.shape = list(shape)
-        self.dtype = DType(dtype)
-
-    def __repr__(self):
-        return f"ShapeVar(shape={str(self.shape)}, dtype={self.dtype.value})"
-
-    def gt_zero(self):
-        ret = []
-        for s in self.shape:
-            if isinstance(s, z3.ExprRef):
-                ret.append(nnsmith_gt(s, 0))
-            else:
-                ConstraintCheck.gt(s, 0)
-        return ret
-
-    def eq(self, other):
-        SanityCheck.eq(self.ndims, other.ndims)
-        ret = []
-        for i in range(self.ndims):
-            if isinstance(self.shape[i], z3.ExprRef) or isinstance(
-                other.shape[i], z3.ExprRef
-            ):
-                ret.append(nnsmith_eq(self.shape[i], other.shape[i]))
-            else:
-                ConstraintCheck.eq(self.shape[i], other.shape[i])
-        return ret
-
-    def torch(self):
-        # NOTE: Only for concrete shapes.
-        return torch.Size(self.shape)
-
-    def constains_symbol(self) -> bool:
-        return any(isinstance(s, z3.ExprRef) for s in self.shape)
-
-    def nelement(self):
-        if len(self.shape) == 0:  # Scalar
-            return 1
-        return reduce(lambda x, y: nnsmith_mul(x, y), self.shape, 1)
-
-    def deepcopy(self):
-        return ShapeVar(shape=list(self.shape), dtype=self.dtype)
-
-    @staticmethod
-    def from_torch(torch_tensor):
-        return ShapeVar(list(torch_tensor.shape), torch_tensor.dtype)
-
-    @property
-    def ndims(self):
-        return len(self.shape)
-
-
 def check_shape_fn(func):
     def wrapper_check_shape_fn(self, input_shapes):
         SanityCheck.true(
@@ -423,7 +109,7 @@ def check_shape_fn(func):
 
 
 def check_require_fn(func):
-    def wrapper_check_require_fn(self, input_shapes: List[ShapeVar]):
+    def wrapper_check_require_fn(self, input_shapes: List[AbsTensor]):
         SanityCheck.eq(
             len(input_shapes),
             len(self.inp_ranks),
@@ -571,8 +257,8 @@ class AbsOpBase(ABC):
     # Each element is a tuple of allowed input dtypes. NOTE: len(list) can >= the # of inputs, for handling ops with arbitrary arity.
     # For example, [(DType.float32, DType.float32), (DType.float64, DType.float64), (DType.int32, DType.int32)] means that
     # this op can accept one of float32xfloat32, float64xfloat64, and int32xint32 as input dtypes.
-    in_dtypes: List[DTypeComb] = None  # Overwrite me!
-    out_dtypes: List[DTypeComb] = None
+    in_dtypes: List[Tuple[DType, ...]] = None  # Overwrite me!
+    out_dtypes: List[Tuple[DType, ...]] = None
     # whether to disable the op during graph generation
     _skip = False
 
@@ -598,18 +284,18 @@ class AbsOpBase(ABC):
 
     @abstractmethod  # Overload me!
     # Exception means rejection.
-    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         raise NotImplementedError
 
     @check_shape_fn  # Public API.
-    def checked_type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def checked_type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         self.last_outs = self._type_transfer(input_shapes)
         return self.last_outs
 
     # Overload me!
     # Extra constraints for the input tensors.
     # Exception means rejection.
-    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+    def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         return []
 
     @abstractmethod
@@ -617,7 +303,7 @@ class AbsOpBase(ABC):
         raise NotImplementedError
 
     def deduct_inp_ranks_and_dtype(
-        self, out_shape_var: List[ShapeVar]
+        self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
         raise NotImplementedError
 
@@ -625,7 +311,7 @@ class AbsOpBase(ABC):
     def checked_requires(self, input_shapes):
         return self._requires(input_shapes)
 
-    def n_floats(self, input_shapes: List[ShapeVar]) -> z3.ExprRef:
+    def n_floats(self, input_shapes: List[AbsTensor]) -> z3.ExprRef:
         return reduce(nnsmith_add, [i.nelement() for i in self.last_outs])
 
     def flops(self, input_shapes):
@@ -652,9 +338,9 @@ def concretize(op: AbsOpBase, model: Optional[z3.ModelRef]) -> AbsOpBase:
         ret_op = deepcopy(op)
         values = []
 
-        for idx, s in enumerate(op.shape_var.shape):
+        for idx, s in enumerate(op.abs_tensor.shape):
             if isinstance(s, z3.ExprRef):
-                ret_op.shape_var.shape[idx] = model.eval(s).as_long()
+                ret_op.abs_tensor.shape[idx] = model.eval(s).as_long()
 
         return ret_op
 
@@ -722,15 +408,15 @@ class ElementWiseUnaryOp(UnaryOpBase):
         self.inp_ranks = [int_all()]
         self.out_ranks = [int_all()]
 
-    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         SanityCheck.eq(len(input_shapes), 1)
         return [input_shapes[0]]
 
     def deduct_inp_ranks_and_dtype(
-        self, out_shape_var: List[ShapeVar]
+        self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
         return [
-            (out_shape_var[0].ndims, out_shape_var[0].dtype),
+            (out_abs_tensor[0].ndims, out_abs_tensor[0].dtype),
         ]
 
 
@@ -751,25 +437,25 @@ class BcastBinaryOp(BinaryOpBase):
         self.same_inp_dims = False
         self.bcastable = True
 
-    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         tgt_shape = broadcast_shapes(*(ish.shape for ish in input_shapes))
         dtype = (
             input_shapes[0].dtype
             if self._bcast_out_dtypes is None
             else self._bcast_out_dtypes[0]
         )
-        return [ShapeVar(tgt_shape, dtype)]
+        return [AbsTensor(tgt_shape, dtype)]
 
     def _requires(self, input_shapes):
         return broadcast_cons_binary(*(ish.shape for ish in input_shapes))
 
     def deduct_inp_ranks_and_dtype(
-        self, out_shape_var: List[ShapeVar]
+        self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
-        x, y = bcast_rand_ndims(2, out_shape_var[0].ndims)
+        x, y = bcast_rand_ndims(2, out_abs_tensor[0].ndims)
         return [
-            (x, out_shape_var[0].dtype),
-            (y, out_shape_var[0].dtype),
+            (x, out_abs_tensor[0].dtype),
+            (y, out_abs_tensor[0].dtype),
         ]
 
 
@@ -785,9 +471,9 @@ class Comparator(BcastBinaryOp):  # > < =
     _bcast_out_dtypes = [DType.bool]
 
     def deduct_inp_ranks_and_dtype(
-        self, out_shape_var: List[ShapeVar]
+        self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
-        x, y = bcast_rand_ndims(2, out_shape_var[0].ndims)
+        x, y = bcast_rand_ndims(2, out_abs_tensor[0].ndims)
         in_dtypes = random.choice(self.in_dtypes)
         return [
             (x, in_dtypes[0]),
@@ -814,11 +500,11 @@ class Where(TernaryOpBase):
         self.same_inp_dtypes = True
         self.bcastable = True
 
-    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         # assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
         tgt_shape = broadcast_shapes(*(ish.shape for ish in input_shapes))
         dtype = input_shapes[1].dtype
-        return [ShapeVar(tgt_shape, dtype)]
+        return [AbsTensor(tgt_shape, dtype)]
 
     def _requires(self, input_shapes):
         return broadcast_cons(*(ish.shape for ish in input_shapes)) + [
@@ -829,13 +515,13 @@ class Where(TernaryOpBase):
         return torch.where
 
     def deduct_inp_ranks_and_dtype(
-        self, out_shape_var: List[ShapeVar]
+        self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
-        x, y, z = bcast_rand_ndims(3, out_shape_var[0].ndims)
+        x, y, z = bcast_rand_ndims(3, out_abs_tensor[0].ndims)
         return [
             (x, DType.bool),
-            (y, out_shape_var[0].dtype),
-            (z, out_shape_var[0].dtype),
+            (y, out_abs_tensor[0].dtype),
+            (z, out_abs_tensor[0].dtype),
         ]
 
 
@@ -946,11 +632,11 @@ class Input(AbsOpBase):
         self.inp_ranks = []
         self.out_ranks = [(dim,)]
 
-    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         SanityCheck.eq(len(input_shapes), 0)
-        return [self.shape_var]
+        return [self.abs_tensor]
 
-    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+    def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         SanityCheck.eq(len(input_shapes), 0)
         return []
 
@@ -970,24 +656,25 @@ class Constant(AbsOpBase):
         self.dim = dim
         self.inp_ranks = []
         self.out_ranks = [(dim,)]
+        self.abs_tensor = None
 
-    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         SanityCheck.eq(len(input_shapes), 0)
-        return [self.shape_var]
+        return [self.abs_tensor]
 
-    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+    def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         SanityCheck.eq(len(input_shapes), 0)
         return []
 
     def torch(self) -> Callable[..., torch.Tensor]:
-        data = torch.randn(self.shape_var.shape, device=_DEV).to(
-            self.shape_var.dtype.value
+        data = torch.randn(self.abs_tensor.shape, device=_DEV).to(
+            self.abs_tensor.dtype.torch()
         )
         return StopFoldConst(data)
 
 
 class Placeholder:
-    def __init__(self, out_shape: ShapeVar):
+    def __init__(self, out_shape: AbsTensor):
         self.out_shape = out_shape
         self.inp_ranks = []
         self.out_ranks = [(out_shape.ndims,)]
@@ -997,12 +684,12 @@ class Placeholder:
 
     def to_const(self):
         const_node = Constant(self.out_shape.ndims)
-        const_node.shape_var = self.out_shape
+        const_node.abs_tensor = self.out_shape
         return const_node
 
     def to_input(self):
         input_node = Input(self.out_shape.ndims)
-        input_node.shape_var = self.out_shape
+        input_node.abs_tensor = self.out_shape
         return input_node
 
 
@@ -1012,8 +699,8 @@ class LegacyConstant0D(Constant):
         # TODO more dtypes
 
     @property
-    def shape_var(self):
-        return ShapeVar([], dtype=self.extra_attrs["dtype"])
+    def abs_tensor(self):
+        return AbsTensor([], dtype=self.extra_attrs["dtype"])
 
 
 class LegacyConstant1D(Constant):
@@ -1022,8 +709,8 @@ class LegacyConstant1D(Constant):
         self.dim0 = dim0
 
     @property
-    def shape_var(self):
-        return ShapeVar([self.dim0], dtype=self.extra_attrs["dtype"])
+    def abs_tensor(self):
+        return AbsTensor([self.dim0], dtype=self.extra_attrs["dtype"])
 
 
 class LegacyConstant2D(Constant):
@@ -1033,8 +720,8 @@ class LegacyConstant2D(Constant):
         self.dim1 = dim1
 
     @property
-    def shape_var(self):
-        return ShapeVar([self.dim0, self.dim1], dtype=self.extra_attrs["dtype"])
+    def abs_tensor(self):
+        return AbsTensor([self.dim0, self.dim1], dtype=self.extra_attrs["dtype"])
 
 
 class LegacyConstant3D(Constant):
@@ -1050,8 +737,8 @@ class LegacyConstant3D(Constant):
         self.dim2 = dim2
 
     @property
-    def shape_var(self):
-        return ShapeVar(
+    def abs_tensor(self):
+        return AbsTensor(
             [self.dim0, self.dim1, self.dim2], dtype=self.extra_attrs["dtype"]
         )
 
@@ -1071,8 +758,8 @@ class LegacyConstant4D(Constant):
         self.dim3 = dim3
 
     @property
-    def shape_var(self):
-        return ShapeVar(
+    def abs_tensor(self):
+        return AbsTensor(
             [self.dim0, self.dim1, self.dim2, self.dim3],
             dtype=self.extra_attrs["dtype"],
         )
@@ -1088,7 +775,9 @@ Div = leaf(
                 lambda self: lambda x, y: torch.div(
                     x,
                     y,
-                    rounding_mode="floor" if DType(x.dtype) in DTYPE_INTS else None,
+                    rounding_mode="floor"
+                    if DType.from_torch(x.dtype) in DTYPE_INTS
+                    else None,
                 )
             ),
             "torch_loss": lambda self, x, y: loss_gt_zero(torch.abs(y)),
@@ -1288,7 +977,7 @@ class Clip(ElementWiseUnaryOp):
         self.max = 1
         self.bias = None
 
-    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         if self.bias is None:
             if input_shapes[0].dtype in DTYPE_FLOATS:
                 self.bias = 0.5
@@ -1361,7 +1050,7 @@ class Softmax(ElementWiseUnaryOp):
         self.inp_ranks = [int_from(1)]
         self.out_ranks = [int_from(1)]
 
-    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+    def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         return [nnsmith_lt(self.dim, input_shapes[0].ndims), nnsmith_ge(self.dim, 0)]
 
     def torch(self) -> Callable[..., torch.Tensor]:
@@ -1389,14 +1078,14 @@ class Pool2d(UnaryOpBase):
         self.inp_ranks = [(4,)]  # NCHW
         self.out_ranks = [(4,)]  # NCHW
 
-    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
 
-        shape_var = ShapeVar([], dtype=input_shapes[0].dtype)
+        abs_tensor = AbsTensor([], dtype=input_shapes[0].dtype)
         # Batch dim: just copy
-        shape_var.shape.append(input_shapes[0].shape[0])
+        abs_tensor.shape.append(input_shapes[0].shape[0])
         # Output channels
-        shape_var.shape.append(input_shapes[0].shape[1])
-        shape_var.shape.append(
+        abs_tensor.shape.append(input_shapes[0].shape[1])
+        abs_tensor.shape.append(
             (
                 nnsmith_div(
                     nnsmith_add(
@@ -1408,7 +1097,7 @@ class Pool2d(UnaryOpBase):
                 + 1
             )
         )
-        shape_var.shape.append(
+        abs_tensor.shape.append(
             (
                 nnsmith_div(
                     nnsmith_add(
@@ -1420,7 +1109,7 @@ class Pool2d(UnaryOpBase):
                 + 1
             )
         )
-        return [shape_var]
+        return [abs_tensor]
 
     def _requires(self, input_shapes):
         cons = []
@@ -1468,9 +1157,9 @@ class Pool2d(UnaryOpBase):
         )
 
     def deduct_inp_ranks_and_dtype(
-        self, out_shape_var: List[ShapeVar]
+        self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
-        return [(4, out_shape_var[0].dtype)]
+        return [(4, out_abs_tensor[0].dtype)]
 
 
 @leaf
@@ -1549,7 +1238,7 @@ class Slice(UnaryOpBase):
                 self.end = self.INT_MAX
         return self.extra_attrs["axis"]
 
-    def _requires(self, input_shapes: List[ShapeVar]):
+    def _requires(self, input_shapes: List[AbsTensor]):
         inp = input_shapes[0]
         axis = self._get_attrs(inp.ndims)
         reg = self.extra_attrs["region"]
@@ -1579,7 +1268,7 @@ class Slice(UnaryOpBase):
         cons.append(nnsmith_le(self.step, dim_s))
         return cons
 
-    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         inp = input_shapes[0]
         axis = self._get_attrs(inp.ndims)
         s = list(inp.shape)
@@ -1590,7 +1279,7 @@ class Slice(UnaryOpBase):
             nnsmith_add(nnsmith_sub(end, self.start), nnsmith_sub(self.step, 1)),
             self.step,
         )
-        return [ShapeVar(s, input_shapes[0].dtype)]
+        return [AbsTensor(s, input_shapes[0].dtype)]
 
     def torch(self):
         reg = self.extra_attrs["region"]
@@ -1614,9 +1303,9 @@ class Slice(UnaryOpBase):
         return _func
 
     def deduct_inp_ranks_and_dtype(
-        self, out_shape_var: List[ShapeVar]
+        self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
-        return [(out_shape_var[0].ndims, out_shape_var[0].dtype)]
+        return [(out_abs_tensor[0].ndims, out_abs_tensor[0].dtype)]
 
 
 def _pad_num_var_param(rstart=1, max=None):
@@ -1650,7 +1339,7 @@ class Pad(UnaryOpBase):
             len(self.padding_list) % 2 == 0
         ), f"padding_list must be even, got {self.padding_list}"
 
-    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+    def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         pad = self.padding_list
         isv = input_shapes[0].shape
         cons = []
@@ -1666,14 +1355,14 @@ class Pad(UnaryOpBase):
             )
         return cons
 
-    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         isv = input_shapes[0].shape
         pad = self.padding_list
         s = list(isv)
         for i in range(len(pad) // 2):
             j = len(isv) - 1 - i
             s[j] = nnsmith_add(nnsmith_add(s[j], pad[i * 2]), pad[i * 2 + 1])
-        return [ShapeVar(s, input_shapes[0].dtype)]
+        return [AbsTensor(s, input_shapes[0].dtype)]
 
     def torch(self) -> Callable[..., torch.Tensor]:
         if self.extra_attrs["type"] == "constant":
@@ -1691,9 +1380,9 @@ class Pad(UnaryOpBase):
             )
 
     def deduct_inp_ranks_and_dtype(
-        self, out_shape_var: List[ShapeVar]
+        self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
-        return [(out_shape_var[0].ndims, out_shape_var[0].dtype)]
+        return [(out_abs_tensor[0].ndims, out_abs_tensor[0].dtype)]
 
 
 @leaf
@@ -1721,7 +1410,7 @@ class ReflectPad(Pad):
         self.inp_ranks = [int_range(len(padding_list) // 2 + 1, 4)]
         self.out_ranks = [int_range(len(padding_list) // 2 + 1, 4)]
 
-    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+    def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         cons = super()._requires(input_shapes)
         pad = self.padding_list
         isv = input_shapes[0].shape
@@ -1748,10 +1437,10 @@ class Expand(UnaryOpBase, ABC):
         self.expand_last_dim = expand_last_dim
         self.expand_n = expand_n
 
-    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         if self.expand_last_dim <= len(input_shapes[0].shape):
             # NOTE: Werid, deepcopy is useless here.
-            shape = ShapeVar(
+            shape = AbsTensor(
                 shape=[*input_shapes[0].shape], dtype=input_shapes[0].dtype
             )
             shape.shape[-self.expand_last_dim] = self.expand_n
@@ -1763,7 +1452,7 @@ class Expand(UnaryOpBase, ABC):
             #       return [expand_n, 1, u, v] where `1` is padded.
             dtype = input_shapes[0].dtype
             return [
-                ShapeVar(
+                AbsTensor(
                     [
                         self.expand_n,
                         *(
@@ -1790,19 +1479,19 @@ class Expand(UnaryOpBase, ABC):
 
     def torch(self):
         return lambda x: x.expand(
-            *self._type_transfer([ShapeVar.from_torch(x)])[0].shape
+            *self._type_transfer([AbsTensor.from_torch(x)])[0].shape
         )
 
     def deduct_inp_ranks_and_dtype(
-        self, out_shape_var: List[ShapeVar]
+        self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
         inp_rank = (
             self.expand_last_dim
-            if out_shape_var[0].ndims < self.expand_last_dim
-            else out_shape_var[0].ndims
+            if out_abs_tensor[0].ndims < self.expand_last_dim
+            else out_abs_tensor[0].ndims
         )
-        ConstraintCheck.ge(out_shape_var[0].ndims, self.expand_last_dim)
-        return [(inp_rank, out_shape_var[0].dtype)]
+        ConstraintCheck.ge(out_abs_tensor[0].ndims, self.expand_last_dim)
+        return [(inp_rank, out_abs_tensor[0].dtype)]
 
 
 @leaf
@@ -1841,11 +1530,11 @@ class BatchNorm2d(ElementWiseUnaryOp):
         self.nfeat = nfeat
 
     def deduct_inp_ranks_and_dtype(
-        self, out_shape_var: List[ShapeVar]
+        self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
         return [(4, DType.float32)]
 
-    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+    def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         return [
             nnsmith_eq(self.nfeat, input_shapes[0].shape[1]),
             nnsmith_ge(input_shapes[0].shape[0], 2),
@@ -1880,12 +1569,12 @@ class Conv1d(UnaryOpBase):
         self.inp_ranks = [(3,)]  # NCL
         self.out_ranks = [(3,)]  # NCL
 
-    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        shape_var = ShapeVar(
+    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+        abs_tensor = AbsTensor(
             [input_shapes[0].shape[0], self.out_channels], dtype=input_shapes[0].dtype
         )
         mimic_k = self.kernel_size + (self.dilation - 1) * (self.kernel_size - 1)
-        shape_var.shape.append(
+        abs_tensor.shape.append(
             (
                 nnsmith_div(
                     nnsmith_add(
@@ -1897,7 +1586,7 @@ class Conv1d(UnaryOpBase):
             )
         )
 
-        return [shape_var]
+        return [abs_tensor]
 
     def _requires(self, input_shapes):
         # FIXME: Handling flops.
@@ -1917,9 +1606,9 @@ class Conv1d(UnaryOpBase):
         return cons
 
     def deduct_inp_ranks_and_dtype(
-        self, out_shape_var: List[ShapeVar]
+        self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
-        return [(3, out_shape_var[0].dtype)]
+        return [(3, out_abs_tensor[0].dtype)]
 
     def __repr__(self) -> str:
         repr = f"Conv1d({self.in_channels}, {self.out_channels}, k={self.kernel_size}"
@@ -1974,15 +1663,15 @@ class NCHWConv2d(UnaryOpBase):
         self.inp_ranks = [(4,)]  # NC(H,)W
         self.out_ranks = [(4,)]  # NC(H,)W
 
-    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
-        shape_var = ShapeVar(
+    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+        abs_tensor = AbsTensor(
             [input_shapes[0].shape[0], self.out_channels], dtype=input_shapes[0].dtype
         )
 
         mimic_kh = self.kernel_h_size + (self.dilation_h - 1) * (self.kernel_h_size - 1)
         mimic_kw = self.kernel_w_size + (self.dilation_w - 1) * (self.kernel_w_size - 1)
 
-        shape_var.shape.append(
+        abs_tensor.shape.append(
             (
                 nnsmith_div(
                     nnsmith_add(
@@ -1994,7 +1683,7 @@ class NCHWConv2d(UnaryOpBase):
                 + 1
             )
         )
-        shape_var.shape.append(
+        abs_tensor.shape.append(
             (
                 nnsmith_div(
                     nnsmith_add(
@@ -2006,7 +1695,7 @@ class NCHWConv2d(UnaryOpBase):
                 + 1
             )
         )
-        return [shape_var]
+        return [abs_tensor]
 
     def _requires(self, input_shapes):
         cons = []
@@ -2049,7 +1738,7 @@ class NCHWConv2d(UnaryOpBase):
         )
 
     def flops(self, input_shapes):
-        w = ShapeVar(
+        w = AbsTensor(
             [
                 self.out_channels,
                 self.in_channels,
@@ -2070,14 +1759,14 @@ class NCHWConv2d(UnaryOpBase):
 
     def n_floats(self, input_shapes):
         # FIXME: maybe need to take dilation into account?
-        padded_data = ShapeVar(input_shapes[0].shape, dtype=input_shapes[0].dtype)
+        padded_data = AbsTensor(input_shapes[0].shape, dtype=input_shapes[0].dtype)
         padded_data.shape[2] = nnsmith_add(
             padded_data.shape[2], nnsmith_mul(2, self.padding)
         )
         padded_data.shape[3] = nnsmith_add(
             padded_data.shape[3], nnsmith_mul(2, self.padding)
         )
-        w = ShapeVar(
+        w = AbsTensor(
             [
                 self.out_channels,
                 self.in_channels,
@@ -2090,9 +1779,9 @@ class NCHWConv2d(UnaryOpBase):
         return nnsmith_add(nnsmith_add(w.nelement(), padded_data.nelement()), outs)
 
     def deduct_inp_ranks_and_dtype(
-        self, out_shape_var: List[ShapeVar]
+        self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
-        return [(4, out_shape_var[0].dtype)]
+        return [(4, out_abs_tensor[0].dtype)]
 
     def __repr__(self) -> str:
         repr = f"Conv2d({self.in_channels}, {self.out_channels}, k=({self.kernel_h_size},{self.kernel_w_size})"
@@ -2138,7 +1827,7 @@ class Reshape(UnaryOpBase):
         self.out_ranks = [(len(target_shape),)]
         self.target_shape: List[Union[int, z3.ExprRef]] = target_shape
 
-    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         __MAX_SOLVE_SYMBOL__ = 8
         # otherwise OOM.
         ConstraintCheck.le(
@@ -2146,9 +1835,9 @@ class Reshape(UnaryOpBase):
         )
 
         if -1 not in self.target_shape:
-            return [ShapeVar(self.target_shape, dtype=input_shapes[0].dtype)]
+            return [AbsTensor(self.target_shape, dtype=input_shapes[0].dtype)]
         # else
-        shape_var = ShapeVar(self.target_shape, dtype=input_shapes[0].dtype)
+        abs_tensor = AbsTensor(self.target_shape, dtype=input_shapes[0].dtype)
         auto_dim = -1
         accum = 1
         for i, v in enumerate(self.target_shape):
@@ -2159,11 +1848,11 @@ class Reshape(UnaryOpBase):
             else:
                 accum = nnsmith_mul(accum, v)
 
-        shape_var.shape[auto_dim] = nnsmith_div(
+        abs_tensor.shape[auto_dim] = nnsmith_div(
             reduce(lambda x, y: nnsmith_mul(x, y), input_shapes[0].shape, 1), accum
         )
 
-        return [shape_var]
+        return [abs_tensor]
 
     def _requires(self, input_shapes):
         ret = []
@@ -2224,9 +1913,9 @@ class Reshape(UnaryOpBase):
         return lambda x: x.reshape(*self.target_shape)
 
     def deduct_inp_ranks_and_dtype(
-        self, out_shape_var: List[ShapeVar]
+        self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
-        return [(-1, out_shape_var[0].dtype)]
+        return [(-1, out_abs_tensor[0].dtype)]
 
 
 @leaf
@@ -2264,11 +1953,11 @@ class Transpose(UnaryOpBase):
             ) % (1 + max_dim)
         return self.extra_attrs["dim0"], self.extra_attrs["dim1"]
 
-    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         dim0, dim1 = self._init_swap_dims(input_shapes[0].shape)
         shape = list(input_shapes[0].shape)
         shape[dim0], shape[dim1] = shape[dim1], shape[dim0]
-        return [ShapeVar(shape, input_shapes[0].dtype)]
+        return [AbsTensor(shape, input_shapes[0].dtype)]
 
     def _requires(self, input_shapes):
         dim0, dim1 = self._init_swap_dims(input_shapes[0].shape)
@@ -2287,9 +1976,9 @@ class Transpose(UnaryOpBase):
         return f
 
     def deduct_inp_ranks_and_dtype(
-        self, out_shape_var: List[ShapeVar]
+        self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
-        return [(out_shape_var[0].ndims, out_shape_var[0].dtype)]
+        return [(out_abs_tensor[0].ndims, out_abs_tensor[0].dtype)]
 
 
 # Sum, Min, Max, Mean, ArgMin, ArgMax, Squeeze, Size
@@ -2307,19 +1996,19 @@ class InterpBase(UnaryOpBase):
         self.inp_ranks = [(len(size) + 2,)]
         self.out_ranks = [(len(size) + 2,)]
 
-    def _requires(self, input_shapes: List[ShapeVar]):
+    def _requires(self, input_shapes: List[AbsTensor]):
         return [nnsmith_gt(v, 0) for v in self.size]
 
-    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         shape = list(input_shapes[0].shape)
         for i in range(len(self.size)):
             shape[-(1 + i)] = self.size[-(1 + i)]
-        return [ShapeVar(shape, input_shapes[0].dtype)]
+        return [AbsTensor(shape, input_shapes[0].dtype)]
 
     def deduct_inp_ranks_and_dtype(
-        self, out_shape_var: List[ShapeVar]
+        self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
-        return [(out_shape_var[0].ndims, out_shape_var[0].dtype)]
+        return [(out_abs_tensor[0].ndims, out_abs_tensor[0].dtype)]
 
 
 @leaf
@@ -2392,13 +2081,13 @@ class ReduceBase(UnaryOpBase, ABC):
                 self.extra_attrs["reduce_dim"] = random.randint(0, len(input_shape) - 1)
         return self.extra_attrs["reduce_dim"]
 
-    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         svar_list = []
         for i, v in enumerate(input_shapes[0].shape):
             if i != self._init_reduce_dim(input_shapes[0].shape):
                 svar_list.append(v)
         return [
-            ShapeVar(
+            AbsTensor(
                 svar_list,
                 input_shapes[0].dtype
                 if self._reduce_out_dtype is None
@@ -2406,7 +2095,7 @@ class ReduceBase(UnaryOpBase, ABC):
             )
         ]
 
-    def _requires(self, input_shapes: List[ShapeVar]):
+    def _requires(self, input_shapes: List[AbsTensor]):
         reduce_dim = self._init_reduce_dim(input_shapes[0].shape)
         return []
 
@@ -2416,9 +2105,9 @@ class ReduceBase(UnaryOpBase, ABC):
         return orank + 1
 
     def deduct_inp_ranks_and_dtype(
-        self, out_shape_var: List[ShapeVar]
+        self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
-        return [(self._get_irank(out_shape_var[0].ndims), out_shape_var[0].dtype)]
+        return [(self._get_irank(out_abs_tensor[0].ndims), out_abs_tensor[0].dtype)]
 
 
 @leaf
@@ -2497,10 +2186,10 @@ class ArgMin(ReduceBase):
         return lambda x: x.argmin()
 
     def deduct_inp_ranks_and_dtype(
-        self, out_shape_var: List[ShapeVar]
+        self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
         return [
-            (self._get_irank(out_shape_var[0].ndims), random.choice(self.in_dtypes)[0])
+            (self._get_irank(out_abs_tensor[0].ndims), random.choice(self.in_dtypes)[0])
         ]
 
 
@@ -2518,10 +2207,10 @@ class ArgMax(ReduceBase):
         return lambda x: x.argmax()
 
     def deduct_inp_ranks_and_dtype(
-        self, out_shape_var: List[ShapeVar]
+        self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
         return [
-            (self._get_irank(out_shape_var[0].ndims), random.choice(self.in_dtypes)[0])
+            (self._get_irank(out_abs_tensor[0].ndims), random.choice(self.in_dtypes)[0])
         ]
 
 
@@ -2536,19 +2225,19 @@ class TriBase(UnaryOpBase):
         self.inp_ranks = [(2,)]
         self.out_ranks = [(2,)]
 
-    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         SanityCheck.eq(len(input_shapes), 1)
         return [input_shapes[0]]
 
     def deduct_inp_ranks_and_dtype(
-        self, out_shape_var: List[ShapeVar]
+        self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
-        return [(2, out_shape_var[0].dtype)]
+        return [(2, out_abs_tensor[0].dtype)]
 
 
 @leaf
 class Tril(TriBase):
-    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+    def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         ConstraintCheck.true(input_shapes[0].ndims == 2)
         nrow = input_shapes[0].shape[0]
         ncol = input_shapes[0].shape[1]
@@ -2560,7 +2249,7 @@ class Tril(TriBase):
 
 @leaf
 class Triu(TriBase):
-    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+    def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         ConstraintCheck.true(input_shapes[0].ndims == 2)
         nrow = input_shapes[0].shape[0]
         ncol = input_shapes[0].shape[1]
@@ -2583,17 +2272,17 @@ class Linear(UnaryOpBase):
         # at least one dim. cannot be zranks_all()
         self.out_ranks = [int_from(1)]
 
-    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         assert len(input_shapes) == 1, "Linear only takes one input, but got {}".format(
             len(input_shapes)
         )
         return [
-            ShapeVar(
+            AbsTensor(
                 shape=[*input_shapes[0].shape[:-1], self.ofeat], dtype=DType.float32
             )
         ]
 
-    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+    def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         ConstraintCheck.true(input_shapes[0].ndims >= 1)
         return [
             nnsmith_ge(self.ifeat, 1),
@@ -2605,9 +2294,9 @@ class Linear(UnaryOpBase):
         return torch.nn.Linear(in_features=self.ifeat, out_features=self.ofeat)
 
     def deduct_inp_ranks_and_dtype(
-        self, out_shape_var: List[ShapeVar]
+        self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
-        return [(out_shape_var[0].ndims, DType.float32)]
+        return [(out_abs_tensor[0].ndims, DType.float32)]
 
 
 def partialclass(cls, name, *args, **kwds) -> Type[AbsOpBase]:
@@ -2632,12 +2321,12 @@ class Concat(AbsOpBase):
         self.out_ranks = [(int_from(1))]
         self.same_inp_dims = True
 
-    def _init_concat_axis(self, input_shapes: List[ShapeVar]) -> int:
+    def _init_concat_axis(self, input_shapes: List[AbsTensor]) -> int:
         if "axis" not in self.extra_attrs:
             self.extra_attrs["axis"] = random.randint(0, input_shapes[0].ndims - 1)
         return self.extra_attrs["axis"]
 
-    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+    def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         ndims = input_shapes[0].ndims
         SanityCheck.gt(ndims, self._init_concat_axis(input_shapes))
         for s in input_shapes:
@@ -2651,10 +2340,10 @@ class Concat(AbsOpBase):
                 )
         return cons
 
-    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         SanityCheck.true(input_shapes[0].ndims > 0)
         axis = self._init_concat_axis(input_shapes)
-        os = ShapeVar(input_shapes[0].shape, input_shapes[0].dtype)
+        os = AbsTensor(input_shapes[0].shape, input_shapes[0].dtype)
         os.shape[axis] = reduce(nnsmith_add, [s.shape[axis] for s in input_shapes])
         return [os]
 
@@ -2663,10 +2352,11 @@ class Concat(AbsOpBase):
         return lambda *args: torch.cat(args, dim=axis)
 
     def deduct_inp_ranks_and_dtype(
-        self, out_shape_var: List[ShapeVar]
+        self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
         return [
-            (out_shape_var[0].ndims, out_shape_var[0].dtype) for _ in range(self.arity)
+            (out_abs_tensor[0].ndims, out_abs_tensor[0].dtype)
+            for _ in range(self.arity)
         ]
 
 
@@ -2723,20 +2413,20 @@ class Cast(ElementWiseUnaryOp, ABC):
     def __str__(self) -> str:
         return "Cast " + str(self.extra_attrs)
 
-    def _requires(self, input_shapes: List[ShapeVar]) -> List[z3.ExprRef]:
+    def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         return []
 
-    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         assert len(input_shapes) == 1
-        return [ShapeVar(input_shapes[0].shape, self.extra_attrs["to"])]
+        return [AbsTensor(input_shapes[0].shape, self.extra_attrs["to"])]
 
     def deduct_inp_ranks_and_dtype(
-        self, out_shape_var: List[ShapeVar]
+        self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
-        return [(out_shape_var[0].ndims, self.extra_attrs["to"])]
+        return [(out_abs_tensor[0].ndims, self.extra_attrs["to"])]
 
     def torch(self):
-        return lambda x: x.to(dtype=self.extra_attrs["to"].value)
+        return lambda x: x.to(dtype=self.extra_attrs["to"].torch())
 
 
 @leaf
@@ -2803,7 +2493,7 @@ class Gemm(TernaryOpBase):
             self.extra_attrs["beta"] = beta
         return self.extra_attrs
 
-    def _requires(self, input_shapes: List[ShapeVar]):
+    def _requires(self, input_shapes: List[AbsTensor]):
         ConstraintCheck.true(input_shapes[0].ndims <= 2)
         out_shape = self.checked_type_transfer(input_shapes)[0]
         cons = broadcast_to_cons(input_shapes[0].shape, out_shape.shape)
@@ -2811,14 +2501,14 @@ class Gemm(TernaryOpBase):
         # matmul constraint
         mat1, mat2 = input_shapes[1], input_shapes[2]
         cons.append(mat1.shape[1] == mat2.shape[0])
-        self._set_or_get_extra_attrs(input_shapes[0].dtype.value)
+        self._set_or_get_extra_attrs(input_shapes[0].dtype.torch())
         if Z3_CONS_FLOPS:
             cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
         return cons
 
-    def _type_transfer(self, input_shapes: List[ShapeVar]) -> List[ShapeVar]:
+    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         mat1, mat2 = input_shapes[1], input_shapes[2]
-        return [ShapeVar([mat1.shape[0], mat2.shape[1]], input_shapes[0].dtype)]
+        return [AbsTensor([mat1.shape[0], mat2.shape[1]], input_shapes[0].dtype)]
 
     def torch(self):
         extra_attrs = self._set_or_get_extra_attrs()
@@ -2831,12 +2521,12 @@ class Gemm(TernaryOpBase):
         return mat1.shape[0] * mat1.shape[1] * mat2.shape[1]
 
     def deduct_inp_ranks_and_dtype(
-        self, out_shape_var: List[ShapeVar]
+        self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
         return [
-            (random.randint(0, 2), out_shape_var[0].dtype),
-            (2, out_shape_var[0].dtype),
-            (2, out_shape_var[0].dtype),
+            (random.randint(0, 2), out_abs_tensor[0].dtype),
+            (2, out_abs_tensor[0].dtype),
+            (2, out_abs_tensor[0].dtype),
         ]
 
 
@@ -2904,19 +2594,6 @@ def config_skip_op(skip_config):
             print(*msg)
 
 
-def _check_comb(comb: DTypeComb, op: AbsOpBase):
-    inps = []
-    for dtype, ndims in zip(comb, op.inp_ranks):
-        ndim = min(ndims)
-        # TODO use symbolic solver
-        inps.append(torch.empty([2] * ndims, dtype=dtype.value))
-    try:
-        _ = op.torch()(*inps)
-    except Exception as e:
-        return False
-    return True
-
-
 def main():
     # Test shape functions
     print(len(ALL_OP_TYPES), "operators supported:")
@@ -2924,23 +2601,23 @@ def main():
     assert Reshape in ALL_OP_TYPES
 
     # Reshape from scalar
-    lhs = ShapeVar([], DType.float32)
+    lhs = AbsTensor([], DType.float32)
     s = z3.Solver()
     op = Reshape(1)
     rhs = op.checked_type_transfer([lhs])
-    assert all(rhs[0].eq(ShapeVar([1], DType.float32))), (lhs, rhs)
+    assert all(rhs[0].eq(AbsTensor([1], DType.float32))), (lhs, rhs)
     s.add(*op.checked_requires([lhs]))
     assert s.check() == z3.sat
     # Reduce rank 0
     abs_op = Squeeze()
-    scalar = ShapeVar.from_torch(torch.tensor(10))
+    scalar = AbsTensor.from_torch(torch.tensor(10))
     assert abs_op.checked_type_transfer([scalar])[0].ndims == 0
     abs_op.checked_requires([scalar])
 
     # ReLU
     lhs = torch.relu(torch.randn(1, 1, 1, 1)).shape
     rhs = torch.Size(
-        ReLU().checked_type_transfer([ShapeVar([1, 1, 1, 1], DType.float32)])[0].shape
+        ReLU().checked_type_transfer([AbsTensor([1, 1, 1, 1], DType.float32)])[0].shape
     )
     assert lhs == rhs, f"{lhs} != {rhs}"
 
@@ -2952,8 +2629,8 @@ def main():
         Add()
         .checked_type_transfer(
             [
-                ShapeVar([2, 3, 4, 5], DType.float32),
-                ShapeVar([2, 3, 4, 5], DType.float32),
+                AbsTensor([2, 3, 4, 5], DType.float32),
+                AbsTensor([2, 3, 4, 5], DType.float32),
             ]
         )[0]
         .shape
@@ -2964,12 +2641,12 @@ def main():
     a = torch.randn(source_shape)
     abs_op = ExpandLast4(expand_n=2)
     assert a.expand(2, 1, *source_shape).shape == torch.Size(
-        abs_op.checked_type_transfer([ShapeVar(source_shape, DType.float32)])[0].shape
+        abs_op.checked_type_transfer([AbsTensor(source_shape, DType.float32)])[0].shape
     )
 
     abs_op = ExpandLast1(expand_n=2)
     rhs = torch.Size(
-        abs_op.checked_type_transfer([ShapeVar(list(source_shape), DType.float32)])[
+        abs_op.checked_type_transfer([AbsTensor(list(source_shape), DType.float32)])[
             0
         ].shape
     )
@@ -2983,12 +2660,12 @@ def main():
     assert (
         out.shape
         == NCHWConv2d(3, 3, 3, 4, 1, 1)
-        .checked_type_transfer([ShapeVar(source_shape, DType.float32)])[0]
+        .checked_type_transfer([AbsTensor(source_shape, DType.float32)])[0]
         .torch()
     )
     print(
         NCHWConv2d(3, 3, 3, 4, 1, 1).checked_type_transfer(
-            [ShapeVar([2, *z3.Ints("c h w")], DType.float32)]
+            [AbsTensor([2, *z3.Ints("c h w")], DType.float32)]
         )[0]
     )
 
@@ -2999,7 +2676,7 @@ def main():
     assert (
         a.reshape(*target_shape).shape
         == Reshape(*target_shape)
-        .checked_type_transfer([ShapeVar(source_shape, DType.float32)])[0]
+        .checked_type_transfer([AbsTensor(source_shape, DType.float32)])[0]
         .torch()
     )
 
@@ -3008,10 +2685,10 @@ def main():
         s = z3.Solver()
         v = z3.Ints("a b c d e")
         abs_op = Reshape(*v)
-        cons = abs_op.checked_requires([ShapeVar(source_shape, DType.float32)])
+        cons = abs_op.checked_requires([AbsTensor(source_shape, DType.float32)])
         for c in cons:
             s.add(c)
-        for c in abs_op.checked_type_transfer([ShapeVar(source_shape, DType.float32)])[
+        for c in abs_op.checked_type_transfer([AbsTensor(source_shape, DType.float32)])[
             0
         ].gt_zero():
             s.add(c)
@@ -3024,7 +2701,7 @@ def main():
     p0, p1, p2, p3, p4, p5 = z3.Ints("p0 p1 p2 p3 p4 p5")
     op = NCHWConv2d(p0, p1, p2, p3, p4, p5)
     s = z3.Solver()
-    shape = ShapeVar([1, 3, 224, 224], DType.float32)
+    shape = AbsTensor([1, 3, 224, 224], DType.float32)
     for c in op.checked_requires([shape]):
         s.add(c)
     for c in op.checked_type_transfer([shape])[0].gt_zero():
@@ -3043,7 +2720,7 @@ def main():
     p0, p1, p2, p3 = z3.Ints("p0 p1 p2 p3")
     op = AvgPool2d(p0, p1, p2, p3)
     s = z3.Solver()
-    shape = ShapeVar([1, 3, 224, 224], DType.float32)
+    shape = AbsTensor([1, 3, 224, 224], DType.float32)
     for c in op.checked_requires([shape]):
         s.add(c)
     for c in op.checked_type_transfer([shape])[0].gt_zero():

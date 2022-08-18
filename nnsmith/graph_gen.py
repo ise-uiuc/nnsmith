@@ -42,7 +42,7 @@ class RequiredDimNotFound(Exception):
     pass
 
 
-ALIVE_SHAPE_TYPE = List[Tuple[int, ShapeVar, int]]
+ALIVE_SHAPE_TYPE = List[Tuple[int, AbsTensor, int]]
 
 
 InputInfoBase = NamedTuple(
@@ -52,7 +52,7 @@ InputInfoBase = NamedTuple(
 
 class InputInfo(InputInfoBase):
     def __repr__(self) -> str:
-        return f"InputInfo(op={self.op}<{self.op.shape_var.dtype.value}>, oid={self.oid}, node_id={self.node_id}, input_name={self.input_name})"
+        return f"InputInfo(op={self.op}<{self.op.asb_tensor.dtype.short()}>, oid={self.oid}, node_id={self.node_id}, input_name={self.input_name})"
 
 
 __MB_LIM__ = 6 * 1024
@@ -69,7 +69,8 @@ def random_tensor(shape, dtype, margin=4, base=5, use_cuda=False):
         assert isinstance(base, int) or isinstance(base, float)
 
     fp_tensor = base + (torch.rand(shape, device=dev) - 0.5) * margin
-    if DType.is_float(str(dtype)):
+
+    if dtype.is_floating_point:
         return fp_tensor.to(dtype)
     else:
         return torch.round(fp_tensor).to(dtype)
@@ -119,7 +120,7 @@ class SymbolNet(nn.Module):
         self.input_info: List[InputInfo] = []
 
         tmp_op_output_map = {}  # node id -> output idx in tensors;
-        shape_vars = {}
+        abs_tensors = {}
         self.n_floats, self.flops = 0, 0
         for node_id in nx.topological_sort(graph):
             n_inp = graph.nodes[node_id]["nin"]
@@ -137,7 +138,7 @@ class SymbolNet(nn.Module):
             self.concrete_graph.add_node(
                 node_id, op=op, label=textwrap.fill(f"#{node_id} ~ {op}", width=30)
             )
-            self.concretize_svars(node_id, shape_vars, model, op)
+            self.concretize_svars(node_id, abs_tensors, model, op)
 
             # Glob inputs
             for from_node, _, (out_idx, in_idx) in graph.in_edges(
@@ -198,10 +199,10 @@ class SymbolNet(nn.Module):
         if self.verbose:
             print("input_info=", self.input_info)
         self.input_spec = {
-            f"i{ii.op.idx}": ii.op.shape_var.shape for ii in self.input_info
+            f"i{ii.op.idx}": ii.op.abs_tensor.shape for ii in self.input_info
         }
         self.plausible_input_shape = {
-            f"i{ii.op.idx}": ii.op.shape_var for ii in self.input_info
+            f"i{ii.op.idx}": ii.op.abs_tensor for ii in self.input_info
         }
         self.first_run = True
         self.hacked = {}  # make forward deterministic
@@ -212,7 +213,7 @@ class SymbolNet(nn.Module):
         self.check_intermediate_numeric = False
         self.invalid_found_last = None
 
-    def concretize_svars(self, node_id, shape_vars, model, op):
+    def concretize_svars(self, node_id, abs_tensors, model, op):
         # concretize shapevars
         if self.alive_shapes is not None:
             ishape_indices = self.graph.nodes[node_id]["ishape_indices"]
@@ -224,16 +225,16 @@ class SymbolNet(nn.Module):
                     model.eval(i).as_long() if isinstance(i, z3.ExprRef) else i
                     for i in shape
                 ]
-                assert shape_idx not in shape_vars, f"{shape_idx} already exists"
-                shape_vars[shape_idx] = ShapeVar(shape, dtype)
+                assert shape_idx not in abs_tensors, f"{shape_idx} already exists"
+                abs_tensors[shape_idx] = AbsTensor(shape, dtype)
             self.concrete_graph.nodes[node_id]["in_svs"] = [
-                shape_vars[i] for i in ishape_indices
+                abs_tensors[i] for i in ishape_indices
             ]
             self.concrete_graph.nodes[node_id]["out_svs"] = [
-                shape_vars[i] for i in shape_indices
+                abs_tensors[i] for i in shape_indices
             ]
             # ensure n_floats and flops within limit
-            tmp_inp = [shape_vars[i] for i in ishape_indices]
+            tmp_inp = [abs_tensors[i] for i in ishape_indices]
             op.checked_type_transfer(tmp_inp)
             op_nfl = op.n_floats(tmp_inp)
             if self.verbose:
@@ -301,9 +302,9 @@ class SymbolNet(nn.Module):
                     param.copy_(
                         torch.where(
                             param.isnan().logical_or(param.isinf()),
-                            random_tensor(shape=param.shape, dtype=param.dtype).to(
-                                param.device
-                            ),
+                            random_tensor(
+                                shape=param.shape, dtype=param.dtype.torch()
+                            ).to(param.device),
                             param,
                         )
                     )
@@ -351,31 +352,13 @@ class SymbolNet(nn.Module):
     def reset_optimizer(self):
         self.optimizer = torch.optim.Adam(self.to_train, lr=5e-1)
 
-    def _check_out_dtype(self, outputs, node_id, op):
-        if self.alive_shapes is None:
-            return
-        msg_head = f"In dtype checking for {op} (#{node_id}): "
-        shape_indices = self.graph.nodes[node_id]["shape_indices"]
-        SanityCheck.eq(
-            len(outputs),
-            len(shape_indices),
-            msg_head + f"{len(outputs)} != {len(shape_indices)}",
-        )
-        for out, shape_idx in zip(outputs, shape_indices):
-            SanityCheck.eq(
-                out.dtype,
-                self.alive_shapes[shape_idx][1].dtype.value,
-                msg_head
-                + f"torch dtype ({out.dtype}) != symbolic dtype ({self.alive_shapes[shape_idx][1].dtype.value})",
-            )
-
     def get_random_inps(self, **kwargs) -> List[torch.Tensor]:
         # center: -margin ~ 0 ~ +margin
         inputs = []
         for ii in self.input_info:
             inputs.append(
                 random_tensor(
-                    ii.op.shape_var.shape, ii.op.shape_var.dtype.value, **kwargs
+                    ii.op.abs_tensor.shape, ii.op.abs_tensor.dtype.torch(), **kwargs
                 )
             )
 
@@ -429,9 +412,9 @@ class SymbolNet(nn.Module):
                             inp.copy_(
                                 torch.where(
                                     inp.isnan().logical_or(inp.isinf()),
-                                    random_tensor(shape=inp.shape, dtype=inp.dtype).to(
-                                        inp.device
-                                    ),
+                                    random_tensor(
+                                        shape=inp.shape, dtype=inp.dtype.torch()
+                                    ).to(inp.device),
                                     inp,
                                 )
                             )
@@ -528,8 +511,6 @@ class SymbolNet(nn.Module):
                     for i in range(len(outputs)):
                         outputs[i].retain_grad()
                         self.interm_grad.append((f"#{node_id}_{op}_{i}", outputs[i]))
-
-            self._check_out_dtype(outputs, node_id, op)
 
             if self.check_intermediate_numeric or (
                 self.use_gradient and not self.stop_updating_loss
@@ -689,7 +670,7 @@ class SimpleGenerator:
         syms = self.new_syms(
             ["v%s_%s" % (self.monotonic_placeholder_id, k) for k in range(rank)]
         )
-        shapevar = ShapeVar(
+        shapevar = AbsTensor(
             shape=syms, dtype=dtype if dtype is not None else self.random_dtype()
         )
         self.monotonic_placeholder_id += 1
@@ -729,7 +710,7 @@ class SimpleGenerator:
     @abstractmethod
     def insert_init_ph_node(
         self, init_rank, shape=None, dtype=DType.float32
-    ) -> ShapeVar:
+    ) -> AbsTensor:
         raise NotImplementedError
 
     @abstractmethod
@@ -904,7 +885,7 @@ class SimpleGenerator:
         self,
         node: AbsOpBase,
         ishape_indices: List[int],
-        oshapes: List[ShapeVar] = None,
+        oshapes: List[AbsTensor] = None,
         force_shape_indices=None,
     ) -> int:
         if oshapes is None:
@@ -917,18 +898,18 @@ class SimpleGenerator:
 
         shape_indices = []
         if force_shape_indices is None:
-            for i, shape_var in enumerate(oshapes):
+            for i, abs_tensor in enumerate(oshapes):
                 SanityCheck.true(
-                    len(shape_var.shape) in node.out_ranks[i],
+                    len(abs_tensor.shape) in node.out_ranks[i],
                     "{}'s dimension size is not {} in {}".format(
-                        shape_var.shape, node.out_ranks[i], node.__class__.__name__
+                        abs_tensor.shape, node.out_ranks[i], node.__class__.__name__
                     ),
                 )
-                node.out_ranks[i] = (len(shape_var.shape),)
+                node.out_ranks[i] = (len(abs_tensor.shape),)
                 shape_idx = len(self.alive_shapes)
                 shape_indices.append(shape_idx)
-                self.alive_shapes.append((succ_nid, shape_var, i))
-                self.dim2shape_idx.setdefault(len(shape_var.shape), []).append(
+                self.alive_shapes.append((succ_nid, abs_tensor, i))
+                self.dim2shape_idx.setdefault(len(abs_tensor.shape), []).append(
                     shape_idx
                 )
         else:
@@ -1085,7 +1066,7 @@ class SimpleGenerator:
         else:  # inputs have different dimension sizes.
             dim_spec_list = op.inp_ranks
 
-        ishape_indices = self.pick_shape_var_idx(
+        ishape_indices = self.pick_tensor_idx(
             type(op),
             dim_spec_list,
             op.in_dtypes,
@@ -1107,7 +1088,7 @@ class SimpleGenerator:
                 continue
             ph_candidates.append(oshape)
 
-        placeholder_indices = self.pick_shape_var_idx(
+        placeholder_indices = self.pick_tensor_idx(
             type(op), op.out_ranks, op.out_dtypes, candidate_shapes=ph_candidates
         )
 
@@ -1116,7 +1097,7 @@ class SimpleGenerator:
 
         return False
 
-    def try_insert_node_type(self, node_t, max_shape_var_pick_time=3) -> bool:
+    def try_insert_node_type(self, node_t, max_tensor_pick_time=3) -> bool:
         if self.verbose:
             print(
                 f"Inserting node #{len(self.abstract_graph.nodes)}: "
@@ -1124,7 +1105,7 @@ class SimpleGenerator:
             )
 
         try:
-            for _ in range(max_shape_var_pick_time):
+            for _ in range(max_tensor_pick_time):
                 # should recreate a new instance since some attributes (like axis) should be initialized for each pick
                 op_param_n = node_t.get_num_var_param()
                 op_id = len(self.abstract_graph.nodes)
@@ -1152,7 +1133,7 @@ class SimpleGenerator:
 
         return False
 
-    def filter_shapes(self, ndims, dtype, candidate_shapes: List[ShapeVar]):
+    def filter_shapes(self, ndims, dtype, candidate_shapes: List[AbsTensor]):
         cans = range(len(candidate_shapes))
 
         cans = list(
@@ -1181,12 +1162,12 @@ class SimpleGenerator:
     def pick_shape(self, node_t, candidates):
         return random.choice(candidates)
 
-    def pick_shape_var_idx(
+    def pick_tensor_idx(
         self,
         node_t,
         ndim_list: List[Set[int]],
-        dtype_combs_spec: List[DTypeComb],
-        candidate_shapes: List[ShapeVar],
+        dtype_combs_spec: List[Tuple[DType, ...]],
+        candidate_shapes: List[AbsTensor],
     ) -> List[int]:
         """Randomly pick indices to shape variables from the output pool.
 
@@ -1197,7 +1178,7 @@ class SimpleGenerator:
             List[int]: indices to applicable shape variables.
         """
 
-        shape_var_candidates = []
+        abs_tensor_candidates = []
         if self.verbose:
             print("dtype_combs_spec:", dtype_combs_spec)
 
@@ -1225,9 +1206,9 @@ class SimpleGenerator:
             candidates = self.filter_shapes(
                 ndims=ndims, dtype=dtype_comb[i], candidate_shapes=candidate_shapes
             )
-            shape_var_candidates.append(self.pick_shape(node_t, candidates))
+            abs_tensor_candidates.append(self.pick_shape(node_t, candidates))
 
-        return shape_var_candidates
+        return abs_tensor_candidates
 
     def viz(self, filename: str = None):
         if filename is None:
@@ -1255,7 +1236,7 @@ class PureSymbolGen(SimpleGenerator):
         return ph
 
     # subclasses may override this
-    def extra_constraints(self, node: AbsOpBase, input_shapes: List[ShapeVar]):
+    def extra_constraints(self, node: AbsOpBase, input_shapes: List[AbsTensor]):
         return []
 
     def try_forward_insert_at(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
@@ -1433,7 +1414,7 @@ def range_constrain(param, lb, ub):
     return [z3.And(*ret)] if len(ret) > 0 else []
 
 
-def __SLICE_CONSTRAINTS(node, inp_shps: List[ShapeVar], construct_param_dict):
+def __SLICE_CONSTRAINTS(node, inp_shps: List[AbsTensor], construct_param_dict):
     # NOTE(JK): backward mode is slow at generating a chain of many slice ops.
     # Might be one potential general performance issue. If hit performance bottleneck someday,
     # might want to revisit this (substitute old placeholder symbols might help?)
@@ -1608,7 +1589,7 @@ class GuidedGen(PureSymbolGen):
         #     *constraints, nnsmith_le(self.n_floats, self.limit_float)) == z3.sat, 'Input constraints too tight'
         return constraints
 
-    def extra_constraints(self, node: AbsOpBase, input_shapes: List[ShapeVar]):
+    def extra_constraints(self, node: AbsOpBase, input_shapes: List[AbsTensor]):
         ret = []
         construct_param_dict = signature(node.__init__).parameters
         config = self.param_config.get(node.__class__.__name__, None)
@@ -1634,9 +1615,9 @@ class GuidedGen(PureSymbolGen):
         for node_id in shuffled_nids:
             op = graph.nodes[node_id]["op"]
             ishape_indices = graph.nodes[node_id]["ishape_indices"]
-            ishape_vars = [self.alive_shapes[i][1] for i in ishape_indices]
+            itensors = [self.alive_shapes[i][1] for i in ishape_indices]
             if isinstance(op, AbsOpBase):
-                cons = self.extra_constraints(op, ishape_vars)
+                cons = self.extra_constraints(op, itensors)
             else:
                 assert isinstance(op, Placeholder), op
                 cons = self.gen_ph_cons(op)

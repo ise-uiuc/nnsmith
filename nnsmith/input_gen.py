@@ -95,9 +95,7 @@ class PracticalHybridSearch(InputSearchBase):
 
         self.differentiable = None
 
-        if all(
-            [DType.is_float(ii.op.shape_var.dtype.value) for ii in self.net.input_info]
-        ):
+        if all([DType.is_float(ii.op.abs_tensor.dtype) for ii in self.net.input_info]):
             diff_test_inp = self.net.get_random_inps(use_cuda=self.use_cuda)
             for item in diff_test_inp:
                 item.requires_grad_()

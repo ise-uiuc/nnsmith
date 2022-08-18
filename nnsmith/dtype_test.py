@@ -15,7 +15,7 @@ from nnsmith.abstract.op import (
     ALL_OP_STR2TYPE,
     AbsOpBase,
     DType,
-    ShapeVar,
+    AbsTensor,
     concretize,
     Input,
     Constant,
@@ -247,7 +247,7 @@ def rewrite_op_dtype(
                 rank = inputs[0].ndims
             else:
                 rank = random.choice(ranks)
-            shape = ShapeVar(
+            shape = AbsTensor(
                 shape=[z3.Int("s%s" % (k)) for k in range(rank)],
                 dtype=available_idtypes[0][i],
             )

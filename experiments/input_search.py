@@ -216,9 +216,9 @@ if __name__ == "__main__":
             # Estimate model size | avoid OOM
             nbytes = 0
             for ii in net.input_info:
-                dtype = ii.op.shape_var.dtype.value
+                dtype = ii.op.asb_tensor.dtype.torch()
                 nbytes += (
-                    ii.op.shape_var.nelement()
+                    ii.op.asb_tensor.nelement()
                     * torch.tensor(0, dtype=dtype).element_size()
                 )
             for name, param in net.named_parameters():
