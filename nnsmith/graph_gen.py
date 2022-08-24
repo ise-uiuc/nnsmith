@@ -1,6 +1,8 @@
 from multiprocessing import Process
 import psutil
 from collections import defaultdict, namedtuple
+from dataclasses import dataclass
+import pickle
 import math
 import textwrap
 from typing import Dict, Tuple, List, Set
@@ -43,7 +45,10 @@ Instruction: Tuple[AbsOpBase, List[int], List[int]] = namedtuple(
 )
 
 
-# Minimal information for constructing a graph.
+"""Minimal information for constructing a graph."""
+
+
+@dataclass
 class Schedule:
     def __init__(self, instructions, input_keys, leaf_keys, key2type):
         self.instructions: List[Instruction] = instructions
@@ -51,38 +56,48 @@ class Schedule:
         self.leaf_keys: List[int] = leaf_keys
         self.key2type: Dict[int, AbsTensor] = key2type
 
+    @staticmethod
+    def init(graph: nx.MultiDiGraph, key2type: Dict[int, AbsTensor]) -> "Schedule":
+        # The input graph should be a concretized graph.
+        instructions: List[Instruction] = []
+        input_keys = []
+        user_keys = set()
 
-def make_schedule(graph: nx.MultiDiGraph, key2type: Dict[int, AbsTensor]):
-    # The input graph should be a concretized graph.
-    instructions: List[Instruction] = []
-    input_keys = []
-    user_keys = set()
+        # freeze node with static attributes in label;
+        for node_id in nx.topological_sort(graph):
+            node = graph.nodes[node_id]
+            op = node["op"]
 
-    # freeze node with static attributes in label;
-    for node_id in nx.topological_sort(graph):
-        node = graph.nodes[node_id]
-        op = node["op"]
+            if isinstance(op, Input):
+                input_keys.append(node["shape_indices"][0])
 
-        if isinstance(op, Input):
-            input_keys.append(node["shape_indices"][0])
+            for used_idx in node["ishape_indices"]:
+                user_keys.add(used_idx)
 
-        for used_idx in node["ishape_indices"]:
-            user_keys.add(used_idx)
-
-        # TODO(@ganler): Better name than "shape_indices"
-        # TODO(@ganler): Add refcnt or last ref mechanism to save memory
-        instructions.append(
-            Instruction(
-                op=op,
-                inputs=node["ishape_indices"],
-                outputs=node["shape_indices"],
+            # TODO(@ganler): Better name than "shape_indices"
+            # TODO(@ganler): Add refcnt or last ref mechanism to save memory
+            instructions.append(
+                Instruction(
+                    op=op,
+                    inputs=node["ishape_indices"],
+                    outputs=node["shape_indices"],
+                )
             )
-        )
 
-    # simplify the statements above
-    leaf_keys = [key for key in key2type if key not in user_keys]
+        # simplify the statements above
+        leaf_keys = [key for key in key2type if key not in user_keys]
 
-    return Schedule(instructions, input_keys, leaf_keys, key2type)
+        return Schedule(instructions, input_keys, leaf_keys, key2type)
+
+    def dump(self, path: str = "schedule.pkl") -> None:
+        with open(path, "wb") as f:
+            pickle.dump(self, f)
+
+    @staticmethod
+    def load(path: str = "schedule.pkl") -> "Schedule":
+        with open(path, "rb") as f:
+            schedule = pickle.load(f)
+        return schedule
 
 
 def concretize_graph(
@@ -1226,8 +1241,22 @@ if __name__ == "__main__":
     parser.add_argument("--forward_prob", type=float)
     parser.add_argument("--diff_can_overwrite", action="store_true")
     parser.add_argument("--print_grad", type=int, default=0)
+    parser.add_argument(
+        "--framework", type=str, help="deep learning framework to use", default="torch"
+    )
 
     args = parser.parse_args()
+
+    if args.framework == "torch":
+        ALL_OP_TYPES = [
+            Add,
+            Linear,
+        ]
+    elif args.framework == "tensorflow":
+        ALL_OP_TYPES = [
+            Add,
+            Dense,
+        ]
 
     gen_args = {}
     if args.diff_can_overwrite:
@@ -1280,20 +1309,29 @@ if __name__ == "__main__":
         gen.abstract_graph, gen.tensor_dataflow, gen.get_solutions()
     )
 
-    schedule = make_schedule(fixed_graph, concrete_abstensors)
+    schedule = Schedule.init(fixed_graph, concrete_abstensors)
 
-    model = ONNXModel.from_schedule(schedule)
-    model.refine_weights()  # either random generated or gradient-based.
-    oracle = model.make_oracle()
+    if args.framework == "torch":
+        model = ONNXModel.from_schedule(schedule)
+        model.refine_weights()  # either random generated or gradient-based.
+        oracle = model.make_oracle()
 
-    testcase = TestCase(model, oracle)
-    testcase.dump(root_folder=args.output)
+        testcase = TestCase(model, oracle)
+        testcase.dump(root_folder=args.output)
 
-    if args.verbose or args.viz:
-        G = fixed_graph
-        nx.drawing.nx_pydot.write_dot(G, "graph.dot")
-        fmt = args.img.replace(".", "")
-        os.system(
-            f"dot -T{fmt} graph.dot > {os.path.join(args.output, f'graph.{fmt}')}"
-        )
-        os.system("rm graph.dot")
+        if args.verbose or args.viz:
+            G = fixed_graph
+            nx.drawing.nx_pydot.write_dot(G, "graph.dot")
+            fmt = args.img.replace(".", "")
+            os.system(
+                f"dot -T{fmt} graph.dot > {os.path.join(args.output, f'graph.{fmt}')}"
+            )
+            os.system("rm graph.dot")
+
+    elif args.framework == "tensorflow":
+        from nnsmith.materialize.tensorflow import TFModel
+
+        model = TFModel(schedule=schedule)
+
+    else:
+        raise ValueError(f"Unknown deep learning framework {args.framework}")
