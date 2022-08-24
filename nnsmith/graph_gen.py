@@ -1,14 +1,9 @@
-# See https://github.com/Z3Prover/z3/issues/5656
-import z3  # Always import z3 first to avoid incompatibility issue.
-
 from multiprocessing import Process
 import psutil
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 import math
 import textwrap
-import pickle
-import cloudpickle
-from typing import Dict, NamedTuple, Tuple, List, Optional, Set
+from typing import Dict, Tuple, List, Set
 from inspect import signature
 import traceback
 import random
@@ -16,15 +11,14 @@ import time
 import os
 import copy
 import warnings
-
-import networkx as nx
-import torch
-from torch import nn
-import numpy as np
 import uuid
 
+import networkx as nx
+import numpy as np
+import z3
+
 from nnsmith.dtype_test import rewrite_op_dtype
-from nnsmith.error import SanityCheck, ConstraintCheck, ConstraintError
+from nnsmith.error import SanityCheck, ConstraintError
 from nnsmith.abstract.op import *
 from nnsmith.abstract.op import __MAX_RANK__ as __MAX_RANK__
 
@@ -34,548 +28,93 @@ assert NNSMITH_LIMNF_V in ["0", "1"]
 NNSMITH_BV_SIZE = os.getenv("NNSMITH_BV_SIZE", "8")
 
 
-__INPUT_FOUND_NAN_MSG__ = "[NaN] in model inputs!"
-__INPUT_FOUND_INF_MSG__ = "[Inf] in model inputs!"
-
-
 class RequiredDimNotFound(Exception):
     pass
 
 
-ALIVE_SHAPE_TYPE = List[Tuple[int, AbsTensor, int]]
+__MB_LIM__ = 6 * 1024
+__TEXTWRAP_WIDTH__ = 30
 
 
-InputInfoBase = NamedTuple(
-    "InputInfo", [("op", Input), ("oid", int), ("node_id", int), ("input_name", str)]
+TensorCtx = namedtuple("TensorCtx", ["op_id", "type", "output_idx"])
+# Every tensor is represented by a (unique) integer key.
+Instruction: Tuple[AbsOpBase, List[int], List[int]] = namedtuple(
+    "Instruction", ["op", "inputs", "outputs"]
 )
 
 
-class InputInfo(InputInfoBase):
-    def __repr__(self) -> str:
-        return f"InputInfo(op={self.op}<{self.op.asb_tensor.dtype.short()}>, oid={self.oid}, node_id={self.node_id}, input_name={self.input_name})"
+# Minimal information for constructing a graph.
+class Schedule:
+    def __init__(self, instructions, input_keys, leaf_keys, key2type):
+        self.instructions: List[Instruction] = instructions
+        self.input_keys: List[int] = input_keys
+        self.leaf_keys: List[int] = leaf_keys
+        self.key2type: Dict[int, AbsTensor] = key2type
 
 
-__MB_LIM__ = 6 * 1024
-# weight of gradients for valid op losses
+def make_schedule(graph: nx.MultiDiGraph, key2type: Dict[int, AbsTensor]):
+    # The input graph should be a concretized graph.
+    instructions: List[Instruction] = []
+    input_keys = []
+    user_keys = set()
 
+    # freeze node with static attributes in label;
+    for node_id in nx.topological_sort(graph):
+        node = graph.nodes[node_id]
+        op = node["op"]
 
-# Probablistically, sampling at positive domain is beneficial.
-def random_tensor(shape, dtype, margin=4, base=5, use_cuda=False):
-    # center: -margin ~ 0 ~ +margin
-    dev = torch.device("cuda" if use_cuda else "cpu")
-    if base == "center":
-        base = -margin / 2
-    else:
-        assert isinstance(base, int) or isinstance(base, float)
+        if isinstance(op, Input):
+            input_keys.append(node["shape_indices"][0])
 
-    fp_tensor = base + (torch.rand(shape, device=dev) - 0.5) * margin
+        for used_idx in node["ishape_indices"]:
+            user_keys.add(used_idx)
 
-    if dtype.is_floating_point:
-        return fp_tensor.to(dtype)
-    else:
-        return torch.round(fp_tensor).to(dtype)
-
-
-class SymbolNet(nn.Module):
-    def __init__(
-        self,
-        graph: nx.MultiDiGraph,
-        model: z3.ModelRef,
-        verbose=False,
-        alive_shapes: ALIVE_SHAPE_TYPE = None,
-        record_intermediate=False,
-        use_gradient=False,
-        megabyte_lim=__MB_LIM__,
-        print_grad=0,
-    ):
-        super(SymbolNet, self).__init__()
-        self.megabyte_lim = megabyte_lim
-        self.verbose = verbose
-        self.print_grad = print_grad
-        self.tensors = []  # 1) edges; 2) leaf nodes; 3) input -> 0;
-        self.ref_cnt = []  # ref cnt -> tensors; erased on 0;
-        self.instructions = []  # <Func, <input idx>, <output idx>>
-        self.n_output = 0
-        self.inp_id_cnt = 0
-        self.n_vulnerable_op = 0
-        # idx of self.instructions that has method `proxy_grad`
-        self.proxy_inst_idx = []
-        self.proxy_enabled_ = False
-
-        self.using_cuda = None  # not sure
-
-        # keep track of layers and weights so that the tracing can work properly
-        self.mlist = nn.ModuleList()
-        self.graph = graph
-        self.concrete_graph = graph.copy()
-        # NOTE: All leaf nodes are output tensors.
-        self.alive_shapes = alive_shapes
-        if alive_shapes is None:
-            warnings.warn(
-                "Please supply `alive_shapes` if possible. This will be used to check dtype correctness."
+        # TODO(@ganler): Better name than "shape_indices"
+        # TODO(@ganler): Add refcnt or last ref mechanism to save memory
+        instructions.append(
+            Instruction(
+                op=op,
+                inputs=node["ishape_indices"],
+                outputs=node["shape_indices"],
             )
-        # whether or not to register intermediate tensors as output tensors. Useful (at least) for checking nan
-        self.record_intermediate = record_intermediate
-
-        self.input_info: List[InputInfo] = []
-
-        tmp_op_output_map = {}  # node id -> output idx in tensors;
-        abs_tensors = {}
-        self.n_floats, self.flops = 0, 0
-        for node_id in nx.topological_sort(graph):
-            n_inp = graph.nodes[node_id]["nin"]
-            n_out = graph.nodes[node_id]["nout"]
-
-            tmp_op_output_map[node_id] = len(self.tensors)
-            for _ in range(n_out):
-                self.tensors.append(None)
-                self.ref_cnt.append(0)
-
-            input_idx = [None] * n_inp
-            output_idx = [None] * n_out
-            op = concretize(graph.nodes[node_id]["op"], model)
-            self.concrete_graph.nodes[node_id]["op"] = op
-            self.concrete_graph.add_node(
-                node_id, op=op, label=textwrap.fill(f"#{node_id} ~ {op}", width=30)
-            )
-            self.concretize_svars(node_id, abs_tensors, model, op)
-
-            # Glob inputs
-            for from_node, _, (out_idx, in_idx) in graph.in_edges(
-                node_id, data="operand_idx"
-            ):
-                required = tmp_op_output_map[from_node] + out_idx
-                input_idx[in_idx] = required
-                self.ref_cnt[required] += 1
-
-            # Glob outputs
-            out_edges = graph.out_edges(node_id, data="operand_idx")
-            if len(out_edges) == 0:  # leaf node
-                # create fake output indices
-                output_idx = list(
-                    range(
-                        tmp_op_output_map[node_id], tmp_op_output_map[node_id] + n_out
-                    )
-                )
-                for op_out_idx, out_idx in enumerate(output_idx):
-                    self.ref_cnt[out_idx] += 1
-                    self.concrete_graph.add_node(f"o{self.n_output}")
-                    svar = self.concrete_graph.nodes[node_id]["out_svs"][op_out_idx]
-                    self.concrete_graph.add_edge(
-                        node_id,
-                        f"o{self.n_output}",
-                        key=str(uuid.uuid1()),
-                        label=f"{op_out_idx}→ {svar.dtype.short()}!{svar.shape}",
-                    )
-                    self.n_output += 1
-            else:
-                for _, _, (out_idx, in_idx) in out_edges:
-                    output_idx[out_idx] = tmp_op_output_map[node_id] + out_idx
-
-            if not isinstance(op, Input):
-                torch_fn = op.torch()
-                if isinstance(torch_fn, nn.Module):
-                    self.mlist.append(torch_fn)
-                self.instructions.append((torch_fn, input_idx, output_idx, op, node_id))
-                if hasattr(op, "proxy_grad"):
-                    self.proxy_inst_idx.append(len(self.instructions) - 1)
-
-                if hasattr(op, "torch_loss"):
-                    self.n_vulnerable_op += 1
-            else:  # Should be input node
-                SanityCheck.true(type(op) is Input, "type(op) should be Input")
-                SanityCheck.eq(len(output_idx), 1)
-                op.idx = self.inp_id_cnt
-                self.inp_id_cnt += 1
-                self.input_info.append(
-                    InputInfo(
-                        op=op,
-                        oid=output_idx[0],
-                        node_id=node_id,
-                        input_name=f"i{op.idx}",
-                    )
-                )
-
-        if self.verbose:
-            print("input_info=", self.input_info)
-        self.input_spec = {
-            f"i{ii.op.idx}": ii.op.abs_tensor.shape for ii in self.input_info
-        }
-        self.plausible_input_shape = {
-            f"i{ii.op.idx}": ii.op.abs_tensor for ii in self.input_info
-        }
-        self.first_run = True
-        self.hacked = {}  # make forward deterministic
-
-        self.use_gradient = use_gradient
-        if use_gradient:
-            self.enable_training()
-        self.check_intermediate_numeric = False
-        self.invalid_found_last = None
-
-    def concretize_svars(self, node_id, abs_tensors, model, op):
-        # concretize shapevars
-        if self.alive_shapes is not None:
-            ishape_indices = self.graph.nodes[node_id]["ishape_indices"]
-            shape_indices = self.graph.nodes[node_id]["shape_indices"]
-            for shape_idx in shape_indices:
-                shape = self.alive_shapes[shape_idx][1].shape
-                dtype = self.alive_shapes[shape_idx][1].dtype
-                shape = [
-                    model.eval(i).as_long() if isinstance(i, z3.ExprRef) else i
-                    for i in shape
-                ]
-                assert shape_idx not in abs_tensors, f"{shape_idx} already exists"
-                abs_tensors[shape_idx] = AbsTensor(shape, dtype)
-            self.concrete_graph.nodes[node_id]["in_svs"] = [
-                abs_tensors[i] for i in ishape_indices
-            ]
-            self.concrete_graph.nodes[node_id]["out_svs"] = [
-                abs_tensors[i] for i in shape_indices
-            ]
-            # ensure n_floats and flops within limit
-            tmp_inp = [abs_tensors[i] for i in ishape_indices]
-            op.checked_type_transfer(tmp_inp)
-            op_nfl = op.n_floats(tmp_inp)
-            if self.verbose:
-                print(f"op: {op} nfloats: {op_nfl}")
-            self.n_floats += op_nfl
-            assert (
-                self.n_floats * 8 <= self.megabyte_lim * 1024 * 1024
-            ), f"Current number of elements ({self.n_floats/1024/1024}m) exceeded memory limit ({self.megabyte_lim} MB) Current op: {op}"
-            if FLOPS_LIM is not None:
-                assert (
-                    op.flops(tmp_inp) < FLOPS_LIM
-                ), f"Current number of flops ({op.flops(tmp_inp)}m) exceeded limit ({FLOPS_LIM} m). Current op: {op}"
-            # concretize edge attributes
-            self.concretize_edge(node_id)
-
-    def concretize_edge(self, node_id):
-        for u, v, key, data in self.concrete_graph.out_edges(
-            node_id, data=True, keys=True
-        ):
-            out_idx, in_idx = data["operand_idx"]
-            svar = self.concrete_graph.nodes[node_id]["out_svs"][out_idx]
-            self.concrete_graph.add_edge(
-                u,
-                v,
-                key=key,
-                label=f"{out_idx}→{in_idx} {svar.dtype.short()}!{svar.shape}",
-            )
-
-    def to_picklable(self):
-        self.alive_shapes = None
-        del self.graph
-
-    def proxy_enabled(self):
-        return self.proxy_enabled_
-
-    def enable_proxy_grad(self):
-        for i in self.proxy_inst_idx:
-            _, input_idx, output_idx, op, node_id = self.instructions[i]
-            self.instructions[i] = (op.proxy_grad(), input_idx, output_idx, op, node_id)
-
-        self.proxy_enabled_ = True
-
-    def disable_proxy_grad(self):
-        for i in self.proxy_inst_idx:
-            _, input_idx, output_idx, op, node_id = self.instructions[i]
-            self.instructions[i] = (op.torch(), input_idx, output_idx, op, node_id)
-        self.proxy_enabled_ = False
-
-    def get_params(self):
-        return sum([i["params"] for i in self.optimizer.param_groups], [])
-
-    def _zero_grad(self):
-        for p in self.get_params():
-            p.grad = None
-
-    def backward(self):
-        if self.loss is not None:
-            self._zero_grad()
-            params = self.get_params()
-            loss_name, l = self.loss
-            l.backward()
-
-            with torch.no_grad():
-                for param in self.parameters():
-                    param.copy_(
-                        torch.where(
-                            param.isnan().logical_or(param.isinf()),
-                            random_tensor(
-                                shape=param.shape, dtype=param.dtype.torch()
-                            ).to(param.device),
-                            param,
-                        )
-                    )
-
-            if self.print_grad >= 2:
-                for name, i in self.interm_grad:
-                    msg = (
-                        f"{i.grad.min()} ~ {i.grad.max()} ~ {i.grad.mean()}"
-                        if i.grad is not None
-                        else "None"
-                    )
-                    print(f"Iter {self.iter_num} [{loss_name}] {name} grad: {msg}")
-
-            nonzero = False
-            with torch.no_grad():
-                for i, p in enumerate(params):
-                    if p.grad is not None and torch.any(p.grad != 0):
-                        nonzero = True
-                        break  # As long as there's non-zero grad.
-            ConstraintCheck.true(
-                nonzero, "Gradients are all zero. Cannot make progress."
-            )
-
-            torch.nn.utils.clip_grad_norm_(self.to_train, 1e-1)
-            self.optimizer.step()
-
-    def training_reset(self):
-        self.loss = None
-        self.stop_updating_loss = False
-
-    def stop_training(self):
-        self.use_gradient = False
-        self.loss = None
-
-    def enable_training(self, extra_trainable=[]):
-        self.use_gradient = True
-        self.to_train = []
-        for t in extra_trainable:
-            self.to_train.append(t)
-        for t in self.parameters():
-            self.to_train.append(t)
-        self.optimizer = torch.optim.Adam(self.to_train, lr=5e-1)
-        self.training_reset()
-
-    def reset_optimizer(self):
-        self.optimizer = torch.optim.Adam(self.to_train, lr=5e-1)
-
-    def get_random_inps(self, **kwargs) -> List[torch.Tensor]:
-        # center: -margin ~ 0 ~ +margin
-        inputs = []
-        for ii in self.input_info:
-            inputs.append(
-                random_tensor(
-                    ii.op.abs_tensor.shape, ii.op.abs_tensor.dtype.torch(), **kwargs
-                )
-            )
-
-        return inputs
-
-    def grad_input_gen(
-        self, init_tensors, use_cuda=False, max_time=None, **kwargs
-    ) -> Optional[List[torch.Tensor]]:
-        # TODO: trim the param. max_iter is not used; remove getenv
-        if max_time is None:
-            max_time = float(os.getenv("NNSMITH_GRAD_TIME", 0.5))
-
-        inputs = []
-        for tensor in init_tensors:
-            if tensor.data.dtype.is_floating_point:
-                inputs.append(torch.nn.parameter.Parameter(tensor.data.clone()))
-            else:
-                inputs.append(tensor.data)
-
-        self.enable_training(extra_trainable=inputs)
-
-        last_check_intermediate_numeric = self.check_intermediate_numeric
-        self.check_intermediate_numeric = True
-
-        if use_cuda:
-            inputs = [inp.cuda() for inp in inputs]
-            self.use_cuda()
-
-        sat_inputs = None
-        st = time.time()
-        self.iter_num = 0
-        self.cur_loss_name = None
-        while time.time() - st < max_time:
-            self.training_reset()
-            self.iter_num += 1
-
-            try:
-                _ = self(*inputs)
-                if self.invalid_found_last:  # need_to_train
-                    self.backward()
-                else:
-                    sat_inputs = [v.data for v in inputs]
-                    break
-            except ConstraintError as e:
-                if __INPUT_FOUND_INF_MSG__ in str(e) or __INPUT_FOUND_NAN_MSG__ in str(
-                    e
-                ):
-                    # flush NaN/Inf in inputs
-                    with torch.no_grad():
-                        for inp in inputs:
-                            inp.copy_(
-                                torch.where(
-                                    inp.isnan().logical_or(inp.isinf()),
-                                    random_tensor(
-                                        shape=inp.shape, dtype=inp.dtype.torch()
-                                    ).to(inp.device),
-                                    inp,
-                                )
-                            )
-                    continue
-                print(e)
-                break
-
-        self.stop_training()
-        if sat_inputs is None:
-            print("[grad] no valid range found!!!")
-
-        self.check_intermediate_numeric = last_check_intermediate_numeric
-        return sat_inputs
-
-    def use_cuda(self):
-        self.cuda()
-        self.using_cuda = True
-
-    def forward(self, *args, **kwargs):
-        # required: input_info, tensors, ref_cnt, instructions, hacked, first_run verbose # alive_shapes, graph
-        self.differentiable = True
-        xs = [None] * len(self.input_info)
-        for i in range(len(args)):
-            xs[i] = args[i]
-        for ii in self.input_info:
-            if ii.input_name in kwargs:
-                xs[ii.op.idx] = kwargs[ii.input_name]
-        assert all(x is not None for x in xs), xs
-        ConstraintCheck.true(
-            not any([torch.isinf(x).any() for x in xs]), __INPUT_FOUND_INF_MSG__
         )
-        ConstraintCheck.true(
-            not any([torch.isnan(x).any() for x in xs]), __INPUT_FOUND_NAN_MSG__
+
+    # simplify the statements above
+    leaf_keys = [key for key in key2type if key not in user_keys]
+
+    return Schedule(instructions, input_keys, leaf_keys, key2type)
+
+
+def concretize_graph(
+    graph: nx.MultiDiGraph, dataflow: List[TensorCtx], model: z3.ModelRef
+) -> Tuple[nx.MultiDiGraph,]:
+    concrete_shapes = {}
+
+    # freeze node with static attributes in label;
+    for node_id in nx.topological_sort(graph):
+        node = graph.nodes[node_id]
+        op = concretize_op(node["op"], model)
+        node["op"] = op
+        node["label"] = textwrap.fill(f"#{node_id} ~ {op}", width=__TEXTWRAP_WIDTH__)
+
+        # concretize shapes;
+        inp_shapes = [concrete_shapes[df_idx] for df_idx in node["ishape_indices"]]
+        out_shapes = op.checked_type_transfer(inp_shapes)
+
+        for i, df_idx in enumerate(node["shape_indices"]):
+            concrete_shapes[df_idx] = out_shapes[i]
+
+    # freeze edge with static attributes in label;
+    for src, dst, idx in graph.edges(keys=True):
+        edge = graph.edges[src, dst, idx]
+        out_operand_idx, in_operand_idx = edge["operand_idx"]
+        svar = concrete_shapes[edge["shape_idx"]]
+        edge["label"] = textwrap.fill(
+            f"{out_operand_idx}→{in_operand_idx} {svar.dtype.short()}!{svar.shape}",
+            width=__TEXTWRAP_WIDTH__,
         )
-        local_ref_cnt = self.ref_cnt.copy()
-        self.tensors = [None for _ in self.tensors]
-        self.invalid_found_last = False
 
-        self.interm_grad = []
-
-        # LOG.
-        if self.print_grad >= 2:
-            for i in range(len(xs)):
-                if xs[i].requires_grad:
-                    self.interm_grad.append((f"i_{i}", xs[i]))
-            for i, p in enumerate(self.parameters()):
-                if p.requires_grad:
-                    self.interm_grad.append((f"p_{i}", p))
-
-        for ii in self.input_info:
-            self.tensors[ii.oid] = xs[ii.op.idx]
-
-        for inst, inps, outs, op, node_id in self.instructions:
-            input_tensors = [self.tensors[idx] for idx in inps]
-            if self.using_cuda:
-                input_tensors = [inp.cuda() for inp in input_tensors]
-            if isinstance(op, Div):
-                if not self.first_run:
-                    cond = self.hacked[node_id]
-                else:
-                    cond = (input_tensors[1] == 0).any()
-                if cond:
-                    input_tensors[1] = torch.clip(
-                        input_tensors[1],
-                        torch.ones(
-                            size=[1],
-                            dtype=input_tensors[1].dtype,
-                            device=input_tensors[1].device,
-                        ),
-                    )
-                self.hacked[node_id] = cond
-
-            # REAL FORWARD.
-            outputs = inst(*input_tensors)
-            if not isinstance(outputs, list):
-                outputs = [outputs]
-
-            for out in outputs:
-                self.differentiable &= out.grad_fn is not None
-
-            # LOG.
-            if self.verbose:
-                print(
-                    f"--> executing op={op}, node_id={node_id}, inps={inps}, outs={outs}"
-                )
-                print("\tinputs=")
-                for inp_i, i in enumerate(input_tensors):
-                    print(f"  (shape={i.shape} dtype={i.dtype})")
-                    print(f"[inp]@{inp_i} :: {i.min().data:.5f} ~ {i.max().data:.5f}")
-                for out_i, o in enumerate(outputs):
-                    print(f"[out]@{out_i} :: {o.min().data:.5f} ~ {o.max().data:.5f}")
-            if self.print_grad >= 2:
-                if outputs[0].requires_grad:
-                    for i in range(len(outputs)):
-                        outputs[i].retain_grad()
-                        self.interm_grad.append((f"#{node_id}_{op}_{i}", outputs[i]))
-
-            if self.check_intermediate_numeric or (
-                self.use_gradient and not self.stop_updating_loss
-            ):
-                if hasattr(op, "torch_loss"):
-                    loss = op.torch_loss(*input_tensors)
-                    if not isinstance(loss, tuple):
-                        loss = ("", loss)  # loss sufficx, loss
-                    vul_op_loss = loss
-                else:
-                    vul_op_loss = None
-                self.invalid_found_last |= not op.numeric_valid(outputs)
-
-                if self.invalid_found_last and (
-                    self.use_gradient and not self.stop_updating_loss
-                ):
-                    if self.print_grad >= 1:
-                        for inp_i, inp in enumerate(input_tensors):
-                            print(
-                                f"[inp]@{inp_i} :: {inp.min().data:.5f} ~ {inp.max().data:.5f}"
-                            )
-
-                    ConstraintCheck.true(
-                        vul_op_loss is not None,
-                        f"op={op}_{node_id} has no `torch_loss` but produces NaN or INF!",
-                    )
-                    # TODO: some less vulnerable ops (like Mul) may also trigger Inf and will crash the process.
-                    # Given its low chance of happening, ignore it for now.
-                    loss_suf, l = vul_op_loss
-                    msg = f"loss_{loss_suf}: {l.min().data:.3f} ~ {l.max().data:.3f} ~ {torch.sum((l > 0) * l).item()}"
-                    if self.print_grad >= 1:
-                        print(
-                            f"Iter #{self.iter_num} [NaN/Inf] in outputs ~ {op}_{node_id} :: {msg}"
-                        )
-
-                    assert (
-                        l > 0
-                    ).sum() > 0, f"`{op}` produces NaN or INF but loss is all negative"
-                    loss_name = f"{op}_{node_id}_{loss_suf}"
-                    assert self.loss is None, "Multiple loss detected!"
-                    self.loss = loss_name, torch.sum((l > 0) * l)
-                    if loss_name != self.cur_loss_name:
-                        self.reset_optimizer()
-                        self.cur_loss_name = loss_name
-
-                    self.stop_updating_loss = True
-                    return outputs
-
-            if self.verbose:
-                print(
-                    "\toutputs=",
-                    ",".join(f"(shape={i.shape} dtype={i.dtype})" for i in outputs),
-                )
-            for idx in inps:
-                local_ref_cnt[idx] -= 1
-                if local_ref_cnt[idx] == 0 and not self.record_intermediate:
-                    self.tensors[idx] = None
-            for idx, output in list(zip(outs, outputs)):
-                SanityCheck.none(
-                    self.tensors[idx], "tensor[{}] is not None.".format(idx)
-                )
-                if local_ref_cnt[idx] > 0:  # Will be used.
-                    self.tensors[idx] = output
-        self.first_run = False
-        return tuple(t for t in self.tensors if t is not None)
+    return graph, concrete_shapes
 
 
 class SimpleGenerator:
@@ -583,13 +122,11 @@ class SimpleGenerator:
         self,
         init_rank=4,
         skip=[Input],
-        viz_sbs=False,
         megabyte_lim=__MB_LIM__,
         seed=None,
         verbose=False,
         use_bitvec=False,
         viz_verbose=False,
-        merge_op_v=None,
         limnf=True,
         candidates_overwrite=None,
         forward_prob=None,
@@ -598,7 +135,7 @@ class SimpleGenerator:
         if seed is not None:
             np.random.seed(seed)
             random.seed(seed)
-            torch.manual_seed(seed)
+
         self.verbose = verbose
         self.viz_verbose = viz_verbose
 
@@ -614,10 +151,7 @@ class SimpleGenerator:
         # filter those with no dtype specified
         self.op_candidates = [op for op in self.op_candidates if op.in_dtypes]
 
-        if use_bitvec:
-            self.solver = z3.SolverFor("QF_UFBV")
-        else:
-            self.solver = z3.Solver()
+        self.solver = z3.SolverFor("QF_UFBV") if use_bitvec else z3.Solver()
 
         # 4 bytes per float (assume we use float64)
         self.limit_float = 1024**2 * megabyte_lim // 8
@@ -625,14 +159,15 @@ class SimpleGenerator:
         # Node -> op: AbsOpBase
         # Edge -> shape_idx:-> self.alive_shapes
         self.abstract_graph = nx.MultiDiGraph()
-        self.picklable_graph = nx.MultiDiGraph()
 
-        # <op idx, shape variable, output operand idx>
-        self.alive_shapes: ALIVE_SHAPE_TYPE = []
+        # Flat view of consumable tensors which makes random selection easier.
+        # List of namedtuple("TensorCtx", ["op_id", "type", "output_idx"])
+        #                                   int    AbsTensor  int
+        self.tensor_dataflow: List[TensorCtx] = []
+
         # dim size -> list[shape idx -> output_tensor_pool]
         self.dim2shape_idx: Dict[int, List[int]] = {}
         self.viz_cnt = 0
-        self.is_viz_sbs = viz_sbs
 
         self.use_bitvec = use_bitvec
         self.init_rank = init_rank
@@ -640,9 +175,7 @@ class SimpleGenerator:
         self.monotonic_placeholder_id = 0
         self.monotonic_nx_node_idx = 0
         # self.reusable_placeholder_nx_indices = []
-        self.last_soln = None
-        self.wts = None
-        self.merge_op_v = merge_op_v or "v0"  # v0 as default version
+        self.last_solution = None
         self.limnf = limnf
         self.n_floats_cons = []
 
@@ -650,7 +183,7 @@ class SimpleGenerator:
         self.placeholders: List[int] = []
         # for all (including newly created tmp) placeholders
         self.insert_init_ph_node(
-            self.create_placeholder(init_rank, dtype=torch.float32 if init_fp else None)
+            self.create_placeholder(init_rank, dtype=DType.float32 if init_fp else None)
         )
         self.init_ph_alive = True
         self.forward_prob = 0.5 if forward_prob is None else forward_prob
@@ -724,7 +257,7 @@ class SimpleGenerator:
         raise NotImplementedError
 
     @abstractmethod
-    def get_symbol_solutions(self) -> List:
+    def get_solutions(self) -> List:
         raise NotImplementedError
 
     def extra_exit_check(self) -> bool:
@@ -740,8 +273,8 @@ class SimpleGenerator:
 
     def recompute_n_floats(self):
         self.n_floats = 0
-        for i in self.alive_shapes:
-            self.n_floats = nnsmith_add(self.n_floats, i[1].nelement())
+        for _, val, _ in self.tensor_dataflow:
+            self.n_floats = nnsmith_add(self.n_floats, val.nelement())
 
     def abstract_gen(self, max_node_size=10, max_gen_millisec=2000):
         self.max_gen_millisec = max_gen_millisec
@@ -758,7 +291,10 @@ class SimpleGenerator:
             "memory_max_size",
             50 * 1024,  # MB
         )
+
         init_time = time.time()
+
+        # starts generation.
         while (
             time.time() - init_time < max_gen_millisec / 1000
             and self.num_op() < max_node_size
@@ -784,6 +320,7 @@ class SimpleGenerator:
             assert self.check_sat() == z3.sat
 
         self.post_process()  # can be used to add more constraints
+
         # init graph placeholders
         shuffled_placeholder = self.placeholders
         self.abstract_graph.nodes[shuffled_placeholder[0]][
@@ -802,7 +339,7 @@ class SimpleGenerator:
     def check_arith_ref(self, var):
         SanityCheck.true(
             isinstance(var, (z3.BitVecRef, z3.BoolRef, bool)),
-            f"{type(var)}not supported.",
+            f"{type(var)} not supported.",
         )
         if not isinstance(var, bool):
             for child in var.children():
@@ -824,7 +361,7 @@ class SimpleGenerator:
         if timeout is None:
             cres = self.solver.check(*assumptions)
         else:
-
+            # FIXME(@ganler): fix the dirty workaround.
             def _run():
                 cres = self.solver.check(*assumptions)
                 exit({"sat": 0, "unsat": 1, "unknown": 2}[str(cres)])
@@ -860,26 +397,11 @@ class SimpleGenerator:
         if cres == z3.sat:
             if timeout is not None:
                 self.solver.check(*assumptions)
-            self.last_soln = self.solver.model()
+            self.last_solution = self.solver.model()
         return cres
 
-    def compute_wts(self):
-        self.wts = [1] * len(self.op_candidates)
-        normalize_op_t = {"latest": EXPANDED_OP, "v0": EXPANDED_OP_V0}[self.merge_op_v]
-        op_t_idx = {}
-        for i in range(len(self.op_candidates)):
-            for op_t in normalize_op_t:
-                if issubclass(self.op_candidates[i], op_t):
-                    op_t_idx[op_t] = op_t_idx.get(op_t, []) + [i]
-
-        for idx in op_t_idx.values():
-            for i in idx:
-                self.wts[i] = 1.0 / len(idx)
-
     def pick_next_op_type(self):
-        if self.wts is None:
-            self.compute_wts()
-        return random.choices(self.op_candidates, k=1, weights=self.wts)[0]
+        return random.choices(self.op_candidates, k=1)[0]
 
     def forward_insert_node(
         self,
@@ -889,7 +411,7 @@ class SimpleGenerator:
         force_shape_indices=None,
     ) -> int:
         if oshapes is None:
-            input_shapes = [self.alive_shapes[idx][1] for idx in ishape_indices]
+            input_shapes = [self.tensor_dataflow[idx].type for idx in ishape_indices]
             oshapes = node.checked_type_transfer(input_shapes)
 
         succ_nid = self.get_new_node_id()
@@ -906,9 +428,11 @@ class SimpleGenerator:
                     ),
                 )
                 node.out_ranks[i] = (len(abs_tensor.shape),)
-                shape_idx = len(self.alive_shapes)
+                shape_idx = len(self.tensor_dataflow)
                 shape_indices.append(shape_idx)
-                self.alive_shapes.append((succ_nid, abs_tensor, i))
+                self.tensor_dataflow.append(
+                    TensorCtx(op_id=succ_nid, type=abs_tensor, output_idx=i)
+                )
                 self.dim2shape_idx.setdefault(len(abs_tensor.shape), []).append(
                     shape_idx
                 )
@@ -927,12 +451,13 @@ class SimpleGenerator:
             shape_indices=shape_indices,
             ishape_indices=ishape_indices,
             label=textwrap.fill(
-                f"#{succ_nid} ~ {node}" if not self.viz_verbose else "", width=30
+                f"#{succ_nid} ~ {node}" if not self.viz_verbose else "",
+                width=__TEXTWRAP_WIDTH__,
             ),
         )
 
         for in_operand_idx, idx in enumerate(ishape_indices):
-            pred_nid, svar, out_operand_idx = self.alive_shapes[idx]
+            pred_nid, svar, out_operand_idx = self.tensor_dataflow[idx]
             self.abstract_graph.add_edge(
                 pred_nid,
                 succ_nid,
@@ -943,9 +468,6 @@ class SimpleGenerator:
                 if not self.viz_verbose
                 else "",
             )
-
-        if self.is_viz_sbs:
-            self.viz()
 
         return succ_nid
 
@@ -970,8 +492,10 @@ class SimpleGenerator:
             # Insert Placeholder in `input_nodes`
             if isinstance(input_node, Placeholder):
                 nid = self.get_new_node_id()
-                shape_idx = len(self.alive_shapes)
-                self.alive_shapes.append((nid, input_node.out_shape, 0))
+                shape_idx = len(self.tensor_dataflow)
+                self.tensor_dataflow.append(
+                    TensorCtx(op_id=nid, type=input_node.out_shape, output_idx=0)
+                )
                 self.dim2shape_idx.setdefault(input_node.out_shape.ndims, []).append(
                     shape_idx
                 )
@@ -984,7 +508,7 @@ class SimpleGenerator:
                     shape_indices=[shape_idx],
                     label=textwrap.fill(
                         f"#{nid} ~ {input_node}" if not self.viz_verbose else "",
-                        width=30,
+                        width=__TEXTWRAP_WIDTH__,
                     ),
                 )
                 ishape_indices.append(shape_idx)
@@ -999,7 +523,9 @@ class SimpleGenerator:
         op_nx_idx = self.forward_insert_node(
             node,
             ishape_indices=ishape_indices,
-            oshapes=[self.alive_shapes[as_idx][1] for as_idx in to_occ_alive_shape_idx],
+            oshapes=[
+                self.tensor_dataflow[as_idx][1] for as_idx in to_occ_alive_shape_idx
+            ],
             force_shape_indices=to_occ_alive_shape_idx,
         )
 
@@ -1016,7 +542,7 @@ class SimpleGenerator:
                 # 2. shape var
                 # 3. out operand idx
 
-                _, svar, _ = self.alive_shapes[old_edge_idx]
+                _, svar, _ = self.tensor_dataflow[old_edge_idx]
                 out_operand_idx = i
                 in_operand_idx = edge_info["operand_idx"][1]
 
@@ -1031,23 +557,24 @@ class SimpleGenerator:
                     if not self.viz_verbose
                     else "",
                 )
-                self.alive_shapes[old_edge_idx] = (op_nx_idx, svar, out_operand_idx)
+                self.tensor_dataflow[old_edge_idx] = TensorCtx(
+                    op_nx_idx, svar, out_operand_idx
+                )
 
                 self.abstract_graph.remove_edge(src, dst, key=key)
 
             # if the PH to occupy has no consumers, we simply reassign its alive shape.
             # NOTE: we assume the first node is a placeholder.
             if self.init_ph_alive:  # update alive_shape[0]
-                self.alive_shapes[0] = (op_nx_idx, self.alive_shapes[0][1], 0)
+                self.tensor_dataflow[0] = TensorCtx(
+                    op_nx_idx, self.tensor_dataflow[0][1], 0
+                )
                 self.init_ph_alive = False
 
             # remove placeholders
             self.abstract_graph.remove_node(nx_idx)
             # self.reusable_placeholder_nx_indices.append(nx_idx)
             self.placeholders.remove(nx_idx)
-
-        if self.is_viz_sbs:
-            self.viz()
 
     def try_forward_insert(self, op: AbsOpBase):
         n_inp = len(op.inp_ranks)
@@ -1070,7 +597,7 @@ class SimpleGenerator:
             type(op),
             dim_spec_list,
             op.in_dtypes,
-            candidate_shapes=[s[1] for s in self.alive_shapes],
+            candidate_shapes=[s[1] for s in self.tensor_dataflow],
         )
 
         if self.try_forward_insert_at(op, ishape_indices):
@@ -1240,7 +767,7 @@ class PureSymbolGen(SimpleGenerator):
         return []
 
     def try_forward_insert_at(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
-        input_shapes = [self.alive_shapes[idx][1] for idx in ishape_indices]
+        input_shapes = [self.tensor_dataflow[idx][1] for idx in ishape_indices]
         constraints = node.checked_requires(input_shapes)
 
         if self.verbose:
@@ -1271,8 +798,6 @@ class PureSymbolGen(SimpleGenerator):
                 check_res = self.check_sat(*constraints, *tmp_n_floats_cons)
         else:
             check_res = self.check_sat(*constraints)
-        if check_res == z3.unknown:  # Timeout thing.
-            self.on_timeout(node, ishape_indices)
 
         if check_res != z3.sat:
             return False
@@ -1360,12 +885,9 @@ class PureSymbolGen(SimpleGenerator):
 
         return True
 
-    def on_timeout(self, node: AbsOpBase, ishape_indices: List[int]):
-        pass
-
-    def get_symbol_solutions(self) -> List:
-        SanityCheck.not_none(self.last_soln)
-        return self.last_soln
+    def get_solutions(self) -> List:
+        SanityCheck.not_none(self.last_solution, "Run check_sat first!")
+        return self.last_solution
 
 
 class Bin:
@@ -1615,7 +1137,7 @@ class GuidedGen(PureSymbolGen):
         for node_id in shuffled_nids:
             op = graph.nodes[node_id]["op"]
             ishape_indices = graph.nodes[node_id]["ishape_indices"]
-            itensors = [self.alive_shapes[i][1] for i in ishape_indices]
+            itensors = [self.tensor_dataflow[i].type for i in ishape_indices]
             if isinstance(op, AbsOpBase):
                 cons = self.extra_constraints(op, itensors)
             else:
@@ -1629,7 +1151,6 @@ class GuidedGen(PureSymbolGen):
         shuffled = list(range(len(all_cons)))
         random.shuffle(shuffled)
         cur_cons = [all_cons[i] for i in shuffled]
-        timeout = self.max_gen_millisec / (1 + math.log2(len(cur_cons))) / 3
         while self.check_sat(*cur_cons) != z3.sat:
             cur_cons = cur_cons[: len(cur_cons) // 2]
             if len(cur_cons) == 0:
@@ -1639,23 +1160,50 @@ class GuidedGen(PureSymbolGen):
             print("# guidance applied: {} / {}".format(len(cur_cons), len(all_cons)))
 
 
-def parse_args():
+def random_model_gen(
+    init_rank=4,
+    max_nodes=5,
+    seed=None,
+    use_bitvec=False,
+    timeout_ms=20000,
+    verbose=False,
+    skip=None,
+    **kwargs,
+):
+    if skip is not None:
+        config_skip_op(skip)
+    gen = PureSymbolGen(
+        init_rank=init_rank,
+        seed=seed,
+        verbose=verbose,
+        use_bitvec=use_bitvec,
+        **kwargs,
+    )
+    gen.abstract_gen(max_node_size=max_nodes, max_gen_millisec=timeout_ms)
+
+    return gen
+
+
+if __name__ == "__main__":
+    # Generate a random ONNX model
+    # TODO(@ganler): generate arbitrary model given things like `format=tf`.
+    # TODO(@ganler): clean terminal outputs.
+
     import argparse
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--max_nodes", type=int, default=10)
     parser.add_argument("--init_rank", type=int, default=4)
-    parser.add_argument("--timeout", type=int, default=50000)
-    parser.add_argument(
-        "--viz_sbs", action="store_true", help="visualize the step by step"
-    )
-    parser.add_argument("--output_path", type=str, default="output.onnx")
+    parser.add_argument("--timeout_ms", type=int, default=50000)
+    parser.add_argument("--output", type=str, default="output", help="Output directory")
     parser.add_argument("--seed", type=int)
+    # TODO(@ganler): use logging to control verbosity
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--img", type=str, help="Output image format", default="png")
     parser.add_argument("--use_bitvec", action="store_true")
-    parser.add_argument("--viz_graph", action="store_true")
-    parser.add_argument("--mode", default="random")
-    parser.add_argument("--merge_op_v", default=None)
+    parser.add_argument(
+        "--viz", action="store_true", help="Visualize the model in given format."
+    )
     parser.add_argument(
         "--skip",
         help="Node types to skip. Split by `,`. By default a blacklist for each backend is also appended.",
@@ -1675,51 +1223,11 @@ def parse_args():
         help="Enable the limit on the number of floats",
     )
     parser.add_argument("--use_cuda", action="store_true")
-    parser.add_argument("--no_export", action="store_true")
     parser.add_argument("--forward_prob", type=float)
     parser.add_argument("--diff_can_overwrite", action="store_true")
     parser.add_argument("--print_grad", type=int, default=0)
-    return parser.parse_args()
 
-
-def random_model_gen(
-    init_rank=4,
-    viz_sbs=False,
-    max_nodes=5,
-    seed=None,
-    use_bitvec=False,
-    timeout=20000,
-    verbose=False,
-    mode="random",
-    skip=None,
-    **kwargs,
-):
-
-    GenCls = {
-        "random": PureSymbolGen,
-        "guided": GuidedGen,
-    }[mode]
-    if skip is not None:
-        config_skip_op(skip)
-    gen = GenCls(
-        init_rank=init_rank,
-        viz_sbs=viz_sbs,
-        seed=seed,
-        verbose=verbose,
-        use_bitvec=use_bitvec,
-        **kwargs,
-    )
-    gen.abstract_gen(max_node_size=max_nodes, max_gen_millisec=timeout)
-    solution = gen.get_symbol_solutions()
-
-    return gen, solution
-
-
-if __name__ == "__main__":
-    from nnsmith.export import torch2onnx
-    from nnsmith.input_gen import PracticalHybridSearch
-
-    args = parse_args()
+    args = parser.parse_args()
 
     gen_args = {}
     if args.diff_can_overwrite:
@@ -1733,79 +1241,59 @@ if __name__ == "__main__":
     strt_time = time.time()
 
     seed = args.seed
+    # TODO(@ganler): use seed register and setter to set seeds.
     if seed is None:
         # If we have not selected a seed, choose random one.
         seed = random.getrandbits(32)
     print(f"Using seed {seed}")
-    torch.manual_seed(seed)
+
+    # TODO(@ganler): make skipper easier to use.
     if args.skip is not None:
         config_skip_op(args.skip)
 
+    from nnsmith.materialize import TestCase
+    from nnsmith.materialize.onnx import ONNXModel
+    from nnsmith.util import mkdir
+
     strt_time = time.time()
-    gen, solution = random_model_gen(
+    gen = random_model_gen(
         init_rank=args.init_rank,
         seed=seed,
-        viz_sbs=args.viz_sbs,
         max_nodes=args.max_nodes,
         use_bitvec=args.use_bitvec,
-        timeout=args.timeout,
+        timeout_ms=args.timeout_ms,
         verbose=args.verbose,
-        mode=args.mode,
         limnf=args.limnf,
-        merge_op_v=args.merge_op_v,
         forward_prob=args.forward_prob,
         **gen_args,
     )
-    print(f"{len(solution)} symbols and {len(gen.solver.assertions())} constraints.")
-    print(f"{time.time() - strt_time}s to generate a graph w/ {gen.num_op()} operators")
-    if args.verbose:
-        print("solution:", solution)
-    strt_time = time.time()
-    if args.verbose or args.viz_graph:
-        gen.viz(args.output_path + ".png")
-
-    if args.no_export:
-        exit(0)
-
-    net = SymbolNet(
-        gen.abstract_graph,
-        solution,
-        verbose=args.verbose,
-        alive_shapes=gen.alive_shapes,
-        print_grad=args.print_grad,
+    print(
+        f"{len(gen.get_solutions())} symbols and {len(gen.solver.assertions())} constraints."
     )
-    print("Initializing SymbolNet time: {}s".format(time.time() - strt_time))
 
-    input_st = time.time()
+    if args.verbose:
+        print("solution:", gen.get_solutions())
 
-    sat_inputs = None
+    mkdir(args.output)
 
-    searcher = PracticalHybridSearch(net, use_cuda=args.use_cuda)
+    fixed_graph, concrete_abstensors = concretize_graph(
+        gen.abstract_graph, gen.tensor_dataflow, gen.get_solutions()
+    )
 
-    _, sat_inputs = searcher.search()
+    schedule = make_schedule(fixed_graph, concrete_abstensors)
 
-    ed_time = time.time()
+    model = ONNXModel.from_schedule(schedule)
+    model.refine_weights()  # either random generated or gradient-based.
+    oracle = model.make_oracle()
 
-    print("Time to generate inputs: {:.3f}s".format(ed_time - input_st))
+    testcase = TestCase(model, oracle)
+    testcase.dump(root_folder=args.output)
 
-    if args.verbose or args.viz_graph:
-        G = net.concrete_graph
+    if args.verbose or args.viz:
+        G = fixed_graph
         nx.drawing.nx_pydot.write_dot(G, "graph.dot")
-        filename = args.output_path + "-concrete.png"
-        os.system(f"dot -Tpng graph.dot > {filename} && rm graph.dot")
-
-    if sat_inputs is not None:
-        ret_inputs = {}
-        for i, name in enumerate(net.input_spec):
-            ret_inputs[name] = sat_inputs[name].cpu().numpy()
-        sat_inputs = ret_inputs
-        pickle.dump(sat_inputs, open(args.output_path + "-sat_inputs.pkl", "wb"))
-
-    torch2onnx(net, args.output_path, verbose=args.verbose, use_cuda=args.use_cuda)
-
-    import onnx
-
-    onnx.checker.check_model(onnx.load(args.output_path), full_check=True)
-
-    net.to_picklable()
-    cloudpickle.dump(net, open(args.output_path + "-net.pkl", "wb"), protocol=4)
+        fmt = args.img.replace(".", "")
+        os.system(
+            f"dot -T{fmt} graph.dot > {os.path.join(args.output, f'graph.{fmt}')}"
+        )
+        os.system("rm graph.dot")

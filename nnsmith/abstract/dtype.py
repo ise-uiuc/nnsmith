@@ -61,6 +61,7 @@ class DType(Enum):
             "bool": DType.bool,
         }[s]
 
+    # TODO(@ganler): put "torchization" in a separate file.
     def torch(self):
         import torch
 

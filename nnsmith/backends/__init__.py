@@ -18,10 +18,6 @@ def mk_factory(name, device="cpu", optmax=True, **kwargs):
         from nnsmith.backends.tvm_graph import TVMFactory
 
         return TVMFactory(device=device, optmax=optmax, executor="graph")
-    elif name == "xla":
-        from nnsmith.backends.xla_graph import XLAExecutor
-
-        return XLAExecutor(device="CUDA")
     elif name == "trt":
         from nnsmith.backends.trt_graph import TRTFactory
 

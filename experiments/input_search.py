@@ -17,14 +17,13 @@ import torch
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-import cloudpickle
 import networkx as nx
 
 
-from nnsmith.export import torch2onnx
+from nnsmith.materialize.onnx.export import torch2onnx
 from nnsmith.util import mkdir
 from nnsmith.graph_gen import random_model_gen, SymbolNet, random_tensor
-from nnsmith.input_gen import GradSearch, SamplingSearch
+from nnsmith.materialize.torch.input_gen import GradSearch, SamplingSearch
 from nnsmith.dtype_test import rewrite_op_dtype
 from nnsmith.abstract.op import ALL_OP_TYPES
 

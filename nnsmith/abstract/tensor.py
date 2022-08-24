@@ -17,6 +17,9 @@ class AbsTensor:
     def __repr__(self):
         return f"AbsTensor<{self.dtype.short()}>{str(self.shape)}"
 
+    def __eq__(self, other):
+        return self.shape == other.shape and self.dtype == other.dtype
+
     def gt_zero(self):
         ret = []
         for s in self.shape:

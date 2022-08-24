@@ -38,29 +38,6 @@ class BackendFactory(ABC):
                 onnx_model = onnx.load(model)
             return onnx_model
 
-    @classmethod
-    def _coverage_install(cls):
-        raise NotImplementedError("Coverage support not implemented.")
-
-    @classmethod
-    def coverage_install(cls):
-        try:
-            return cls._coverage_install()
-        except Exception as e:
-            print(f"Coverage support not implemented: {e}")
-            print(f"Falling back to no coverage support.")
-
-            class FallbackCoverage:
-                @staticmethod
-                def get_now():
-                    return 0
-
-                @staticmethod
-                def get_total():
-                    return 0
-
-            return FallbackCoverage()
-
     @staticmethod
     def dtype_str(id: int) -> str:
         """See https://deeplearning4j.org/api/latest/onnx/Onnx.TensorProto.DataType.html"""

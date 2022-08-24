@@ -1,5 +1,10 @@
+from multipledispatch import dispatch
+
 import torch
 
+from nnsmith.abstract.op import *
+
+# used proxy gradient functions
 SLOPE = 0.1
 
 
@@ -112,3 +117,41 @@ class PGClip(torch.nn.Module):
 
     def forward(self, x):
         return PGClipFunc.apply(x, self.min, self.max)
+
+
+class Dummy:  # For simple syntactic checking;
+    pass
+
+
+# proxy_fn:    proxy
+@dispatch(Dummy)
+def proxy_fn(op):
+    pass
+
+
+@dispatch(ReLU)
+def proxy_fn(op: ReLU):
+    return PGReLU()
+
+
+@dispatch(Ceil)
+def proxy_fn(op: Ceil):
+    return PGCeil()
+
+
+# PGFloor
+@dispatch(Floor)
+def proxy_fn(op: Floor):
+    return PGFloor()
+
+
+# PGClip
+@dispatch(Clip)
+def proxy_fn(op: Clip):
+    return PGClip(op.min, op.max)
+
+
+# Round
+@dispatch(Round)
+def proxy_fn(op: Round):
+    return PGRound()

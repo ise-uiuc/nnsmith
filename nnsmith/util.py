@@ -16,7 +16,7 @@ def mkdir(dir, yes=False):
             )
         if decision.lower() == "n":
             raise RuntimeError(
-                f"{dir} already exist... We want an empty folder to report..."
+                f"{dir} already exist... Remove it or use a different name."
             )
         else:
             shutil.rmtree(dir)

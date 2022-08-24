@@ -16,7 +16,7 @@ from nnsmith.abstract.op import (
     AbsOpBase,
     DType,
     AbsTensor,
-    concretize,
+    concretize_op,
     Input,
     Constant,
 )
@@ -261,7 +261,7 @@ def rewrite_op_dtype(
         m = solver.model()
 
         # rewrite
-        concrete_op = concretize(op, m)
+        concrete_op = concretize_op(op, m)
         concrete_input_shapes = []
         for inp in inputs:
             shape = []

@@ -10,11 +10,8 @@ from inspect import signature
 import random
 
 import z3
-import torch
 
 from nnsmith.error import SanityCheck, ConstraintCheck
-from nnsmith.abstract.loss_func import *
-from nnsmith.abstract.proxy_grad import *
 from nnsmith.abstract.dtype import (
     DType,
     DTYPE_ALL,
@@ -25,17 +22,12 @@ from nnsmith.abstract.dtype import (
 from nnsmith.abstract.arith import *
 from nnsmith.abstract.tensor import AbsTensor
 
-# Recommended resources: https://theory.stanford.edu/~nikolaj/programmingz3.html
-# Another plausible tool (Interval Analysis): https://simon-rohou.fr/research/tubex-lib/doc/toctree.html
-# Please follow the PyTorch API conventions: https://pytorch.org/docs/stable/nn.html
-
 # There are following types of constraints at this point:
 # 1. Shape variables must be greater than 0;
 # 2. Shape variables must avoid devision by 0;
 # 3. Intra-input shape constraints; e.g., add(x, y) where x.shape() must be equal to y.shape();
 # 4. Extra constraints introduced by individual operators;
 
-_DEV = torch.device("cpu")
 FLOPS_LIM = os.getenv("NNSMITH_FLOPS_LIM", "auto")
 if FLOPS_LIM == "auto":  # use predefined value
     FLOPS_LIM = 2**30
@@ -298,10 +290,6 @@ class AbsOpBase(ABC):
     def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         return []
 
-    @abstractmethod
-    def torch(self) -> Callable[..., torch.Tensor]:
-        raise NotImplementedError
-
     def deduct_inp_ranks_and_dtype(
         self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
@@ -320,19 +308,8 @@ class AbsOpBase(ABC):
     def __repr__(self) -> str:
         return self.__class__.__name__
 
-    @classmethod
-    def numeric_valid(cls, outputs) -> bool:
-        with torch.no_grad():
-            return not any(
-                [torch.isnan(out).any() or torch.isinf(out).any() for out in outputs]
-            )
 
-    @classmethod
-    def numeric_unstable(cls, outputs) -> bool:
-        return not cls.numeric_valid(outputs)
-
-
-def concretize(op: AbsOpBase, model: Optional[z3.ModelRef]) -> AbsOpBase:
+def concretize_op(op: AbsOpBase, model: Optional[z3.ModelRef]) -> AbsOpBase:
     if isinstance(op, Constant) or isinstance(op, Input):
         assert not hasattr(op, "torch_loss")
         ret_op = deepcopy(op)
@@ -511,9 +488,6 @@ class Where(TernaryOpBase):
             z3.BoolVal(input_shapes[1].dtype == input_shapes[2].dtype)
         ]
 
-    def torch(self):
-        return torch.where
-
     def deduct_inp_ranks_and_dtype(
         self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
@@ -531,21 +505,21 @@ Add = leaf(
     type(
         "Add",
         (BcastBinaryOp1,),
-        {"torch": lambda self: torch.add, "__module__": __name__},
+        {"__module__": __name__},
     )
 )
 Sub = leaf(
     type(
         "Sub",
         (BcastBinaryOp1,),
-        {"torch": lambda self: torch.sub, "__module__": __name__},
+        {"__module__": __name__},
     )
 )
 Mul = leaf(
     type(
         "Mul",
         (BcastBinaryOp1,),
-        {"torch": lambda self: torch.mul, "__module__": __name__},
+        {"__module__": __name__},
     )
 )
 # NOTE(JK): didn't find multi-input version of Max and Min in torch, so assume binary ops
@@ -553,54 +527,45 @@ Max = leaf(
     type(
         "Max",
         (BcastBinaryOp1,),
-        {"torch": lambda self: torch.max, "__module__": __name__},
+        {"__module__": __name__},
     )
 )
 Min = leaf(
     type(
         "Min",
         (BcastBinaryOp1,),
-        {"torch": lambda self: torch.min, "__module__": __name__},
+        {"__module__": __name__},
     )
 )
 
-Equal = leaf(
-    type(
-        "Equal", (Comparator,), {"torch": lambda self: torch.eq, "__module__": __name__}
-    )
-)
+Equal = leaf(type("Equal", (Comparator,), {"__module__": __name__}))
 Greater = leaf(
     type(
         "Greater",
         (Comparator,),
-        {"torch": lambda self: torch.gt, "__module__": __name__},
+        {"__module__": __name__},
     )
 )
-Less = leaf(
-    type(
-        "Less", (Comparator,), {"torch": lambda self: torch.lt, "__module__": __name__}
-    )
-)
-
+Less = leaf(type("Less", (Comparator,), {"__module__": __name__}))
 And = leaf(
     type(
         "And",
         (Logical,),
-        {"torch": lambda self: torch.logical_and, "__module__": __name__},
+        {"__module__": __name__},
     )
 )
 Or = leaf(
     type(
         "Or",
         (Logical,),
-        {"torch": lambda self: torch.logical_or, "__module__": __name__},
+        {"__module__": __name__},
     )
 )
 Xor = leaf(
     type(
         "Xor",
         (Logical,),
-        {"torch": lambda self: torch.logical_xor, "__module__": __name__},
+        {"__module__": __name__},
     )
 )
 
@@ -608,19 +573,6 @@ Xor = leaf(
 # lhs_dtypes = (DType.int32, DType.int64, DType.float32, DType.float64)
 # rhs_dtypes = (DType.int32, DType.int64, DType.float32, DType.float64)
 # Pow.in_dtypes = itertools.product(lhs_dtypes, rhs_dtypes)
-
-
-class StopFoldConst(torch.nn.Module):
-    def __init__(self, data: torch.Tensor):
-        super().__init__()
-        self.dtype = data.dtype
-        self.param = torch.nn.parameter.Parameter(
-            data, requires_grad=data.is_floating_point()
-        )
-
-    @torch.no_grad()
-    def forward(self):
-        return self.param.to(dtype=self.dtype, device=_DEV)
 
 
 class Input(AbsOpBase):
@@ -640,9 +592,6 @@ class Input(AbsOpBase):
         SanityCheck.eq(len(input_shapes), 0)
         return []
 
-    def torch(self) -> Callable[..., torch.Tensor]:
-        raise NotImplementedError()
-
 
 class Constant(AbsOpBase):
     in_dtypes = [()]
@@ -656,7 +605,7 @@ class Constant(AbsOpBase):
         self.dim = dim
         self.inp_ranks = []
         self.out_ranks = [(dim,)]
-        self.abs_tensor = None
+        self.abs_tensor: AbsTensor = None
 
     def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         SanityCheck.eq(len(input_shapes), 0)
@@ -665,12 +614,6 @@ class Constant(AbsOpBase):
     def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         SanityCheck.eq(len(input_shapes), 0)
         return []
-
-    def torch(self) -> Callable[..., torch.Tensor]:
-        data = torch.randn(self.abs_tensor.shape, device=_DEV).to(
-            self.abs_tensor.dtype.torch()
-        )
-        return StopFoldConst(data)
 
 
 class Placeholder:
@@ -770,19 +713,7 @@ Div = leaf(
     type(
         "Div",
         (BcastBinaryOp1,),
-        {
-            "torch": (
-                lambda self: lambda x, y: torch.div(
-                    x,
-                    y,
-                    rounding_mode="floor"
-                    if DType.from_torch(x.dtype) in DTYPE_INTS
-                    else None,
-                )
-            ),
-            "torch_loss": lambda self, x, y: loss_gt_zero(torch.abs(y)),
-            "__module__": __name__,
-        },
+        {"__module__": __name__},
     )
 )
 
@@ -792,39 +723,11 @@ class Pow(BcastBinaryOp):
     in_dtypes = [(i, i) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
-    def torch(self):
-        return torch.pow
-
-    def torch_loss(self, a, b):
-        # a >= 0 && b*log(a) <= 20
-        l0 = loss_gt_zero(a)
-        if torch.any(l0 > 0):
-            return ("l0", l0)
-        l1 = loss_le(
-            b * torch.log(torch.maximum(a, torch.tensor(1e-40, dtype=a.dtype))), 40
-        )
-        return ("l1", l1)
-
-    @classmethod
-    def numeric_unstable(cls, outputs) -> bool:
-        with torch.no_grad():
-            return any(
-                [
-                    torch.isnan(out).any()
-                    or torch.isinf(out).any()
-                    or torch.any(out > math.exp(40))
-                    for out in outputs
-                ]
-            )
-
 
 @leaf
 class GELU(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
-
-    def torch(self):
-        return torch.nn.GELU()
 
 
 @leaf
@@ -837,26 +740,17 @@ class LeakyReLU(ElementWiseUnaryOp):
         super().__init__()
         self.negative_slope = 0.01
 
-    def torch(self):
-        return torch.nn.LeakyReLU(self.negative_slope)
-
 
 @leaf
 class PReLU(ElementWiseUnaryOp):
     in_dtypes = [(DType.float32,)]
     out_dtypes = [(DType.float32,)]
 
-    def torch(self):
-        return torch.nn.PReLU(device=_DEV)
-
 
 @leaf
 class Sigmoid(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
-
-    def torch(self):
-        return torch.sigmoid
 
 
 class TrigonometricOp(ElementWiseUnaryOp):
@@ -868,17 +762,11 @@ class Sin(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
-    def torch(self):
-        return torch.sin
-
 
 @leaf
 class Cos(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
-
-    def torch(self):
-        return torch.cos
 
 
 @leaf
@@ -886,23 +774,11 @@ class Asin(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
-    def torch(self):
-        return torch.asin
-
-    def torch_loss(self, x):
-        return loss_le(x.abs(), 1)
-
 
 @leaf
 class Acos(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
-
-    def torch(self):
-        return torch.acos
-
-    def torch_loss(self, x):
-        return loss_le(x.abs(), 1)
 
 
 @leaf
@@ -910,25 +786,16 @@ class Tan(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
-    def torch(self):
-        return torch.tan
-
 
 @leaf
 class Atan(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
-    def torch(self):
-        return torch.atan
-
 
 @leaf
 class Abs(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
-
-    def torch(self):
-        return torch.abs
 
 
 @leaf
@@ -936,35 +803,17 @@ class ReLU(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
-    def torch(self):
-        return torch.nn.ReLU()
-
-    def proxy_grad(self):
-        return PGReLU()
-
 
 @leaf
 class Ceil(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
-    def torch(self):
-        return torch.ceil
-
-    def proxy_grad(self):
-        return PGCeil()
-
 
 @leaf
 class Floor(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
-
-    def torch(self):
-        return torch.floor
-
-    def proxy_grad(self):
-        return PGFloor()
 
 
 @leaf
@@ -987,23 +836,11 @@ class Clip(ElementWiseUnaryOp):
             self.max = self.max + self.bias
         return super()._type_transfer(input_shapes)
 
-    def torch(self):
-        return lambda x: torch.clip(x, self.min, self.max)
-
-    def proxy_grad(self):
-        return PGClip(self.min, self.max)
-
 
 @leaf
 class Round(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
-
-    def torch(self):
-        return torch.round
-
-    def proxy_grad(self):
-        return PGRound()
 
 
 @leaf
@@ -1011,32 +848,17 @@ class Sqrt(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
-    def torch(self):
-        return torch.sqrt
-
-    def torch_loss(self, x):
-        return loss_ge(x, 0)
-
 
 @leaf
 class Log2(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
-    def torch(self):
-        return torch.log2
-
-    def torch_loss(self, x):
-        return loss_gt_zero(x)
-
 
 @leaf
 class Neg(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
-
-    def torch(self):
-        return torch.neg
 
 
 @leaf
@@ -1052,9 +874,6 @@ class Softmax(ElementWiseUnaryOp):
 
     def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         return [nnsmith_lt(self.dim, input_shapes[0].ndims), nnsmith_ge(self.dim, 0)]
-
-    def torch(self) -> Callable[..., torch.Tensor]:
-        return torch.nn.Softmax(dim=self.dim)
 
 
 class Pool2d(UnaryOpBase):
@@ -1164,27 +983,12 @@ class Pool2d(UnaryOpBase):
 
 @leaf
 class MaxPool2d(Pool2d):
-    def torch(self) -> Callable[..., torch.Tensor]:
-        return torch.nn.MaxPool2d(
-            kernel_size=(self.kernel_h_size, self.kernel_w_size),
-            stride=self.stride,
-            padding=self.padding,
-        )
+    pass
 
 
 @leaf
 class AvgPool2d(Pool2d):
-    # TODO: model more
-    # self.extra_attrs['ceil_mode'] = random.choice([False, True])
-    # self.extra_attrs['count_include_pad'] = random.choice([False, True])
-    # self.extra_attrs['divisor_override'] = None  # ignore for now
-
-    def torch(self) -> Callable[..., torch.Tensor]:
-        return torch.nn.AvgPool2d(
-            kernel_size=(self.kernel_h_size, self.kernel_w_size),
-            stride=self.stride,
-            padding=self.padding,
-        )
+    pass
 
 
 @leaf
@@ -1281,27 +1085,6 @@ class Slice(UnaryOpBase):
         )
         return [AbsTensor(s, input_shapes[0].dtype)]
 
-    def torch(self):
-        reg = self.extra_attrs["region"]
-
-        def _func(x):
-            dim_s = x.shape[self.extra_attrs["axis"]]
-            start, end = self.start, self.end
-            if reg in ["left", "mid"]:
-                start -= dim_s
-            # actual end would be 0, which is not really 'left'
-            if reg == "left" and end < dim_s and end != Slice.INT_MAX:
-                end -= dim_s
-            s = tuple(
-                slice(None, None)
-                if i != self.extra_attrs["axis"]
-                else slice(start, end, self.step)
-                for i in range(self.extra_attrs["ndims"])
-            )
-            return x[s]
-
-        return _func
-
     def deduct_inp_ranks_and_dtype(
         self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
@@ -1363,21 +1146,6 @@ class Pad(UnaryOpBase):
             j = len(isv) - 1 - i
             s[j] = nnsmith_add(nnsmith_add(s[j], pad[i * 2]), pad[i * 2 + 1])
         return [AbsTensor(s, input_shapes[0].dtype)]
-
-    def torch(self) -> Callable[..., torch.Tensor]:
-        if self.extra_attrs["type"] == "constant":
-            # 0 easily cause division by zero...
-            # 1 easily cause false positives (sqrt(1) = 0.99999... != 1 in ORT, so floor(sqrt(1))=0)
-            return lambda x: torch.nn.functional.pad(
-                x, self.padding_list, "constant", value=0.5
-            )
-        elif (
-            self.extra_attrs["type"] == "replicate"
-            or self.extra_attrs["type"] == "reflect"
-        ):
-            return lambda x: torch.nn.functional.pad(
-                x, self.padding_list, self.extra_attrs["type"]
-            )
 
     def deduct_inp_ranks_and_dtype(
         self, out_abs_tensor: List[AbsTensor]
@@ -1477,11 +1245,6 @@ class Expand(UnaryOpBase, ABC):
             return cons
         return [nnsmith_ge(self.expand_n, 1)]
 
-    def torch(self):
-        return lambda x: x.expand(
-            *self._type_transfer([AbsTensor.from_torch(x)])[0].shape
-        )
-
     def deduct_inp_ranks_and_dtype(
         self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
@@ -1539,9 +1302,6 @@ class BatchNorm2d(ElementWiseUnaryOp):
             nnsmith_eq(self.nfeat, input_shapes[0].shape[1]),
             nnsmith_ge(input_shapes[0].shape[0], 2),
         ]  # batch size = 1 -> fail training.
-
-    def torch(self) -> Callable[..., torch.Tensor]:
-        return torch.nn.BatchNorm2d(num_features=self.nfeat)
 
 
 @leaf
@@ -1620,16 +1380,6 @@ class Conv1d(UnaryOpBase):
             repr += f", d={self.dilation}"
         repr += ")"
         return repr
-
-    def torch(self):
-        return torch.nn.Conv1d(
-            in_channels=self.in_channels,
-            out_channels=self.out_channels,
-            kernel_size=self.kernel_size,
-            stride=self.stride,
-            padding=self.padding,
-            dilation=self.dilation,
-        )
 
 
 @leaf
@@ -1726,16 +1476,6 @@ class NCHWConv2d(UnaryOpBase):
         if Z3_CONS_FLOPS:
             cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
         return cons
-
-    def torch(self):
-        return torch.nn.Conv2d(
-            self.in_channels,
-            self.out_channels,
-            kernel_size=(self.kernel_h_size, self.kernel_w_size),
-            stride=self.stride,
-            padding=self.padding,
-            device=_DEV,
-        )
 
     def flops(self, input_shapes):
         w = AbsTensor(
@@ -1909,9 +1649,6 @@ class Reshape(UnaryOpBase):
         assert -1 not in self.target_shape
         return ret
 
-    def torch(self):
-        return lambda x: x.reshape(*self.target_shape)
-
     def deduct_inp_ranks_and_dtype(
         self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
@@ -1926,10 +1663,6 @@ class Flatten(Reshape):
     def __init__(self, dim0: Union[int, z3.ExprRef]):
         super().__init__(1, dim0)
         self.dim0 = dim0
-
-    def torch(self):
-        # See https://github.com/pytorch/pytorch/issues/74142
-        return lambda x: x.flatten().unsqueeze(0)
 
 
 @leaf
@@ -1967,13 +1700,6 @@ class Transpose(UnaryOpBase):
             f"dim={len(input_shapes[0].shape)}.transpose({dim0},{dim1})",
         )
         return []
-
-    def torch(self):
-        def f(x: torch.Tensor):
-            dim0, dim1 = self._init_swap_dims(list(x.shape))
-            return x.transpose(dim0, dim1)
-
-        return f
 
     def deduct_inp_ranks_and_dtype(
         self, out_abs_tensor: List[AbsTensor]
@@ -2013,50 +1739,27 @@ class InterpBase(UnaryOpBase):
 
 @leaf
 class NearestInterp(InterpBase):
-    def torch(self) -> Callable[..., torch.Tensor]:
-        return lambda x: torch.nn.functional.interpolate(
-            x, size=self.size, mode="nearest"
-        )
+    pass
 
 
 @leaf
 class LinearInterp(InterpBase):
     num_var_param = [1]
 
-    def torch(self) -> Callable[..., torch.Tensor]:
-        return lambda x: torch.nn.functional.interpolate(
-            x, size=self.size, mode="linear"
-        )
-
 
 @leaf
 class BilinearInterp(InterpBase):
     num_var_param = [2]
-
-    def torch(self) -> Callable[..., torch.Tensor]:
-        return lambda x: torch.nn.functional.interpolate(
-            x, size=self.size, mode="bilinear"
-        )
 
 
 @leaf
 class BicubicInterp(InterpBase):
     num_var_param = [2]
 
-    def torch(self) -> Callable[..., torch.Tensor]:
-        return lambda x: torch.nn.functional.interpolate(
-            x, size=self.size, mode="bicubic"
-        )
-
 
 @leaf
 class TrilinearInterp(InterpBase):
     num_var_param = [3]
-
-    def torch(self) -> Callable[..., torch.Tensor]:
-        return lambda x: torch.nn.functional.interpolate(
-            x, size=self.size, mode="trilinear"
-        )
 
 
 class ReduceBase(UnaryOpBase, ABC):
@@ -2120,12 +1823,6 @@ class Squeeze(ReduceBase):
             return []
         return [nnsmith_eq(input_shapes[0].shape[reduce_dim], 1)]
 
-    def torch(self):
-        if self.extra_attrs["reduce_dim"] is not None:
-            return lambda x: x.squeeze(self.extra_attrs["reduce_dim"])
-        else:
-            return lambda x: x.squeeze()
-
 
 @leaf
 class ReduceSum(ReduceBase):
@@ -2133,21 +1830,11 @@ class ReduceSum(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS if i != DType.int32]
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS if i != DType.int32]
 
-    def torch(self):
-        if self.extra_attrs["reduce_dim"] is not None:
-            return lambda x: x.sum(self.extra_attrs["reduce_dim"])
-        return lambda x: x.sum()
-
 
 @leaf
 class ReduceMin(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
-
-    def torch(self):
-        if self.extra_attrs["reduce_dim"] is not None:
-            return lambda x: x.min(self.extra_attrs["reduce_dim"]).values
-        return lambda x: x.min()
 
 
 @leaf
@@ -2155,21 +1842,11 @@ class ReduceMax(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
 
-    def torch(self):
-        if self.extra_attrs["reduce_dim"] is not None:
-            return lambda x: x.max(self.extra_attrs["reduce_dim"]).values
-        return lambda x: x.max()
-
 
 @leaf
 class ReduceMean(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
-
-    def torch(self):
-        if self.extra_attrs["reduce_dim"] is not None:
-            return lambda x: x.mean(self.extra_attrs["reduce_dim"])
-        return lambda x: x.mean()
 
 
 @leaf
@@ -2179,11 +1856,6 @@ class ArgMin(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(DType.int64,)]
     _reduce_out_dtype = DType.int64
-
-    def torch(self):
-        if self.extra_attrs["reduce_dim"] is not None:
-            return lambda x: x.argmin(self.extra_attrs["reduce_dim"])
-        return lambda x: x.argmin()
 
     def deduct_inp_ranks_and_dtype(
         self, out_abs_tensor: List[AbsTensor]
@@ -2200,11 +1872,6 @@ class ArgMax(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(DType.int64,)]
     _reduce_out_dtype = DType.int64
-
-    def torch(self):
-        if self.extra_attrs["reduce_dim"] is not None:
-            return lambda x: x.argmax(self.extra_attrs["reduce_dim"])
-        return lambda x: x.argmax()
 
     def deduct_inp_ranks_and_dtype(
         self, out_abs_tensor: List[AbsTensor]
@@ -2243,9 +1910,6 @@ class Tril(TriBase):
         ncol = input_shapes[0].shape[1]
         return [z3.And(self.diagonal >= -nrow, (ncol - 1) >= self.diagonal)]
 
-    def torch(self):
-        return lambda x: x.tril(self.diagonal)
-
 
 @leaf
 class Triu(TriBase):
@@ -2254,9 +1918,6 @@ class Triu(TriBase):
         nrow = input_shapes[0].shape[0]
         ncol = input_shapes[0].shape[1]
         return [z3.And(self.diagonal >= -(nrow - 1), ncol >= self.diagonal)]
-
-    def torch(self):
-        return lambda x: x.triu(self.diagonal)
 
 
 @leaf
@@ -2290,19 +1951,10 @@ class Linear(UnaryOpBase):
             nnsmith_eq(input_shapes[0].shape[-1], self.ifeat),
         ]
 
-    def torch(self) -> Callable[..., torch.Tensor]:
-        return torch.nn.Linear(in_features=self.ifeat, out_features=self.ofeat)
-
     def deduct_inp_ranks_and_dtype(
         self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
         return [(out_abs_tensor[0].ndims, DType.float32)]
-
-
-def partialclass(cls, name, *args, **kwds) -> Type[AbsOpBase]:
-    return type(
-        name, (cls,), {"__init__": functools.partialmethod(cls.__init__, *args, **kwds)}
-    )
 
 
 class Concat(AbsOpBase):
@@ -2346,10 +1998,6 @@ class Concat(AbsOpBase):
         os = AbsTensor(input_shapes[0].shape, input_shapes[0].dtype)
         os.shape[axis] = reduce(nnsmith_add, [s.shape[axis] for s in input_shapes])
         return [os]
-
-    def torch(self):
-        axis = self.extra_attrs["axis"]
-        return lambda *args: torch.cat(args, dim=axis)
 
     def deduct_inp_ranks_and_dtype(
         self, out_abs_tensor: List[AbsTensor]
@@ -2424,9 +2072,6 @@ class Cast(ElementWiseUnaryOp, ABC):
         self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
         return [(out_abs_tensor[0].ndims, self.extra_attrs["to"])]
-
-    def torch(self):
-        return lambda x: x.to(dtype=self.extra_attrs["to"].torch())
 
 
 @leaf
@@ -2510,12 +2155,6 @@ class Gemm(TernaryOpBase):
         mat1, mat2 = input_shapes[1], input_shapes[2]
         return [AbsTensor([mat1.shape[0], mat2.shape[1]], input_shapes[0].dtype)]
 
-    def torch(self):
-        extra_attrs = self._set_or_get_extra_attrs()
-        return lambda *args: torch.addmm(
-            *args, beta=extra_attrs["beta"], alpha=extra_attrs["alpha"]
-        )
-
     def flops(self, input_shapes):
         mat1, mat2 = input_shapes[1], input_shapes[2]
         return mat1.shape[0] * mat1.shape[1] * mat2.shape[1]
@@ -2592,147 +2231,3 @@ def config_skip_op(skip_config):
                 msg += ["skip entire"]
                 op._skip = True
             print(*msg)
-
-
-def main():
-    # Test shape functions
-    print(len(ALL_OP_TYPES), "operators supported:")
-    print(ALL_OP_STR2TYPE.keys())
-    assert Reshape in ALL_OP_TYPES
-
-    # Reshape from scalar
-    lhs = AbsTensor([], DType.float32)
-    s = z3.Solver()
-    op = Reshape(1)
-    rhs = op.checked_type_transfer([lhs])
-    assert all(rhs[0].eq(AbsTensor([1], DType.float32))), (lhs, rhs)
-    s.add(*op.checked_requires([lhs]))
-    assert s.check() == z3.sat
-    # Reduce rank 0
-    abs_op = Squeeze()
-    scalar = AbsTensor.from_torch(torch.tensor(10))
-    assert abs_op.checked_type_transfer([scalar])[0].ndims == 0
-    abs_op.checked_requires([scalar])
-
-    # ReLU
-    lhs = torch.relu(torch.randn(1, 1, 1, 1)).shape
-    rhs = torch.Size(
-        ReLU().checked_type_transfer([AbsTensor([1, 1, 1, 1], DType.float32)])[0].shape
-    )
-    assert lhs == rhs, f"{lhs} != {rhs}"
-
-    # Add
-    a = torch.randn(2, 3, 4, 5)
-    b = torch.randn(2, 3, 4, 5)
-    c = a + b
-    assert c.shape == torch.Size(
-        Add()
-        .checked_type_transfer(
-            [
-                AbsTensor([2, 3, 4, 5], DType.float32),
-                AbsTensor([2, 3, 4, 5], DType.float32),
-            ]
-        )[0]
-        .shape
-    )
-
-    # Expand
-    source_shape = (4, 1)
-    a = torch.randn(source_shape)
-    abs_op = ExpandLast4(expand_n=2)
-    assert a.expand(2, 1, *source_shape).shape == torch.Size(
-        abs_op.checked_type_transfer([AbsTensor(source_shape, DType.float32)])[0].shape
-    )
-
-    abs_op = ExpandLast1(expand_n=2)
-    rhs = torch.Size(
-        abs_op.checked_type_transfer([AbsTensor(list(source_shape), DType.float32)])[
-            0
-        ].shape
-    )
-    lhs = a.expand(4, 2).shape
-    assert lhs == rhs, f"{lhs} != {rhs}"
-
-    # NCHWConv2d
-    source_shape = (2, 3, 24, 24)
-    a = torch.randn(*source_shape)
-    out = torch.conv2d(a, torch.randn(3, 3, 3, 4), stride=1, padding=1)
-    assert (
-        out.shape
-        == NCHWConv2d(3, 3, 3, 4, 1, 1)
-        .checked_type_transfer([AbsTensor(source_shape, DType.float32)])[0]
-        .torch()
-    )
-    print(
-        NCHWConv2d(3, 3, 3, 4, 1, 1).checked_type_transfer(
-            [AbsTensor([2, *z3.Ints("c h w")], DType.float32)]
-        )[0]
-    )
-
-    # Reshape
-    source_shape = (2, 3, 4)
-    target_shape = (1, 2, 3, 2, 2)
-    a = torch.randn(*source_shape)
-    assert (
-        a.reshape(*target_shape).shape
-        == Reshape(*target_shape)
-        .checked_type_transfer([AbsTensor(source_shape, DType.float32)])[0]
-        .torch()
-    )
-
-    # Dirty fix for z3 bug by wrapping the context using seprated functions.
-    def test_reshape_symbol():  # See https://github.com/Z3Prover/z3/issues/989
-        s = z3.Solver()
-        v = z3.Ints("a b c d e")
-        abs_op = Reshape(*v)
-        cons = abs_op.checked_requires([AbsTensor(source_shape, DType.float32)])
-        for c in cons:
-            s.add(c)
-        for c in abs_op.checked_type_transfer([AbsTensor(source_shape, DType.float32)])[
-            0
-        ].gt_zero():
-            s.add(c)
-        assert s.check() == z3.sat
-        print(s.model())
-
-    test_reshape_symbol()
-
-    # Test `concrete` function.
-    p0, p1, p2, p3, p4, p5 = z3.Ints("p0 p1 p2 p3 p4 p5")
-    op = NCHWConv2d(p0, p1, p2, p3, p4, p5)
-    s = z3.Solver()
-    shape = AbsTensor([1, 3, 224, 224], DType.float32)
-    for c in op.checked_requires([shape]):
-        s.add(c)
-    for c in op.checked_type_transfer([shape])[0].gt_zero():
-        s.add(c)
-    assert s.check() == z3.sat
-    model = s.model()
-    concrete_op = concretize(op, model)
-    assert concrete_op.in_channels == model[p0].as_long()
-    assert concrete_op.out_channels == model[p1].as_long()
-    assert concrete_op.kernel_h_size == model[p2].as_long()
-    assert concrete_op.kernel_w_size == model[p3].as_long()
-    assert concrete_op.stride == model[p4].as_long()
-    assert concrete_op.padding == model[p5].as_long()
-
-    # Test `concrete` function.
-    p0, p1, p2, p3 = z3.Ints("p0 p1 p2 p3")
-    op = AvgPool2d(p0, p1, p2, p3)
-    s = z3.Solver()
-    shape = AbsTensor([1, 3, 224, 224], DType.float32)
-    for c in op.checked_requires([shape]):
-        s.add(c)
-    for c in op.checked_type_transfer([shape])[0].gt_zero():
-        s.add(c)
-    assert s.check() == z3.sat
-    model = s.model()
-    concrete_op = concretize(op, model)
-    assert concrete_op.kernel_h_size == model[p0].as_long()
-    assert concrete_op.kernel_w_size == model[p1].as_long()
-    assert concrete_op.stride == model[p2].as_long()
-    assert concrete_op.padding == model[p3].as_long()
-
-
-if __name__ == "__main__":
-    main()

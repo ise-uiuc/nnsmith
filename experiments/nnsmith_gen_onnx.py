@@ -1,6 +1,6 @@
 from nnsmith.graph_gen import random_model_gen, SymbolNet
-from nnsmith.input_gen import PracticalHybridSearch
-from nnsmith.export import torch2onnx
+from nnsmith.materialize.torch.input_gen import PracticalHybridSearch
+from nnsmith.materialize.onnx.export import torch2onnx
 from nnsmith.dtype_test import rewrite_op_dtype
 from nnsmith.abstract.op import ALL_OP_TYPES
 from nnsmith.util import mkdir

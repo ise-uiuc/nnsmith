@@ -1,11 +1,11 @@
 import time
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 from abc import ABC, abstractmethod
 
 import torch
 import numpy as np
 
-from nnsmith.graph_gen import SymbolNet, random_tensor
+from nnsmith.materialize.torch.symbolnet import SymbolNet, random_tensor
 from nnsmith.abstract.op import DType
 
 
@@ -30,7 +30,7 @@ class InputSearchBase(ABC):
 
     def search(
         self, max_time_ms: int = None, max_sample: int = 1, return_list=False
-    ) -> Tuple[int, Tuple[str, np.ndarray]]:
+    ) -> Tuple[int, Dict[str, np.ndarray]]:
         n_try = 0
         sat_inputs = None
         start_time = time.time()
@@ -59,11 +59,6 @@ class InputSearchBase(ABC):
                 sat_inputs = res
                 break
 
-        if sat_inputs is not None and not return_list:
-            sat_inputs = {
-                name: inp for name, inp in zip(self.net.input_spec, sat_inputs)
-            }
-
         return n_try, sat_inputs
 
 
@@ -72,7 +67,7 @@ class SamplingSearch(InputSearchBase):
     def search_one(self, start_inp, timeout_ms: int = None) -> List[torch.Tensor]:
         with torch.no_grad():
             self.net.check_intermediate_numeric = True
-            _ = self.net(*start_inp)
+            _ = self.net(**start_inp)
             if not self.net.invalid_found_last:
                 return start_inp
 
@@ -95,11 +90,11 @@ class PracticalHybridSearch(InputSearchBase):
 
         self.differentiable = None
 
-        if all([DType.is_float(ii.op.abs_tensor.dtype) for ii in self.net.input_info]):
+        if all([DType.is_float(v.dtype) for _, v in self.net.input_like.items()]):
             diff_test_inp = self.net.get_random_inps(use_cuda=self.use_cuda)
-            for item in diff_test_inp:
+            for _, item in diff_test_inp.items():
                 item.requires_grad_()
-            self.net.forward(*diff_test_inp)
+            self.net.forward(**diff_test_inp)
             self.differentiable = self.net.differentiable
         else:
             self.differentiable = False

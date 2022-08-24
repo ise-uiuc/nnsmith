@@ -9,7 +9,7 @@
     - `"input"`: A dictionary of input.
     - `"output"`: A dictionary of output if the results are expected to be compared or `None` if the output contains `NaN` or `Inf` as undefined behaviours.
 - **Meta information**: `meta.json` meta information.
-    - `"sys"`: like `"tvm-gpu"` and `"ort-cpu"`
+    - `"system"`: like `"tvm-gpu"` and `"ort-cpu"`
     - `"version"`: a version string hooked from `${SystemPackage}.__version__`
     - `"symptom"`: `"crash"` or `"inconsistency"`
     - `"trigger-hash"` (optional): a git hash that can trigger this bug.

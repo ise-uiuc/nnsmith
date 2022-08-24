@@ -4,3 +4,4 @@ onnxruntime-gpu
 nvidia-pyindex
 nvidia-tensorrt
 apache-tvm
+gitpython

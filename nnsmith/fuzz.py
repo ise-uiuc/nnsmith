@@ -3,7 +3,6 @@ from multiprocessing import Process
 import subprocess
 from pathlib import Path
 import pickle
-import cloudpickle
 import sys
 import time
 import os
@@ -32,8 +31,8 @@ from nnsmith.error import NNSmithInternalError
 from nnsmith.difftest import assert_allclose
 from nnsmith.graph_gen import random_model_gen, SymbolNet
 from nnsmith.dtype_test import rewrite_op_dtype
-from nnsmith.input_gen import PracticalHybridSearch
-from nnsmith.export import torch2onnx
+from nnsmith.materialize.torch.input_gen import PracticalHybridSearch
+from nnsmith.materialize.onnx.export import torch2onnx
 from nnsmith.backends import BackendFactory, mk_factory
 from nnsmith.interal_naming import onnx2external_data_dir
 
@@ -461,10 +460,6 @@ class FuzzingLoop:  # TODO: Support multiple backends.
             else:
                 outputs = [o.cpu().numpy() for o in outputs]
 
-        net.to_picklable()
-        cloudpickle.dump(
-            net.concrete_graph, open(path + "-graph.pkl", "wb"), protocol=4
-        )
         self.rich_profile["succ_gen"] = np.append(
             self.rich_profile["succ_gen"], [gen_time]
         )
