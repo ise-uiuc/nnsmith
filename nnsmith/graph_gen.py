@@ -44,15 +44,15 @@ Instruction: Tuple[AbsOpBase, List[int], List[int]] = namedtuple(
     "Instruction", ["op", "inputs", "outputs"]
 )
 
-# @dataclass
+
+@dataclass
 class Schedule:
     """Minimal information for constructing a graph."""
 
-    def __init__(self, instructions, input_keys, leaf_keys, key2type):
-        self.instructions: List[Instruction] = instructions
-        self.input_keys: List[int] = input_keys
-        self.leaf_keys: List[int] = leaf_keys
-        self.key2type: Dict[int, AbsTensor] = key2type
+    instructions: List[Instruction]
+    input_keys: List[int]
+    leaf_keys: List[int]
+    key2type: Dict[int, AbsTensor]
 
     @staticmethod
     def init(graph: nx.MultiDiGraph, key2type: Dict[int, AbsTensor]) -> "Schedule":
@@ -86,21 +86,6 @@ class Schedule:
         leaf_keys = [key for key in key2type if key not in user_keys]
 
         return Schedule(instructions, input_keys, leaf_keys, key2type)
-
-    # def dump(self, path: str = "schedule.pkl") -> None:
-    #     with open(path, "wb") as f:
-    #         pickle.dump(self, f)
-
-    # @staticmethod
-    # def dump(obj: "Schedule", path: str = "schedule.pkl") -> None:
-    #     with open(path, "wb") as f:
-    #         pickle.dump(obj, f)
-
-    # @staticmethod
-    # def load(path: str = "schedule.pkl") -> "Schedule":
-    #     with open(path, "rb") as f:
-    #         schedule = pickle.load(f)
-    #     return schedule
 
 
 def concretize_graph(

@@ -46,7 +46,6 @@ class TFModel:
         schedule: Schedule,
         verbose: bool = False,
     ) -> None:
-        self.verbose = verbose
         self.net: TFNet = TFNet(
             schedule=schedule,
             verbose=verbose,
@@ -73,16 +72,14 @@ class TFModel:
         inputs: Dict[str, tf.Tensor | tf.TensorSpec] = None,
     ) -> Callable[..., Dict[str, tf.Tensor]]:
         os.makedirs(output_dir, exist_ok=True)
-        # self.net.schedule.dump(os.path.join(output_dir, "schedule.pkl"))
-        # Schedule.dump(self.net.schedule, os.path.join(output_dir, "schedule.pkl"))
-        with open(os.path.join(output_dir, "schedule.pkl"), "wb") as f:
+        with open(os.path.join(output_dir, TFModel.schedule_pkl_name()), "wb") as f:
             pickle.dump(self.net.schedule, f)
         if inputs is None or isinstance(inputs["i0"], tf.TensorSpec):
             tensor_inputs = self.random_inputs()
         else:
             tensor_inputs = inputs
         outputs_eager_run = self.run_eagerly(tensor_inputs)
-        with open(os.path.join(output_dir, "in_out.pkl"), "wb") as f:
+        with open(os.path.join(output_dir, TFModel.in_out_pkl_name()), "wb") as f:
             pickle.dump(
                 {
                     "inputs": {name: v.numpy() for name, v in tensor_inputs.items()},
@@ -94,17 +91,20 @@ class TFModel:
             )
         concrete_net = self.concrete_net(tensor_inputs)
         tf.saved_model.save(
-            self.net, os.path.join(output_dir, "tfnet"), signatures=concrete_net
+            self.net,
+            os.path.join(output_dir, TFModel.tfnet_dir_name()),
+            signatures=concrete_net,
         )
         return concrete_net
 
     @staticmethod
     def load(
-        saved_dir: str = "saved_tfnet", verbose: bool = False
+        saved_dir: str = "saved_tfmodel", verbose: bool = False
     ) -> Tuple["TFModel", Dict[str, tf.Tensor], Dict[str, tf.Tensor]]:
-        schedule = Schedule.load(os.path.join(saved_dir, "schedule.pkl"))
+        with open(os.path.join(saved_dir, TFModel.schedule_pkl_name()), "rb") as f:
+            schedule: Schedule = pickle.load(f)
         model = TFModel(schedule, verbose)
-        with open(os.path.join(saved_dir, "in_out.pkl"), "rb") as f:
+        with open(os.path.join(saved_dir, TFModel.in_out_pkl_name()), "rb") as f:
             in_out = pickle.load(f)
         inputs = {name: tf.convert_to_tensor(v) for name, v in in_out["inputs"].items()}
         outputs = {
@@ -142,3 +142,15 @@ class TFModel:
                 tf.cast(1e-3, dtype=x_v.dtype),
                 message=f"Tensors are NOT equal: x[{key}] = {x_v} != {y_v} = y[{key}]",
             )
+
+    @staticmethod
+    def schedule_pkl_name():
+        return "schedule.pkl"
+
+    @staticmethod
+    def in_out_pkl_name():
+        return "in_out.pkl"
+
+    @staticmethod
+    def tfnet_dir_name():
+        return "tfnet"
