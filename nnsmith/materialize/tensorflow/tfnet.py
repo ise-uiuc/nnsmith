@@ -2,6 +2,7 @@ from typing import cast, Iterator, Callable, List, Dict
 from dataclasses import dataclass, astuple
 
 import tensorflow as tf
+
 from nnsmith.abstract.tensor import AbsTensor  # type: ignore
 
 from nnsmith.graph_gen import Schedule
@@ -11,7 +12,7 @@ from nnsmith.error import ConstraintCheck, ConstraintError, SanityCheck
 
 
 @dataclass
-class TFInstr:
+class Instr:
     fwd_fn: Callable
     inp_keys: List[int]
     out_keys: List[int]
@@ -37,7 +38,7 @@ class TFNet(tf.Module):
         self.verbose = verbose
         self.schedule: Schedule = schedule
         self.mlist: List[Callable] = []
-        self.instructions: List[TFInstr] = []
+        self.instructions: List[Instr] = []
 
         for op, inp_keys, out_keys in self.schedule.instructions:
             if not isinstance(op, Input):
@@ -49,7 +50,7 @@ class TFNet(tf.Module):
                 SanityCheck.true(fwd_fn is not None, f"Bad implementation for {op}")
                 if not isinstance(op, tf.Module):
                     self.mlist.append(fwd_fn)  # Add tf.Module to track its parameters
-                self.instructions.append(TFInstr(fwd_fn, inp_keys, out_keys))
+                self.instructions.append(Instr(fwd_fn, inp_keys, out_keys))
         # end for
 
     @property

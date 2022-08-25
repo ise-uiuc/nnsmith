@@ -1,9 +1,11 @@
+from __future__ import annotations
 from typing import Any, Callable, Dict, List, Tuple
 from multipledispatch import dispatch  # type: ignore
 import os
 import dill as pickle
 
 import tensorflow as tf  # type: ignore
+from tensorflow import keras
 
 from nnsmith.graph_gen import Schedule
 from nnsmith.materialize.tensorflow.tfnet import TFNet
