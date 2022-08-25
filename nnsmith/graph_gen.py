@@ -2,10 +2,10 @@ from multiprocessing import Process
 import psutil
 from collections import defaultdict, namedtuple
 from dataclasses import dataclass
-import pickle
+import dill as pickle
 import math
 import textwrap
-from typing import Dict, Tuple, List, Set
+from typing import Dict, Tuple, List, Set, cast
 from inspect import signature
 import traceback
 import random
@@ -44,12 +44,10 @@ Instruction: Tuple[AbsOpBase, List[int], List[int]] = namedtuple(
     "Instruction", ["op", "inputs", "outputs"]
 )
 
-
-"""Minimal information for constructing a graph."""
-
-
-@dataclass
+# @dataclass
 class Schedule:
+    """Minimal information for constructing a graph."""
+
     def __init__(self, instructions, input_keys, leaf_keys, key2type):
         self.instructions: List[Instruction] = instructions
         self.input_keys: List[int] = input_keys
@@ -89,21 +87,26 @@ class Schedule:
 
         return Schedule(instructions, input_keys, leaf_keys, key2type)
 
-    def dump(self, path: str = "schedule.pkl") -> None:
-        with open(path, "wb") as f:
-            pickle.dump(self, f)
+    # def dump(self, path: str = "schedule.pkl") -> None:
+    #     with open(path, "wb") as f:
+    #         pickle.dump(self, f)
 
-    @staticmethod
-    def load(path: str = "schedule.pkl") -> "Schedule":
-        with open(path, "rb") as f:
-            schedule = pickle.load(f)
-        return schedule
+    # @staticmethod
+    # def dump(obj: "Schedule", path: str = "schedule.pkl") -> None:
+    #     with open(path, "wb") as f:
+    #         pickle.dump(obj, f)
+
+    # @staticmethod
+    # def load(path: str = "schedule.pkl") -> "Schedule":
+    #     with open(path, "rb") as f:
+    #         schedule = pickle.load(f)
+    #     return schedule
 
 
 def concretize_graph(
     graph: nx.MultiDiGraph, dataflow: List[TensorCtx], model: z3.ModelRef
-) -> Tuple[nx.MultiDiGraph,]:
-    concrete_shapes = {}
+) -> Tuple[nx.MultiDiGraph, Dict[int, AbsTensor]]:
+    concrete_shapes: Dict[int, AbsTensor] = {}
 
     # freeze node with static attributes in label;
     for node_id in nx.topological_sort(graph):
@@ -1311,6 +1314,15 @@ if __name__ == "__main__":
 
     schedule = Schedule.init(fixed_graph, concrete_abstensors)
 
+    if args.verbose or args.viz:
+        G = fixed_graph
+        nx.drawing.nx_pydot.write_dot(G, "graph.dot")
+        fmt = args.img.replace(".", "")
+        os.system(
+            f"dot -T{fmt} graph.dot > {os.path.join(args.output, f'graph.{fmt}')}"
+        )
+        os.system("rm graph.dot")
+
     if args.framework == "torch":
         model = ONNXModel.from_schedule(schedule)
         model.refine_weights()  # either random generated or gradient-based.
@@ -1319,19 +1331,29 @@ if __name__ == "__main__":
         testcase = TestCase(model, oracle)
         testcase.dump(root_folder=args.output)
 
-        if args.verbose or args.viz:
-            G = fixed_graph
-            nx.drawing.nx_pydot.write_dot(G, "graph.dot")
-            fmt = args.img.replace(".", "")
-            os.system(
-                f"dot -T{fmt} graph.dot > {os.path.join(args.output, f'graph.{fmt}')}"
-            )
-            os.system("rm graph.dot")
-
     elif args.framework == "tensorflow":
-        from nnsmith.materialize.tensorflow import TFModel
+        from icecream import ic
+        from nnsmith.materialize.tensorflow import *
 
-        model = TFModel(schedule=schedule)
+        model = cast(TFModel, TFModel(schedule=schedule))
+        inputs = model.random_inputs()
+
+        out_eager = model.run_eagerly(inputs)
+        ic(out_eager)
+
+        out_graph_exe = model.concrete_net(inputs)(**inputs)
+        ic(out_graph_exe)
+
+        model_save_dir = cast(str, args.output)
+        model.save(model_save_dir, inputs)
+        out_tflite = tf_to_tflite_runner(
+            os.path.join(model_save_dir, "tfnet"),
+            os.path.join(model_save_dir, "model.tflite"),
+        )(**inputs)
+        ic(out_tflite)
+
+        TFModel.assert_eq(out_eager, out_graph_exe)
+        TFModel.assert_eq(out_eager, out_tflite)
 
     else:
         raise ValueError(f"Unknown deep learning framework {args.framework}")

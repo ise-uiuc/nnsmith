@@ -6,7 +6,7 @@ import os
 from multiprocessing import Pool, cpu_count
 from typing import Dict, Set
 import re
-import pickle
+import dill as pickle
 
 import onnx
 import pandas as pd

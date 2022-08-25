@@ -62,7 +62,7 @@ class DType(Enum):
         }[s]
 
     # TODO(@ganler): put "torchization" in a separate file.
-    def torch(self):
+    def torch(self) -> "torch.dtype":
         import torch
 
         return {
@@ -78,7 +78,8 @@ class DType(Enum):
             DType.bool: torch.bool,
         }[self]
 
-    def from_torch(self):
+    @staticmethod
+    def from_torch(dtype) -> "DType":
         import torch
 
         return {
@@ -92,7 +93,26 @@ class DType(Enum):
             torch.complex64: DType.complex64,
             torch.complex128: DType.complex128,
             torch.bool: DType.bool,
+        }[dtype]
+
+    def tensorflow(self) -> "tf.Dtype":
+        import tensorflow as tf
+
+        return {
+            DType.float32: tf.float32,
+            DType.float64: tf.float64,
+            DType.int32: tf.int32,
         }[self]
+
+    @staticmethod
+    def from_tensorflow(dtype) -> "DType":
+        import tensorflow as tf
+
+        return {
+            tf.float32: DType.float32,
+            tf.float64: DType.float64,
+            tf.int32: DType.int32,
+        }[dtype]
 
 
 DTYPE_ALL = [DType.float32, DType.float64, DType.int32, DType.int64, DType.bool]

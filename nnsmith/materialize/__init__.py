@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-import pickle
+import dill as pickle
 import os
 import json
 from typing import Dict

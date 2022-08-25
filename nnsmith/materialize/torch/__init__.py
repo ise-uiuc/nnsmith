@@ -1,5 +1,5 @@
 from typing import Dict
-import pickle
+import dill as pickle
 
 
 import torch

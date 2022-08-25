@@ -1,20 +1,104 @@
-from typing import Dict
-import tensorflow as tf  # type: ignore
-from tensorflow import keras
+from typing import cast, Iterator, Callable, List, Dict
+from dataclasses import dataclass, astuple
+
+import tensorflow as tf
+from nnsmith.abstract.tensor import AbsTensor  # type: ignore
 
 from nnsmith.graph_gen import Schedule
+from nnsmith.abstract.op import AbsOpBase, Input
+from nnsmith.materialize.tensorflow.forward import forward_fn
+from nnsmith.error import ConstraintCheck, ConstraintError, SanityCheck
 
-"""
-Concrete TensorFlow Network
-It is only used to do forward computation and ...
-"""
+
+@dataclass
+class TFInstr:
+    fwd_fn: Callable
+    inp_keys: List[int]
+    out_keys: List[int]
 
 
 class TFNet(tf.Module):
-    def __init__(self, schedule: Schedule) -> None:
+    """
+    Concrete TensorFlow Network
+    It is only used to do forward computation and ...
+    """
+
+    def __init__(
+        self,
+        schedule: Schedule,
+        verbose: bool = False,
+    ) -> None:
+        """Build a TensorFlow model from schedule
+
+        Args:
+            schedule (Schedule): minimal information for constructing a concrete graph.
+        """
         super().__init__()
+        self.verbose = verbose
+        self.schedule: Schedule = schedule
+        self.mlist: List[Callable] = []
+        self.instructions: List[TFInstr] = []
+
+        for op, inp_keys, out_keys in self.schedule.instructions:
+            if not isinstance(op, Input):
+                op = cast(AbsOpBase, op)
+                out_abs_tensor = self.schedule.key2type[
+                    out_keys[0]
+                ]  # TODO Colin how to support Dense layer with different dtypes
+                fwd_fn = forward_fn(op, out_abs_tensor)
+                SanityCheck.true(fwd_fn is not None, f"Bad implementation for {op}")
+                if not isinstance(op, tf.Module):
+                    self.mlist.append(fwd_fn)  # Add tf.Module to track its parameters
+                self.instructions.append(TFInstr(fwd_fn, inp_keys, out_keys))
+        # end for
+
+    @property
+    def input_specs(self) -> List[tf.TensorSpec]:
+        ret: List[tf.TensorSpec] = []
+        for i_inp, key in enumerate(self.schedule.input_keys):
+            abs_tensor = self.schedule.key2type[key]
+            ret.append(
+                tf.TensorSpec(
+                    shape=abs_tensor.shape,
+                    dtype=abs_tensor.dtype.tensorflow(),
+                    name=f"i{i_inp}",
+                )
+            )
+        return ret
 
     @tf.function
     def __call__(self, *args, **kwargs) -> Dict[str, tf.Tensor]:
+        if self.verbose:
+            mode = "Running Eagerly" if tf.executing_eagerly() else "Tracing"
+            print(f"{mode} with JIT config: {tf.config.optimizer.get_jit()}")
 
-        pass
+        key2tensor: Dict[int, tf.Tensor] = {}
+        if len(args) == len(self.schedule.input_keys):
+            for i, key in enumerate(self.schedule.input_keys):
+                key2tensor[key] = args[i]
+        elif len(kwargs) == len(self.schedule.input_keys):
+            for i, key in enumerate(self.schedule.input_keys):
+                key2tensor[key] = kwargs[f"i{i}"]
+        else:
+            raise ValueError("Either user args only or kwargs only")
+
+        for i_instr, instr in enumerate(self.instructions):
+            # get inputs
+            inp_tensors = [key2tensor[key] for key in instr.inp_keys]
+
+            # forward
+            out_tensors = instr.fwd_fn(
+                *inp_tensors
+            )  # TODO Colin when it can return a list?
+            if not isinstance(out_tensors, list):
+                out_tensors = [out_tensors]
+
+            # store outputs
+            for i_out, out_key in enumerate(instr.out_keys):
+                key2tensor[out_key] = out_tensors[i_out]
+
+        # end for instructions
+        out_dict = {
+            f"o{i}": key2tensor[key] for i, key in enumerate(self.schedule.leaf_keys)
+        }
+        return out_dict

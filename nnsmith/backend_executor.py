@@ -1,5 +1,5 @@
 import random
-import pickle
+import dill as pickle
 from pathlib import Path
 import time
 

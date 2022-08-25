@@ -9,7 +9,7 @@ from typing import List, Tuple
 
 from uuid import uuid4
 import pandas as pd
-import pickle
+import dill as pickle
 
 import matplotlib.pyplot as plt
 from tqdm import tqdm

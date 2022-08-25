@@ -10,7 +10,7 @@ import time
 import argparse
 import random
 import os
-import pickle
+import dill as pickle
 import psutil
 
 import torch

@@ -2,7 +2,7 @@ import glob
 from multiprocessing import Process
 import subprocess
 from pathlib import Path
-import pickle
+import dill as pickle
 import sys
 import time
 import os

@@ -1,6 +1,6 @@
 import pytest
 
-import pickle
+import dill as pickle
 
 from nnsmith.abstract.dtype import DType
 from nnsmith.abstract.tensor import AbsTensor
