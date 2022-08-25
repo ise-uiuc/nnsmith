@@ -5,6 +5,15 @@ import os
 import dill as pickle
 
 import tensorflow as tf  # type: ignore
+
+
+def fix_tensorflow_issues():
+    tf.config.experimental.enable_tensor_float_32_execution(False)
+    for gpu in tf.config.experimental.list_physical_devices("GPU"):
+        tf.config.experimental.set_memory_growth(gpu, True)
+
+
+fix_tensorflow_issues()
 from tensorflow import keras
 
 from nnsmith.graph_gen import Schedule

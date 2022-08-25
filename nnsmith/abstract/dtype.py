@@ -102,6 +102,7 @@ class DType(Enum):
             DType.float32: tf.float32,
             DType.float64: tf.float64,
             DType.int32: tf.int32,
+            DType.int64: tf.int64,
         }[self]
 
     @staticmethod
@@ -112,6 +113,7 @@ class DType(Enum):
             tf.float32: DType.float32,
             tf.float64: DType.float64,
             tf.int32: DType.int32,
+            tf.int64: DType.int64,
         }[dtype]
 
 
