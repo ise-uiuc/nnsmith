@@ -21,7 +21,9 @@ class StopFoldConst(tf.Module):
 
 @dispatch(Constant, AbsTensor)
 def forward_fn(op: Constant, out_abs_tensor: AbsTensor):
-    data = tf.random.normal(op.abs_tensor.shape, dtype=op.abs_tensor.dtype.tensorflow())
+    data = tf.cast(
+        tf.random.normal(op.abs_tensor.shape), op.abs_tensor.dtype.tensorflow()
+    )
     return StopFoldConst(data)
 
 

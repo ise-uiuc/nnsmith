@@ -11,13 +11,15 @@ from nnsmith.materialize.tensorflow.tfnet import TFNet
 
 @dispatch(list)
 def randn_from_specs(specs: List[tf.TensorSpec]) -> List[tf.Tensor]:
-    return [tf.random.normal(shape=spec.shape, dtype=spec.dtype) for spec in specs]
+    return [
+        tf.cast(tf.random.normal(shape=spec.shape), dtype=spec.dtype) for spec in specs
+    ]
 
 
 @dispatch(dict)
 def randn_from_specs(specs: Dict[str, tf.TensorSpec]) -> Dict[str, tf.Tensor]:
     return {
-        name: tf.random.normal(shape=spec.shape, dtype=spec.dtype)
+        name: tf.cast(tf.random.normal(shape=spec.shape), dtype=spec.dtype)
         for name, spec in specs.items()
     }
 
@@ -114,10 +116,12 @@ class TFModel:
 
     def random_inputs(self) -> Dict[str, tf.Tensor]:
         return {
-            spec.name: tf.random.normal(
-                shape=spec.shape,
+            spec.name: tf.cast(
+                tf.random.normal(
+                    shape=spec.shape,
+                    seed=None,
+                ),
                 dtype=spec.dtype,
-                seed=None,
             )
             for spec in self.net.input_specs
         }
@@ -137,11 +141,10 @@ class TFModel:
     def assert_eq(x: Dict[str, tf.Tensor], y: Dict[str, tf.Tensor]) -> None:
         for key in x:
             x_v, y_v = x[key], y[key]
-            tf.assert_less(
+            assert tf.less_equal(
                 tf.reduce_max(tf.abs(x_v - y_v)),
                 tf.cast(1e-3, dtype=x_v.dtype),
-                message=f"Tensors are NOT equal: x[{key}] = {x_v} != {y_v} = y[{key}]",
-            )
+            ), f"Tensors are NOT equal: x[{key}] = {x_v} != {y_v} = y[{key}]"
 
     @staticmethod
     def schedule_pkl_name():
