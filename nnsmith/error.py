@@ -1,35 +1,7 @@
-# Also, there's a timeout error which is managed by subprocess module.
 from abc import ABC
 
 
-class ModeledError(Exception):
-    """
-    This is a base class for all modeled errors.
-    """
-
-    pass
-
-
-class CrashError(ModeledError):
-    pass
-
-
-class IncorrectResult(ModeledError):
-    pass
-
-
-class NumericError(ModeledError):
-    pass
-
-
-# Timeout...
-
-
-class MaybeDeadLoop(ModeledError):
-    pass
-
-
-class NNSmithInternalError(Exception):
+class InternalError(Exception):
     """Fatal unexpected internal errors in NNSmith that should shut down the program immediately."""
 
     pass
@@ -95,7 +67,7 @@ class AbsCheck(ABC):
 
 
 class SanityCheck(AbsCheck):
-    _EXCEPTION_TYPE = NNSmithInternalError
+    _EXCEPTION_TYPE = InternalError
 
 
 class ConstraintCheck(AbsCheck):

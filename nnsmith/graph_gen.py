@@ -17,7 +17,6 @@ import networkx as nx
 import numpy as np
 import z3
 
-from nnsmith.dtype_test import rewrite_op_dtype
 from nnsmith.error import SanityCheck, ConstraintError
 from nnsmith.abstract.op import *
 from nnsmith.abstract.op import __MAX_RANK__ as __MAX_RANK__
@@ -1229,14 +1228,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    gen_args = {}
-    if args.diff_can_overwrite:
-        __DIFF_CACHE__ = "config/diff.pkl"
-        differentiable_ops = rewrite_op_dtype(
-            ALL_OP_TYPES, factory=None, diff=True, verbose=False, cache=__DIFF_CACHE__
-        )
-        gen_args["candidates_overwrite"] = differentiable_ops
-        gen_args["init_fp"] = True
+    # TODO(@ganler): re-enable generating differentiable models.
 
     strt_time = time.time()
 
@@ -1265,7 +1257,6 @@ if __name__ == "__main__":
         verbose=args.verbose,
         limnf=args.limnf,
         forward_prob=args.forward_prob,
-        **gen_args,
     )
     print(
         f"{len(gen.get_solutions())} symbols and {len(gen.solver.assertions())} constraints."

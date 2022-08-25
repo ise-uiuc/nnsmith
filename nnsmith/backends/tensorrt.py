@@ -1,11 +1,13 @@
 import warnings
-from nnsmith.backends import BackendFactory
 
-# See https://docs.nvidia.com/deeplearning/tensorrt/api/python_api/index.html
+from multipledispatch import dispatch
 import tensorrt as trt
 import onnx
 import pycuda.driver as cuda
 import numpy as np
+
+from nnsmith.backends import BackendFactory
+from nnsmith.materialize.onnx import ONNXModel
 
 
 class HostDeviceMem(object):
@@ -21,19 +23,26 @@ class HostDeviceMem(object):
 
 
 class TRTFactory(BackendFactory):
-    def __init__(self, device="gpu", optmax=True):
-        self.name = "trt"
-        if device != "gpu":
-            warnings.warn(f"TRT backend only supports GPU. {device} is ignored.")
-            device = "gpu"
-        if optmax is False:
-            warnings.warn("Well, there's no O0 for TensorRT so far...")
-        super().__init__(device, optmax)
+    def __init__(self, device="gpu", optmax=True, **kwargs):
+        super().__init__(device, optmax, **kwargs)
 
-    def mk_backend(self, model, **kwargs):
+        if device != "gpu":
+            raise ValueError("TensorRT backend only supports GPU!")
+
+        if optmax is False:
+            # TODO(@ganler): support non-optimized TensorRT by using performing
+            # inference over a model that marks all nodes as outputs.
+            warnings.warn("There is not O0 mode for TensorRT so far.")
+
+    @property
+    def system_name(self) -> str:
+        return "tensorrt"
+
+    @dispatch(ONNXModel)
+    def mk_backend(self, model: ONNXModel):
         import pycuda.autoinit
 
-        onnx_model = self.get_onnx_proto(model)
+        onnx_model = model.native_model
         engine = self.build_engine_onnx(onnx_model)
 
         def closure(inputs):
@@ -71,8 +80,7 @@ class TRTFactory(BackendFactory):
         return closure
 
     @staticmethod
-    def build_engine_onnx(model_file):
-        onnx_model = BackendFactory.get_onnx_proto(model_file)
+    def build_engine_onnx(onnx_model):
         builder = trt.Builder(trt.Logger(trt.Logger.WARNING))
         network = builder.create_network(
             1 << (int)(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
@@ -125,26 +133,3 @@ class TRTFactory(BackendFactory):
         stream.synchronize()
         # Return only the host outputs.
         return [out.host for out in outputs]
-
-
-if __name__ == "__main__":
-    import wget
-    import os
-    import numpy as np
-    from onnxsim import simplify
-
-    filename = "mobilenetv2.onnx"
-    if not os.path.exists("mobilenetv2.onnx"):
-        filename = wget.download(
-            "https://github.com/onnx/models/raw/main/vision/classification/mobilenet/model/mobilenetv2-7.onnx",
-            out="mobilenetv2.onnx",
-        )
-    factory = TRTFactory()
-    sim_model, check = simplify(
-        BackendFactory.get_onnx_proto(filename),
-        input_shapes={"input": [1, 3, 224, 224]},
-    )
-    backend = factory.mk_backend(sim_model)
-    output = backend({"input": np.zeros((1, 3, 224, 224))})["output"]
-    assert output.shape == (1, 1000), "{} != {}".format(output.shape, (1, 1000))
-    assert output[0, 233] - (-1.34753) < 1e-3

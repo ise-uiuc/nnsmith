@@ -1,9 +1,7 @@
 from typing import Dict
 import pickle
 
-
 import torch
-
 
 from nnsmith.graph_gen import Schedule
 from nnsmith.abstract.op import AbsTensor
@@ -92,3 +90,7 @@ class TorchModel(Model):
     @property
     def output_like(self) -> Dict[str, AbsTensor]:
         return self.torch_model.output_like
+
+    @property
+    def native_model(self) -> SymbolNet:
+        return self.torch_model
