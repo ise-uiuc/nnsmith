@@ -1,11 +1,10 @@
+from typing import Dict, Tuple, List, Set, cast
 from multiprocessing import Process
 import psutil
 from collections import defaultdict, namedtuple
-from dataclasses import dataclass
 import pickle
 import math
 import textwrap
-from typing import Dict, Tuple, List, Set, cast
 from inspect import signature
 import traceback
 import random
@@ -22,6 +21,7 @@ import z3
 from nnsmith.error import SanityCheck, ConstraintError
 from nnsmith.abstract.op import *
 from nnsmith.abstract.op import __MAX_RANK__ as __MAX_RANK__
+from nnsmith.materialize import Model, Schedule
 
 
 NNSMITH_LIMNF_V = os.getenv("NNSMITH_LIMNF_V", "0")
@@ -39,52 +39,6 @@ __TEXTWRAP_WIDTH__ = 30
 
 TensorCtx = namedtuple("TensorCtx", ["op_id", "type", "output_idx"])
 # Every tensor is represented by a (unique) integer key.
-Instruction: Tuple[AbsOpBase, List[int], List[int]] = namedtuple(
-    "Instruction", ["op", "inputs", "outputs"]
-)
-
-
-@dataclass
-class Schedule:
-    """Minimal information for constructing a graph."""
-
-    instructions: List[Instruction]
-    input_keys: List[int]
-    leaf_keys: List[int]
-    key2type: Dict[int, AbsTensor]
-
-    @staticmethod
-    def init(graph: nx.MultiDiGraph, key2type: Dict[int, AbsTensor]) -> "Schedule":
-        # The input graph should be a concretized graph.
-        instructions: List[Instruction] = []
-        input_keys = []
-        user_keys = set()
-
-        # freeze node with static attributes in label;
-        for node_id in nx.topological_sort(graph):
-            node = graph.nodes[node_id]
-            op = node["op"]
-
-            if isinstance(op, Input):
-                input_keys.append(node["otensor_idx"][0])
-
-            for used_idx in node["itensor_idx"]:
-                user_keys.add(used_idx)
-
-            # TODO(@ganler): Better name than "otensor_idx"
-            # TODO(@ganler): Add refcnt or last ref mechanism to save memory
-            instructions.append(
-                Instruction(
-                    op=op,
-                    inputs=node["itensor_idx"],
-                    outputs=node["otensor_idx"],
-                )
-            )
-
-        # simplify the statements above
-        leaf_keys = [key for key in key2type if key not in user_keys]
-
-        return Schedule(instructions, input_keys, leaf_keys, key2type)
 
 
 def concretize_graph(
@@ -1295,6 +1249,8 @@ if __name__ == "__main__":
         )
         os.system("rm graph.dot")
 
+    model: Model
+
     if args.framework == "torch":
         model = ONNXModel.from_schedule(schedule)
         model.refine_weights()  # either random generated or gradient-based.
@@ -1305,9 +1261,13 @@ if __name__ == "__main__":
 
     elif args.framework == "tensorflow":
         from icecream import ic
-        from nnsmith.materialize.tensorflow import TFModel, tf_to_tflite_runner
+        from nnsmith.materialize.tensorflow import (
+            TFModel,
+            tf_to_tflite_runner,
+            assert_io_eq_tf,
+        )
 
-        model = cast(TFModel, TFModel(schedule=schedule))
+        model = TFModel(schedule=schedule)
         inputs = model.random_inputs()
         out_eager = model.run_eagerly(inputs)
         ic(out_eager)
@@ -1316,15 +1276,15 @@ if __name__ == "__main__":
         ic(out_graph_exe)
 
         model_save_dir = cast(str, args.output)
-        model.save(model_save_dir, inputs)
+        model.dump_by_inputs(model_save_dir, inputs)
         out_tflite = tf_to_tflite_runner(
             os.path.join(model_save_dir, "tfnet"),
             os.path.join(model_save_dir, "model.tflite"),
         )(**inputs)
         ic(out_tflite)
 
-        TFModel.assert_eq(out_eager, out_graph_exe)
-        TFModel.assert_eq(out_eager, out_tflite)
+        assert_io_eq_tf(out_eager, out_graph_exe)
+        assert_io_eq_tf(out_eager, out_tflite)
 
     else:
         raise ValueError(f"Unknown deep learning framework {args.framework}")

@@ -1,14 +1,65 @@
+from typing import Dict, Tuple, List, Any
 import pickle
+from collections import namedtuple
+from dataclasses import dataclass
 import os
 import json
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Dict
 
+import networkx as nx
 import numpy as np
 
+from nnsmith.abstract.op import AbsOpBase, Input
 from nnsmith.abstract.tensor import AbsTensor
-from nnsmith.graph_gen import Schedule
+
+
+Instruction: Tuple[AbsOpBase, List[int], List[int]] = namedtuple(
+    "Instruction", ["op", "inputs", "outputs"]
+)
+
+
+@dataclass
+class Schedule:
+    """Minimal information for constructing a graph."""
+
+    instructions: List[Instruction]
+    input_keys: List[int]
+    leaf_keys: List[int]
+    key2type: Dict[int, AbsTensor]
+
+    @staticmethod
+    def init(graph: nx.MultiDiGraph, key2type: Dict[int, AbsTensor]) -> "Schedule":
+        # The input graph should be a concretized graph.
+        instructions: List[Instruction] = []
+        input_keys = []
+        user_keys = set()
+
+        # freeze node with static attributes in label;
+        for node_id in nx.topological_sort(graph):
+            node = graph.nodes[node_id]
+            op = node["op"]
+
+            if isinstance(op, Input):
+                input_keys.append(node["otensor_idx"][0])
+
+            for used_idx in node["itensor_idx"]:
+                user_keys.add(used_idx)
+
+            # TODO(@ganler): Better name than "otensor_idx"
+            # TODO(@ganler): Add refcnt or last ref mechanism to save memory
+            instructions.append(
+                Instruction(
+                    op=op,
+                    inputs=node["itensor_idx"],
+                    outputs=node["otensor_idx"],
+                )
+            )
+
+        # simplify the statements above
+        leaf_keys = [key for key in key2type if key not in user_keys]
+
+        return Schedule(instructions, input_keys, leaf_keys, key2type)
 
 
 class Oracle:
@@ -45,10 +96,12 @@ class Oracle:
 
 
 class Model(ABC):
+    @property
     @abstractmethod
     def input_like(self) -> Dict[str, AbsTensor]:
         pass
 
+    @property
     @abstractmethod
     def output_like(self) -> Dict[str, AbsTensor]:
         pass
@@ -60,16 +113,16 @@ class Model(ABC):
 
     @staticmethod
     @abstractmethod
-    def load(path) -> "Model":
+    def load(path: str) -> "Model":
         pass
 
     @abstractmethod
-    def dump(self, path):
+    def dump(self, path: str) -> None:
         pass
 
     @property
     @abstractmethod
-    def native_model(self):
+    def native_model(self) -> Any:
         pass
 
     @staticmethod
@@ -90,7 +143,7 @@ class Model(ABC):
         pass
 
     @staticmethod
-    def name_prefix():
+    def name_prefix() -> str:
         return "model"
 
     @property

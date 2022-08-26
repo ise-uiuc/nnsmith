@@ -21,7 +21,8 @@ class Instr:
 class TFNet(tf.Module):
     """
     Concrete TensorFlow Network
-    It is only used to do forward computation and ...
+    It only has minimal methods to be a TF network.
+    It only has minimal information "schedule" to do computation.
     """
 
     def __init__(
@@ -52,20 +53,6 @@ class TFNet(tf.Module):
                     self.mlist.append(fwd_fn)  # Add tf.Module to track its parameters
                 self.instructions.append(Instr(fwd_fn, inp_keys, out_keys))
         # end for
-
-    @property
-    def input_specs(self) -> List[tf.TensorSpec]:
-        ret: List[tf.TensorSpec] = []
-        for i_inp, key in enumerate(self.schedule.input_keys):
-            abs_tensor = self.schedule.key2type[key]
-            ret.append(
-                tf.TensorSpec(
-                    shape=abs_tensor.shape,
-                    dtype=abs_tensor.dtype.tensorflow(),
-                    name=f"i{i_inp}",
-                )
-            )
-        return ret
 
     @tf.function
     def __call__(self, *args, **kwargs) -> Dict[str, tf.Tensor]:
