@@ -18,6 +18,9 @@ class Instr:
     out_keys: List[int]
 
 
+TFNetOutDict = Dict[str, tf.Tensor]
+
+
 class TFNet(tf.Module):
     """
     Concrete TensorFlow Network
@@ -55,7 +58,7 @@ class TFNet(tf.Module):
         # end for
 
     @tf.function
-    def __call__(self, *args, **kwargs) -> Dict[str, tf.Tensor]:
+    def __call__(self, *args, **kwargs) -> TFNetOutDict:
         if self.verbose:
             mode = "Running Eagerly" if tf.executing_eagerly() else "Tracing"
             print(f"{mode} with JIT config: {tf.config.optimizer.get_jit()}")

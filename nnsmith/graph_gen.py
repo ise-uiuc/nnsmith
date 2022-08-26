@@ -1263,24 +1263,29 @@ if __name__ == "__main__":
         from icecream import ic  # TODO Colin remove this
         from nnsmith.materialize.tensorflow import (
             TFModel,
-            tf_to_tflite_runner,
             assert_dict_eq_tf,
+            np_dict_from_tf,
+            tf_dict_from_np,
         )
+        from nnsmith.backends.tflite import TFLiteFactory
 
         model = TFModel(schedule=schedule)
         inputs = model.random_inputs()
         out_eager = model.run_eagerly(inputs)
         ic(out_eager)
 
-        out_graph_exe = model.concrete_net(inputs)(**inputs)
+        concrete_net = model.concrete_net()
+        out_graph_exe = concrete_net(**inputs)
         ic(out_graph_exe)
 
         model_save_dir = cast(str, args.output)
         model.dump_with_oracle(model_save_dir, inputs)
-        out_tflite = tf_to_tflite_runner(
-            os.path.join(model_save_dir, "tfnet"),
-            os.path.join(model_save_dir, "model.tflite"),
-        )(**inputs)
+
+        np_inputs = np_dict_from_tf(inputs)
+        tflite_factory = TFLiteFactory(None, None)
+        tflite_runner = tflite_factory.make_backend(model)
+        np_outputs = tflite_runner(np_inputs)
+        out_tflite = tf_dict_from_np(np_outputs)
         ic(out_tflite)
 
         assert_dict_eq_tf(out_eager, out_graph_exe)

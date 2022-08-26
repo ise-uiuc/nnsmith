@@ -3,11 +3,13 @@ from typing import Any, Callable, Dict, List, Tuple
 from multipledispatch import dispatch  # type: ignore
 import os
 import pickle
+import numpy as np
 
 import tensorflow as tf  # type: ignore
 
 
 def fix_tensorflow_issues():
+    # https://github.com/tensorflow/tensorflow/issues/57359
     tf.config.experimental.enable_tensor_float_32_execution(False)
     for gpu in tf.config.experimental.list_physical_devices("GPU"):
         tf.config.experimental.set_memory_growth(gpu, True)
@@ -18,14 +20,10 @@ fix_tensorflow_issues()
 from nnsmith.graph_gen import Schedule
 from nnsmith.abstract.op import AbsTensor
 from nnsmith.materialize import Model, Oracle
-from nnsmith.materialize.tensorflow.tfnet import TFNet
+from nnsmith.materialize.tensorflow.tfnet import TFNet, TFNetOutDict
 
-
-@dispatch(list)
-def randn_from_specs(specs: List[tf.TensorSpec]) -> List[tf.Tensor]:
-    return [
-        tf.cast(tf.random.normal(shape=spec.shape), dtype=spec.dtype) for spec in specs
-    ]
+TFNetInputDict = Dict[str, tf.Tensor]
+TFNetCallable = Callable[..., TFNetOutDict]
 
 
 @dispatch(dict)
@@ -36,20 +34,12 @@ def randn_from_specs(specs: Dict[str, tf.TensorSpec]) -> Dict[str, tf.Tensor]:
     }
 
 
-def tf_to_tflite_runner(
-    saved_dir: str, output_path: str = None
-) -> Callable[..., Dict[str, tf.Tensor]]:
-    converter = tf.lite.TFLiteConverter.from_saved_model(saved_dir)
-    converter.target_spec.supported_ops = [
-        tf.lite.OpsSet.TFLITE_BUILTINS,  # enable TensorFlow Lite ops.
-        tf.lite.OpsSet.SELECT_TF_OPS,  # enable TensorFlow ops.
-    ]
-    model_content = converter.convert()
-    if output_path is not None:
-        with open(output_path, "wb") as f:
-            f.write(model_content)
-    interpreter = tf.lite.Interpreter(model_content=model_content)
-    return interpreter.get_signature_runner()
+def np_dict_from_tf(x: Dict[str, tf.Tensor]) -> Dict[str, np.ndarray]:
+    return {key: value.numpy() for key, value in x.items()}
+
+
+def tf_dict_from_np(x: Dict[str, np.ndarray]) -> Dict[str, tf.Tensor]:
+    return {key: tf.convert_to_tensor(value) for key, value in x.items()}
 
 
 def assert_dict_eq_tf(x: Dict[str, tf.Tensor], y: Dict[str, tf.Tensor]) -> None:
@@ -73,6 +63,7 @@ class TFModel(Model):
         verbose: bool = False,
     ) -> None:
         """Must provide a schedule to avoid NoneType errors"""
+        super().__init__()
         self.net: TFNet = TFNet(
             schedule=schedule,
             verbose=verbose,
@@ -126,8 +117,8 @@ class TFModel(Model):
             input_dict = inputs
         output_dict = self.run_eagerly(input_dict)
 
-        input_dict = {k: v.numpy() for k, v in input_dict.items()}
-        output_dict = {k: v.numpy() for k, v in output_dict.items()}
+        input_dict = np_dict_from_tf(input_dict)
+        output_dict = np_dict_from_tf(output_dict)
 
         return Oracle(input_dict, output_dict)
 
@@ -157,7 +148,7 @@ class TFModel(Model):
         self,
         path: str = "saved_tfnet",
         inputs: Dict[str, tf.Tensor | tf.TensorSpec] = None,
-    ) -> Callable[..., Dict[str, tf.Tensor]]:
+    ) -> TFNetCallable:
         concrete_net = self.concrete_net(inputs)
         tf.saved_model.save(self.net, path, signatures=concrete_net)
         return concrete_net
@@ -165,7 +156,7 @@ class TFModel(Model):
     @staticmethod
     def load_tfnet(
         saved_dir: str = "saved_tfnet",
-    ) -> Callable[..., Dict[str, tf.Tensor]]:
+    ) -> TFNetCallable:
         return tf.saved_model.load(saved_dir)
 
     @staticmethod
@@ -178,7 +169,7 @@ class TFModel(Model):
     @staticmethod
     def load_with_oracle(
         path: str = "saved_tfmodel",
-    ) -> Tuple["TFModel", Dict[str, tf.Tensor], Dict[str, tf.Tensor]]:
+    ) -> Tuple["TFModel", TFNetInputDict, TFNetOutDict]:
         model = TFModel.load(path)
         oracle = Oracle.load(os.path.join(path, Oracle.name()))
         input_dict = {name: tf.convert_to_tensor(v) for name, v in oracle.input.items()}
@@ -199,7 +190,7 @@ class TFModel(Model):
     def tfnet_dir_name():
         return "tfnet"
 
-    def random_inputs(self) -> Dict[str, tf.Tensor]:
+    def random_inputs(self) -> TFNetInputDict:
         return {
             spec.name: tf.cast(
                 tf.random.normal(
@@ -212,15 +203,15 @@ class TFModel(Model):
         }
 
     def concrete_net(
-        self, inputs: Dict[str, tf.Tensor | tf.TensorSpec] = None
-    ) -> Callable[..., Dict[str, tf.Tensor]]:
+        self, inputs: Dict[str, tf.Tensor | tf.TensorSpec] | None = None
+    ) -> TFNetCallable:
         if inputs is None:
-            inputs = self.random_inputs()
+            inputs = self.input_specs
         return self.net.__call__.get_concrete_function(**inputs)
 
     def refine_weights(self) -> None:
         raise NotImplementedError()
 
-    def run_eagerly(self, inputs: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
+    def run_eagerly(self, inputs: TFNetInputDict) -> TFNetOutDict:
         tf.config.run_functions_eagerly(True)
         return self.net(**inputs)

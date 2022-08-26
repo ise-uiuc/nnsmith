@@ -63,7 +63,12 @@ class Schedule:
 
 
 class Oracle:
-    def __init__(self, input, output, provider: str = "unknown") -> None:
+    def __init__(
+        self,
+        input: Dict[str, np.ndarray],
+        output: Dict[str, np.ndarray],
+        provider: str = "unknown",
+    ) -> None:
         self.input: Dict[str, np.ndarray] = input
         self.output: Dict[str, np.ndarray] = output
         self._provider = provider
