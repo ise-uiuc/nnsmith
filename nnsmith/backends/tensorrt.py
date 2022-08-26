@@ -39,7 +39,7 @@ class TRTFactory(BackendFactory):
         return "tensorrt"
 
     @dispatch(ONNXModel)
-    def mk_backend(self, model: ONNXModel):
+    def make_backend(self, model: ONNXModel):
         import pycuda.autoinit
 
         onnx_model = model.native_model
@@ -94,7 +94,10 @@ class TRTFactory(BackendFactory):
             for error in range(parser.num_errors):
                 error_msg += str(parser.get_error(error))
             raise RuntimeError(error_msg)
-        return builder.build_engine(network, config)
+        engine_bytes = builder.build_serialized_network(network, config)
+        return trt.Runtime(trt.Logger(trt.Logger.WARNING)).deserialize_cuda_engine(
+            engine_bytes
+        )
 
     @staticmethod
     def allocate_buffers(engine):

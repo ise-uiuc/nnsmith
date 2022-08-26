@@ -132,7 +132,7 @@ def _inference_test(
                     onnx_model = onnx.load(onnx_model_path)
                     input_spec, _ = BackendFactory.analyze_onnx_io(onnx_model)
                     eval_inputs = gen_one_input(input_spec, 1, 1)
-                    factory.mk_backend(onnx_model)(eval_inputs)
+                    factory.make_backend(onnx_model)(eval_inputs)
         except Exception as e:
             if verbose:
                 fail_print(f"=====> [Failure] at {itypes}")

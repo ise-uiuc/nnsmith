@@ -30,7 +30,7 @@ if __name__ == "__main__":
             onnx_path = os.path.join(path, "model.onnx")
             onnx_model = BackendFactory.get_onnx_proto(onnx_path)
             try:
-                fac.mk_backend(onnx_model)
+                fac.make_backend(onnx_model)
             except Exception as e:
                 crash_msg.add(str(e))
         except Exception as e:

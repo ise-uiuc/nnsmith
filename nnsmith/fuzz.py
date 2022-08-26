@@ -27,14 +27,14 @@ from rich.console import RenderableType
 from rich.columns import Columns
 
 from nnsmith.abstract.op import ALL_OP_TYPES, config_skip_op
-from nnsmith.error import NNSmithInternalError
+from nnsmith.error import InternalError
 from nnsmith.difftest import assert_allclose
 from nnsmith.graph_gen import random_model_gen, SymbolNet
 from nnsmith.dtype_test import rewrite_op_dtype
 from nnsmith.materialize.torch.input_gen import PracticalHybridSearch
 from nnsmith.materialize.onnx.export import torch2onnx
 from nnsmith.backends import BackendFactory, mk_factory
-from nnsmith.interal_naming import onnx2external_data_dir
+from nnsmith.macro import onnx2external_data_dir
 
 _METADATA_NAME_ = "meta.txt"
 
@@ -111,7 +111,7 @@ class Reporter:  # From Tzer.
                     "Report folder already exists. Press [Y/N] to continue or exit..."
                 )
             if decision.lower() == "n":
-                raise NNSmithInternalError(
+                raise InternalError(
                     f"{self.report_folder} already exist... We want an empty folder to report..."
                 )
             else:
@@ -478,7 +478,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         with open(oracle_path, "rb") as f:
             inputs, outputs = pickle.load(f)
 
-        backend = self.factory.mk_backend(onnx_model)
+        backend = self.factory.make_backend(onnx_model)
         results = backend(inputs)
         assert_allclose(results, outputs, self.factory.name, "torch", safe_mode=True)
 

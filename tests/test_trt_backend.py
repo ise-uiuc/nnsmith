@@ -35,7 +35,7 @@ def test_synthesized_onnx_model(tmp_path):
 
     assert (
         TRTFactory(
-            device="gpu", optmax=False, catch_process_crash=False
+            device="gpu", optmax=True, catch_process_crash=False
         ).verify_testcase(testcase)
         is None
     )

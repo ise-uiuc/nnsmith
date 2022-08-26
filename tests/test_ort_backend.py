@@ -6,6 +6,9 @@ from nnsmith.graph_gen import random_model_gen, concretize_graph, make_schedule
 from nnsmith.backends.onnxruntime import ORTFactory
 
 
+TestCase.__test__ = False  # supress PyTest warning
+
+
 def test_synthesized_onnx_model(tmp_path):
     d = tmp_path / "test_ort_onnx"
     d.mkdir()

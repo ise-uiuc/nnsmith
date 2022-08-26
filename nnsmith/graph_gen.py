@@ -19,7 +19,6 @@ import networkx as nx
 import numpy as np
 import z3
 
-from nnsmith.dtype_test import rewrite_op_dtype
 from nnsmith.error import SanityCheck, ConstraintError
 from nnsmith.abstract.op import *
 from nnsmith.abstract.op import __MAX_RANK__ as __MAX_RANK__
@@ -67,18 +66,18 @@ class Schedule:
             op = node["op"]
 
             if isinstance(op, Input):
-                input_keys.append(node["shape_indices"][0])
+                input_keys.append(node["otensor_idx"][0])
 
-            for used_idx in node["ishape_indices"]:
+            for used_idx in node["itensor_idx"]:
                 user_keys.add(used_idx)
 
-            # TODO(@ganler): Better name than "shape_indices"
+            # TODO(@ganler): Better name than "otensor_idx"
             # TODO(@ganler): Add refcnt or last ref mechanism to save memory
             instructions.append(
                 Instruction(
                     op=op,
-                    inputs=node["ishape_indices"],
-                    outputs=node["shape_indices"],
+                    inputs=node["itensor_idx"],
+                    outputs=node["otensor_idx"],
                 )
             )
 
@@ -97,15 +96,17 @@ def concretize_graph(
     for node_id in nx.topological_sort(graph):
         node = graph.nodes[node_id]
         op = concretize_op(node["op"], model)
+
+        # concretize shapes;
+        itensors = [concrete_shapes[df_idx] for df_idx in node["itensor_idx"]]
+        otensors = op.checked_type_transfer(itensors)
+        op.input_like = itensors
+
         node["op"] = op
         node["label"] = textwrap.fill(f"#{node_id} ~ {op}", width=__TEXTWRAP_WIDTH__)
 
-        # concretize shapes;
-        inp_shapes = [concrete_shapes[df_idx] for df_idx in node["ishape_indices"]]
-        out_shapes = op.checked_type_transfer(inp_shapes)
-
-        for i, df_idx in enumerate(node["shape_indices"]):
-            concrete_shapes[df_idx] = out_shapes[i]
+        for i, df_idx in enumerate(node["otensor_idx"]):
+            concrete_shapes[df_idx] = otensors[i]
 
     # freeze edge with static attributes in label;
     for src, dst, idx in graph.edges(keys=True):
@@ -129,7 +130,6 @@ class SimpleGenerator:
         seed=None,
         verbose=False,
         use_bitvec=False,
-        viz_verbose=False,
         limnf=True,
         candidates_overwrite=None,
         forward_prob=None,
@@ -140,7 +140,6 @@ class SimpleGenerator:
             random.seed(seed)
 
         self.verbose = verbose
-        self.viz_verbose = viz_verbose
 
         if candidates_overwrite is None:
             self.op_candidates = [
@@ -250,7 +249,7 @@ class SimpleGenerator:
         raise NotImplementedError
 
     @abstractmethod
-    def try_forward_insert_at(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
+    def try_forward_insert_at(self, node: AbsOpBase, itensor_idx: List[int]) -> bool:
         raise NotImplementedError
 
     @abstractmethod
@@ -409,20 +408,20 @@ class SimpleGenerator:
     def forward_insert_node(
         self,
         node: AbsOpBase,
-        ishape_indices: List[int],
+        itensor_idx: List[int],
         oshapes: List[AbsTensor] = None,
-        force_shape_indices=None,
+        force_otensor_idx=None,
     ) -> int:
         if oshapes is None:
-            input_shapes = [self.tensor_dataflow[idx].type for idx in ishape_indices]
+            input_shapes = [self.tensor_dataflow[idx].type for idx in itensor_idx]
             oshapes = node.checked_type_transfer(input_shapes)
 
         succ_nid = self.get_new_node_id()
         if isinstance(node, Placeholder):
             self.placeholders.append(succ_nid)
 
-        shape_indices = []
-        if force_shape_indices is None:
+        otensor_idx = []
+        if force_otensor_idx is None:
             for i, abs_tensor in enumerate(oshapes):
                 SanityCheck.true(
                     len(abs_tensor.shape) in node.out_ranks[i],
@@ -432,7 +431,7 @@ class SimpleGenerator:
                 )
                 node.out_ranks[i] = (len(abs_tensor.shape),)
                 shape_idx = len(self.tensor_dataflow)
-                shape_indices.append(shape_idx)
+                otensor_idx.append(shape_idx)
                 self.tensor_dataflow.append(
                     TensorCtx(op_id=succ_nid, type=abs_tensor, output_idx=i)
                 )
@@ -441,25 +440,25 @@ class SimpleGenerator:
                 )
         else:
             # When taking the position of placeholders, we do not need to add new alive shapes.
-            shape_indices = force_shape_indices
+            otensor_idx = force_otensor_idx
 
         # NOTE: because of backward insertion, we may not be able to limit the symbol size as there will be some
         # trivially equivalent symbols which harms the readability. (e.g., relations like `a = b` is not known).
-        # NOTE: `shape_indices` and `ishape_indices` are indices of alive_shapes
+        # NOTE: `otensor_idx` and `itensor_idx` are indices of alive_shapes
         self.abstract_graph.add_node(
             succ_nid,
             op=node,
-            nin=len(ishape_indices),
+            nin=len(itensor_idx),
             nout=len(oshapes),
-            shape_indices=shape_indices,
-            ishape_indices=ishape_indices,
+            otensor_idx=otensor_idx,
+            itensor_idx=itensor_idx,
             label=textwrap.fill(
-                f"#{succ_nid} ~ {node}" if not self.viz_verbose else "",
+                f"#{succ_nid} ~ {node}",
                 width=__TEXTWRAP_WIDTH__,
             ),
         )
 
-        for in_operand_idx, idx in enumerate(ishape_indices):
+        for in_operand_idx, idx in enumerate(itensor_idx):
             pred_nid, svar, out_operand_idx = self.tensor_dataflow[idx]
             self.abstract_graph.add_edge(
                 pred_nid,
@@ -467,9 +466,7 @@ class SimpleGenerator:
                 key=str(uuid.uuid1()),
                 shape_idx=idx,
                 operand_idx=(out_operand_idx, in_operand_idx),
-                label=f"{out_operand_idx}→{in_operand_idx} {svar.dtype.short()}!{svar.shape}"
-                if not self.viz_verbose
-                else "",
+                label=f"{out_operand_idx}→{in_operand_idx} {svar.dtype.short()}!{svar.shape}",
             )
 
         return succ_nid
@@ -490,7 +487,7 @@ class SimpleGenerator:
         # self.placeholder idx -> nx graph node idx
         occ_holder_idx_nx = [self.placeholders[i] for i in occupied_idx]
 
-        ishape_indices = []
+        itensor_idx = []
         for input_node in input_nodes:
             # Insert Placeholder in `input_nodes`
             if isinstance(input_node, Placeholder):
@@ -507,29 +504,29 @@ class SimpleGenerator:
                     op=input_node,
                     nin=0,
                     nout=1,
-                    ishape_indices=[],
-                    shape_indices=[shape_idx],
+                    itensor_idx=[],
+                    otensor_idx=[shape_idx],
                     label=textwrap.fill(
-                        f"#{nid} ~ {input_node}" if not self.viz_verbose else "",
+                        f"#{nid} ~ {input_node}",
                         width=__TEXTWRAP_WIDTH__,
                     ),
                 )
-                ishape_indices.append(shape_idx)
+                itensor_idx.append(shape_idx)
                 self.placeholders.append(nid)
             else:
-                ishape_indices.append(input_node)
+                itensor_idx.append(input_node)
 
         # Insert node
         to_occ_alive_shape_idx = [
-            self.id2nxnode(nx_nid)["shape_indices"][0] for nx_nid in occ_holder_idx_nx
+            self.id2nxnode(nx_nid)["otensor_idx"][0] for nx_nid in occ_holder_idx_nx
         ]
         op_nx_idx = self.forward_insert_node(
             node,
-            ishape_indices=ishape_indices,
+            itensor_idx=itensor_idx,
             oshapes=[
                 self.tensor_dataflow[as_idx][1] for as_idx in to_occ_alive_shape_idx
             ],
-            force_shape_indices=to_occ_alive_shape_idx,
+            force_otensor_idx=to_occ_alive_shape_idx,
         )
 
         # Insert edges and remove placeholders
@@ -556,9 +553,7 @@ class SimpleGenerator:
                     key=str(uuid.uuid1()),
                     shape_idx=edge_info["shape_idx"],  # reuse old alive shape
                     operand_idx=(out_operand_idx, in_operand_idx),
-                    label=f"{out_operand_idx}→{in_operand_idx} {svar.dtype.short()}!{svar.shape}"
-                    if not self.viz_verbose
-                    else "",
+                    label=f"{out_operand_idx}→{in_operand_idx} {svar.dtype.short()}!{svar.shape}",
                 )
                 self.tensor_dataflow[old_edge_idx] = TensorCtx(
                     op_nx_idx, svar, out_operand_idx
@@ -596,14 +591,14 @@ class SimpleGenerator:
         else:  # inputs have different dimension sizes.
             dim_spec_list = op.inp_ranks
 
-        ishape_indices = self.pick_tensor_idx(
+        itensor_idx = self.pick_tensor_idx(
             type(op),
             dim_spec_list,
             op.in_dtypes,
             candidate_shapes=[s[1] for s in self.tensor_dataflow],
         )
 
-        if self.try_forward_insert_at(op, ishape_indices):
+        if self.try_forward_insert_at(op, itensor_idx):
             return True
 
         return False
@@ -769,8 +764,8 @@ class PureSymbolGen(SimpleGenerator):
     def extra_constraints(self, node: AbsOpBase, input_shapes: List[AbsTensor]):
         return []
 
-    def try_forward_insert_at(self, node: AbsOpBase, ishape_indices: List[int]) -> bool:
-        input_shapes = [self.tensor_dataflow[idx][1] for idx in ishape_indices]
+    def try_forward_insert_at(self, node: AbsOpBase, itensor_idx: List[int]) -> bool:
+        input_shapes = [self.tensor_dataflow[idx][1] for idx in itensor_idx]
         constraints = node.checked_requires(input_shapes)
 
         if self.verbose:
@@ -818,7 +813,7 @@ class PureSymbolGen(SimpleGenerator):
             print("\tinputs:", input_shapes)
             print("\toutputs:", output_shapes)
 
-        self.forward_insert_node(node, ishape_indices, output_shapes)
+        self.forward_insert_node(node, itensor_idx, output_shapes)
         return True
 
     def try_occupy_placeholder(
@@ -1139,8 +1134,8 @@ class GuidedGen(PureSymbolGen):
         all_cons = []
         for node_id in shuffled_nids:
             op = graph.nodes[node_id]["op"]
-            ishape_indices = graph.nodes[node_id]["ishape_indices"]
-            itensors = [self.tensor_dataflow[i].type for i in ishape_indices]
+            itensor_idx = graph.nodes[node_id]["itensor_idx"]
+            itensors = [self.tensor_dataflow[i].type for i in itensor_idx]
             if isinstance(op, AbsOpBase):
                 cons = self.extra_constraints(op, itensors)
             else:
@@ -1246,14 +1241,7 @@ if __name__ == "__main__":
             Dense,
         ]
 
-    gen_args = {}
-    if args.diff_can_overwrite:
-        __DIFF_CACHE__ = "config/diff.pkl"
-        differentiable_ops = rewrite_op_dtype(
-            ALL_OP_TYPES, factory=None, diff=True, verbose=False, cache=__DIFF_CACHE__
-        )
-        gen_args["candidates_overwrite"] = differentiable_ops
-        gen_args["init_fp"] = True
+    # TODO(@ganler): re-enable generating differentiable models.
 
     strt_time = time.time()
 
@@ -1282,7 +1270,6 @@ if __name__ == "__main__":
         verbose=args.verbose,
         limnf=args.limnf,
         forward_prob=args.forward_prob,
-        **gen_args,
     )
     print(
         f"{len(gen.get_solutions())} symbols and {len(gen.solver.assertions())} constraints."

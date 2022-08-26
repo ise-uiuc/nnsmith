@@ -1,5 +1,7 @@
 from enum import Enum, auto, unique
 
+import numpy as np
+
 # TODO(@ganler): add float16 support.
 @unique
 class DType(Enum):
@@ -60,6 +62,20 @@ class DType(Enum):
             "complex128": DType.complex128,
             "bool": DType.bool,
         }[s]
+
+    def numpy(self):
+        return {
+            DType.float16: np.float16,
+            DType.float32: np.float32,
+            DType.float64: np.float64,
+            DType.int8: np.int8,
+            DType.int16: np.int16,
+            DType.int32: np.int32,
+            DType.int64: np.int64,
+            DType.complex64: np.complex64,
+            DType.complex128: np.complex128,
+            DType.bool: np.bool_,
+        }[self]
 
     # TODO(@ganler): put "torchization" in a separate file.
     def torch(self) -> "torch.dtype":

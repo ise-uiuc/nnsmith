@@ -9,11 +9,13 @@ import torch.onnx
 import onnx
 import onnx.checker
 import onnx.helper
-from nnsmith.abstract.dtype import DType
+from onnx.external_data_helper import load_external_data_for_model
 
-from nnsmith.graph_gen import Schedule
+from nnsmith.abstract.dtype import DType
 from nnsmith.abstract.op import AbsTensor
+from nnsmith.graph_gen import Schedule
 from nnsmith.materialize.torch import TorchModel, SymbolNet
+from nnsmith.macro import onnx2external_data_dir
 
 
 def create_deadcode_onnx(onnx_model, name_mask) -> onnx.ModelProto:
@@ -68,6 +70,7 @@ def torch2onnx(
                 tuple(dummy_inputs),
                 exportable,
                 input_names=input_names,
+                output_names=list(model.output_like.keys()),
                 verbose=verbose,
                 do_constant_folding=do_constant_folding,
                 opset_version=14,
@@ -123,6 +126,19 @@ def analyze_onnx_io(
         ), f"Fixed shape needed, but got {shape} for output {name}"
         output_types[name] = AbsTensor(shape=shape, dtype=dtype)
     return input_types, output_types
+
+
+def get_onnx_proto(model: Union[onnx.ModelProto, str]) -> onnx.ModelProto:
+    if isinstance(model, onnx.ModelProto):
+        return model
+    else:
+        external_data_dir = onnx2external_data_dir(model)
+        if os.path.exists(external_data_dir):
+            onnx_model = onnx.load(model, load_external_data=False)
+            load_external_data_for_model(onnx_model, external_data_dir)
+        else:
+            onnx_model = onnx.load(model)
+        return onnx_model
 
 
 class ONNXModel(TorchModel):
@@ -225,6 +241,10 @@ class ONNXModel(TorchModel):
             ret.full_output_like = ret.torch_model.output_like
 
         return ret
+
+    @property
+    def native_model(self):
+        return self.onnx_model
 
     def get_onnx_from_torch(self) -> onnx.ModelProto:
         f = BytesIO()

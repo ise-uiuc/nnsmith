@@ -37,7 +37,7 @@ class ORTFactory(BackendFactory):
         return "onnxruntime"
 
     @dispatch(ONNXModel)
-    def mk_backend(
+    def make_backend(
         self, model: ONNXModel
     ) -> Callable[[Dict[str, np.ndarray]], Dict[str, np.ndarray]]:
         sess_options = ort.SessionOptions()

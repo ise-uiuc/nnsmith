@@ -71,7 +71,7 @@ class SymbolNet(nn.Module):
                     self.mlist.append(torch_fn)
                 self.instructions.append((torch_fn, inputs, outputs, None))
 
-                if loss_fn.resolve((type(op),)):
+                if loss_fn.dispatch(type(op)):
                     self.n_vulnerable_op += 1
 
                 self.instructions.append((torch_fn, inputs, outputs, op))  # TODO Colin
@@ -111,7 +111,7 @@ class SymbolNet(nn.Module):
     def enable_proxy_grad(self):
         for i, inst in enumerate(self.instructions):
             _, inputs, outputs, op = inst
-            if proxy_fn.resolve((type(op),)):  # has proxy
+            if proxy_fn.dispatch(type(op)):  # has proxy
                 self.instructions[i] = (proxy_fn(op), inputs, outputs, op)
 
         self.proxy_enabled_ = True
@@ -119,7 +119,7 @@ class SymbolNet(nn.Module):
     def disable_proxy_grad(self):
         for i, inst in enumerate(self.instructions):
             _, inputs, outputs, op = inst
-            if proxy_fn.resolve((type(op),)):  # has proxy
+            if proxy_fn.dispatch(type(op)):  # has proxy
                 self.instructions[i] = (forward_fn(op), inputs, outputs, op)
 
         self.proxy_enabled_ = False
@@ -349,7 +349,7 @@ class SymbolNet(nn.Module):
             if self.check_intermediate_numeric or (
                 self.use_gradient and not self.stop_updating_loss
             ):
-                if loss_fn.resolve((type(op),)) is not None:
+                if loss_fn.dispatch(type(op)) is not None:
                     loss = loss_fn(op)(*input_tensors)
                     if not isinstance(loss, tuple):
                         loss = ("", loss)  # loss sufficx, loss

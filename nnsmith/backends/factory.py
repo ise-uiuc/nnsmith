@@ -1,135 +1,126 @@
 from abc import ABC, abstractmethod
-from typing import List, Union, Dict, Tuple
-from collections import namedtuple
-import os
+from typing import Callable, Dict, Optional
+import traceback
 
-import onnx
-from onnx.external_data_helper import load_external_data_for_model
 import numpy as np
 
-from nnsmith.interal_naming import onnx2external_data_dir
-
-ShapeType = namedtuple("ShapeType", ["shape", "dtype"])
+from nnsmith.abstract.tensor import AbsTensor
+from nnsmith.materialize import BugReport, Oracle, Stage, Symptom, TestCase, Model
+from nnsmith.difftest import assert_allclose
 
 
 class BackendFactory(ABC):
-    def __init__(self, device="cpu", optmax=True):
+    def __init__(self, device="cpu", optmax=True, catch_process_crash=True):
         super().__init__()
         self.device = device
         self.optmax = optmax
-        assert self.name, 'Need to add`self.name = "my_backend"` during extension'
+        # If true, will run the compilation and execution in a subprocess.
+        # and catch segfaults returned as BugReport.
+        self.catch_process_crash = catch_process_crash
+
+    @property
+    @abstractmethod
+    def system_name(self) -> str:
+        pass
+
+    def __str__(self) -> str:
+        return (
+            f"{self.system_name} (opt={'max' if self.optmax else 'min'}-{self.device})"
+        )
+
+    @staticmethod
+    def make_random_input(
+        input_like: Dict[str, AbsTensor], low=1, high=2
+    ) -> Dict[str, np.ndarray]:
+        return {
+            name: np.random.uniform(low=low, high=high, size=aten.shape).astype(
+                aten.dtype.numpy()
+            )
+            for name, aten in input_like.items()
+        }
 
     @abstractmethod
-    def mk_backend(
-        self, model: Union[onnx.ModelProto, str], **kwargs
-    ) -> Dict[str, np.ndarray]:
+    def make_backend(
+        self, model: Model
+    ) -> Callable[[Dict[str, np.ndarray]], Dict[str, np.ndarray]]:
         raise NotImplementedError
 
-    @staticmethod
-    def get_onnx_proto(model: Union[onnx.ModelProto, str]) -> onnx.ModelProto:
-        if isinstance(model, onnx.ModelProto):
-            return model
-        else:
-            external_data_dir = onnx2external_data_dir(model)
-            if os.path.exists(external_data_dir):
-                onnx_model = onnx.load(model, load_external_data=False)
-                load_external_data_for_model(onnx_model, external_data_dir)
-            else:
-                onnx_model = onnx.load(model)
-            return onnx_model
+    def verify_testcase(self, testcase: TestCase) -> Optional[BugReport]:
+        # TODO(@ganler): impl fault catching in subprocess
+        assert not self.catch_process_crash, "not implemented"
 
-    @staticmethod
-    def dtype_str(id: int) -> str:
-        """See https://deeplearning4j.org/api/latest/onnx/Onnx.TensorProto.DataType.html"""
-        if id == 1:
-            return "float32"
-        elif id == 2:
-            return "uint8"
-        elif id == 3:
-            return "int8"
-        elif id == 4:
-            return "uint16"
-        elif id == 5:
-            return "int16"
-        elif id == 6:
-            return "int32"
-        elif id == 7:
-            return "int64"
-        elif id == 8:
-            return "string"
-        elif id == 9:
-            return "bool"
-        elif id == 10:
-            return "float16"
-        elif id == 11:
-            return "double"
-        elif id == 12:
-            return "uint32"
-        elif id == 13:
-            return "uint64"
-        elif id == 14:
-            return "complex64"
-        elif id == 15:
-            return "complex128"
-        elif id == 16:
-            return "bfloat16"
-        else:
-            raise ValueError(
-                f"Unknown dtype id: {id}. See https://deeplearning4j.org/api/latest/onnx/Onnx.TensorProto.DataType.html"
+        try:  # compilation
+            executable = self.make_backend(testcase.model)
+        except Exception:
+            return BugReport(
+                testcase=testcase,
+                system=self.system_name,
+                symptom=Symptom.EXCEPTION,
+                stage=Stage.COMPILATION,
+                log=traceback.format_exc(),
             )
 
-    @staticmethod
-    def analyze_onnx_io(
-        model: onnx.ModelProto,
-    ) -> Tuple[Dict[str, ShapeType], List[str]]:
-        """Analyze the input and output shapes of an ONNX model.
+        if not testcase.oracle:
+            # generate inputs automatically.
+            input = self.make_random_input(testcase.model.input_like())
+        else:
+            input = testcase.oracle.input
 
-        Args:
-            model (onnx.ModelProto): The model to be analyzed.
+        try:  # execution
+            output = executable(input)
+        except Exception:
+            return BugReport(
+                testcase=testcase,
+                system=self.system_name,
+                symptom=Symptom.EXCEPTION,
+                stage=Stage.EXECUTION,
+                log=traceback.format_exc(),
+            )
 
-        Returns:
-            Tuple[Dict[str, ShapeType], List[str]]: Input specifications (name -> {shape, dtype}) and output names.
-        """
-        inp_analysis_ret = {}
-        out_analysis_names = [node.name for node in model.graph.output]
+        if not testcase.oracle.output:
+            try:  # verification
+                assert_allclose(
+                    output,
+                    testcase.oracle.output,
+                    self.__str__(),
+                    testcase.oracle.provider,
+                )
+            except AssertionError:
+                return BugReport(
+                    testcase=testcase,
+                    system=self.system_name,
+                    symptom=Symptom.INCONSISTENCY,
+                    stage=Stage.VERIFICATION,
+                    log=traceback.format_exc(),
+                )
 
-        # Note that there are 2 kinds of "inputs":
-        # 1. The inputs provided by the user (e.g., images);
-        # 2. The inputs provided by the model (e.g., the weights).
-        # We only consider the first kind of inputs.
-        weight_names = [node.name for node in model.graph.initializer]
+        return None
 
-        # Analyze the input shapes
-        # Expected information:
-        #   For each input:
-        #     1. name
-        #     2. shape (Note: `-1` stands for unknown dimension)
-        #     3. data type
-        # iterate through inputs of the graph
-        for input_node in model.graph.input:
-            if input_node.name in weight_names:
-                continue
-            # get type of input tensor
-            tensor_type = input_node.type.tensor_type
+    def make_testcase(
+        self, model: Model, input: Dict[str, np.ndarray] = None
+    ) -> TestCase:
+        try:  # compilation
+            executable = self.make_backend(model)
+        except Exception:
+            raise BugReport(
+                TestCase(model=model, oracle=None),  # None means no oracle
+                Symptom.EXCEPTION,
+                Stage.COMPILATION,
+                traceback.format_exc(),
+            )
 
-            shape = []
-            dtype = BackendFactory.dtype_str(tensor_type.elem_type)
+        if not input:
+            # generate inputs automatically.
+            input = self.make_random_input(model.input_like())
 
-            # check if it has a shape:
-            if tensor_type.HasField("shape"):
-                # iterate through dimensions of the shape:
-                for d in tensor_type.shape.dim:
-                    # the dimension may have a definite (integer) value or a symbolic identifier or neither:
-                    if d.HasField("dim_value"):
-                        shape.append(d.dim_value)  # known dimension
-                    elif d.HasField("dim_param"):
-                        # unknown dimension with symbolic name
-                        shape.append(-1)
-                    else:
-                        shape.append(-1)  # unknown dimension with no name
-            else:
-                raise ValueError("Input node {} has no shape".format(input_node.name))
+        try:  # execution
+            output = executable(input)
+        except Exception:
+            return BugReport(
+                TestCase(model, Oracle(input=input, output=None)),
+                Symptom.EXCEPTION,
+                Stage.EXECUTION,
+                traceback.format_exc(),
+            )
 
-            inp_analysis_ret[input_node.name] = ShapeType(shape, dtype)
-
-        return inp_analysis_ret, out_analysis_names
+        return TestCase(model, Oracle(input=input, output=output))
