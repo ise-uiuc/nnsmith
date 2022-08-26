@@ -183,7 +183,10 @@ def forward_fn(op: Ceil):
 
 @dispatch(Clip)
 def forward_fn(op: Clip):
-    return lambda x: torch.clip(x, op.min, op.max)
+    if op.input_like[0].dtype in DTYPE_FLOATS:
+        return lambda x: torch.clip(x, -1.5, 1.5)
+    else:
+        return lambda x: torch.clip(x, -1, 1)
 
 
 @dispatch(Round)
@@ -268,7 +271,7 @@ def forward_fn(op: Pad):
 
 @dispatch(Expand)
 def forward_fn(op: Expand):
-    return lambda x: x.expand(*op._type_transfer([AbsTensor.from_torch(x)])[0].shape)
+    return lambda x: x.expand(*op.type_transfer([AbsTensor.from_torch(x)])[0].shape)
 
 
 @dispatch(BatchNorm2d)

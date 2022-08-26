@@ -274,18 +274,18 @@ class AbsOpBase(ABC):
 
     @abstractmethod  # Overload me!
     # Exception means rejection.
-    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         raise NotImplementedError
 
     @check_shape_fn  # Public API.
     def checked_type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
-        self.last_outs = self._type_transfer(input_shapes)
+        self.last_outs = self.type_transfer(input_shapes)
         return self.last_outs
 
     # Overload me!
     # Extra constraints for the input tensors.
     # Exception means rejection.
-    def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
+    def requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         return []
 
     def deduct_inp_ranks_and_dtype(
@@ -295,7 +295,7 @@ class AbsOpBase(ABC):
 
     @check_require_fn  # Public API.
     def checked_requires(self, input_shapes):
-        return self._requires(input_shapes)
+        return self.requires(input_shapes)
 
     def n_floats(self, input_shapes: List[AbsTensor]) -> z3.ExprRef:
         return reduce(nnsmith_add, [i.nelement() for i in self.last_outs])
@@ -383,7 +383,7 @@ class ElementWiseUnaryOp(UnaryOpBase):
         self.inp_ranks = [int_all()]
         self.out_ranks = [int_all()]
 
-    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         SanityCheck.eq(len(input_shapes), 1)
         return [input_shapes[0]]
 
@@ -412,7 +412,7 @@ class BcastBinaryOp(BinaryOpBase):
         self.same_inp_dims = False
         self.bcastable = True
 
-    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         tgt_shape = broadcast_shapes(*(ish.shape for ish in input_shapes))
         dtype = (
             input_shapes[0].dtype
@@ -421,7 +421,7 @@ class BcastBinaryOp(BinaryOpBase):
         )
         return [AbsTensor(tgt_shape, dtype)]
 
-    def _requires(self, input_shapes):
+    def requires(self, input_shapes):
         return broadcast_cons_binary(*(ish.shape for ish in input_shapes))
 
     def deduct_inp_ranks_and_dtype(
@@ -475,13 +475,13 @@ class Where(TernaryOpBase):
         self.same_inp_dtypes = True
         self.bcastable = True
 
-    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         # assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
         tgt_shape = broadcast_shapes(*(ish.shape for ish in input_shapes))
         dtype = input_shapes[1].dtype
         return [AbsTensor(tgt_shape, dtype)]
 
-    def _requires(self, input_shapes):
+    def requires(self, input_shapes):
         return broadcast_cons(*(ish.shape for ish in input_shapes)) + [
             z3.BoolVal(input_shapes[1].dtype == input_shapes[2].dtype)
         ]
@@ -582,11 +582,11 @@ class Input(AbsOpBase):
         self.inp_ranks = []
         self.out_ranks = [(dim,)]
 
-    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         SanityCheck.eq(len(input_shapes), 0)
         return [self.abs_tensor]
 
-    def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
+    def requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         SanityCheck.eq(len(input_shapes), 0)
         return []
 
@@ -605,11 +605,11 @@ class Constant(AbsOpBase):
         self.out_ranks = [(dim,)]
         self.abs_tensor: AbsTensor = None
 
-    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         SanityCheck.eq(len(input_shapes), 0)
         return [self.abs_tensor]
 
-    def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
+    def requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         SanityCheck.eq(len(input_shapes), 0)
         return []
 
@@ -746,22 +746,6 @@ class Floor(ElementWiseUnaryOp):
 class Clip(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
 
-    def __init__(self):
-        super().__init__()
-        self.min = -1
-        self.max = 1
-        self.bias = None
-
-    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
-        if self.bias is None:
-            if input_shapes[0].dtype in DTYPE_FLOATS:
-                self.bias = 0.5
-            else:
-                self.bias = 0
-            self.min = self.min - self.bias
-            self.max = self.max + self.bias
-        return super()._type_transfer(input_shapes)
-
 
 @leaf
 class Round(ElementWiseUnaryOp):
@@ -798,7 +782,7 @@ class Softmax(ElementWiseUnaryOp):
         self.inp_ranks = [int_from(1)]
         self.out_ranks = [int_from(1)]
 
-    def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
+    def requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         return [nnsmith_lt(self.dim, input_shapes[0].ndims), nnsmith_ge(self.dim, 0)]
 
 
@@ -823,7 +807,7 @@ class Pool2d(UnaryOpBase):
         self.inp_ranks = [(4,)]  # NCHW
         self.out_ranks = [(4,)]  # NCHW
 
-    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
 
         abs_tensor = AbsTensor([], dtype=input_shapes[0].dtype)
         # Batch dim: just copy
@@ -856,7 +840,7 @@ class Pool2d(UnaryOpBase):
         )
         return [abs_tensor]
 
-    def _requires(self, input_shapes):
+    def requires(self, input_shapes):
         cons = []
         ret = []
         cons.append(nnsmith_ge(self.kernel_h_size, 1))
@@ -968,7 +952,7 @@ class Slice(UnaryOpBase):
                 self.end = self.INT_MAX
         return self.extra_attrs["axis"]
 
-    def _requires(self, input_shapes: List[AbsTensor]):
+    def requires(self, input_shapes: List[AbsTensor]):
         inp = input_shapes[0]
         axis = self._get_attrs(inp.ndims)
         reg = self.extra_attrs["region"]
@@ -998,7 +982,7 @@ class Slice(UnaryOpBase):
         cons.append(nnsmith_le(self.step, dim_s))
         return cons
 
-    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         inp = input_shapes[0]
         axis = self._get_attrs(inp.ndims)
         s = list(inp.shape)
@@ -1048,7 +1032,7 @@ class Pad(UnaryOpBase):
             len(self.padding_list) % 2 == 0
         ), f"padding_list must be even, got {self.padding_list}"
 
-    def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
+    def requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         pad = self.padding_list
         isv = input_shapes[0].shape
         cons = []
@@ -1064,7 +1048,7 @@ class Pad(UnaryOpBase):
             )
         return cons
 
-    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         isv = input_shapes[0].shape
         pad = self.padding_list
         s = list(isv)
@@ -1104,8 +1088,8 @@ class ReflectPad(Pad):
         self.inp_ranks = [int_range(len(padding_list) // 2 + 1, 4)]
         self.out_ranks = [int_range(len(padding_list) // 2 + 1, 4)]
 
-    def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
-        cons = super()._requires(input_shapes)
+    def requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
+        cons = super().requires(input_shapes)
         pad = self.padding_list
         isv = input_shapes[0].shape
         for i in range(len(pad) // 2):
@@ -1131,7 +1115,7 @@ class Expand(UnaryOpBase, ABC):
         self.expand_last_dim = expand_last_dim
         self.expand_n = expand_n
 
-    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         if self.expand_last_dim <= len(input_shapes[0].shape):
             # NOTE: Werid, deepcopy is useless here.
             shape = AbsTensor(
@@ -1159,7 +1143,7 @@ class Expand(UnaryOpBase, ABC):
                 )
             ]
 
-    def _requires(self, input_shapes):
+    def requires(self, input_shapes):
         SanityCheck.ge(self.expand_last_dim, 1)
 
         input_shape = input_shapes[0].shape
@@ -1223,7 +1207,7 @@ class BatchNorm2d(ElementWiseUnaryOp):
     ) -> List[Tuple[int, DType]]:
         return [(4, DType.float32)]
 
-    def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
+    def requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         return [
             nnsmith_eq(self.nfeat, input_shapes[0].shape[1]),
             nnsmith_ge(input_shapes[0].shape[0], 2),
@@ -1255,7 +1239,7 @@ class Conv1d(UnaryOpBase):
         self.inp_ranks = [(3,)]  # NCL
         self.out_ranks = [(3,)]  # NCL
 
-    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         abs_tensor = AbsTensor(
             [input_shapes[0].shape[0], self.out_channels], dtype=input_shapes[0].dtype
         )
@@ -1274,7 +1258,7 @@ class Conv1d(UnaryOpBase):
 
         return [abs_tensor]
 
-    def _requires(self, input_shapes):
+    def requires(self, input_shapes):
         # FIXME: Handling flops.
         cons = []
         cons.append(nnsmith_eq(self.in_channels, input_shapes[0].shape[1]))
@@ -1339,7 +1323,7 @@ class NCHWConv2d(UnaryOpBase):
         self.inp_ranks = [(4,)]  # NC(H,)W
         self.out_ranks = [(4,)]  # NC(H,)W
 
-    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         abs_tensor = AbsTensor(
             [input_shapes[0].shape[0], self.out_channels], dtype=input_shapes[0].dtype
         )
@@ -1373,7 +1357,7 @@ class NCHWConv2d(UnaryOpBase):
         )
         return [abs_tensor]
 
-    def _requires(self, input_shapes):
+    def requires(self, input_shapes):
         cons = []
         # TODO: Use eager mode for debugging.
         cons.append(nnsmith_eq(self.in_channels, input_shapes[0].shape[1]))
@@ -1416,7 +1400,7 @@ class NCHWConv2d(UnaryOpBase):
         return nnsmith_mul(
             nnsmith_mul(
                 nnsmith_mul(
-                    self._type_transfer(input_shapes)[0].nelement(), self.in_channels
+                    self.type_transfer(input_shapes)[0].nelement(), self.in_channels
                 ),
                 self.kernel_h_size,
             ),
@@ -1493,7 +1477,7 @@ class Reshape(UnaryOpBase):
         self.out_ranks = [(len(target_shape),)]
         self.target_shape: List[Union[int, z3.ExprRef]] = target_shape
 
-    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         __MAX_SOLVE_SYMBOL__ = 8
         # otherwise OOM.
         ConstraintCheck.le(
@@ -1520,7 +1504,7 @@ class Reshape(UnaryOpBase):
 
         return [abs_tensor]
 
-    def _requires(self, input_shapes):
+    def requires(self, input_shapes):
         ret = []
 
         inp = input_shapes[0]
@@ -1612,13 +1596,13 @@ class Transpose(UnaryOpBase):
             ) % (1 + max_dim)
         return self.extra_attrs["dim0"], self.extra_attrs["dim1"]
 
-    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         dim0, dim1 = self._init_swap_dims(input_shapes[0].shape)
         shape = list(input_shapes[0].shape)
         shape[dim0], shape[dim1] = shape[dim1], shape[dim0]
         return [AbsTensor(shape, input_shapes[0].dtype)]
 
-    def _requires(self, input_shapes):
+    def requires(self, input_shapes):
         dim0, dim1 = self._init_swap_dims(input_shapes[0].shape)
         SanityCheck.ge(
             len(input_shapes[0].shape),
@@ -1648,10 +1632,10 @@ class InterpBase(UnaryOpBase):
         self.inp_ranks = [(len(size) + 2,)]
         self.out_ranks = [(len(size) + 2,)]
 
-    def _requires(self, input_shapes: List[AbsTensor]):
+    def requires(self, input_shapes: List[AbsTensor]):
         return [nnsmith_gt(v, 0) for v in self.size]
 
-    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         shape = list(input_shapes[0].shape)
         for i in range(len(self.size)):
             shape[-(1 + i)] = self.size[-(1 + i)]
@@ -1710,7 +1694,7 @@ class ReduceBase(UnaryOpBase, ABC):
                 self.extra_attrs["reduce_dim"] = random.randint(0, len(input_shape) - 1)
         return self.extra_attrs["reduce_dim"]
 
-    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         svar_list = []
         for i, v in enumerate(input_shapes[0].shape):
             if i != self._init_reduce_dim(input_shapes[0].shape):
@@ -1724,7 +1708,7 @@ class ReduceBase(UnaryOpBase, ABC):
             )
         ]
 
-    def _requires(self, input_shapes: List[AbsTensor]):
+    def requires(self, input_shapes: List[AbsTensor]):
         reduce_dim = self._init_reduce_dim(input_shapes[0].shape)
         return []
 
@@ -1743,7 +1727,7 @@ class ReduceBase(UnaryOpBase, ABC):
 class Squeeze(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_ALL]
 
-    def _requires(self, input_shapes):
+    def requires(self, input_shapes):
         reduce_dim = self._init_reduce_dim(input_shapes[0].shape)
         if reduce_dim is None:
             return []
@@ -1818,7 +1802,7 @@ class TriBase(UnaryOpBase):
         self.inp_ranks = [(2,)]
         self.out_ranks = [(2,)]
 
-    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         SanityCheck.eq(len(input_shapes), 1)
         return [input_shapes[0]]
 
@@ -1830,7 +1814,7 @@ class TriBase(UnaryOpBase):
 
 @leaf
 class Tril(TriBase):
-    def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
+    def requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         ConstraintCheck.true(input_shapes[0].ndims == 2)
         nrow = input_shapes[0].shape[0]
         ncol = input_shapes[0].shape[1]
@@ -1839,7 +1823,7 @@ class Tril(TriBase):
 
 @leaf
 class Triu(TriBase):
-    def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
+    def requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         ConstraintCheck.true(input_shapes[0].ndims == 2)
         nrow = input_shapes[0].shape[0]
         ncol = input_shapes[0].shape[1]
@@ -1859,7 +1843,7 @@ class Linear(UnaryOpBase):
         # at least one dim. cannot be zranks_all()
         self.out_ranks = [int_from(1)]
 
-    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         assert len(input_shapes) == 1, "Linear only takes one input, but got {}".format(
             len(input_shapes)
         )
@@ -1869,7 +1853,7 @@ class Linear(UnaryOpBase):
             )
         ]
 
-    def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
+    def requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         ConstraintCheck.true(input_shapes[0].ndims >= 1)
         return [
             nnsmith_ge(self.ifeat, 1),
@@ -1904,7 +1888,7 @@ class Concat(AbsOpBase):
             self.extra_attrs["axis"] = random.randint(0, input_shapes[0].ndims - 1)
         return self.extra_attrs["axis"]
 
-    def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
+    def requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         ndims = input_shapes[0].ndims
         SanityCheck.gt(ndims, self._init_concat_axis(input_shapes))
         for s in input_shapes:
@@ -1918,7 +1902,7 @@ class Concat(AbsOpBase):
                 )
         return cons
 
-    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         SanityCheck.true(input_shapes[0].ndims > 0)
         axis = self._init_concat_axis(input_shapes)
         os = AbsTensor(input_shapes[0].shape, input_shapes[0].dtype)
@@ -1987,10 +1971,10 @@ class Cast(ElementWiseUnaryOp, ABC):
     def __str__(self) -> str:
         return "Cast " + str(self.extra_attrs)
 
-    def _requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
+    def requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         return []
 
-    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         assert len(input_shapes) == 1
         return [AbsTensor(input_shapes[0].shape, self.extra_attrs["to"])]
 
@@ -2064,7 +2048,7 @@ class Gemm(TernaryOpBase):
             self.extra_attrs["beta"] = beta
         return self.extra_attrs
 
-    def _requires(self, input_shapes: List[AbsTensor]):
+    def requires(self, input_shapes: List[AbsTensor]):
         ConstraintCheck.true(input_shapes[0].ndims <= 2)
         out_shape = self.checked_type_transfer(input_shapes)[0]
         cons = broadcast_to_cons(input_shapes[0].shape, out_shape.shape)
@@ -2077,7 +2061,7 @@ class Gemm(TernaryOpBase):
             cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
         return cons
 
-    def _type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         mat1, mat2 = input_shapes[1], input_shapes[2]
         return [AbsTensor([mat1.shape[0], mat2.shape[1]], input_shapes[0].dtype)]
 

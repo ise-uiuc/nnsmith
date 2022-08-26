@@ -147,7 +147,10 @@ def proxy_fn(op: Floor):
 # PGClip
 @dispatch(Clip)
 def proxy_fn(op: Clip):
-    return PGClip(op.min, op.max)
+    if op.input_like[0].dtype in DTYPE_FLOATS:
+        return PGClip(-1.5, 1.5)
+    else:
+        return PGClip(-1, 1)
 
 
 # Round
