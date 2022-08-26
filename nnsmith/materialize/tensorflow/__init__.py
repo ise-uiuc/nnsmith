@@ -120,7 +120,18 @@ class TFModel(Model):
         return ""
 
     def dump(self, path: str = "saved_tfmodel") -> None:
-        self.dump_by_inputs(path)
+        os.makedirs(path, exist_ok=True)
+        # schedule.pkl
+        with open(os.path.join(path, TFModel.schedule_pkl_name()), "wb") as f:
+            pickle.dump(self.net.schedule, f)
+        # tfnet
+        concrete_net = self.concrete_net(self.input_specs)
+        tf.saved_model.save(
+            self.net,
+            os.path.join(path, TFModel.tfnet_dir_name()),
+            signatures=concrete_net,
+        )
+        return concrete_net
 
     @staticmethod
     def load(path: str = "saved_tfmodel") -> "TFModel":
@@ -129,18 +140,15 @@ class TFModel(Model):
         model = TFModel(schedule)
         return model
 
-    def dump_by_inputs(
+    def dump_with_io(
         self,
         path: str = "saved_tfmodel",
         inputs: Dict[str, tf.Tensor | tf.TensorSpec] = None,
     ) -> Callable[..., Dict[str, tf.Tensor]]:
-        os.makedirs(path, exist_ok=True)
-        # schedule.pkl
-        with open(os.path.join(path, TFModel.schedule_pkl_name()), "wb") as f:
-            pickle.dump(self.net.schedule, f)
+        concrete_net = self.dump(path)
         # in_out.pkl
         if inputs is None or isinstance(inputs["i0"], tf.TensorSpec):
-            tensor_inputs = self.random_inputs()
+            tensor_inputs = self.random_inputs()  # get numeric inputs
         else:
             tensor_inputs = inputs
         outputs_eager_run = self.run_eagerly(tensor_inputs)
@@ -154,13 +162,6 @@ class TFModel(Model):
                 },
                 file=f,
             )
-        # tfnet
-        concrete_net = self.concrete_net(tensor_inputs)
-        tf.saved_model.save(
-            self.net,
-            os.path.join(path, TFModel.tfnet_dir_name()),
-            signatures=concrete_net,
-        )
         return concrete_net
 
     def dump_tfnet(

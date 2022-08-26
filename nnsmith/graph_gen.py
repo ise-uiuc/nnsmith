@@ -1260,7 +1260,7 @@ if __name__ == "__main__":
         testcase.dump(root_folder=args.output)
 
     elif args.framework == "tensorflow":
-        from icecream import ic
+        from icecream import ic  # TODO Colin remove this
         from nnsmith.materialize.tensorflow import (
             TFModel,
             tf_to_tflite_runner,
@@ -1276,7 +1276,7 @@ if __name__ == "__main__":
         ic(out_graph_exe)
 
         model_save_dir = cast(str, args.output)
-        model.dump_by_inputs(model_save_dir, inputs)
+        model.dump_with_io(model_save_dir, inputs)
         out_tflite = tf_to_tflite_runner(
             os.path.join(model_save_dir, "tfnet"),
             os.path.join(model_save_dir, "model.tflite"),
