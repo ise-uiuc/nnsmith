@@ -1264,7 +1264,7 @@ if __name__ == "__main__":
         from nnsmith.materialize.tensorflow import (
             TFModel,
             tf_to_tflite_runner,
-            assert_io_eq_tf,
+            assert_dict_eq_tf,
         )
 
         model = TFModel(schedule=schedule)
@@ -1276,15 +1276,15 @@ if __name__ == "__main__":
         ic(out_graph_exe)
 
         model_save_dir = cast(str, args.output)
-        model.dump_with_io(model_save_dir, inputs)
+        model.dump_with_oracle(model_save_dir, inputs)
         out_tflite = tf_to_tflite_runner(
             os.path.join(model_save_dir, "tfnet"),
             os.path.join(model_save_dir, "model.tflite"),
         )(**inputs)
         ic(out_tflite)
 
-        assert_io_eq_tf(out_eager, out_graph_exe)
-        assert_io_eq_tf(out_eager, out_tflite)
+        assert_dict_eq_tf(out_eager, out_graph_exe)
+        assert_dict_eq_tf(out_eager, out_tflite)
 
     else:
         raise ValueError(f"Unknown deep learning framework {args.framework}")

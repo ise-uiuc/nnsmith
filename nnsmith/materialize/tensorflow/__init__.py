@@ -15,8 +15,6 @@ def fix_tensorflow_issues():
 
 fix_tensorflow_issues()
 
-from tensorflow import keras
-
 from nnsmith.graph_gen import Schedule
 from nnsmith.abstract.op import AbsTensor
 from nnsmith.materialize import Model, Oracle
@@ -54,7 +52,7 @@ def tf_to_tflite_runner(
     return interpreter.get_signature_runner()
 
 
-def assert_io_eq_tf(x: Dict[str, tf.Tensor], y: Dict[str, tf.Tensor]) -> None:
+def assert_dict_eq_tf(x: Dict[str, tf.Tensor], y: Dict[str, tf.Tensor]) -> None:
     for key in x:
         x_v, y_v = x[key], y[key]
         assert tf.less_equal(
@@ -119,6 +117,20 @@ class TFModel(Model):
     def name_suffix() -> str:
         return ""
 
+    def make_oracle(
+        self, inputs: Dict[str, tf.Tensor | tf.TensorSpec] = None
+    ) -> Oracle:
+        if inputs is None or isinstance(inputs["i0"], tf.TensorSpec):
+            input_dict = self.random_inputs()
+        else:
+            input_dict = inputs
+        output_dict = self.run_eagerly(input_dict)
+
+        input_dict = {k: v.numpy() for k, v in input_dict.items()}
+        output_dict = {k: v.numpy() for k, v in output_dict.items()}
+
+        return Oracle(input_dict, output_dict)
+
     def dump(self, path: str = "saved_tfmodel") -> None:
         os.makedirs(path, exist_ok=True)
         # schedule.pkl
@@ -131,38 +143,15 @@ class TFModel(Model):
             os.path.join(path, TFModel.tfnet_dir_name()),
             signatures=concrete_net,
         )
-        return concrete_net
 
-    @staticmethod
-    def load(path: str = "saved_tfmodel") -> "TFModel":
-        with open(os.path.join(path, TFModel.schedule_pkl_name()), "rb") as f:
-            schedule: Schedule = pickle.load(f)
-        model = TFModel(schedule)
-        return model
-
-    def dump_with_io(
+    def dump_with_oracle(
         self,
         path: str = "saved_tfmodel",
         inputs: Dict[str, tf.Tensor | tf.TensorSpec] = None,
-    ) -> Callable[..., Dict[str, tf.Tensor]]:
-        concrete_net = self.dump(path)
-        # in_out.pkl
-        if inputs is None or isinstance(inputs["i0"], tf.TensorSpec):
-            tensor_inputs = self.random_inputs()  # get numeric inputs
-        else:
-            tensor_inputs = inputs
-        outputs_eager_run = self.run_eagerly(tensor_inputs)
-        with open(os.path.join(path, TFModel.in_out_pkl_name()), "wb") as f:
-            pickle.dump(
-                {
-                    "inputs": {name: v.numpy() for name, v in tensor_inputs.items()},
-                    "outputs": {
-                        name: v.numpy() for name, v in outputs_eager_run.items()
-                    },
-                },
-                file=f,
-            )
-        return concrete_net
+    ) -> None:
+        self.dump(path)
+        oracle = self.make_oracle(inputs)
+        oracle.dump(os.path.join(path, Oracle.name()))
 
     def dump_tfnet(
         self,
@@ -180,19 +169,23 @@ class TFModel(Model):
         return tf.saved_model.load(saved_dir)
 
     @staticmethod
-    def load_with_io(
-        path: str = "saved_tfmodel",
-    ) -> Tuple["TFModel", Dict[str, tf.Tensor], Dict[str, tf.Tensor]]:
+    def load(path: str = "saved_tfmodel") -> "TFModel":
         with open(os.path.join(path, TFModel.schedule_pkl_name()), "rb") as f:
             schedule: Schedule = pickle.load(f)
         model = TFModel(schedule)
-        with open(os.path.join(path, TFModel.in_out_pkl_name()), "rb") as f:
-            in_out = pickle.load(f)
-        inputs = {name: tf.convert_to_tensor(v) for name, v in in_out["inputs"].items()}
-        outputs = {
-            name: tf.convert_to_tensor(v) for name, v in in_out["outputs"].items()
+        return model
+
+    @staticmethod
+    def load_with_oracle(
+        path: str = "saved_tfmodel",
+    ) -> Tuple["TFModel", Dict[str, tf.Tensor], Dict[str, tf.Tensor]]:
+        model = TFModel.load(path)
+        oracle = Oracle.load(os.path.join(path, Oracle.name()))
+        input_dict = {name: tf.convert_to_tensor(v) for name, v in oracle.input.items()}
+        output_dict = {
+            name: tf.convert_to_tensor(v) for name, v in oracle.output.items()
         }
-        return model, inputs, outputs
+        return model, input_dict, output_dict
 
     @staticmethod
     def schedule_pkl_name():
