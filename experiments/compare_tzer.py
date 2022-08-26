@@ -1,4 +1,4 @@
-import dill as pickle
+import pickle
 import argparse
 import os
 

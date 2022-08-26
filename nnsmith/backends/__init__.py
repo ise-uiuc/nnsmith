@@ -1,7 +1,7 @@
 from typing import List, Union, Dict, Tuple
 import os
 
-import dill as pickle
+import pickle
 import numpy as np
 
 from nnsmith.util import gen_one_input

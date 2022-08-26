@@ -1,6 +1,6 @@
 import os
 import multiprocessing
-import dill as pickle
+import pickle
 from pathlib import Path
 from copy import deepcopy
 

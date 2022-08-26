@@ -2,9 +2,11 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Tuple
 from multipledispatch import dispatch  # type: ignore
 import os
-import dill as pickle
+import pickle
 
 import tensorflow as tf  # type: ignore
+
+from nnsmith.graph_gen import Schedule
 
 
 def fix_tensorflow_issues():

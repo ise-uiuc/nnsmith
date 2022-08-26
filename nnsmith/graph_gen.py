@@ -2,7 +2,7 @@ from multiprocessing import Process
 import psutil
 from collections import defaultdict, namedtuple
 from dataclasses import dataclass
-import dill as pickle
+import pickle
 import math
 import textwrap
 from typing import Dict, Tuple, List, Set, cast
@@ -1318,11 +1318,10 @@ if __name__ == "__main__":
 
     elif args.framework == "tensorflow":
         from icecream import ic
-        from nnsmith.materialize.tensorflow import *
+        from nnsmith.materialize.tensorflow import TFModel, tf_to_tflite_runner
 
         model = cast(TFModel, TFModel(schedule=schedule))
         inputs = model.random_inputs()
-
         out_eager = model.run_eagerly(inputs)
         ic(out_eager)
 

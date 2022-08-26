@@ -3,7 +3,7 @@ import numpy as np
 from numpy import testing
 
 from nnsmith.error import *
-import dill as pickle
+import pickle
 from pathlib import Path
 
 

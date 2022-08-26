@@ -375,7 +375,7 @@ def plot_one_round(
 
 if "__main__" == __name__:
     import argparse
-    import dill as pickle
+    import pickle
 
     parser = argparse.ArgumentParser()
     parser.add_argument(

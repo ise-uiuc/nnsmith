@@ -2,7 +2,7 @@ import os
 import sys
 import random
 import numpy as np
-import dill as pickle
+import pickle
 
 from nnsmith.error import IncorrectResult
 from nnsmith.backends import BackendFactory, mk_factory

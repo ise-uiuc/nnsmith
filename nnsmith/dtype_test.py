@@ -1,6 +1,6 @@
 from typing import List
 import warnings
-import dill as pickle
+import pickle
 import os
 import random
 from termcolor import colored

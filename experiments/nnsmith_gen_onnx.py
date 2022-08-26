@@ -7,7 +7,7 @@ from nnsmith.util import mkdir
 
 from experiments.graphfuzz import GraphFuzz
 
-import dill as pickle
+import pickle
 import os
 import random
 import argparse
