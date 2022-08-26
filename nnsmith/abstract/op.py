@@ -2,10 +2,8 @@ from abc import ABC, abstractmethod
 from copy import deepcopy
 import fnmatch
 from functools import reduce
-import functools
-import math
 import os
-from typing import List, Optional, Tuple, Union, Callable, Type
+from typing import List, Optional, Tuple, Union
 from inspect import signature
 import random
 
@@ -634,78 +632,6 @@ class Placeholder:
         input_node = Input(self.out_shape.ndims)
         input_node.abs_tensor = self.out_shape
         return input_node
-
-
-class LegacyConstant0D(Constant):
-    def __init__(self):
-        super().__init__(0)
-        # TODO more dtypes
-
-    @property
-    def abs_tensor(self):
-        return AbsTensor([], dtype=self.extra_attrs["dtype"])
-
-
-class LegacyConstant1D(Constant):
-    def __init__(self, dim0: Union[int, z3.ExprRef]):
-        super().__init__(1)
-        self.dim0 = dim0
-
-    @property
-    def abs_tensor(self):
-        return AbsTensor([self.dim0], dtype=self.extra_attrs["dtype"])
-
-
-class LegacyConstant2D(Constant):
-    def __init__(self, dim0: Union[int, z3.ExprRef], dim1: Union[int, z3.ExprRef]):
-        super().__init__(2)
-        self.dim0 = dim0
-        self.dim1 = dim1
-
-    @property
-    def abs_tensor(self):
-        return AbsTensor([self.dim0, self.dim1], dtype=self.extra_attrs["dtype"])
-
-
-class LegacyConstant3D(Constant):
-    def __init__(
-        self,
-        dim0: Union[int, z3.ExprRef],
-        dim1: Union[int, z3.ExprRef],
-        dim2: Union[int, z3.ExprRef],
-    ):
-        super().__init__(3)
-        self.dim0 = dim0
-        self.dim1 = dim1
-        self.dim2 = dim2
-
-    @property
-    def abs_tensor(self):
-        return AbsTensor(
-            [self.dim0, self.dim1, self.dim2], dtype=self.extra_attrs["dtype"]
-        )
-
-
-class LegacyConstant4D(Constant):
-    def __init__(
-        self,
-        dim0: Union[int, z3.ExprRef],
-        dim1: Union[int, z3.ExprRef],
-        dim2: Union[int, z3.ExprRef],
-        dim3: Union[int, z3.ExprRef],
-    ):
-        super().__init__(4)
-        self.dim0 = dim0
-        self.dim1 = dim1
-        self.dim2 = dim2
-        self.dim3 = dim3
-
-    @property
-    def abs_tensor(self):
-        return AbsTensor(
-            [self.dim0, self.dim1, self.dim2, self.dim3],
-            dtype=self.extra_attrs["dtype"],
-        )
 
 
 # FIXME: Div will cause fuzzing crash.
@@ -2188,7 +2114,6 @@ def config_skip_op(skip_config):
             # # buggy, see https://github.com/NVIDIA/TensorRT/issues/1781
             # 'Less', 'Greater', 'Equal',
             # buggy
-            "LegacyConstant*",
         ],
         "tvm": [],
         "tvm-cuda": [],

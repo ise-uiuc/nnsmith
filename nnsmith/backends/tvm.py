@@ -22,7 +22,13 @@ class TVMFactory(BackendFactory):
         # as in this level fast_math is enabled where slight numerical
         # inconsistency is allowed and outputs for UB-input may differ.
         self.opt_level = 4 if optmax else 0
-        self.target = tvm.target.Target("llvm" if device == "cpu" else "cuda")
+        if device == "cpu":
+            self.target = tvm.target.Target("llvm")
+        elif device == "cuda" or device == "gpu":
+            self.target = tvm.target.Target("cuda")
+        else:
+            raise ValueError(f"Unknown device `{device}`")
+
         self.executor_mode = executor
 
     def get_device(self):
@@ -48,7 +54,7 @@ class TVMFactory(BackendFactory):
         return output
 
     @dispatch(ONNXModel)
-    def mk_backend(self, model: ONNXModel):
+    def make_backend(self, model: ONNXModel):
         onnx_model = model.native_model
         shape_dict = {name: aten.shape for name, aten in model.input_like.items()}
         mod, params = relay.frontend.from_onnx(

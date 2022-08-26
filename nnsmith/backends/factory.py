@@ -40,20 +40,17 @@ class BackendFactory(ABC):
         }
 
     @abstractmethod
-    def mk_backend(
+    def make_backend(
         self, model: Model
     ) -> Callable[[Dict[str, np.ndarray]], Dict[str, np.ndarray]]:
         raise NotImplementedError
 
     def verify_testcase(self, testcase: TestCase) -> Optional[BugReport]:
-        # model = testcase.model.native_model
-
         # TODO(@ganler): impl fault catching in subprocess
         assert not self.catch_process_crash, "not implemented"
 
         try:  # compilation
-            print(testcase.model)
-            executable = self.mk_backend(testcase.model)
+            executable = self.make_backend(testcase.model)
         except Exception:
             return BugReport(
                 testcase=testcase,
@@ -99,11 +96,11 @@ class BackendFactory(ABC):
 
         return None
 
-    def bump_testcase(
+    def make_testcase(
         self, model: Model, input: Dict[str, np.ndarray] = None
     ) -> TestCase:
         try:  # compilation
-            executable = self.mk_backend(model)
+            executable = self.make_backend(model)
         except Exception:
             raise BugReport(
                 TestCase(model=model, oracle=None),  # None means no oracle

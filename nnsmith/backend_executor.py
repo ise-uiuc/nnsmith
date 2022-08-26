@@ -85,7 +85,7 @@ if __name__ == "__main__":
         # use optmin for the reference backend
         ref_backend = mk_factory(
             args.cmp_with, device=args.device, optmax=False
-        ).mk_backend(onnx_model)
+        ).make_backend(onnx_model)
         oracle_outputs = ref_backend(test_inputs)
         if is_invalid(oracle_outputs):
             print(f"[WARNING] Backend {args.cmp_with} produces nan/inf in output.")
@@ -93,7 +93,7 @@ if __name__ == "__main__":
     # -- this backend:
     this_backend = mk_factory(
         args.backend, device=args.device, optmax=not args.optmin
-    ).mk_backend(onnx_model)
+    ).make_backend(onnx_model)
     this_outputs = this_backend(test_inputs)
     if is_invalid(this_outputs):
         print(f"[WARNING] Backend {args.backend} produces nan/inf in output.")

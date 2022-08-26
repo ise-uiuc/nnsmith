@@ -1,9 +1,13 @@
 import pytest
 
+import tvm
+
 from nnsmith.materialize import TestCase
 from nnsmith.materialize.onnx import ONNXModel
 from nnsmith.graph_gen import random_model_gen, concretize_graph, make_schedule
 from nnsmith.backends.tvm import TVMFactory
+
+TestCase.__test__ = False  # supress PyTest warning
 
 
 def test_synthesized_onnx_model(tmp_path):
@@ -39,3 +43,11 @@ def test_synthesized_onnx_model(tmp_path):
         ).verify_testcase(testcase)
         is None
     )
+
+    if tvm.cuda(0).exist:
+        assert (
+            TVMFactory(
+                device="cuda", optmax=False, catch_process_crash=False
+            ).verify_testcase(testcase)
+            is None
+        )

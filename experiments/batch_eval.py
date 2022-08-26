@@ -101,7 +101,7 @@ if __name__ == "__main__":
             )
 
         try:
-            omax_exec = omax_fac.mk_backend(onnx_model)
+            omax_exec = omax_fac.make_backend(onnx_model)
             pred_omax = omax_exec(eval_inputs)
             # We compare results iff NaN/Inf-free as we only consider confident bugs.
             if num_must_valid and all(
@@ -117,7 +117,7 @@ if __name__ == "__main__":
                         report_bug("torch-omax-", err_tch_omax)
                     else:
                         # RESULT INCONSISTENCY. But need to see if we can narrow it down to an optimzation bug.
-                        omin_exec = omin_fac.mk_backend(onnx_model)
+                        omin_exec = omin_fac.make_backend(onnx_model)
                         err_omax_omin = verify(
                             args.backend + "-omax",
                             args.backend + "-omin",

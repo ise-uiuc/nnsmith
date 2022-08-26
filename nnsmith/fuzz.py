@@ -478,7 +478,7 @@ class FuzzingLoop:  # TODO: Support multiple backends.
         with open(oracle_path, "rb") as f:
             inputs, outputs = pickle.load(f)
 
-        backend = self.factory.mk_backend(onnx_model)
+        backend = self.factory.make_backend(onnx_model)
         results = backend(inputs)
         assert_allclose(results, outputs, self.factory.name, "torch", safe_mode=True)
 
