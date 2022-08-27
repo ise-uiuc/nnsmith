@@ -13,7 +13,7 @@ class ConstraintError(Exception):
     pass
 
 
-class AbsCheck(ABC):
+class BaseChecker(ABC):
     _EXCEPTION_TYPE = None
 
     @classmethod
@@ -66,9 +66,9 @@ class AbsCheck(ABC):
             )
 
 
-class SanityCheck(AbsCheck):
+class SanityCheck(BaseChecker):
     _EXCEPTION_TYPE = InternalError
 
 
-class ConstraintCheck(AbsCheck):
+class ConstraintCheck(BaseChecker):
     _EXCEPTION_TYPE = ConstraintError

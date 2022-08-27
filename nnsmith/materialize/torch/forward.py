@@ -1,18 +1,39 @@
+from typing import Set, Type
 from multipledispatch import dispatch
 
 import torch
 
+from nnsmith.error import SanityCheck
 from nnsmith.abstract.op import *
+from nnsmith.materialize.torch.dialect import Linear
 
 # Implementation of operators.
-class Dummy:  # For simple syntactic checking;
-    pass
+
+# core dialect + some future PyTorch-only Operators.
+TORCH_REALIZABLE_OPS = FULL_OPERATOR_SETS["core"].union(FULL_OPERATOR_SETS["torch"])
+ALL_TORCH_OPS: Set[Type[AbsOpBase]] = set()
+
+
+def operator_impl(op_type, *args, **kwargs):
+    SanityCheck.true(
+        issubclass(op_type, AbsOpBase),
+        f"Decorator operator_impl takes AbsOpBase subclass, but got {op_type}",
+    )
+    if op_type is not Constant:  # Constant comes from placeholder.
+        dispatchables = [
+            rtype for rtype in TORCH_REALIZABLE_OPS if issubclass(rtype, op_type)
+        ]
+        for rtype in dispatchables:
+            ALL_TORCH_OPS.add(rtype)
+
+        SanityCheck.true(
+            len(dispatchables) != 0,
+            f"Decorator operator_impl only take types decorated by `mark_realize`, but got {op_type}",
+        )
+    return dispatch(op_type, *args, **kwargs)
 
 
 # forward_fn:  forward
-@dispatch(Dummy)
-def forward_fn(op):
-    pass
 
 
 class StopFoldConst(torch.nn.Module):
@@ -28,94 +49,94 @@ class StopFoldConst(torch.nn.Module):
         return self.param.to(dtype=self.dtype)
 
 
-@dispatch(Constant)
+@operator_impl(Constant)
 def forward_fn(op: Constant):
     data = torch.randn(op.abs_tensor.shape).to(op.abs_tensor.dtype.torch())
     return StopFoldConst(data)
 
 
-@dispatch(ReLU)
+@operator_impl(ReLU)
 def forward_fn(op: ReLU):
     return torch.nn.ReLU()
 
 
-@dispatch(GELU)
+@operator_impl(GELU)
 def forward_fn(op: GELU):
     return torch.nn.GELU()
 
 
-@dispatch(LeakyReLU)
+@operator_impl(LeakyReLU)
 def forward_fn(op: LeakyReLU):
     return torch.nn.LeakyReLU(op.negative_slope)
 
 
-@dispatch(PReLU)
+@operator_impl(PReLU)
 def forward_fn(op: PReLU):
     return torch.nn.PReLU()
 
 
-@dispatch(Sigmoid)
+@operator_impl(Sigmoid)
 def forward_fn(op: Sigmoid):
     return torch.nn.Sigmoid()
 
 
-@dispatch(Sin)
+@operator_impl(Sin)
 def forward_fn(op: Sin):
     return torch.sin
 
 
-@dispatch(Cos)
+@operator_impl(Cos)
 def forward_fn(op: Cos):
     return torch.cos
 
 
-@dispatch(Asin)
+@operator_impl(Asin)
 def forward_fn(op: Asin):
     return torch.asin
 
 
-@dispatch(Acos)
+@operator_impl(Acos)
 def forward_fn(op: Acos):
     return torch.acos
 
 
-@dispatch(Tan)
+@operator_impl(Tan)
 def forward_fn(op: Tan):
     return torch.tan
 
 
-@dispatch(Atan)
+@operator_impl(Atan)
 def forward_fn(op: Atan):
     return torch.atan
 
 
 # Abs
-@dispatch(Abs)
+@operator_impl(Abs)
 def forward_fn(op: Abs):
     return torch.abs
 
 
-@dispatch(Where)
+@operator_impl(Where)
 def forward_fn(op: Where):
     return torch.where
 
 
-@dispatch(Add)
+@operator_impl(Add)
 def forward_fn(op: Add):
     return torch.add
 
 
-@dispatch(Sub)
+@operator_impl(Sub)
 def forward_fn(op: Sub):
     return torch.sub
 
 
-@dispatch(Mul)
+@operator_impl(Mul)
 def forward_fn(op: Mul):
     return torch.mul
 
 
-@dispatch(Div)
+@operator_impl(Div)
 def forward_fn(op: Div):
     return lambda up, down: torch.div(
         up,
@@ -124,64 +145,64 @@ def forward_fn(op: Div):
     )
 
 
-@dispatch(Max)
+@operator_impl(Max)
 def forward_fn(op: Max):
     return torch.max
 
 
-@dispatch(Min)
+@operator_impl(Min)
 def forward_fn(op: Min):
     return torch.min
 
 
-@dispatch(Equal)
+@operator_impl(Equal)
 def forward_fn(op: Equal):
     return torch.eq
 
 
-@dispatch(Greater)
+@operator_impl(Greater)
 def forward_fn(op: Greater):
     return torch.gt
 
 
-@dispatch(Less)
+@operator_impl(Less)
 def forward_fn(op: Less):
     return torch.lt
 
 
-@dispatch(And)
+@operator_impl(And)
 def forward_fn(op: And):
     return torch.logical_and
 
 
-@dispatch(Or)
+@operator_impl(Or)
 def forward_fn(op: Or):
     return torch.logical_or
 
 
-@dispatch(Xor)
+@operator_impl(Xor)
 def forward_fn(op: Xor):
     return torch.logical_xor
 
 
-@dispatch(Pow)
+@operator_impl(Pow)
 def forward_fn(op: Pow):
     return torch.pow
 
 
 # Floor
-@dispatch(Floor)
+@operator_impl(Floor)
 def forward_fn(op: Floor):
     return torch.floor
 
 
 # Ceil
-@dispatch(Ceil)
+@operator_impl(Ceil)
 def forward_fn(op: Ceil):
     return torch.ceil
 
 
-@dispatch(Clip)
+@operator_impl(Clip)
 def forward_fn(op: Clip):
     if op.input_like[0].dtype in DTYPE_FLOATS:
         return lambda x: torch.clip(x, -1.5, 1.5)
@@ -189,32 +210,32 @@ def forward_fn(op: Clip):
         return lambda x: torch.clip(x, -1, 1)
 
 
-@dispatch(Round)
+@operator_impl(Round)
 def forward_fn(op: Round):
     return torch.round
 
 
-@dispatch(Sqrt)
+@operator_impl(Sqrt)
 def forward_fn(op: Sqrt):
     return torch.sqrt
 
 
-@dispatch(Log2)
+@operator_impl(Log2)
 def forward_fn(op: Log2):
     return torch.log2
 
 
-@dispatch(Neg)
+@operator_impl(Neg)
 def forward_fn(op: Neg):
     return torch.neg
 
 
-@dispatch(Softmax)
+@operator_impl(Softmax)
 def forward_fn(op: Softmax):
     return torch.nn.Softmax(dim=op.dim)
 
 
-@dispatch(MaxPool2d)
+@operator_impl(MaxPool2d)
 def forward_fn(op: MaxPool2d):
     return torch.nn.MaxPool2d(
         kernel_size=(op.kernel_h_size, op.kernel_w_size),
@@ -223,7 +244,7 @@ def forward_fn(op: MaxPool2d):
     )
 
 
-@dispatch(AvgPool2d)
+@operator_impl(AvgPool2d)
 def forward_fn(op: AvgPool2d):
     return torch.nn.AvgPool2d(
         kernel_size=(op.kernel_h_size, op.kernel_w_size),
@@ -232,7 +253,7 @@ def forward_fn(op: AvgPool2d):
     )
 
 
-@dispatch(Slice)
+@operator_impl(Slice)
 def forward_fn(op: Slice):
     reg = op.extra_attrs["region"]
 
@@ -255,7 +276,7 @@ def forward_fn(op: Slice):
     return _func
 
 
-@dispatch(Pad)
+@operator_impl(Pad)
 def forward_fn(op: Pad):
     if op.extra_attrs["type"] == "constant":
         # 0 easily cause division by zero...
@@ -269,17 +290,17 @@ def forward_fn(op: Pad):
         )
 
 
-@dispatch(Expand)
+@operator_impl(Expand)
 def forward_fn(op: Expand):
     return lambda x: x.expand(*op.type_transfer([AbsTensor.from_torch(x)])[0].shape)
 
 
-@dispatch(BatchNorm2d)
+@operator_impl(BatchNorm2d)
 def forward_fn(op: BatchNorm2d):
     return torch.nn.BatchNorm2d(num_features=op.nfeat)
 
 
-@dispatch(Conv1d)
+@operator_impl(Conv1d)
 def forward_fn(op: Conv1d):
     return torch.nn.Conv1d(
         in_channels=op.in_channels,
@@ -291,7 +312,7 @@ def forward_fn(op: Conv1d):
     )
 
 
-@dispatch(NCHWConv2d)
+@operator_impl(NCHWConv2d)
 def forward_fn(op: NCHWConv2d):
     return torch.nn.Conv2d(
         op.in_channels,
@@ -302,17 +323,17 @@ def forward_fn(op: NCHWConv2d):
     )
 
 
-@dispatch(Reshape)
+@operator_impl(Reshape)
 def forward_fn(op: Reshape):
     return lambda x: x.reshape(*op.target_shape)
 
 
-@dispatch(Flatten)
+@operator_impl(Flatten)
 def forward_fn(op: Flatten):
     return lambda x: x.flatten()
 
 
-@dispatch(Transpose)
+@operator_impl(Transpose)
 def forward_fn(op: Transpose):
     def f(x: torch.Tensor):
         dim0, dim1 = op._init_swap_dims(list(x.shape))
@@ -322,35 +343,35 @@ def forward_fn(op: Transpose):
 
 
 # NearestInterp
-@dispatch(NearestInterp)
+@operator_impl(NearestInterp)
 def forward_fn(op: NearestInterp):
     return lambda x: torch.nn.functional.interpolate(x, size=op.size, mode="nearest")
 
 
 # LinearInterp
-@dispatch(LinearInterp)
+@operator_impl(LinearInterp)
 def forward_fn(op: LinearInterp):
     return lambda x: torch.nn.functional.interpolate(x, size=op.size, mode="linear")
 
 
 # BilinearInterp
-@dispatch(BilinearInterp)
+@operator_impl(BilinearInterp)
 def forward_fn(op: BilinearInterp):
     return lambda x: torch.nn.functional.interpolate(x, size=op.size, mode="bilinear")
 
 
-@dispatch(BicubicInterp)
+@operator_impl(BicubicInterp)
 def forward_fn(op: BicubicInterp):
     return lambda x: torch.nn.functional.interpolate(x, size=op.size, mode="bicubic")
 
 
 # TrilinearInterp
-@dispatch(TrilinearInterp)
+@operator_impl(TrilinearInterp)
 def forward_fn(op: TrilinearInterp):
     return lambda x: torch.nn.functional.interpolate(x, size=op.size, mode="trilinear")
 
 
-@dispatch(Squeeze)
+@operator_impl(Squeeze)
 def forward_fn(op: Squeeze):
     if op.extra_attrs["reduce_dim"] is not None:
         return lambda x: x.squeeze(op.extra_attrs["reduce_dim"])
@@ -358,7 +379,7 @@ def forward_fn(op: Squeeze):
         return lambda x: x.squeeze()
 
 
-@dispatch(ReduceSum)
+@operator_impl(ReduceSum)
 def forward_fn(op: ReduceSum):
     if op.extra_attrs["reduce_dim"] is not None:
         return lambda x: x.sum(op.extra_attrs["reduce_dim"])
@@ -366,7 +387,7 @@ def forward_fn(op: ReduceSum):
 
 
 # ReduceMin
-@dispatch(ReduceMin)
+@operator_impl(ReduceMin)
 def forward_fn(op: ReduceMin):
     if op.extra_attrs["reduce_dim"] is not None:
         return lambda x: x.min(op.extra_attrs["reduce_dim"]).values
@@ -374,7 +395,7 @@ def forward_fn(op: ReduceMin):
 
 
 # ReduceMax
-@dispatch(ReduceMax)
+@operator_impl(ReduceMax)
 def forward_fn(op: ReduceMax):
     if op.extra_attrs["reduce_dim"] is not None:
         return lambda x: x.max(op.extra_attrs["reduce_dim"]).values
@@ -382,7 +403,7 @@ def forward_fn(op: ReduceMax):
 
 
 # ReduceMean
-@dispatch(ReduceMean)
+@operator_impl(ReduceMean)
 def forward_fn(op: ReduceMean):
     if op.extra_attrs["reduce_dim"] is not None:
         return lambda x: x.mean(op.extra_attrs["reduce_dim"])
@@ -390,7 +411,7 @@ def forward_fn(op: ReduceMean):
 
 
 # ArgMin
-@dispatch(ArgMin)
+@operator_impl(ArgMin)
 def forward_fn(op: ArgMin):
     if op.extra_attrs["reduce_dim"] is not None:
         return lambda x: x.argmin(op.extra_attrs["reduce_dim"])
@@ -398,7 +419,7 @@ def forward_fn(op: ArgMin):
 
 
 # ArgMax
-@dispatch(ArgMax)
+@operator_impl(ArgMax)
 def forward_fn(op: ArgMax):
     if op.extra_attrs["reduce_dim"] is not None:
         return lambda x: x.argmax(op.extra_attrs["reduce_dim"])
@@ -406,36 +427,36 @@ def forward_fn(op: ArgMax):
 
 
 # Tril
-@dispatch(Tril)
+@operator_impl(Tril)
 def forward_fn(op: Tril):
     return lambda x: x.tril(op.diagonal)
 
 
 # Triu
-@dispatch(Triu)
+@operator_impl(Triu)
 def forward_fn(op: Triu):
     return lambda x: x.triu(op.diagonal)
 
 
 # Linear
-@dispatch(Linear)
+@operator_impl(Linear)
 def forward_fn(op: Linear):
     return torch.nn.Linear(in_features=op.ifeat, out_features=op.ofeat)
 
 
-@dispatch(Concat)
+@operator_impl(Concat)
 def forward_fn(op: Concat):
     axis = op.extra_attrs["axis"]
     return lambda *args: torch.cat(args, dim=axis)
 
 
-@dispatch(Cast)
+@operator_impl(Cast)
 def forward_fn(op: Cast):
     return lambda x: x.to(dtype=op.extra_attrs["to"].torch())
 
 
 # Gemm
-@dispatch(Gemm)
+@operator_impl(Gemm)
 def forward_fn(op: Gemm):
     extra_attrs = op._set_or_get_extra_attrs()
     return lambda *args: torch.addmm(

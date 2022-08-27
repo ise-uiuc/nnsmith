@@ -3,10 +3,11 @@ import os
 import json
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Dict
+from typing import Dict, List, Type
 
 import numpy as np
 
+from nnsmith.abstract.op import AbsOpBase
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.graph_gen import Schedule
 
@@ -96,6 +97,10 @@ class Model(ABC):
     @property
     def type(self) -> str:
         return type(self).__name__
+
+    @staticmethod
+    def operators() -> List[Type[AbsOpBase]]:
+        pass
 
 
 class TestCase:

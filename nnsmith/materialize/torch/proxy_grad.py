@@ -118,14 +118,7 @@ class PGClip(torch.nn.Module):
         return PGClipFunc.apply(x, self.min, self.max)
 
 
-class Dummy:  # For simple syntactic checking;
-    pass
-
-
 # proxy_fn:    proxy
-@dispatch(Dummy)
-def proxy_fn(op):
-    pass
 
 
 @dispatch(ReLU)
