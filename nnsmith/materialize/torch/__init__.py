@@ -1,4 +1,4 @@
-from typing import Dict, List, Type, Callable
+from typing import Dict, List, Type
 import pickle
 
 import torch
@@ -99,7 +99,7 @@ class TorchModel(Model):
 
     @staticmethod
     def operators() -> List[Type[AbsOpBase]]:
-        return list(ALL_TORCH_OPS)
+        return ALL_TORCH_OPS
 
     @staticmethod
     def add_seed_setter() -> None:

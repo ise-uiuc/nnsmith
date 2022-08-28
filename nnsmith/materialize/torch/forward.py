@@ -11,7 +11,7 @@ from nnsmith.materialize.torch.dialect import Linear
 
 # core dialect + some future PyTorch-only Operators.
 TORCH_REALIZABLE_OPS = FULL_OPERATOR_SETS["core"] + FULL_OPERATOR_SETS["torch"]
-ALL_TORCH_OPS: Set[Type[AbsOpBase]] = set()
+ALL_TORCH_OPS: List[Type[AbsOpBase]] = []
 
 
 def operator_impl(op_type, *args, **kwargs):
@@ -24,7 +24,7 @@ def operator_impl(op_type, *args, **kwargs):
             rtype for rtype in TORCH_REALIZABLE_OPS if issubclass(rtype, op_type)
         ]
         for rtype in dispatchables:
-            ALL_TORCH_OPS.add(rtype)
+            ALL_TORCH_OPS.append(rtype)
 
         SanityCheck.true(
             len(dispatchables) != 0,
