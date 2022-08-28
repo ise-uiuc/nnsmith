@@ -40,6 +40,11 @@ class AbsTensor:
                 ConstraintCheck.eq(self.shape[i], other.shape[i])
         return ret
 
+    def torch(self):
+        import torch
+
+        return torch.Size(self.shape)
+
     def constains_symbol(self) -> bool:
         return any(isinstance(s, z3.ExprRef) for s in self.shape)
 

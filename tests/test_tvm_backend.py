@@ -11,6 +11,7 @@ def test_synthesized_onnx_model(tmp_path):
 
     # TODO(@ganler): do dtype first.
     gen = random_model_gen(
+        opset=ONNXModel.operators(),
         init_rank=4,
         seed=23132,
         max_nodes=1,

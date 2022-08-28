@@ -14,6 +14,7 @@ def test_synthesized_onnx_model(tmp_path):
     d.mkdir()
 
     gen = random_model_gen(
+        opset=ONNXModel.operators(),
         init_rank=4,
         seed=23132,
         max_nodes=2,
