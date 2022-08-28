@@ -2,7 +2,6 @@ from functools import reduce
 from typing import List, Union
 
 import z3
-import torch
 
 from nnsmith.error import SanityCheck, ConstraintCheck
 from nnsmith.abstract.dtype import DType
@@ -42,7 +41,8 @@ class AbsTensor:
         return ret
 
     def torch(self):
-        # NOTE: Only for concrete shapes.
+        import torch
+
         return torch.Size(self.shape)
 
     def constains_symbol(self) -> bool:
