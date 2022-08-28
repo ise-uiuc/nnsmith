@@ -47,9 +47,6 @@ class TFNet(tf.Module):
         for op, inp_keys, out_keys in self.schedule.instructions:
             if not isinstance(op, Input):
                 op = cast(AbsOpBase, op)
-                # out_abs_tensor = self.schedule.key2type[
-                #     out_keys[0]
-                # ]  # TODO Colin how to support Dense layer with different dtypes
                 fwd_fn = forward_fn(op)
                 SanityCheck.true(fwd_fn is not None, f"Bad implementation for {op}")
                 if not isinstance(op, tf.Module):

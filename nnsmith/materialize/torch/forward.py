@@ -26,7 +26,7 @@ class StopFoldConst(torch.nn.Module):
         super().__init__()
         self.dtype = data.dtype
         self.param = torch.nn.parameter.Parameter(
-            data, requires_grad=data.is_floating_point()  # TODO Colin
+            data, requires_grad=data.is_floating_point()  # TODO Colin trainable const?
         )
 
     @torch.no_grad()

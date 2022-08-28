@@ -1163,18 +1163,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # if args.framework == "torch":
-    #     # ALL_OP_TYPES = [
-    #     #     Add,
-    #     #     Linear,
-    #     # ]
-    #     ALL_OP_TYPES.remove(Dense)
-    # elif args.framework == "tensorflow":
-    #     ALL_OP_TYPES = [
-    #         Add,
-    #         Dense,
-    #     ]
-
     # TODO(@ganler): re-enable generating differentiable models.
 
     strt_time = time.time()
@@ -1241,14 +1229,20 @@ if __name__ == "__main__":
     elif args.framework == "tensorflow":
         from icecream import ic  # TODO Colin remove this
         from nnsmith.materialize.tensorflow import (
-            TFModel,
             assert_dict_eq_tf,
             np_dict_from_tf,
             tf_dict_from_np,
         )
         from nnsmith.backends.tflite import TFLiteFactory
 
-        model = TFModel(schedule=schedule)
+        model = Model(schedule=schedule)
+        # model.refine_weights()
+        oracle = model.make_oracle()
+
+        testcase = TestCase(model, oracle)
+        testcase.dump(root_folder=args.output)
+        exit()
+
         inputs = model.random_inputs()
         out_eager = model.run_eagerly(inputs)
         ic(out_eager)
