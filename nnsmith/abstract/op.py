@@ -350,7 +350,7 @@ def concretize_op(op: AbsOpBase, model: Optional[z3.ModelRef]) -> AbsOpBase:
     for idx in symbolic_idx:
         values[idx] = model.eval(values[idx]).as_long()
 
-    concrete_op = globals()[op.__class__.__name__](*values)
+    concrete_op = type(op)(*values)
     concrete_op.inp_ranks = op.inp_ranks
     concrete_op.out_ranks = op.out_ranks
     concrete_op.same_inp_dims = op.same_inp_dims

@@ -15,6 +15,7 @@ def test_onnx_load_dump(tmp_path):
     d.mkdir()
 
     gen = random_model_gen(
+        opset=ONNXModel.operators(),
         init_rank=4,
         seed=54341,
         max_nodes=5,
@@ -60,6 +61,7 @@ def test_bug_report_load_dump(tmp_path):
     d.mkdir()
 
     gen = random_model_gen(
+        opset=ONNXModel.operators(),
         init_rank=4,
         seed=5341,
         max_nodes=5,
