@@ -205,7 +205,9 @@ class TestCase:
         self.model = model
 
     @staticmethod
-    def load(model_type: Model, root_folder: str, allow_no_oracle=False) -> "TestCase":
+    def load(
+        model_type: Type[Model], root_folder: str, allow_no_oracle=False
+    ) -> "TestCase":
         model_path = os.path.join(
             root_folder, model_type.name_prefix() + model_type.name_suffix()
         )
