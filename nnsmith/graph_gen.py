@@ -264,18 +264,18 @@ class SimpleGenerator:
     def abstract_gen(self, max_node_size=10, max_gen_millisec=2000):
         self.max_gen_millisec = max_gen_millisec
         self.cur_phase = "abstract_gen"
-        # z3.set_param(
-        #     "smt.phase_selection",
-        #     5,
-        #     "smt.arith.random_initial_value",
-        #     True,
-        #     "sat.phase",
-        #     "random",
-        #     "timeout",
-        #     max_gen_millisec // 3,
-        #     "memory_max_size",
-        #     50 * 1024,  # MB
-        # )
+        z3.set_param(
+            "smt.phase_selection",
+            5,
+            "smt.arith.random_initial_value",
+            True,
+            "sat.phase",
+            "random",
+            "timeout",
+            max_gen_millisec // 3,
+            "memory_max_size",
+            50 * 1024,  # MB
+        )
 
         init_time = time.time()
 
