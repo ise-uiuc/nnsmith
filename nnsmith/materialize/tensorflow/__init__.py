@@ -8,14 +8,14 @@ import numpy as np
 import tensorflow as tf  # type: ignore
 
 
-def fix_tensorflow_issues():
+def configure_tensorflow():
     # https://github.com/tensorflow/tensorflow/issues/57359
-    tf.config.experimental.enable_tensor_float_32_execution(False)
+    # tf.config.experimental.enable_tensor_float_32_execution(False)
     for gpu in tf.config.experimental.list_physical_devices("GPU"):
         tf.config.experimental.set_memory_growth(gpu, True)
 
 
-fix_tensorflow_issues()
+configure_tensorflow()
 
 from nnsmith.graph_gen import Schedule
 from nnsmith.abstract.op import AbsTensor

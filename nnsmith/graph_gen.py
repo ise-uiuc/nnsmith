@@ -1185,10 +1185,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.framework == "torch":
-        ALL_OP_TYPES = [
-            Add,
-            Linear,
-        ]
+        # ALL_OP_TYPES = [
+        #     Add,
+        #     Linear,
+        # ]
+        ALL_OP_TYPES.remove(Dense)
     elif args.framework == "tensorflow":
         ALL_OP_TYPES = [
             Add,
@@ -1211,7 +1212,6 @@ if __name__ == "__main__":
         config_skip_op(args.skip)
 
     from nnsmith.materialize import TestCase
-    from nnsmith.materialize.onnx import ONNXModel
     from nnsmith.util import mkdir
 
     strt_time = time.time()
@@ -1252,6 +1252,8 @@ if __name__ == "__main__":
     model: Model
 
     if args.framework == "torch":
+        from nnsmith.materialize.onnx import ONNXModel
+
         model = ONNXModel.from_schedule(schedule)
         model.refine_weights()  # either random generated or gradient-based.
         oracle = model.make_oracle()

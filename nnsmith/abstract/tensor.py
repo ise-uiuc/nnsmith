@@ -2,7 +2,6 @@ from functools import reduce
 from typing import List, Union
 
 import z3
-import torch
 
 from nnsmith.error import SanityCheck, ConstraintCheck
 from nnsmith.abstract.dtype import DType
@@ -40,10 +39,6 @@ class AbsTensor:
             else:
                 ConstraintCheck.eq(self.shape[i], other.shape[i])
         return ret
-
-    def torch(self):
-        # NOTE: Only for concrete shapes.
-        return torch.Size(self.shape)
 
     def constains_symbol(self) -> bool:
         return any(isinstance(s, z3.ExprRef) for s in self.shape)
