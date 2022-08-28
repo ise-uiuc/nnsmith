@@ -2,3 +2,4 @@ pytest
 pre-commit
 black
 wget
+gputil

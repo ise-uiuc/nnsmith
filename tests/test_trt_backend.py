@@ -1,5 +1,12 @@
 import pytest
 
+import GPUtil
+
+if not GPUtil.getAvailable():
+    pytest.skip(
+        "Skipping TensorRT tests due to no GPU detected.", allow_module_level=True
+    )
+
 from nnsmith.materialize import TestCase
 from nnsmith.materialize.onnx import ONNXModel
 from nnsmith.graph_gen import random_model_gen, concretize_graph, make_schedule

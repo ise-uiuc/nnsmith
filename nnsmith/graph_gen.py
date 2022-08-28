@@ -1,5 +1,3 @@
-from multiprocessing import Process
-import psutil
 from collections import defaultdict, namedtuple
 import math
 import textwrap
@@ -14,9 +12,9 @@ import warnings
 import uuid
 
 import networkx as nx
-import numpy as np
 import z3
 
+from nnsmith.util import set_seed
 from nnsmith.error import SanityCheck, ConstraintError
 from nnsmith.abstract.op import *
 from nnsmith.abstract.op import __MAX_RANK__ as __MAX_RANK__
@@ -130,15 +128,11 @@ class SimpleGenerator:
         forward_prob=None,
         init_fp=False,
     ):
-        if seed is not None:
-            np.random.seed(seed)
-            random.seed(seed)
+        if seed:
+            set_seed(seed)
 
         self.verbose = verbose
-
         self.op_candidates = opset
-        print(opset)
-
         self.solver = z3.Solver()
 
         # 4 bytes per float (assume we use float64)
@@ -170,6 +164,7 @@ class SimpleGenerator:
         # <op idx>
         self.placeholders: List[int] = []
         # for all (including newly created tmp) placeholders
+
         self.insert_init_ph_node(
             self.create_placeholder(init_rank, dtype=DType.float32 if init_fp else None)
         )
@@ -180,6 +175,7 @@ class SimpleGenerator:
         return random.choices(range(__MAX_RANK__ + 1), weights=[1, 1, 1, 1, 2, 1])[0]
 
     def random_dtype(self):
+        # more floats than ints.
         wts = [1] * len(DTYPE_ALL)
         for i in DTYPE_FLOATS:
             wts[DTYPE_ALL.index(i)] = 8
@@ -191,6 +187,7 @@ class SimpleGenerator:
         syms = self.new_syms(
             ["v%s_%s" % (self.monotonic_placeholder_id, k) for k in range(rank)]
         )
+        print(self.random_dtype())
         shapevar = AbsTensor(
             shape=syms, dtype=dtype if dtype is not None else self.random_dtype()
         )
@@ -267,18 +264,18 @@ class SimpleGenerator:
     def abstract_gen(self, max_node_size=10, max_gen_millisec=2000):
         self.max_gen_millisec = max_gen_millisec
         self.cur_phase = "abstract_gen"
-        z3.set_param(
-            "smt.phase_selection",
-            5,
-            "smt.arith.random_initial_value",
-            True,
-            "sat.phase",
-            "random",
-            "timeout",
-            max_gen_millisec // 3,
-            "memory_max_size",
-            50 * 1024,  # MB
-        )
+        # z3.set_param(
+        #     "smt.phase_selection",
+        #     5,
+        #     "smt.arith.random_initial_value",
+        #     True,
+        #     "sat.phase",
+        #     "random",
+        #     "timeout",
+        #     max_gen_millisec // 3,
+        #     "memory_max_size",
+        #     50 * 1024,  # MB
+        # )
 
         init_time = time.time()
 
@@ -333,7 +330,7 @@ class SimpleGenerator:
             for child in var.children():
                 self.check_arith_ref(child)
 
-    def check_sat(self, *assumptions, timeout=None):
+    def check_sat(self, *assumptions):
         start = time.time()
         if self.use_bitvec:
             for assump in assumptions:
@@ -341,51 +338,28 @@ class SimpleGenerator:
 
         if self.verbose:
             print(
-                "---> total constraints: \n",
-                "\n".join(
-                    sorted(map(str, list(self.solver.assertions()) + list(assumptions)))
-                ),
+                "---> total constraints:\n",
+                ", ".join(map(str, list(self.solver.assertions()))),
+                ", ".join(map(str, list(assumptions))),
             )
-        if timeout is None:
-            cres = self.solver.check(*assumptions)
-        else:
-            # FIXME(@ganler): fix the dirty workaround.
-            def _run():
-                cres = self.solver.check(*assumptions)
-                exit({"sat": 0, "unsat": 1, "unknown": 2}[str(cres)])
 
-            p = Process(target=_run)
-            p.start()
-            p.join(timeout=timeout / 1000)
-            if p.is_alive():
-                cres = z3.unknown
-                for child in psutil.Process(p.pid).children(recursive=False):
-                    child: psutil.Process  # type: ignore
-                    try:
-                        child.terminate()
-                        child.wait()
-                    except psutil.NoSuchProcess:
-                        pass
-                p.terminate()
-                p.join()
-
-            else:
-                cres = {0: z3.sat, 1: z3.unsat, 2: z3.unknown}[p.exitcode]
+        cres = self.solver.check(*assumptions)
 
         checking_time = int((time.time() - start) * 1000)
         if checking_time > 3000 and self.cur_node:  # 3s
             warnings.warn(
                 f"[WARNING] check {self.cur_node} {checking_time} ms at phase {self.cur_phase}"
             )
+
         if self.verbose:
             print(cres, "<-- checking time:", checking_time, "ms")
 
             if cres == z3.unsat:
                 print(f"Unsat core: {self.solver.unsat_core()}")
+
         if cres == z3.sat:
-            if timeout is not None:
-                self.solver.check(*assumptions)
             self.last_solution = self.solver.model()
+
         return cres
 
     def pick_next_op_type(self):
@@ -691,7 +665,7 @@ class SimpleGenerator:
 
         abs_tensor_candidates = []
         if self.verbose:
-            print("dtype_combs_spec:", dtype_combs_spec)
+            print("Input data types candidates:", dtype_combs_spec)
 
         all_can_dtypes = []
         for i, ndims in enumerate(ndim_list):
@@ -1204,11 +1178,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # TODO(@ganler): re-enable generating differentiable models.
-
-    strt_time = time.time()
-
-    # TODO(@ganler): use seed register and setter to set seeds.
     seed = random.getrandbits(32) if args.seed is None else args.seed
+
     print(f"Using seed {seed}")
 
     # TODO(@ganler): skip operators outside of model gen.
@@ -1216,7 +1187,8 @@ if __name__ == "__main__":
     from nnsmith.materialize.onnx import ONNXModel
     from nnsmith.util import mkdir
 
-    strt_time = time.time()
+    ONNXModel.add_seed_setter()
+
     gen = random_model_gen(
         opset=ONNXModel.operators(),
         init_rank=args.init_rank,
@@ -1232,9 +1204,7 @@ if __name__ == "__main__":
     )
 
     if args.verbose:
-        print("solution:", gen.get_solutions())
-
-    mkdir(args.output)
+        print("solution:", ", ".join(map(str, gen.get_solutions())))
 
     fixed_graph, concrete_abstensors = concretize_graph(
         gen.abstract_graph, gen.tensor_dataflow, gen.get_solutions()
@@ -1247,6 +1217,8 @@ if __name__ == "__main__":
     oracle = model.make_oracle()
 
     testcase = TestCase(model, oracle)
+
+    mkdir(args.output)
     testcase.dump(root_folder=args.output)
 
     if args.verbose or args.viz:

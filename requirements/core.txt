@@ -1,8 +1,7 @@
-torch
-onnx
 z3-solver==4.8.14
 pydot
 rich
 networkx==2.7
 termcolor
 multipledispatch
+gitpython
