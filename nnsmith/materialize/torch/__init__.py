@@ -1,11 +1,12 @@
-from typing import Dict
+from typing import Dict, List, Type
 import pickle
 
 import torch
 
 from nnsmith.graph_gen import Schedule
-from nnsmith.abstract.op import AbsTensor
+from nnsmith.abstract.op import AbsTensor, AbsOpBase
 from nnsmith.materialize import Model, Oracle
+from nnsmith.materialize.torch.forward import ALL_TORCH_OPS
 from nnsmith.materialize.torch.input_gen import PracticalHybridSearch
 from nnsmith.materialize.torch.symbolnet import SymbolNet
 
@@ -94,3 +95,7 @@ class TorchModel(Model):
     @property
     def native_model(self) -> SymbolNet:
         return self.torch_model
+
+    @staticmethod
+    def operators() -> List[Type[AbsOpBase]]:
+        return list(ALL_TORCH_OPS)

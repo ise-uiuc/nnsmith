@@ -1,4 +1,4 @@
-from typing import Dict, Tuple, List, Set, cast
+from typing import Dict, Tuple, List, Set, Type, cast
 from multiprocessing import Process
 import psutil
 from collections import defaultdict, namedtuple
@@ -78,14 +78,12 @@ def concretize_graph(
 class SimpleGenerator:
     def __init__(
         self,
+        opset,
         init_rank=4,
-        skip=[Input],
         megabyte_lim=__MB_LIM__,
         seed=None,
         verbose=False,
-        use_bitvec=False,
         limnf=True,
-        candidates_overwrite=None,
         forward_prob=None,
         init_fp=False,
     ):
@@ -95,19 +93,10 @@ class SimpleGenerator:
 
         self.verbose = verbose
 
-        if candidates_overwrite is None:
-            self.op_candidates = [
-                op for op in ALL_OP_TYPES if op not in skip and not op._skip
-            ]
-        else:
-            self.op_candidates = [
-                op for op in candidates_overwrite if op not in skip and not op._skip
-            ]
+        self.op_candidates = opset
+        print(opset)
 
-        # filter those with no dtype specified
-        self.op_candidates = [op for op in self.op_candidates if op.in_dtypes]
-
-        self.solver = z3.SolverFor("QF_UFBV") if use_bitvec else z3.Solver()
+        self.solver = z3.Solver()
 
         # 4 bytes per float (assume we use float64)
         self.limit_float = 1024**2 * megabyte_lim // 8
@@ -125,7 +114,7 @@ class SimpleGenerator:
         self.dim2shape_idx: Dict[int, List[int]] = {}
         self.viz_cnt = 0
 
-        self.use_bitvec = use_bitvec
+        self.use_bitvec = False  # Only consider integer domain for now.
         self.init_rank = init_rank
         self.n_floats = 0
         self.monotonic_placeholder_id = 0
@@ -1007,7 +996,6 @@ def __GROUP_RESHAPE(node, inp_shps, construct_param_dict, bin=True):
 
 
 PARAM_CONFIG1["Reshape"] = __GROUP_RESHAPE
-assert all(i in ALL_OP_STR2TYPE for i in PARAM_CONFIG1.keys())
 
 PARAM_CONFIG2 = copy.deepcopy(PARAM_CONFIG1)
 PARAM_CONFIG2["ConstPad"] = defaultdict(lambda: _DEFAULT_BIN_CONS)
@@ -1113,22 +1101,19 @@ class GuidedGen(PureSymbolGen):
 
 
 def random_model_gen(
+    opset: Set[Type[AbsOpBase]],
     init_rank=4,
     max_nodes=5,
     seed=None,
-    use_bitvec=False,
     timeout_ms=20000,
     verbose=False,
-    skip=None,
     **kwargs,
 ):
-    if skip is not None:
-        config_skip_op(skip)
     gen = PureSymbolGen(
+        opset=opset,
         init_rank=init_rank,
         seed=seed,
         verbose=verbose,
-        use_bitvec=use_bitvec,
         **kwargs,
     )
     gen.abstract_gen(max_node_size=max_nodes, max_gen_millisec=timeout_ms)
@@ -1152,14 +1137,8 @@ if __name__ == "__main__":
     # TODO(@ganler): use logging to control verbosity
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--img", type=str, help="Output image format", default="png")
-    parser.add_argument("--use_bitvec", action="store_true")
     parser.add_argument(
         "--viz", action="store_true", help="Visualize the model in given format."
-    )
-    parser.add_argument(
-        "--skip",
-        help="Node types to skip. Split by `,`. By default a blacklist for each backend is also appended.",
-        type=str,
     )
     parser.set_defaults(limnf=True)
     parser.add_argument(
@@ -1184,42 +1163,42 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.framework == "torch":
-        # ALL_OP_TYPES = [
-        #     Add,
-        #     Linear,
-        # ]
-        ALL_OP_TYPES.remove(Dense)
-    elif args.framework == "tensorflow":
-        ALL_OP_TYPES = [
-            Add,
-            Dense,
-        ]
+    # if args.framework == "torch":
+    #     # ALL_OP_TYPES = [
+    #     #     Add,
+    #     #     Linear,
+    #     # ]
+    #     ALL_OP_TYPES.remove(Dense)
+    # elif args.framework == "tensorflow":
+    #     ALL_OP_TYPES = [
+    #         Add,
+    #         Dense,
+    #     ]
 
     # TODO(@ganler): re-enable generating differentiable models.
 
     strt_time = time.time()
 
-    seed = args.seed
     # TODO(@ganler): use seed register and setter to set seeds.
-    if seed is None:
-        # If we have not selected a seed, choose random one.
-        seed = random.getrandbits(32)
+    seed = random.getrandbits(32) if args.seed is None else args.seed
     print(f"Using seed {seed}")
 
-    # TODO(@ganler): make skipper easier to use.
-    if args.skip is not None:
-        config_skip_op(args.skip)
-
+    # TODO(@ganler): skip operators outside of model gen.
     from nnsmith.materialize import TestCase
     from nnsmith.util import mkdir
 
     strt_time = time.time()
+
+    if args.framework == "torch":
+        from nnsmith.materialize.onnx import ONNXModel as Model
+    elif args.framework == "tensorflow":
+        from nnsmith.materialize.tensorflow import TFModel as Model
+
     gen = random_model_gen(
+        opset=Model.operators(),
         init_rank=args.init_rank,
         seed=seed,
         max_nodes=args.max_nodes,
-        use_bitvec=args.use_bitvec,
         timeout_ms=args.timeout_ms,
         verbose=args.verbose,
         limnf=args.limnf,
@@ -1252,9 +1231,7 @@ if __name__ == "__main__":
     model: Model
 
     if args.framework == "torch":
-        from nnsmith.materialize.onnx import ONNXModel
-
-        model = ONNXModel.from_schedule(schedule)
+        model = Model.from_schedule(schedule)
         model.refine_weights()  # either random generated or gradient-based.
         oracle = model.make_oracle()
 

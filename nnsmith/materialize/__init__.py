@@ -1,4 +1,4 @@
-from typing import Dict, Tuple, List, Any
+from typing import Dict, Tuple, List, Set, Any, Type
 import pickle
 from collections import namedtuple
 from dataclasses import dataclass
@@ -6,12 +6,50 @@ import os
 import json
 from abc import ABC, abstractmethod
 from enum import Enum
+from multipledispatch import dispatch
 
 import networkx as nx
 import numpy as np
 
-from nnsmith.abstract.op import AbsOpBase, Input
+from nnsmith.error import SanityCheck
+from nnsmith.abstract.op import AbsOpBase, Input, Constant
 from nnsmith.abstract.tensor import AbsTensor
+
+
+def framework_operator_impl(
+    FRAMEWORK_REALIZABLE_OPS: Set[Type[AbsOpBase]],
+    ALL_FRAMEWORK_OPS: Set[Type[AbsOpBase]],
+    op_type: AbsOpBase,
+    *args,
+    **kwargs,
+):
+    """When implementing `forward_fn` for an operator class, add this operator into ALL_FRAMEWORK_OPS set.
+
+    Usage:
+        In `forward.py`, define `operator_impl = partial(framework_operator_impl, FW_REALIZABLE_OPS, ALL_FM_OPS)`.
+        Then add `@operator_impl(OpClass)` when implementing `forward_fn` for `OpClass`.
+
+    Args:
+        FRAMEWORK_REALIZABLE_OPS (Set[Type[AbsOpBase]]): all realizable ops in the framework. Usually it can be obtained by FULL_OPERATOR_SETS["core"].union(FULL_OPERATOR_SETS["framework_name"])
+        ALL_FRAMEWORK_OPS (Set[Type[AbsOpBase]]): set of operator classes that are implemented `forward_fn` in the framework.
+        op_type (AbsOpBase): operator class
+    """
+    SanityCheck.true(
+        issubclass(op_type, AbsOpBase),
+        f"Decorator operator_impl takes AbsOpBase subclass, but got {op_type}",
+    )
+    if op_type is not Constant:  # Constant comes from placeholder.
+        dispatchables = [
+            rtype for rtype in FRAMEWORK_REALIZABLE_OPS if issubclass(rtype, op_type)
+        ]
+        for rtype in dispatchables:
+            ALL_FRAMEWORK_OPS.add(rtype)
+
+        SanityCheck.true(
+            len(dispatchables) != 0,
+            f"Decorator operator_impl only take types decorated by `mark_realize`, but got {op_type}",
+        )
+    return dispatch(op_type, *args, **kwargs)
 
 
 Instruction: Tuple[AbsOpBase, List[int], List[int]] = namedtuple(
@@ -145,6 +183,11 @@ class Model(ABC):
 
     @abstractmethod
     def refine_weights(self) -> None:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def operators() -> List[Type[AbsOpBase]]:
         pass
 
     @staticmethod

@@ -68,7 +68,7 @@ def test_bug_report_load_dump(tmp_path):
     fixed_graph, concrete_abstensors = concretize_graph(
         gen.abstract_graph, gen.tensor_dataflow, gen.get_solutions()
     )
-
+    # TODO Colin change make_schedule
     schedule = make_schedule(fixed_graph, concrete_abstensors)
 
     model = ONNXModel.from_schedule(schedule)

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple, Type
 from multipledispatch import dispatch  # type: ignore
 import os
 import pickle
@@ -18,8 +18,9 @@ def configure_tensorflow():
 configure_tensorflow()
 
 from nnsmith.graph_gen import Schedule
-from nnsmith.abstract.op import AbsTensor
+from nnsmith.abstract.op import AbsTensor, AbsOpBase
 from nnsmith.materialize import Model, Oracle
+from nnsmith.materialize.tensorflow.forward import ALL_TF_OPS
 from nnsmith.materialize.tensorflow.tfnet import TFNet, TFNetOutDict
 
 TFNetInputDict = Dict[str, tf.Tensor]
@@ -215,3 +216,7 @@ class TFModel(Model):
     def run_eagerly(self, inputs: TFNetInputDict) -> TFNetOutDict:
         tf.config.run_functions_eagerly(True)
         return self.net(**inputs)
+
+    @staticmethod
+    def operators() -> List[Type[AbsOpBase]]:
+        return list(ALL_TF_OPS)

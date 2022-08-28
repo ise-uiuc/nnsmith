@@ -24,7 +24,7 @@ class TFLiteRunner:
         return self.tfnet_callable(**input)
         # https://github.com/tensorflow/tensorflow/issues/34536#issuecomment-565632906
         # TFLite doesn't support NVIDIA GPU.
-        # It can convert input args to np.ndarray, and it outputs np.ndarray.
+        # It can automatically convert input args to np.ndarray, and it outputs np.ndarray.
         tf_input = tf_dict_from_np(input)
         tf_output = self.tfnet_callable(**tf_input)
         return np_dict_from_tf(tf_output)

@@ -47,14 +47,7 @@ def loss_lt(x, y):
     return loss_lt_zero(x - y)
 
 
-class Dummy:  # For simple syntactic checking;
-    pass
-
-
 # loss_fn:     backward
-@dispatch(Dummy)
-def loss_fn(op):
-    pass
 
 
 @dispatch(Div)

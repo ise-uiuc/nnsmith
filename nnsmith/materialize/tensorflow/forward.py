@@ -1,10 +1,20 @@
 from multipledispatch import dispatch
+from functools import partial
 
 import tensorflow as tf  # type: ignore
 from tensorflow import keras
 from keras import layers
 
 from nnsmith.abstract.op import *
+from nnsmith.materialize import framework_operator_impl
+from nnsmith.materialize.tensorflow.dialect import Dense
+
+
+# core dialect + some future PyTorch-only Operators.
+TF_REALIZABLE_OPS = FULL_OPERATOR_SETS["core"].union(FULL_OPERATOR_SETS["tensorflow"])
+ALL_TF_OPS: Set[Type[AbsOpBase]] = set()
+
+operator_impl = partial(framework_operator_impl, TF_REALIZABLE_OPS, ALL_TF_OPS)
 
 
 class StopFoldConst(tf.Module):
@@ -16,24 +26,24 @@ class StopFoldConst(tf.Module):
         return self.data
 
 
-"""TensorFlow forward Callables"""
+"""Implement TensorFlow forward Callables for operator classes"""
 
 
-@dispatch(Constant, AbsTensor)
-def forward_fn(op: Constant, out_abs_tensor: AbsTensor):
+@operator_impl(Constant)
+def forward_fn(op: Constant):
     data = tf.cast(
         tf.random.normal(op.abs_tensor.shape), op.abs_tensor.dtype.tensorflow()
     )
     return StopFoldConst(data)
 
 
-@dispatch(Add, AbsTensor)
-def forward_fn(op: Add, out_abs_tensor: AbsTensor):
+@operator_impl(Add)
+def forward_fn(op: Add):
     return tf.add
 
 
-@dispatch(Dense, AbsTensor)
-def forward_fn(op: Dense, out_abs_tensor: AbsTensor):
+@operator_impl(Dense)
+def forward_fn(op: Dense):
     return layers.Dense(
-        units=op.ofeat, dtype=out_abs_tensor.dtype.tensorflow(), autocast=False
+        units=op.ofeat, dtype=op.input_like[0].dtype.tensorflow(), autocast=False
     )

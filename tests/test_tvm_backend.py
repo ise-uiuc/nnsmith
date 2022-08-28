@@ -19,7 +19,7 @@ def test_synthesized_onnx_model(tmp_path):
     fixed_graph, concrete_abstensors = concretize_graph(
         gen.abstract_graph, gen.tensor_dataflow, gen.get_solutions()
     )
-
+    # TODO Colin
     schedule = make_schedule(fixed_graph, concrete_abstensors)
 
     model = ONNXModel.from_schedule(schedule)
