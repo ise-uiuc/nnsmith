@@ -1,4 +1,5 @@
 import warnings
+from typing import List
 
 from multipledispatch import dispatch
 import tensorrt as trt
@@ -6,6 +7,10 @@ import onnx
 import pycuda.driver as cuda
 import numpy as np
 
+from nnsmith.abstract.op import AbsOpBase
+from nnsmith.abstract.tensor import AbsTensor
+from nnsmith.abstract.arith import *
+from nnsmith.abstract.extension import patch_requires
 from nnsmith.backends import BackendFactory
 from nnsmith.materialize.onnx import ONNXModel
 
@@ -35,6 +40,7 @@ class TRTFactory(BackendFactory):
             warnings.warn("There is not O0 mode for TensorRT so far.")
 
     @property
+    @classmethod
     def system_name(self) -> str:
         return "tensorrt"
 
@@ -136,3 +142,8 @@ class TRTFactory(BackendFactory):
         stream.synchronize()
         # Return only the host outputs.
         return [out.host for out in outputs]
+
+
+@patch_requires(TRTFactory.system_name, "core.Pool2d")
+def RulePool2d(self: AbsOpBase, _: List[AbsTensor]) -> List[Union[z3.ExprRef, bool]]:
+    return [nnsmith_lt(nnsmith_mul(self.kernel_h_size, self.kernel_w_size), 10000)]
