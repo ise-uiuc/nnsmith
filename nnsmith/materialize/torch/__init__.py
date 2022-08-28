@@ -1,4 +1,4 @@
-from typing import Dict, List, Type
+from typing import Dict, List, Type, Callable
 import pickle
 
 import torch
@@ -9,6 +9,7 @@ from nnsmith.materialize import Model, Oracle
 from nnsmith.materialize.torch.forward import ALL_TORCH_OPS
 from nnsmith.materialize.torch.input_gen import PracticalHybridSearch
 from nnsmith.materialize.torch.symbolnet import SymbolNet
+from nnsmith.util import register_seed_setter
 
 
 class TorchModel(Model):
@@ -99,3 +100,7 @@ class TorchModel(Model):
     @staticmethod
     def operators() -> List[Type[AbsOpBase]]:
         return list(ALL_TORCH_OPS)
+
+    @staticmethod
+    def add_seed_setter() -> None:
+        register_seed_setter("torch", torch.manual_seed, overwrite=True)

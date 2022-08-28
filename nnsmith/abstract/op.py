@@ -3,7 +3,7 @@ from copy import deepcopy
 import fnmatch
 from functools import reduce
 import os
-from typing import List, Optional, Tuple, Union, Dict, Set, Type
+from typing import List, Optional, Tuple, Union, Dict, Type
 from inspect import signature
 import random
 
@@ -46,7 +46,7 @@ Z3_CONS_FLOPS = Z3_CONS_FLOPS == "on"
 __MIN_RANK__ = 0
 __MAX_RANK__ = 5
 
-FULL_OPERATOR_SETS: Dict[str, Set[Type["AbsOpBase"]]] = {}
+FULL_OPERATOR_SETS: Dict[str, List[Type["AbsOpBase"]]] = dict()
 
 
 class mark_realize:
@@ -54,8 +54,13 @@ class mark_realize:
         self.dialect = dialect
 
     def __call__(self, op_type: Type["AbsOpBase"]) -> Type["AbsOpBase"]:
-        FULL_OPERATOR_SETS.setdefault(self.dialect, set()).add(op_type)
-        op_type.namespace = self.dialect
+        op_list = FULL_OPERATOR_SETS.setdefault(self.dialect, [])
+
+        if op_type not in op_list:
+            op_list.append(op_type)
+            op_list.sort(key=lambda x: x.__name__)
+            op_type.namespace = self.dialect
+
         return op_type
 
 

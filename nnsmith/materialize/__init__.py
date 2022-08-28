@@ -102,6 +102,10 @@ class Model(ABC):
     def operators() -> List[Type[AbsOpBase]]:
         pass
 
+    @staticmethod
+    def add_seed_setter() -> None:
+        pass
+
 
 class TestCase:
     def __init__(self, model: Model, oracle: Oracle):

@@ -1,8 +1,33 @@
 import os
 import shutil
-from typing import Dict
+import random
+from typing import Callable, Dict, List
 
 import numpy as np
+
+
+SEED_SETTERS = {
+    "random": random.seed,
+    "numpy": np.random.seed,
+}
+
+
+def register_seed_setter(
+    name: str,
+    fn: Callable[[int], None],
+    overwrite=False,
+):
+    if not overwrite:
+        assert name not in SEED_SETTERS, f"{name} is already registered"
+    SEED_SETTERS[name] = fn
+
+
+def set_seed(seed: int, names: List = None):
+    if names is None:
+        names = SEED_SETTERS.keys()
+    for name in names:
+        print(f"Setting seed {seed} for {name}")
+        SEED_SETTERS[name](seed)
 
 
 def mkdir(dir, yes=False):
@@ -22,17 +47,6 @@ def mkdir(dir, yes=False):
             shutil.rmtree(dir)
 
     os.makedirs(dir)
-
-
-def gen_one_input(inp_spec, l, r, seed=None):
-    if seed is not None:
-        np.random.seed(seed)  # TODO: use standalone random generator
-    inp = {}
-    for name, shape in inp_spec.items():
-        inp[name] = np.random.uniform(low=l, high=r, size=shape.shape).astype(
-            shape.dtype
-        )
-    return inp
 
 
 def is_invalid(output: Dict[str, np.ndarray]):

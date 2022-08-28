@@ -10,7 +10,7 @@ from nnsmith.materialize.torch.dialect import Linear
 # Implementation of operators.
 
 # core dialect + some future PyTorch-only Operators.
-TORCH_REALIZABLE_OPS = FULL_OPERATOR_SETS["core"].union(FULL_OPERATOR_SETS["torch"])
+TORCH_REALIZABLE_OPS = FULL_OPERATOR_SETS["core"] + FULL_OPERATOR_SETS["torch"]
 ALL_TORCH_OPS: Set[Type[AbsOpBase]] = set()
 
 
