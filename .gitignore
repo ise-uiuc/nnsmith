@@ -155,4 +155,4 @@ dmypy.json
 cython_debug/
 
 # Exclude
-!requirements/*.txt
+!requirements/**/*.txt
