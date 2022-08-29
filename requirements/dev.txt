@@ -3,4 +3,3 @@ pre-commit
 black
 wget
 gputil
-pycuda

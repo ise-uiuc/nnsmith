@@ -13,6 +13,7 @@ import uuid
 
 import networkx as nx
 import z3
+import pydot
 
 from nnsmith.util import set_seed
 from nnsmith.error import SanityCheck, ConstraintError
@@ -105,7 +106,6 @@ class SimpleGenerator:
 
         # dim size -> list[shape idx -> output_tensor_pool]
         self.dim2shape_idx: Dict[int, List[int]] = {}
-        self.viz_cnt = 0
 
         self.use_bitvec = False  # Only consider integer domain for now.
         self.init_rank = init_rank
@@ -651,14 +651,6 @@ class SimpleGenerator:
 
         return abs_tensor_candidates
 
-    def viz(self, filename: str = None):
-        if filename is None:
-            filename = f"step{self.viz_cnt}.png"
-        G = self.abstract_graph
-        nx.drawing.nx_pydot.write_dot(G, "graph.dot")
-        os.system(f"dot -Tpng graph.dot > {filename}")
-        self.viz_cnt += 1
-
 
 class PureSymbolGen(SimpleGenerator):
     def insert_init_ph_node(self, ph: Placeholder) -> Placeholder:
@@ -1094,6 +1086,17 @@ def random_model_gen(
     return gen
 
 
+def viz(G, filename: str = None):
+    if filename is None:
+        filename = f"graph.png"
+    if filename.endswith("png"):
+        nx.drawing.nx_pydot.to_pydot(G).write_png(filename)
+    elif filename.endswith("svg"):
+        nx.drawing.nx_pydot.to_pydot(G).write_svg(filename)
+    else:
+        raise ValueError(f"Unsupported image format: {fmt}")
+
+
 if __name__ == "__main__":
     # Generate a random ONNX model
     # TODO(@ganler): generate arbitrary model given things like `format=tf`.
@@ -1178,60 +1181,5 @@ if __name__ == "__main__":
 
     if args.verbose or args.viz:
         G = fixed_graph
-        nx.drawing.nx_pydot.write_dot(G, "graph.dot")
         fmt = args.img.replace(".", "")
-        os.system(
-            f"dot -T{fmt} graph.dot > {os.path.join(args.output, f'graph.{fmt}')}"
-        )
-        os.system("rm graph.dot")
-
-    model: Model
-
-    if args.framework == "torch":
-        model = Model.from_schedule(schedule)
-        model.refine_weights()  # either random generated or gradient-based.
-        oracle = model.make_oracle()
-
-        testcase = TestCase(model, oracle)
-        testcase.dump(root_folder=args.output)
-
-    elif args.framework == "tensorflow":
-        from icecream import ic  # TODO Colin remove this
-        from nnsmith.materialize.tensorflow import (
-            assert_dict_eq_tf,
-            np_dict_from_tf,
-            tf_dict_from_np,
-        )
-        from nnsmith.backends.tflite import TFLiteFactory
-
-        model = Model(schedule=schedule)
-        # model.refine_weights()
-        oracle = model.make_oracle()
-
-        testcase = TestCase(model, oracle)
-        testcase.dump(root_folder=args.output)
-        exit()
-
-        inputs = model.random_inputs()
-        out_eager = model.run_eagerly(inputs)
-        ic(out_eager)
-
-        concrete_net = model.concrete_net()
-        out_graph_exe = concrete_net(**inputs)
-        ic(out_graph_exe)
-
-        model_save_dir = cast(str, args.output)
-        model.dump_with_oracle(model_save_dir, inputs)
-
-        np_inputs = np_dict_from_tf(inputs)
-        tflite_factory = TFLiteFactory(None, None)
-        tflite_runner = tflite_factory.make_backend(model)
-        np_outputs = tflite_runner(np_inputs)
-        out_tflite = tf_dict_from_np(np_outputs)
-        ic(out_tflite)
-
-        assert_dict_eq_tf(out_eager, out_graph_exe)
-        assert_dict_eq_tf(out_eager, out_tflite)
-
-    else:
-        raise ValueError(f"Unknown deep learning framework {args.framework}")
+        viz(G, os.path.join(args.output, f"graph.{fmt}"))

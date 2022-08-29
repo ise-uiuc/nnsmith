@@ -1,11 +1,13 @@
+from dataclasses import dataclass
 import warnings
 from typing import List
 
-from multipledispatch import dispatch
-import tensorrt as trt
 import onnx
-import pycuda.driver as cuda
 import numpy as np
+import tensorrt as trt
+import pycuda.driver as cuda
+from pycuda.driver import DeviceAllocation
+from multipledispatch import dispatch
 
 from nnsmith.abstract.op import AbsOpBase
 from nnsmith.abstract.tensor import AbsTensor
@@ -15,16 +17,10 @@ from nnsmith.backends import BackendFactory
 from nnsmith.materialize.onnx import ONNXModel
 
 
-class HostDeviceMem(object):
-    def __init__(self, host_mem, device_mem):
-        self.host = host_mem
-        self.device = device_mem
-
-    def __str__(self):
-        return "Host:\n" + str(self.host) + "\nDevice:\n" + str(self.device)
-
-    def __repr__(self):
-        return self.__str__()
+@dataclass
+class HostDeviceMem:
+    host: np.ndarray
+    device: DeviceAllocation
 
 
 class TRTFactory(BackendFactory):
@@ -37,7 +33,7 @@ class TRTFactory(BackendFactory):
         if opt_options is False:
             # TODO(@ganler): support non-optimized TensorRT by using performing
             # inference over a model that marks all nodes as outputs.
-            warnings.warn("There is not O0 mode for TensorRT so far.")
+            warnings.warn("There is not O0 mode for TensorRT so far.", UserWarning)
 
     @property
     @classmethod
