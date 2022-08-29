@@ -24,13 +24,13 @@ class HostDeviceMem:
 
 
 class TRTFactory(BackendFactory):
-    def __init__(self, device="gpu", optmax=True, **kwargs):
-        super().__init__(device, optmax, **kwargs)
+    def __init__(self, device="gpu", opt_options=True, **kwargs):
+        super().__init__(device, opt_options, **kwargs)
 
         if device != "gpu":
             raise ValueError("TensorRT backend only supports GPU!")
 
-        if optmax is False:
+        if opt_options is False:
             # TODO(@ganler): support non-optimized TensorRT by using performing
             # inference over a model that marks all nodes as outputs.
             warnings.warn("There is not O0 mode for TensorRT so far.", UserWarning)

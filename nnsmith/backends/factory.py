@@ -1,5 +1,5 @@
+from typing import Callable, Dict, Optional, Any
 from abc import ABC, abstractmethod
-from typing import Callable, Dict, Optional
 import traceback
 
 import numpy as np
@@ -8,12 +8,15 @@ from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.materialize import BugReport, Oracle, Stage, Symptom, TestCase, Model
 from nnsmith.difftest import assert_allclose
 
+BackendIODict = Dict[str, np.ndarray]
+BackendCallable = Callable[[BackendIODict], BackendIODict]
+
 
 class BackendFactory(ABC):
-    def __init__(self, device="cpu", optmax=True, catch_process_crash=True):
+    def __init__(self, device="cpu", opt_options: Any = None, catch_process_crash=True):
         super().__init__()
         self.device = device
-        self.optmax = optmax
+        self.opt_options = opt_options
         # If true, will run the compilation and execution in a subprocess.
         # and catch segfaults returned as BugReport.
         self.catch_process_crash = catch_process_crash
@@ -24,14 +27,12 @@ class BackendFactory(ABC):
         pass
 
     def __str__(self) -> str:
-        return (
-            f"{self.system_name} (opt={'max' if self.optmax else 'min'}-{self.device})"
-        )
+        return f"{self.system_name} ({self.device}  opt: {self.opt_options})"
 
     @staticmethod
     def make_random_input(
         input_like: Dict[str, AbsTensor], low=1, high=2
-    ) -> Dict[str, np.ndarray]:
+    ) -> BackendIODict:
         return {
             name: np.random.uniform(low=low, high=high, size=aten.shape).astype(
                 aten.dtype.numpy()
@@ -40,9 +41,7 @@ class BackendFactory(ABC):
         }
 
     @abstractmethod
-    def make_backend(
-        self, model: Model
-    ) -> Callable[[Dict[str, np.ndarray]], Dict[str, np.ndarray]]:
+    def make_backend(self, model: Model) -> BackendCallable:
         raise NotImplementedError
 
     def verify_testcase(self, testcase: TestCase) -> Optional[BugReport]:
@@ -96,9 +95,7 @@ class BackendFactory(ABC):
 
         return None
 
-    def make_testcase(
-        self, model: Model, input: Dict[str, np.ndarray] = None
-    ) -> TestCase:
+    def make_testcase(self, model: Model, input: BackendIODict = None) -> TestCase:
         try:  # compilation
             executable = self.make_backend(model)
         except Exception:

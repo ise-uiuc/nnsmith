@@ -62,8 +62,8 @@ if __name__ == "__main__":
     random.seed(args.seed)
     np.random.seed(args.seed)
 
-    omax_fac = mk_factory(args.backend, args.device, optmax=True)
-    omin_fac = mk_factory(args.backend, args.device, optmax=False)
+    omax_fac = mk_factory(args.backend, args.device, opt_options=True)
+    omin_fac = mk_factory(args.backend, args.device, opt_options=False)
 
     if args.memcov:
         assert omax_fac._coverage_install().get_now() is not None, "Memcov unavailable!"

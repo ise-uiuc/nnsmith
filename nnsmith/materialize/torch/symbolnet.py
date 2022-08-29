@@ -74,7 +74,9 @@ class SymbolNet(nn.Module):
                 if loss_fn.dispatch(type(op)):
                     self.n_vulnerable_op += 1
 
-                self.instructions.append((torch_fn, inputs, outputs, op))
+                self.instructions.append(
+                    (torch_fn, inputs, outputs, op)
+                )  # TODO Colin op is redundant?
 
         # the order follows `input_keys`
         self.input_map = {

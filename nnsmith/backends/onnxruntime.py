@@ -1,4 +1,4 @@
-from typing import Callable, Dict
+from typing import Callable, Dict, cast
 
 from multipledispatch import dispatch
 import numpy as np
@@ -18,11 +18,12 @@ OPT_LEVELS = [
 
 
 class ORTFactory(BackendFactory):
-    def __init__(self, device, optmax, **kwargs):
+    def __init__(self, device, opt_options, **kwargs):
         """opt_level ranges from 0 to 3, stands for ORT_DISABLE_ALL, ORT_ENABLE_BASIC, ORT_ENABLE_EXTENDED and ORT_ENABLE_ALL.
         See https://onnxruntime.ai/docs/performance/graph-optimizations.html for detail"""
-        super().__init__(device, optmax, **kwargs)
-        self.opt_level = OPT_LEVELS[-1 if optmax else 0]
+        super().__init__(device, opt_options, **kwargs)
+        opt_max = cast(bool, opt_options)
+        self.opt_level = OPT_LEVELS[-1 if opt_max else 0]
         self.providers = ["CPUExecutionProvider"]
         if device in ["cuda", "gpu"]:
             self.providers = [
@@ -38,7 +39,8 @@ class ORTFactory(BackendFactory):
 
     @dispatch(ONNXModel)
     def make_backend(
-        self, model: ONNXModel
+        self,
+        model: ONNXModel,
     ) -> Callable[[Dict[str, np.ndarray]], Dict[str, np.ndarray]]:
         sess_options = ort.SessionOptions()
         sess_options.graph_optimization_level = self.opt_level

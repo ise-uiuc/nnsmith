@@ -1,32 +1,30 @@
 import pytest
 
-import tvm
-
-from nnsmith.materialize import TestCase
+from nnsmith.materialize import TestCase, Schedule
 from nnsmith.materialize.onnx import ONNXModel
-from nnsmith.graph_gen import random_model_gen, concretize_graph, make_schedule
-from nnsmith.backends.tvm import TVMFactory
+from nnsmith.graph_gen import random_model_gen, concretize_graph
+from nnsmith.backends.onnxruntime import ORTFactory
+
 
 TestCase.__test__ = False  # supress PyTest warning
 
 
 def test_synthesized_onnx_model(tmp_path):
-    d = tmp_path / "test_tvm_onnx"
+    d = tmp_path / "test_ort_onnx"
     d.mkdir()
 
-    # TODO(@ganler): do dtype first.
     gen = random_model_gen(
         opset=ONNXModel.operators(),
         init_rank=4,
         seed=23132,
-        max_nodes=1,
-    )  # One op should not be easily wrong... I guess.
+        max_nodes=2,
+    )
 
     fixed_graph, concrete_abstensors = concretize_graph(
         gen.abstract_graph, gen.tensor_dataflow, gen.get_solutions()
     )
 
-    schedule = make_schedule(fixed_graph, concrete_abstensors)
+    schedule = Schedule.init(fixed_graph, concrete_abstensors)
 
     model = ONNXModel.from_schedule(schedule)
 
@@ -39,16 +37,8 @@ def test_synthesized_onnx_model(tmp_path):
     testcase.dump(root_folder=d)
 
     assert (
-        TVMFactory(
-            device="cpu", optmax=False, catch_process_crash=False
+        ORTFactory(
+            device="cpu", opt_options=False, catch_process_crash=False
         ).verify_testcase(testcase)
         is None
     )
-
-    if tvm.cuda(0).exist:
-        assert (
-            TVMFactory(
-                device="cuda", optmax=False, catch_process_crash=False
-            ).verify_testcase(testcase)
-            is None
-        )

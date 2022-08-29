@@ -1,7 +1,7 @@
+from typing import Dict, Tuple, List, Set, Type, cast
 from collections import defaultdict, namedtuple
 import math
 import textwrap
-from typing import Dict, Tuple, List, Set, Type
 from inspect import signature
 import traceback
 import random
@@ -19,6 +19,7 @@ from nnsmith.util import set_seed
 from nnsmith.error import SanityCheck, ConstraintError
 from nnsmith.abstract.op import *
 from nnsmith.abstract.op import __MAX_RANK__ as __MAX_RANK__
+from nnsmith.materialize import Model, Schedule
 
 
 NNSMITH_LIMNF_V = os.getenv("NNSMITH_LIMNF_V", "0")
@@ -36,57 +37,12 @@ __TEXTWRAP_WIDTH__ = 30
 
 TensorCtx = namedtuple("TensorCtx", ["op_id", "type", "output_idx"])
 # Every tensor is represented by a (unique) integer key.
-Instruction: Tuple[AbsOpBase, List[int], List[int]] = namedtuple(
-    "Instruction", ["op", "inputs", "outputs"]
-)
-
-
-# Minimal information for constructing a graph.
-class Schedule:
-    def __init__(self, instructions, input_keys, leaf_keys, key2type):
-        self.instructions: List[Instruction] = instructions
-        self.input_keys: List[int] = input_keys
-        self.leaf_keys: List[int] = leaf_keys
-        self.key2type: Dict[int, AbsTensor] = key2type
-
-
-def make_schedule(graph: nx.MultiDiGraph, key2type: Dict[int, AbsTensor]):
-    # The input graph should be a concretized graph.
-    instructions: List[Instruction] = []
-    input_keys = []
-    user_keys = set()
-
-    # freeze node with static attributes in label;
-    for node_id in nx.topological_sort(graph):
-        node = graph.nodes[node_id]
-        op = node["op"]
-
-        if isinstance(op, Input):
-            input_keys.append(node["otensor_idx"][0])
-
-        for used_idx in node["itensor_idx"]:
-            user_keys.add(used_idx)
-
-        # TODO(@ganler): Better name than "otensor_idx"
-        # TODO(@ganler): Add refcnt or last ref mechanism to save memory
-        instructions.append(
-            Instruction(
-                op=op,
-                inputs=node["itensor_idx"],
-                outputs=node["otensor_idx"],
-            )
-        )
-
-    # simplify the statements above
-    leaf_keys = [key for key in key2type if key not in user_keys]
-
-    return Schedule(instructions, input_keys, leaf_keys, key2type)
 
 
 def concretize_graph(
     graph: nx.MultiDiGraph, dataflow: List[TensorCtx], model: z3.ModelRef
-) -> Tuple[nx.MultiDiGraph,]:
-    concrete_shapes = {}
+) -> Tuple[nx.MultiDiGraph, Dict[int, AbsTensor]]:
+    concrete_shapes: Dict[int, AbsTensor] = {}
 
     # freeze node with static attributes in label;
     for node_id in nx.topological_sort(graph):
@@ -1177,6 +1133,9 @@ if __name__ == "__main__":
     parser.add_argument("--forward_prob", type=float)
     parser.add_argument("--diff_can_overwrite", action="store_true")
     parser.add_argument("--print_grad", type=int, default=0)
+    parser.add_argument(
+        "--framework", type=str, help="deep learning framework to use", default="torch"
+    )
 
     args = parser.parse_args()
 
@@ -1187,13 +1146,18 @@ if __name__ == "__main__":
 
     # TODO(@ganler): skip operators outside of model gen.
     from nnsmith.materialize import TestCase
-    from nnsmith.materialize.onnx import ONNXModel
-    from nnsmith.util import mkdir
 
-    ONNXModel.add_seed_setter()
+    strt_time = time.time()
+
+    if args.framework == "torch":
+        from nnsmith.materialize.onnx import ONNXModel as Model
+    elif args.framework == "tensorflow":
+        from nnsmith.materialize.tensorflow import TFModel as Model
+
+    Model.add_seed_setter()
 
     gen = random_model_gen(
-        opset=ONNXModel.operators(),
+        opset=Model.operators(),
         init_rank=args.init_rank,
         seed=seed,
         max_nodes=args.max_nodes,
@@ -1213,16 +1177,7 @@ if __name__ == "__main__":
         gen.abstract_graph, gen.tensor_dataflow, gen.get_solutions()
     )
 
-    schedule = make_schedule(fixed_graph, concrete_abstensors)
-
-    model = ONNXModel.from_schedule(schedule)
-    model.refine_weights()  # either random generated or gradient-based.
-    oracle = model.make_oracle()
-
-    testcase = TestCase(model, oracle)
-
-    mkdir(args.output)
-    testcase.dump(root_folder=args.output)
+    schedule = Schedule.init(fixed_graph, concrete_abstensors)
 
     if args.verbose or args.viz:
         G = fixed_graph

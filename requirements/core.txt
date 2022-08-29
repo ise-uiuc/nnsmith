@@ -4,4 +4,5 @@ rich
 networkx==2.7
 termcolor
 multipledispatch
+psutil
 gitpython

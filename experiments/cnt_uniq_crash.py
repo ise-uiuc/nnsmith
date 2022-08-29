@@ -13,7 +13,7 @@ if __name__ == "__main__":
     parser.add_argument("--root", type=str, help="Path to the bug folder")
     args = parser.parse_args()
 
-    fac = mk_factory(args.backend, args.device, optmax=True)
+    fac = mk_factory(args.backend, args.device, opt_options=True)
 
     crash_msg = set()
 

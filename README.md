@@ -40,7 +40,7 @@ To contribute to this project, please setup dependencies including `pre-commit`:
 
 ```shell
 # Generate a 5-node graph:
-python nnsmith/graph_gen.py --max_nodes 5 --viz_graph
+python nnsmith/graph_gen.py --max_nodes 5 --viz
 # Output model: output.onnx
 # Output visualization: output.onnx-concrete.png (concrete shape)
 #                       output.onnx.png          (symbolic shape)

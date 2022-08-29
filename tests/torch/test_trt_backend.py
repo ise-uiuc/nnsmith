@@ -7,9 +7,9 @@ if not GPUtil.getAvailable():
         "Skipping TensorRT tests due to no GPU detected.", allow_module_level=True
     )
 
-from nnsmith.materialize import TestCase
+from nnsmith.materialize import Schedule, TestCase
 from nnsmith.materialize.onnx import ONNXModel
-from nnsmith.graph_gen import random_model_gen, concretize_graph, make_schedule
+from nnsmith.graph_gen import random_model_gen, concretize_graph
 from nnsmith.backends.tensorrt import TRTFactory
 
 
@@ -29,7 +29,7 @@ def test_synthesized_onnx_model(tmp_path):
         gen.abstract_graph, gen.tensor_dataflow, gen.get_solutions()
     )
 
-    schedule = make_schedule(fixed_graph, concrete_abstensors)
+    schedule = Schedule.init(fixed_graph, concrete_abstensors)
 
     model = ONNXModel.from_schedule(schedule)
 
@@ -43,7 +43,7 @@ def test_synthesized_onnx_model(tmp_path):
 
     assert (
         TRTFactory(
-            device="gpu", optmax=True, catch_process_crash=False
+            device="gpu", opt_options=True, catch_process_crash=False
         ).verify_testcase(testcase)
         is None
     )
