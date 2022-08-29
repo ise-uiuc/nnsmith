@@ -13,8 +13,8 @@ from nnsmith.materialize.torch.dialect import Linear
 # Implementation of operators.
 
 # core dialect + some future PyTorch-only Operators.
-TORCH_REALIZABLE_OPS = FULL_OPERATOR_SETS["core"].union(FULL_OPERATOR_SETS["torch"])
-ALL_TORCH_OPS: Set[Type[AbsOpBase]] = set()
+TORCH_REALIZABLE_OPS = FULL_OPERATOR_SETS["core"] + FULL_OPERATOR_SETS["torch"]
+ALL_TORCH_OPS: List[Type[AbsOpBase]] = []
 
 operator_impl = partial(framework_operator_impl, TORCH_REALIZABLE_OPS, ALL_TORCH_OPS)
 

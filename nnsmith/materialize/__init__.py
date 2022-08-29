@@ -17,21 +17,21 @@ from nnsmith.abstract.tensor import AbsTensor
 
 
 def framework_operator_impl(
-    FRAMEWORK_REALIZABLE_OPS: Set[Type[AbsOpBase]],
-    ALL_FRAMEWORK_OPS: Set[Type[AbsOpBase]],
+    FRAMEWORK_REALIZABLE_OPS: List[Type[AbsOpBase]],
+    ALL_FRAMEWORK_OPS: List[Type[AbsOpBase]],
     op_type: AbsOpBase,
     *args,
     **kwargs,
 ):
-    """When implementing `forward_fn` for an operator class, add this operator into ALL_FRAMEWORK_OPS set.
+    """When implementing `forward_fn` for an operator class, add this operator into ALL_FRAMEWORK_OPS list.
 
     Usage:
         In `forward.py`, define `operator_impl = partial(framework_operator_impl, FW_REALIZABLE_OPS, ALL_FM_OPS)`.
         Then add `@operator_impl(OpClass)` when implementing `forward_fn` for `OpClass`.
 
     Args:
-        FRAMEWORK_REALIZABLE_OPS (Set[Type[AbsOpBase]]): all realizable ops in the framework. Usually it can be obtained by FULL_OPERATOR_SETS["core"].union(FULL_OPERATOR_SETS["framework_name"])
-        ALL_FRAMEWORK_OPS (Set[Type[AbsOpBase]]): set of operator classes that are implemented `forward_fn` in the framework.
+        FRAMEWORK_REALIZABLE_OPS (List[Type[AbsOpBase]]): all realizable ops in the framework. Usually it can be obtained by FULL_OPERATOR_SETS["core"].union(FULL_OPERATOR_SETS["framework_name"])
+        ALL_FRAMEWORK_OPS (List[Type[AbsOpBase]]): list of operator classes that are implemented `forward_fn` in the framework.
         op_type (AbsOpBase): operator class
     """
     SanityCheck.true(
@@ -43,7 +43,7 @@ def framework_operator_impl(
             rtype for rtype in FRAMEWORK_REALIZABLE_OPS if issubclass(rtype, op_type)
         ]
         for rtype in dispatchables:
-            ALL_FRAMEWORK_OPS.add(rtype)
+            ALL_FRAMEWORK_OPS.append(rtype)
 
         SanityCheck.true(
             len(dispatchables) != 0,
@@ -197,6 +197,14 @@ class Model(ABC):
     @property
     def type(self) -> str:
         return type(self).__name__
+
+    @staticmethod
+    def operators() -> List[Type[AbsOpBase]]:
+        pass
+
+    @staticmethod
+    def add_seed_setter() -> None:
+        pass
 
 
 class TestCase:

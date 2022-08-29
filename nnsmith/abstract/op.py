@@ -3,7 +3,7 @@ from copy import deepcopy
 import fnmatch
 from functools import reduce
 import os
-from typing import List, Optional, Tuple, Union, Dict, Set, Type
+from typing import List, Optional, Tuple, Union, Dict, Type
 from inspect import signature
 import random
 
@@ -46,16 +46,35 @@ Z3_CONS_FLOPS = Z3_CONS_FLOPS == "on"
 __MIN_RANK__ = 0
 __MAX_RANK__ = 5
 
-FULL_OPERATOR_SETS: Dict[str, Set[Type["AbsOpBase"]]] = {}
+FULL_OPERATOR_SETS: Dict[str, List[Type["AbsOpBase"]]] = dict()
+
+_PRAGMA_ONCE_CORE_OP = True  # have to use this dirty hack to avoid namespace violation.
 
 
-class mark_realize:
+class mark_abstract:
+    def __init__(self, dialect):
+        assert (
+            dialect != "core" or _PRAGMA_ONCE_CORE_OP
+        ), "`core` is exclusive to nnsmith.abstract.op. Please use other dilect names"
+        self.dialect = dialect
+
+    def __call__(self, op_type: Type["AbsOpBase"]) -> Type["AbsOpBase"]:
+        op_type.dialect = self.dialect
+        return op_type
+
+
+class mark_materialize:
     def __init__(self, dialect: str):
         self.dialect = dialect
 
     def __call__(self, op_type: Type["AbsOpBase"]) -> Type["AbsOpBase"]:
-        FULL_OPERATOR_SETS.setdefault(self.dialect, set()).add(op_type)
-        op_type.namespace = self.dialect
+        op_list = FULL_OPERATOR_SETS.setdefault(self.dialect, [])
+
+        if op_type not in op_list:
+            op_list.append(op_type)
+            op_list.sort(key=lambda x: x.__name__)
+            op_type = mark_abstract(self.dialect)(op_type)
+
         return op_type
 
 
@@ -241,6 +260,7 @@ def broadcast_to_cons(*shapes: List[Union[z3.ExprRef, int]]) -> List[z3.ExprRef]
     return cons
 
 
+@mark_abstract("core")
 class AbsOpBase(ABC):
     # number of parameters; None means it's fixed that can be inferred through `signature`.
     num_var_param = None
@@ -255,7 +275,11 @@ class AbsOpBase(ABC):
     # whether to disable the op during graph generation
     _skip = False
 
+    dialect = None
+
     def __init__(self):
+        assert self.dialect, "Set dialect with `mark_dialect` or `mark_realize`"
+
         # `[3, 3]` this means this op requires 2 inputs. Where the 1st one has 2 dimensions, and the 2nd one has 3 dimensions.
         # `-1` means arbitrary dimantions; NOTE: but should be concretized during execution.
         # All symbols of correponding operator must be the constructor's parameters.
@@ -288,7 +312,7 @@ class AbsOpBase(ABC):
     # Overload me!
     # Extra constraints for the input tensors.
     # Exception means rejection.
-    def requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
+    def requires(self, input_shapes: List[AbsTensor]) -> List[Union[z3.ExprRef, bool]]:
         return []
 
     def deduct_inp_ranks_and_dtype(
@@ -311,8 +335,12 @@ class AbsOpBase(ABC):
 
     @classmethod
     def __str__(cls) -> str:
-        if hasattr(cls, "namespace"):
-            return cls.namespace + "." + cls.__name__.split(".")[-1]
+        return cls.name()
+
+    @classmethod
+    def name(cls) -> str:
+        if hasattr(cls, "dialect"):
+            return cls.dialect + "." + cls.__name__.split(".")[-1]
         return cls.__name__.split(".")[-1]
 
 
@@ -471,7 +499,7 @@ class Logical(BcastBinaryOp):  # logical and or xor
     _bcast_out_dtypes = [DType.bool]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Where(TernaryOpBase):
     bcastable = True
     in_dtypes = [(DType.bool, i, i) for i in DTYPE_NON_BOOLS]
@@ -508,21 +536,21 @@ class Where(TernaryOpBase):
 
 # bcast binary ops from https://github.com/onnx/onnx/blob/master/docs/Broadcasting.md
 # TODO bitwise_and/or/xor?
-Add = mark_realize("core")(
+Add = mark_materialize("core")(
     type(
         "Add",
         (BcastBinaryOp1,),
         {"__module__": __name__},
     )
 )
-Sub = mark_realize("core")(
+Sub = mark_materialize("core")(
     type(
         "Sub",
         (BcastBinaryOp1,),
         {"__module__": __name__},
     )
 )
-Mul = mark_realize("core")(
+Mul = mark_materialize("core")(
     type(
         "Mul",
         (BcastBinaryOp1,),
@@ -530,14 +558,14 @@ Mul = mark_realize("core")(
     )
 )
 # NOTE(JK): didn't find multi-input version of Max and Min in torch, so assume binary ops
-Max = mark_realize("core")(
+Max = mark_materialize("core")(
     type(
         "Max",
         (BcastBinaryOp1,),
         {"__module__": __name__},
     )
 )
-Min = mark_realize("core")(
+Min = mark_materialize("core")(
     type(
         "Min",
         (BcastBinaryOp1,),
@@ -545,30 +573,30 @@ Min = mark_realize("core")(
     )
 )
 
-Equal = mark_realize("core")(type("Equal", (Comparator,), {"__module__": __name__}))
-Greater = mark_realize("core")(
+Equal = mark_materialize("core")(type("Equal", (Comparator,), {"__module__": __name__}))
+Greater = mark_materialize("core")(
     type(
         "Greater",
         (Comparator,),
         {"__module__": __name__},
     )
 )
-Less = mark_realize("core")(type("Less", (Comparator,), {"__module__": __name__}))
-And = mark_realize("core")(
+Less = mark_materialize("core")(type("Less", (Comparator,), {"__module__": __name__}))
+And = mark_materialize("core")(
     type(
         "And",
         (Logical,),
         {"__module__": __name__},
     )
 )
-Or = mark_realize("core")(
+Or = mark_materialize("core")(
     type(
         "Or",
         (Logical,),
         {"__module__": __name__},
     )
 )
-Xor = mark_realize("core")(
+Xor = mark_materialize("core")(
     type(
         "Xor",
         (Logical,),
@@ -653,7 +681,7 @@ class Placeholder:
 
 
 # FIXME: Div will cause fuzzing crash.
-Div = mark_realize("core")(
+Div = mark_materialize("core")(
     type(
         "Div",
         (BcastBinaryOp1,),
@@ -662,19 +690,19 @@ Div = mark_realize("core")(
 )
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Pow(BcastBinaryOp):
     in_dtypes = [(i, i) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class GELU(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class LeakyReLU(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -685,13 +713,13 @@ class LeakyReLU(ElementWiseUnaryOp):
         self.negative_slope = 0.01
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class PReLU(ElementWiseUnaryOp):
     in_dtypes = [(DType.float32,)]
     out_dtypes = [(DType.float32,)]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Sigmoid(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -701,95 +729,95 @@ class TrigonometricOp(ElementWiseUnaryOp):
     pass
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Sin(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Cos(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Asin(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Acos(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Tan(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Atan(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Abs(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class ReLU(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Ceil(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Floor(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Clip(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Round(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Sqrt(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Log2(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Neg(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Softmax(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -882,11 +910,6 @@ class Pool2d(UnaryOpBase):
         cons.append(nnsmith_le(self.padding, nnsmith_div(self.kernel_h_size, 2)))
         cons.append(nnsmith_le(self.padding, nnsmith_div(self.kernel_w_size, 2)))
 
-        # TensorRT rejects PRODUCT(pool size) >= 10000
-        cons.append(
-            nnsmith_lt(nnsmith_mul(self.kernel_h_size, self.kernel_w_size), 10000)
-        )
-
         # limit FLOPS
         if Z3_CONS_FLOPS:
             cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
@@ -909,17 +932,17 @@ class Pool2d(UnaryOpBase):
         return [(4, out_abs_tensor[0].dtype)]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class MaxPool2d(Pool2d):
     pass
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class AvgPool2d(Pool2d):
     pass
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Slice(UnaryOpBase):
     # pytorch slice always exported as a stack of single-dim slices, so only model sinlge-dim slice here
     # pytorch slice only supports forward slicing, so only model forward slicing here
@@ -1081,13 +1104,13 @@ class Pad(UnaryOpBase):
         return [(out_abs_tensor[0].ndims, out_abs_tensor[0].dtype)]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class ConstPad(Pad):
     def __init__(self, *padding_list):
         super().__init__(padding_list, "constant")
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class ReplicatePad(Pad):
     num_var_param = _pad_num_var_param(2, max=6)
 
@@ -1097,7 +1120,7 @@ class ReplicatePad(Pad):
         self.out_ranks = [int_range(len(padding_list) // 2 + 1, 4)]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class ReflectPad(Pad):
     num_var_param = _pad_num_var_param(2, max=6)
 
@@ -1185,31 +1208,31 @@ class Expand(UnaryOpBase, ABC):
         return [(inp_rank, out_abs_tensor[0].dtype)]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class ExpandLast1(Expand):
     def __init__(self, expand_n: Union[int, z3.ExprRef]):
         super().__init__(expand_last_dim=1, expand_n=expand_n)
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class ExpandLast2(Expand):
     def __init__(self, expand_n: Union[int, z3.ExprRef]):
         super().__init__(expand_last_dim=2, expand_n=expand_n)
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class ExpandLast3(Expand):
     def __init__(self, expand_n: Union[int, z3.ExprRef]):
         super().__init__(expand_last_dim=3, expand_n=expand_n)
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class ExpandLast4(Expand):
     def __init__(self, expand_n: Union[int, z3.ExprRef]):
         super().__init__(expand_last_dim=4, expand_n=expand_n)
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class BatchNorm2d(ElementWiseUnaryOp):
     in_dtypes = [(DType.float32,)]
     out_dtypes = [(DType.float32,)]
@@ -1232,7 +1255,7 @@ class BatchNorm2d(ElementWiseUnaryOp):
         ]  # batch size = 1 -> fail training.
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Conv1d(UnaryOpBase):
     in_dtypes = [(DType.float32,)]
     out_dtypes = [(DType.float32,)]
@@ -1310,7 +1333,7 @@ class Conv1d(UnaryOpBase):
         return repr
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class NCHWConv2d(UnaryOpBase):
     # FIXME: torch exporter does not support float64, may miss bugs
     in_dtypes = [(DType.float32,)]
@@ -1483,7 +1506,7 @@ def random_group(n, k):
     return ret
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Reshape(UnaryOpBase):
     num_var_param = int_range(1, 4)
     in_dtypes = [(i,) for i in DTYPE_ALL]
@@ -1583,7 +1606,7 @@ class Reshape(UnaryOpBase):
         return [(-1, out_abs_tensor[0].dtype)]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Flatten(Reshape):
     num_var_param = None
     # Inputs are target shape.
@@ -1593,7 +1616,7 @@ class Flatten(Reshape):
         self.dim0 = dim0
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Transpose(UnaryOpBase):
     in_dtypes = [(i,) for i in DTYPE_ALL]
 
@@ -1665,27 +1688,27 @@ class InterpBase(UnaryOpBase):
         return [(out_abs_tensor[0].ndims, out_abs_tensor[0].dtype)]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class NearestInterp(InterpBase):
     pass
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class LinearInterp(InterpBase):
     num_var_param = [1]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class BilinearInterp(InterpBase):
     num_var_param = [2]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class BicubicInterp(InterpBase):
     num_var_param = [2]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class TrilinearInterp(InterpBase):
     num_var_param = [3]
 
@@ -1741,7 +1764,7 @@ class ReduceBase(UnaryOpBase, ABC):
         return [(self._get_irank(out_abs_tensor[0].ndims), out_abs_tensor[0].dtype)]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Squeeze(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_ALL]
 
@@ -1752,32 +1775,32 @@ class Squeeze(ReduceBase):
         return [nnsmith_eq(input_shapes[0].shape[reduce_dim], 1)]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class ReduceSum(ReduceBase):
     # pytorch exporter doesn't support int32
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS if i != DType.int32]
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS if i != DType.int32]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class ReduceMin(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class ReduceMax(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class ReduceMean(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class ArgMin(ReduceBase):
     # FIXME(JK): ints are somehow not supported in onnxruntime, which we use to gen inputs.
     # Make it include ints once we use other backends other than onnxruntime.
@@ -1793,7 +1816,7 @@ class ArgMin(ReduceBase):
         ]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class ArgMax(ReduceBase):
     # FIXME(JK): ints are somehow not supported in onnxruntime, which we use to gen inputs.
     # Make it include ints once we use other backends other than onnxruntime.
@@ -1830,7 +1853,7 @@ class TriBase(UnaryOpBase):
         return [(2, out_abs_tensor[0].dtype)]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Tril(TriBase):
     def requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         ConstraintCheck.true(input_shapes[0].ndims == 2)
@@ -1839,7 +1862,7 @@ class Tril(TriBase):
         return [z3.And(self.diagonal >= -nrow, (ncol - 1) >= self.diagonal)]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Triu(TriBase):
     def requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         ConstraintCheck.true(input_shapes[0].ndims == 2)
@@ -1900,7 +1923,7 @@ class Concat(AbsOpBase):
 
 
 # the semantic of `in_dtypes` is not possible dtypes in "max rank". but simply in "rank". don't mess up the definition.
-@mark_realize("core")
+@mark_materialize("core")
 class Concat1(Concat):
     in_dtypes = [(i,) for i in DTYPE_ALL]
 
@@ -1908,7 +1931,7 @@ class Concat1(Concat):
         super().__init__(1)
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Concat2(Concat):
     in_dtypes = [(i, i) for i in DTYPE_ALL]
 
@@ -1916,7 +1939,7 @@ class Concat2(Concat):
         super().__init__(2)
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Concat3(Concat):
     in_dtypes = [(i, i, i) for i in DTYPE_ALL]
 
@@ -1924,7 +1947,7 @@ class Concat3(Concat):
         super().__init__(3)
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Concat4(Concat):
     in_dtypes = [(i, i, i, i) for i in DTYPE_ALL]
 
@@ -1932,7 +1955,7 @@ class Concat4(Concat):
         super().__init__(4)
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Concat5(Concat):
     in_dtypes = [(i, i, i, i, i) for i in DTYPE_ALL]
 
@@ -1965,7 +1988,7 @@ class Cast(ElementWiseUnaryOp, ABC):
         return [(out_abs_tensor[0].ndims, self.extra_attrs["to"])]
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class CastF32(Cast):
     out_dtypes = [(DType.float32,)]
 
@@ -1973,7 +1996,7 @@ class CastF32(Cast):
         super().__init__(DType.float32)
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class CastF64(Cast):
     out_dtypes = [(DType.float64,)]
 
@@ -1981,7 +2004,7 @@ class CastF64(Cast):
         super().__init__(DType.float64)
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class CastI32(Cast):
     out_dtypes = [(DType.int32,)]
 
@@ -1989,7 +2012,7 @@ class CastI32(Cast):
         super().__init__(DType.int32)
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class CastI64(Cast):
     out_dtypes = [(DType.int64,)]
 
@@ -1997,7 +2020,7 @@ class CastI64(Cast):
         super().__init__(DType.int64)
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class CastBool(Cast):
     out_dtypes = [(DType.bool,)]
 
@@ -2005,7 +2028,7 @@ class CastBool(Cast):
         super().__init__(DType.bool)
 
 
-@mark_realize("core")
+@mark_materialize("core")
 class Gemm(TernaryOpBase):
     # https://pytorch.org/docs/stable/generated/torch.addmm.html?highlight=addmm#torch.addmm
     in_dtypes = [(i, i, i) for i in DTYPE_NON_BOOLS]
@@ -2124,3 +2147,6 @@ def config_skip_op(skip_config):
                 msg += ["skip entire"]
                 op._skip = True
             print(*msg)
+
+
+_PRAGMA_ONCE_CORE_OP = False

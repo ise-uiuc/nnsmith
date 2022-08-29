@@ -1,13 +1,13 @@
 from typing import List, Tuple, Union
 
 from nnsmith.abstract.arith import *
-from nnsmith.abstract.op import int_from, UnaryOpBase, mark_realize
+from nnsmith.abstract.op import int_from, UnaryOpBase, mark_materialize
 from nnsmith.abstract.dtype import DType
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import ConstraintCheck
 
 
-@mark_realize("torch")
+@mark_materialize("torch")
 class Linear(UnaryOpBase):
     in_dtypes = [(DType.float32,)]
     out_dtypes = [(DType.float32,)]

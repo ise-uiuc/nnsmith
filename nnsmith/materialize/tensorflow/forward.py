@@ -1,3 +1,4 @@
+from typing import List, Type
 from multipledispatch import dispatch
 from functools import partial
 
@@ -11,8 +12,8 @@ from nnsmith.materialize.tensorflow.dialect import Dense
 
 
 # core dialect + some future PyTorch-only Operators.
-TF_REALIZABLE_OPS = FULL_OPERATOR_SETS["core"].union(FULL_OPERATOR_SETS["tensorflow"])
-ALL_TF_OPS: Set[Type[AbsOpBase]] = set()
+TF_REALIZABLE_OPS = FULL_OPERATOR_SETS["core"] + FULL_OPERATOR_SETS["tensorflow"]
+ALL_TF_OPS: List[Type[AbsOpBase]] = []
 
 operator_impl = partial(framework_operator_impl, TF_REALIZABLE_OPS, ALL_TF_OPS)
 
