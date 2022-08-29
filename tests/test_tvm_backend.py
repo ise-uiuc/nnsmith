@@ -1,5 +1,11 @@
 import pytest
 
+from nnsmith.graph_gen import random_model_gen
+from nnsmith.materialize import TestCase, Schedule
+from nnsmith.materialize.onnx import ONNXModel
+from nnsmith.backends.tvm import TVMFactory
+from nnsmith.graph_gen import random_model_gen, concretize_graph
+
 import tvm
 
 TestCase.__test__ = False  # supress PyTest warning
@@ -21,7 +27,7 @@ def test_synthesized_onnx_model(tmp_path):
         gen.abstract_graph, gen.tensor_dataflow, gen.get_solutions()
     )
     # TODO Colin
-    schedule = make_schedule(fixed_graph, concrete_abstensors)
+    schedule = Schedule.init(fixed_graph, concrete_abstensors)
 
     model = ONNXModel.from_schedule(schedule)
 
