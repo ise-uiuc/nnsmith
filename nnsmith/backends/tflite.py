@@ -40,8 +40,8 @@ class TFLiteFactory(BackendFactory):
         TFLite Python Callable
     """
 
-    def __init__(self, device, optmax, **kwargs) -> None:
-        super().__init__(device, optmax, **kwargs)
+    def __init__(self, device, opt_options, **kwargs) -> None:
+        super().__init__(device, opt_options, **kwargs)
 
     @property
     def system_name(self) -> str:

@@ -1,17 +1,17 @@
 from nnsmith.backends.factory import BackendFactory
 
 
-def mk_factory(name, device="cpu", optmax=True, **kwargs):
+def mk_factory(name, device="cpu", opt_options=True, **kwargs):
     if name == "ort" or name == "onnxruntime":
         from nnsmith.backends.onnxruntime import ORTFactory
 
-        return ORTFactory(device=device, optmax=optmax, **kwargs)
+        return ORTFactory(device=device, opt_options=opt_options, **kwargs)
     elif name == "tvm":
         from nnsmith.backends.tvm import TVMFactory
 
         # default executor is graph
         kwargs["executor"] = kwargs.get("executor", "graph")
-        return TVMFactory(device=device, optmax=optmax, **kwargs)
+        return TVMFactory(device=device, opt_options=opt_options, **kwargs)
     elif name == "trt":
         from nnsmith.backends.tensorrt import TRTFactory
 

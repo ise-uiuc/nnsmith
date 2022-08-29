@@ -151,7 +151,7 @@ class Model(ABC):
 
     @staticmethod
     @abstractmethod
-    def from_schedule(self, instructions: Schedule, **kwargs) -> "Model":
+    def from_schedule(schedule: Schedule, **kwargs) -> "Model":
         pass
 
     @staticmethod

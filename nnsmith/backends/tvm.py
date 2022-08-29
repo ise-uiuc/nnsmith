@@ -16,12 +16,14 @@ def list_eq(a, b):
 
 
 class TVMFactory(BackendFactory):
-    def __init__(self, device="cpu", optmax=True, executor="graph", **kwargs) -> None:
-        super().__init__(device, optmax, **kwargs)
+    def __init__(
+        self, device="cpu", opt_options=True, executor="graph", **kwargs
+    ) -> None:
+        super().__init__(device, opt_options, **kwargs)
         # WARNING: setting opt_level 4 sometimes causes false alarms
         # as in this level fast_math is enabled where slight numerical
         # inconsistency is allowed and outputs for UB-input may differ.
-        self.opt_level = 4 if optmax else 0
+        self.opt_level = 4 if opt_options else 0
         if device == "cpu":
             self.target = tvm.target.Target("llvm")
         elif device == "cuda" or device == "gpu":

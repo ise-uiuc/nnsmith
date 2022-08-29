@@ -12,7 +12,8 @@ from nnsmith.materialize.tensorflow.dialect import Dense
 
 
 # core dialect + some future PyTorch-only Operators.
-TF_REALIZABLE_OPS = FULL_OPERATOR_SETS["core"] + FULL_OPERATOR_SETS["tensorflow"]
+# TF_REALIZABLE_OPS = FULL_OPERATOR_SETS["core"] + FULL_OPERATOR_SETS["tensorflow"]
+TF_REALIZABLE_OPS = [Add, Dense]
 ALL_TF_OPS: List[Type[AbsOpBase]] = []
 
 operator_impl = partial(framework_operator_impl, TF_REALIZABLE_OPS, ALL_TF_OPS)

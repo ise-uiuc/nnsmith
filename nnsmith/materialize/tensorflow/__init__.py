@@ -74,8 +74,8 @@ class TFModel(Model):
         self.net.verbose = verbose
 
     @staticmethod
-    def from_schedule(self, instructions: Schedule, **kwargs) -> "Model":
-        return TFModel(instructions, kwargs["verbose"])
+    def from_schedule(schedule: Schedule, **kwargs) -> "Model":
+        return TFModel(schedule, kwargs.get("verbose", False))
 
     @property
     def native_model(self) -> TFNet:
