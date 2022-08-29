@@ -13,6 +13,7 @@ import uuid
 
 import networkx as nx
 import z3
+import pydot
 
 from nnsmith.util import set_seed
 from nnsmith.error import SanityCheck, ConstraintError
@@ -149,7 +150,6 @@ class SimpleGenerator:
 
         # dim size -> list[shape idx -> output_tensor_pool]
         self.dim2shape_idx: Dict[int, List[int]] = {}
-        self.viz_cnt = 0
 
         self.use_bitvec = False  # Only consider integer domain for now.
         self.init_rank = init_rank
@@ -695,14 +695,6 @@ class SimpleGenerator:
 
         return abs_tensor_candidates
 
-    def viz(self, filename: str = None):
-        if filename is None:
-            filename = f"step{self.viz_cnt}.png"
-        G = self.abstract_graph
-        nx.drawing.nx_pydot.write_dot(G, "graph.dot")
-        os.system(f"dot -Tpng graph.dot > {filename}")
-        self.viz_cnt += 1
-
 
 class PureSymbolGen(SimpleGenerator):
     def insert_init_ph_node(self, ph: Placeholder) -> Placeholder:
@@ -1138,6 +1130,17 @@ def random_model_gen(
     return gen
 
 
+def viz(G, filename: str = None):
+    if filename is None:
+        filename = f"graph.png"
+    if filename.endswith("png"):
+        nx.drawing.nx_pydot.to_pydot(G).write_png(filename)
+    elif filename.endswith("svg"):
+        nx.drawing.nx_pydot.to_pydot(G).write_svg(filename)
+    else:
+        raise ValueError(f"Unsupported image format: {fmt}")
+
+
 if __name__ == "__main__":
     # Generate a random ONNX model
     # TODO(@ganler): generate arbitrary model given things like `format=tf`.
@@ -1223,9 +1226,5 @@ if __name__ == "__main__":
 
     if args.verbose or args.viz:
         G = fixed_graph
-        nx.drawing.nx_pydot.write_dot(G, "graph.dot")
         fmt = args.img.replace(".", "")
-        os.system(
-            f"dot -T{fmt} graph.dot > {os.path.join(args.output, f'graph.{fmt}')}"
-        )
-        os.system("rm graph.dot")
+        viz(G, os.path.join(args.output, f"graph.{fmt}"))
