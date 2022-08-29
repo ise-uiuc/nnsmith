@@ -1146,6 +1146,7 @@ if __name__ == "__main__":
 
     # TODO(@ganler): skip operators outside of model gen.
     from nnsmith.materialize import TestCase
+    from nnsmith.util import mkdir
 
     strt_time = time.time()
 
@@ -1178,6 +1179,16 @@ if __name__ == "__main__":
     )
 
     schedule = Schedule.init(fixed_graph, concrete_abstensors)
+
+    model = Model.from_schedule(schedule)
+    if args.framework == "torch":
+        model.refine_weights()  # either random generated or gradient-based.
+    oracle = model.make_oracle()
+
+    testcase = TestCase(model, oracle)
+
+    mkdir(args.output)
+    testcase.dump(root_folder=args.output)
 
     if args.verbose or args.viz:
         G = fixed_graph
