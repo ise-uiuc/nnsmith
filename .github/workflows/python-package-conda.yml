@@ -20,7 +20,8 @@ jobs:
         echo $CONDA/bin >> $GITHUB_PATH
     - name: Install dependencies
       run: |
-        bash requirements/install_all.sh 
+        bash requirements/install_all.sh
+        export PYTHONPATH=$PYTHONPATH:${GITHUB_WORKSPACE}
     - name: Test torch
       run: |
         pytest tests/torch
