@@ -1,19 +1,21 @@
 """Just to figure out operators types and connections.
 """
 
-import os
-import pickle
-import traceback
 from collections import Counter
-from multiprocessing import Process, cpu_count
+import os
+from multiprocessing import cpu_count, Process
+import traceback
 from typing import List, Tuple
+
 from uuid import uuid4
+import pandas as pd
+import pickle
 
 import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-from onnx_graph_analyzer import analyze_one_relay
 from tqdm import tqdm
+import numpy as np
+
+from onnx_graph_analyzer import analyze_one_relay
 
 SMALL_SIZE = 12
 MEDIUM_SIZE = 16

@@ -1,15 +1,14 @@
 import os
-import pickle
-import random
 import sys
-
+import random
 import numpy as np
+import pickle
 
+from nnsmith.error import IncorrectResult
 from nnsmith.backends import BackendFactory, mk_factory
 from nnsmith.difftest import assert_allclose
-from nnsmith.error import IncorrectResult
-from nnsmith.fuzz import simple_bug_report
 from nnsmith.util import gen_one_input
+from nnsmith.fuzz import simple_bug_report
 
 
 def mcov_write(path):
@@ -63,8 +62,8 @@ if __name__ == "__main__":
     random.seed(args.seed)
     np.random.seed(args.seed)
 
-    omax_fac = mk_factory(args.backend, args.device, opt_options=True)
-    omin_fac = mk_factory(args.backend, args.device, opt_options=False)
+    omax_fac = mk_factory(args.backend, args.device, optmax=True)
+    omin_fac = mk_factory(args.backend, args.device, optmax=False)
 
     if args.memcov:
         assert omax_fac._coverage_install().get_now() is not None, "Memcov unavailable!"

@@ -9,15 +9,15 @@
     python experiments/cov_eval.py --model_dir ONNX_DIR --report_folder REPORT_FOLDER
 """
 
-import argparse
 import os
-import random
-import subprocess
 import sys
+import random
 from time import time
+import argparse
+import subprocess
 
-import numpy as np
 from tqdm import tqdm
+import numpy as np
 
 from nnsmith.util import mkdir
 

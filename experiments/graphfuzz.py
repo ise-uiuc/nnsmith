@@ -26,33 +26,33 @@ Thus we now conclude the search space:
     - input rank: 4;
 """
 
-import os
 import random
-import time
-import warnings
 from typing import List
+import warnings
+import os
+import time
 
 import numpy as np
 import torch
 from tqdm import tqdm
 
+from nnsmith.util import mkdir
 from nnsmith.abstract.op import (
     ALL_OP_TYPES,
     AbsOpBase,
+    Softmax,
     BatchNorm2d,
-    BcastBinaryOp,
     Concat,
-    Constant,
-    Div,
-    DType,
-    ElementWiseUnaryOp,
     Input,
+    Constant,
     NCHWConv2d,
     Pool2d,
-    Softmax,
+    DType,
+    Div,
+    ElementWiseUnaryOp,
+    BcastBinaryOp,
 )
 from nnsmith.dtype_test import rewrite_op_dtype
-from nnsmith.util import mkdir
 
 
 class GraphFuzzNet(torch.nn.Module):

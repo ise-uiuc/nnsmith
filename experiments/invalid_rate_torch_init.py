@@ -3,7 +3,7 @@ import random
 
 from tqdm import tqdm
 
-from nnsmith.graph_gen import SymbolNet, random_model_gen
+from nnsmith.graph_gen import random_model_gen, SymbolNet
 
 
 def mknet(args):

@@ -1,15 +1,16 @@
 """Just to figure out operators types and connections.
 """
 
-import os
-import pickle
-import re
 from collections import Counter
+import os
 from multiprocessing import Pool, cpu_count
 from typing import Dict, Set
+import re
+import pickle
 
 import onnx
 import pandas as pd
+
 from tvm import relay
 
 from nnsmith.backends import BackendFactory

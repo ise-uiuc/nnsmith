@@ -1,7 +1,6 @@
-import os
 import sys
-
 import pandas as pd
+import os
 
 fuzz_report_rt = sys.argv[1]
 df = pd.read_pickle(os.path.join(fuzz_report_rt, "profile.pkl"))

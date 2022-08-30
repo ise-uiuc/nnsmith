@@ -1,6 +1,6 @@
 import os
 
-from nnsmith.backends import BackendFactory, mk_factory
+from nnsmith.backends import mk_factory, BackendFactory
 
 if __name__ == "__main__":
     import argparse
@@ -13,7 +13,7 @@ if __name__ == "__main__":
     parser.add_argument("--root", type=str, help="Path to the bug folder")
     args = parser.parse_args()
 
-    fac = mk_factory(args.backend, args.device, opt_options=True)
+    fac = mk_factory(args.backend, args.device, optmax=True)
 
     crash_msg = set()
 

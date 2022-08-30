@@ -1,14 +1,14 @@
-import pickle
 import random
-import time
+import pickle
 from pathlib import Path
+import time
 
 import onnx
 import onnx.checker
 
 from nnsmith import difftest
-from nnsmith.backends import BackendFactory, gen_one_input_rngs, mk_factory
 from nnsmith.util import is_invalid
+from nnsmith.backends import BackendFactory, gen_one_input_rngs, mk_factory
 
 if __name__ == "__main__":
     import argparse
@@ -84,7 +84,7 @@ if __name__ == "__main__":
         print(f"Using {args.cmp_with} as the reference backend/oracle")
         # use optmin for the reference backend
         ref_backend = mk_factory(
-            args.cmp_with, device=args.device, opt_options=False
+            args.cmp_with, device=args.device, optmax=False
         ).make_backend(onnx_model)
         oracle_outputs = ref_backend(test_inputs)
         if is_invalid(oracle_outputs):
@@ -92,7 +92,7 @@ if __name__ == "__main__":
 
     # -- this backend:
     this_backend = mk_factory(
-        args.backend, device=args.device, opt_options=not args.optmin
+        args.backend, device=args.device, optmax=not args.optmin
     ).make_backend(onnx_model)
     this_outputs = this_backend(test_inputs)
     if is_invalid(this_outputs):

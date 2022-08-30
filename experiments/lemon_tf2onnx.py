@@ -1,17 +1,17 @@
-import argparse
 import os
-import time
-from multiprocessing import Process
 from pathlib import Path
+import argparse
+from multiprocessing import Process
+import time
 
-import numpy as np
 import tensorflow as tf
-import tf2onnx
 from tensorflow import keras
 from tensorflow.python.framework.convert_to_constants import (
     convert_variables_to_constants_v2,
 )
+import tf2onnx
 from tqdm import tqdm
+import numpy as np
 
 from nnsmith.util import mkdir
 

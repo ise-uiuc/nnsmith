@@ -1,21 +1,22 @@
-import argparse
-import os
-import pickle
-import random
-import tarfile
-import time
-import warnings
-
-import torch
-from tqdm import tqdm
+from nnsmith.graph_gen import random_model_gen, SymbolNet
+from nnsmith.materialize.torch.input_gen import PracticalHybridSearch
+from nnsmith.materialize.onnx.export import torch2onnx
+from nnsmith.dtype_test import rewrite_op_dtype
+from nnsmith.abstract.op import ALL_OP_TYPES
+from nnsmith.util import mkdir
 
 from experiments.graphfuzz import GraphFuzz
-from nnsmith.abstract.op import ALL_OP_TYPES
-from nnsmith.dtype_test import rewrite_op_dtype
-from nnsmith.graph_gen import SymbolNet, random_model_gen
-from nnsmith.materialize.onnx.export import torch2onnx
-from nnsmith.materialize.torch.input_gen import PracticalHybridSearch
-from nnsmith.util import mkdir
+
+import pickle
+import os
+import random
+import argparse
+import time
+import warnings
+import tarfile
+
+from tqdm import tqdm
+import torch
 
 
 def nnsmith_gen_once(
