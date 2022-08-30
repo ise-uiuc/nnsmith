@@ -46,10 +46,12 @@ class Oracle:
 
 
 class Model(ABC):
+    @property
     @abstractmethod
     def input_like(self) -> Dict[str, AbsTensor]:
         pass
 
+    @property
     @abstractmethod
     def output_like(self) -> Dict[str, AbsTensor]:
         pass
@@ -94,10 +96,6 @@ class Model(ABC):
     def name_prefix():
         return "model"
 
-    @property
-    def type(self) -> str:
-        return type(self).__name__
-
     @staticmethod
     def operators() -> List[Type[AbsOpBase]]:
         pass
@@ -105,6 +103,19 @@ class Model(ABC):
     @staticmethod
     def add_seed_setter() -> None:
         pass
+
+    @staticmethod
+    def init(name) -> Type["Model"]:
+        if name == "torch":
+            from nnsmith.materialize.torch import TorchModel
+
+            return TorchModel
+        elif name == "onnx":
+            from nnsmith.materialize.onnx import ONNXModel
+
+            return ONNXModel
+        else:
+            raise ValueError(f"Unknown or unsupported model type: {name}")
 
 
 class TestCase:

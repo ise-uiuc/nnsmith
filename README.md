@@ -2,22 +2,23 @@
 
 This project is under heavy development at this point.
 
-Keep active bug tracking and please put bug reports/trackings on this [google sheet](https://docs.google.com/spreadsheets/d/15YY88x_JyZWom2YGNW2JO0JdqNVYWzPbaaRyhVxBJ_Y/edit#gid=0).
+Bug hunting: [google sheet](https://docs.google.com/spreadsheets/d/15YY88x_JyZWom2YGNW2JO0JdqNVYWzPbaaRyhVxBJ_Y/edit#gid=0).
 
 ## Setup
 
-- (optional for fuzzing) `pip install -r requirements/fuzz.txt`;
-- `pip install -r requirements/core.txt` to run generation;
+- `pip install -r requirements/core.txt` to run generation and fuzzing;
+- `pip install --upgrade -r requirements/sys/[system].txt` to allow generating and running specific frameworks;
+  -  **Why "--upgrade"?** In fact, all the sources under `requirements/sys/` are nightly release (except tvm) as we want to "save the world" by catching new bugs;
 
 ```shell
-export PYTHONPATH=$PYTHONPATH:$(pwd)
+export PYTHONPATH=$PYTHONPATH:$(pwd) # A workaround to import nnsmith before having a pip package.
 ```
 
 *A pip package will come soon.*
 
 ## Developer Notes
 
-To contribute to this project, please setup dependencies including `pre-commit`:
+You can use `pre-commit` to simpify development:
 
 - `pip install -r requirements/dev.txt`;
 - `pre-commit install`;
@@ -25,14 +26,18 @@ To contribute to this project, please setup dependencies including `pre-commit`:
 <details><summary><b>More notes</b> <i>[click to expand]</i></summary>
 <div>
 
-- Keep code minimality to make it easy-to-maintain:
-  - If the code is just for your own convenience: please keep it local; as it is hard (for the maintainer) to maintain too many personal files;
-  - If the code is useful for general users or developers: sure let's keep it but tell people how to use it.
-- Try not to bring unnecessary dependencies to the projects.
-- Documentation: If it is about a major feature/usage, put it in README. Otherwise, leave it somewhere else (Wiki or Issue).
+*Simplicity is prerequisite for reliability.* --Edsger W. Dijkstra
+
+We want **code simplicity**: keeping minimal dependencies and focusing on a small set of simple APIs to make NNSmith maintainable to developers and reliable to users.
 
 </div>
 </details>
+
+Run tests before commit:
+
+```shell
+pytest tests -s
+```
 
 ## Commands
 
@@ -40,28 +45,18 @@ To contribute to this project, please setup dependencies including `pre-commit`:
 
 ```shell
 # Generate a 5-node graph:
-python nnsmith/graph_gen.py --max_nodes 5 --viz_graph
-# Output model: output.onnx
-# Output visualization: output.onnx-concrete.png (concrete shape)
-#                       output.onnx.png          (symbolic shape)
-
-# Execute this model with TVM
-python nnsmith/backend_executor.py --model output.onnx --backend tvm
-# --backend can be: `tvm`, `ort` and `trt`.
-# --device can be: `cpu` (default) and `gpu`.
-
-# Compare TVM and ORT results
-python nnsmith/backend_executor.py --model output.onnx --backend tvm --cmp_with ort
-
-# Run fuzzing for 5 minute.
-# remember to run `pip install -r requirements/fuzz.txt` first.
-python nnsmith/fuzz.py --mode random --time 300 --backend tvm --root quick-start-tvm --eval_freq 256
-# Bug report is under `quick-start-tvm` if any.
+python nnsmith/cli/model_gen.py model.max_nodes=5 debug.viz=true
+# Output model:         output/output.onnx
+# Output visualization: output/graph.png
 ```
+
+See other commands under `nnsmith/cli`. We use [hydra](https://hydra.cc/) to manage configurations. See `nnsmith/config/main.yaml`.
 
 ### Coverage Evaluation
 
-To run coverage evaluation, first compile the compiler with LLVM's [source-based code coverage](https://clang.llvm.org/docs/SourceBasedCodeCoverage.html). The commands below should be compatible with LLVM-14.
+**WIP: Scripts under `experiments/` are not ready yet due to recent refactors.**
+
+To run coverage evaluation, first compile the DL framework with LLVM's [source-based code coverage](https://clang.llvm.org/docs/SourceBasedCodeCoverage.html). The commands below should be at least compatible with LLVM-14.
 
 <details><summary><b>NNSmith</b> <i>[click to expand]</i></summary>
 <div>
@@ -78,7 +73,7 @@ python experiments/cov_merge.py -f nnsmith-tvm-* nnsmith-ort-*  # generate merge
 <details><summary><b>LEMON</b> <i>[click to expand]</i></summary>
 <div>
 
-Please prepare ~ 50GB disk space to store LEMON.
+Please prepare 100GB disk space to store LEMON's outputs.
 
 ```shell
 # step 1: Run LEMON to generate models (https://github.com/ganler/LEMON);

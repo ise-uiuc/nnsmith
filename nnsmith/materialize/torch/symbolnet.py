@@ -1,5 +1,6 @@
 import os
 import time
+import warnings
 from typing import Optional, Dict
 
 import torch
@@ -275,14 +276,16 @@ class SymbolNet(nn.Module):
     @torch.jit.ignore
     def debug_numeric(self, tensor_map):
         # TODO(@ganler): optimize warning at export.
-        ConstraintCheck.true(
-            not any([torch.isinf(op).any() for _, op in tensor_map.items()]),
-            __INPUT_FOUND_INF_MSG__,
-        )
-        ConstraintCheck.true(
-            not any([torch.isnan(op).any() for _, op in tensor_map.items()]),
-            __INPUT_FOUND_NAN_MSG__,
-        )
+        with warnings.catch_warnings():  # just shutup.
+            warnings.simplefilter("ignore")
+            ConstraintCheck.true(
+                not any([torch.isinf(op).any() for _, op in tensor_map.items()]),
+                __INPUT_FOUND_INF_MSG__,
+            )
+            ConstraintCheck.true(
+                not any([torch.isnan(op).any() for _, op in tensor_map.items()]),
+                __INPUT_FOUND_NAN_MSG__,
+            )
 
     def forward(self, *args, **kwargs):
         self.differentiable = True

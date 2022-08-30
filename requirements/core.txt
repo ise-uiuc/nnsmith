@@ -5,3 +5,4 @@ networkx==2.7
 termcolor
 multipledispatch
 gitpython
+hydra-core

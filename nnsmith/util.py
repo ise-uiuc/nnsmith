@@ -26,7 +26,6 @@ def set_seed(seed: int, names: List = None):
     if names is None:
         names = SEED_SETTERS.keys()
     for name in names:
-        print(f"Setting seed {seed} for {name}")
         SEED_SETTERS[name](seed)
 
 

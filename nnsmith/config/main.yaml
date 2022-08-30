@@ -1,0 +1,46 @@
+topset: null # All instances will be a subset of `topset`;
+# >> Example:
+# topset:
+#   core.MaxPool2d:
+#     in_dtypes: [["f32"], ["f64"]]
+#     out_dtypes: [["f32"], ["f64"]]
+#   core.Where:
+#     in_dtypes: [["bool", "f32", "f32"]]
+#     out_dtypes: [["f32"]]
+
+exclude: null
+# >> Example:
+# exclude:
+#   - core.MaxPool2d:
+#     in_dtypes: [["f32"], ["f64"]]
+#     out_dtypes: [["f32"], ["f64"]]
+#   - core.Where:
+#     in_dtypes: [["bool", "f32", "f32"]]
+#     out_dtypes: [["f32"]]
+
+topset_from_file: null # Path that contains a YAML file that contains a topset domain as above
+
+# model gen config
+model:
+  type: "onnx"
+  init_rank: 4
+  max_nodes: 10
+  gen_timeout_ms: 50000
+  verbose: false # WARNING: temporary; later should go categorized logging
+  output_dir: "nnsmith_output"
+
+# backend config
+backend:
+  type: "onnxruntime"
+  optmax: true
+  device: "cpu"
+
+cache:
+  topset: true # Run dtype test with automatically maintained cache
+
+# seeds:
+seed: null # means random seed
+
+debug:
+  viz: false
+  viz_fmt: "png" # or "svg" for much smaller figure size and precision;
