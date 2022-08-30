@@ -5,7 +5,7 @@ import numpy as np
 
 import tensorflow as tf  # type: ignore
 
-from nnsmith.backends.factory import BackendFactory, BackendIODict, BackendCallable
+from nnsmith.backends.factory import BackendFactory, BackendCallable
 from nnsmith.materialize.tensorflow import (
     TFModel,
     TFNetCallable,
@@ -20,7 +20,7 @@ class TFLiteRunner:
     def __init__(self, tfnet_callable: TFNetCallable) -> None:
         self.tfnet_callable = tfnet_callable
 
-    def __call__(self, input: BackendIODict) -> BackendIODict:
+    def __call__(self, input: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
         return self.tfnet_callable(**input)
         # https://github.com/tensorflow/tensorflow/issues/34536#issuecomment-565632906
         # TFLite doesn't support NVIDIA GPU.
@@ -40,8 +40,8 @@ class TFLiteFactory(BackendFactory):
         TFLite Python Callable
     """
 
-    def __init__(self, device, opt_options, **kwargs) -> None:
-        super().__init__(device, opt_options, **kwargs)
+    def __init__(self, device, optmax, **kwargs) -> None:
+        super().__init__(device, optmax, **kwargs)
 
     @property
     def system_name(self) -> str:

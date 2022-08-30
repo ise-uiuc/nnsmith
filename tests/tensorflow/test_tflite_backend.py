@@ -38,7 +38,7 @@ def test_synthesized_tflite_model(tmp_path):
 
     assert (
         TFLiteFactory(
-            device="cpu", opt_options=False, catch_process_crash=False
+            device="cpu", optmax=False, catch_process_crash=False
         ).verify_testcase(testcase)
         is None
     )

@@ -7,15 +7,21 @@ if not GPUtil.getAvailable():
         "Skipping TensorRT tests due to no GPU detected.", allow_module_level=True
     )
 
-from nnsmith.materialize import Schedule, TestCase
-from nnsmith.materialize.onnx import ONNXModel
+from nnsmith.abstract.dtype import DType
+from nnsmith.materialize import TestCase
+from nnsmith.materialize import Model, Schedule
 from nnsmith.graph_gen import random_model_gen, concretize_graph
-from nnsmith.backends.tensorrt import TRTFactory
+from nnsmith.backends import BackendFactory
+from nnsmith.narrow_spec import load_topset_from_auto_cache
+
+TestCase.__test__ = False  # supress PyTest warning
 
 
 def test_synthesized_onnx_model(tmp_path):
     d = tmp_path / "test_trt_onnx"
     d.mkdir()
+
+    ONNXModel = Model.init("onnx")
 
     # TODO(@ganler): do dtype first.
     gen = random_model_gen(
@@ -42,8 +48,27 @@ def test_synthesized_onnx_model(tmp_path):
     testcase.dump(root_folder=d)
 
     assert (
-        TRTFactory(
-            device="gpu", opt_options=True, catch_process_crash=False
-        ).verify_testcase(testcase)
+        BackendFactory.init("tensorrt", device="gpu", optmax=True).verify_testcase(
+            testcase
+        )
         is None
+    )
+
+
+def test_narrow_spec_cache_make_and_reload():
+    factory = BackendFactory.init("tensorrt", device="gpu", optmax=True)
+    ONNXModel = Model.init("onnx")
+    opset_lhs = load_topset_from_auto_cache(ONNXModel, factory)
+    assert opset_lhs, "Should not be empty... Something must go wrong."
+    opset_rhs = load_topset_from_auto_cache(ONNXModel, factory)
+    assert opset_lhs == opset_rhs
+
+    # Assert types
+    assert isinstance(opset_lhs["core.ReLU"].in_dtypes[0][0], DType)
+
+    # Assert Dictionary Type Equality
+    assert type(opset_lhs) == type(opset_rhs)
+    assert type(opset_lhs["core.ReLU"]) == type(opset_rhs["core.ReLU"])
+    assert type(opset_lhs["core.ReLU"].in_dtypes[0][0]) == type(
+        opset_rhs["core.ReLU"].in_dtypes[0][0]
     )

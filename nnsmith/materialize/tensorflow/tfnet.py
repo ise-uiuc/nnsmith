@@ -1,14 +1,12 @@
-from typing import cast, Iterator, Callable, List, Dict
-from dataclasses import dataclass, astuple
+from typing import cast, Callable, List, Dict
+from dataclasses import dataclass
 
 import tensorflow as tf
 
-from nnsmith.abstract.tensor import AbsTensor  # type: ignore
-
-from nnsmith.graph_gen import Schedule
+from nnsmith.materialize import Schedule
 from nnsmith.abstract.op import AbsOpBase, Input
 from nnsmith.materialize.tensorflow.forward import forward_fn
-from nnsmith.error import ConstraintCheck, ConstraintError, SanityCheck
+from nnsmith.error import SanityCheck
 
 
 @dataclass

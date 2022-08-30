@@ -9,11 +9,12 @@ import torch.onnx
 import onnx
 import onnx.checker
 import onnx.helper
+from onnx.tools import update_model_dims
 from onnx.external_data_helper import load_external_data_for_model
 
 from nnsmith.abstract.dtype import DType
 from nnsmith.abstract.op import AbsTensor
-from nnsmith.graph_gen import Schedule
+from nnsmith.materialize import Schedule
 from nnsmith.materialize.torch import TorchModel, SymbolNet
 from nnsmith.macro import onnx2external_data_dir
 
@@ -50,7 +51,7 @@ def torch2onnx(
     # Dummy inputs
     if dummy_inputs is None:
         dummy_inputs = [
-            torch.rand(size=svar.shape).to(dtype=svar.dtype.torch())
+            torch.ones(size=svar.shape).uniform_(1, 2).to(dtype=svar.dtype.torch())
             for _, svar in model.input_like.items()
         ]
 
@@ -244,12 +245,20 @@ class ONNXModel(TorchModel):
 
     @property
     def native_model(self):
+        if self.with_torch and self.onnx_model is None:
+            self.onnx_model = self.get_onnx_from_torch()
         return self.onnx_model
 
     def get_onnx_from_torch(self) -> onnx.ModelProto:
         f = BytesIO()
-        torch2onnx(self.torch_model, f, self.masked_output_like.keys())
-        return onnx.load_model_from_string(f.getvalue())
+        torch2onnx(self.torch_model, f)
+        onnx_model = onnx.load_model_from_string(f.getvalue())
+        # freeze input and output shapes.
+        return update_model_dims.update_inputs_outputs_dims(
+            onnx_model,
+            {k: v.shape for k, v in self.torch_model.input_like.items()},
+            {k: v.shape for k, v in self.torch_model.output_like.items()},
+        )
 
     @staticmethod
     def name_suffix() -> str:

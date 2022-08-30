@@ -17,9 +17,8 @@ def configure_tensorflow():
 
 configure_tensorflow()
 
-from nnsmith.graph_gen import Schedule
 from nnsmith.abstract.op import AbsTensor, AbsOpBase
-from nnsmith.materialize import Model, Oracle
+from nnsmith.materialize import Model, Oracle, Schedule
 from nnsmith.materialize.tensorflow.forward import ALL_TF_OPS
 from nnsmith.materialize.tensorflow.tfnet import TFNet, TFNetOutDict
 

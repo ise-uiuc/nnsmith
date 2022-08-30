@@ -6,3 +6,4 @@ termcolor
 multipledispatch
 psutil
 gitpython
+hydra-core

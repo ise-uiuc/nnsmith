@@ -11,6 +11,7 @@ from multipledispatch import dispatch
 
 from nnsmith.abstract.op import AbsOpBase
 from nnsmith.abstract.tensor import AbsTensor
+from nnsmith.abstract.dtype import DType
 from nnsmith.abstract.arith import *
 from nnsmith.abstract.extension import patch_requires
 from nnsmith.backends import BackendFactory
@@ -24,19 +25,18 @@ class HostDeviceMem:
 
 
 class TRTFactory(BackendFactory):
-    def __init__(self, device="gpu", opt_options=True, **kwargs):
-        super().__init__(device, opt_options, **kwargs)
+    def __init__(self, device="gpu", optmax=True, **kwargs):
+        super().__init__(device, optmax, **kwargs)
 
         if device != "gpu":
             raise ValueError("TensorRT backend only supports GPU!")
 
-        if opt_options is False:
+        if optmax is False:
             # TODO(@ganler): support non-optimized TensorRT by using performing
             # inference over a model that marks all nodes as outputs.
             warnings.warn("There is not O0 mode for TensorRT so far.", UserWarning)
 
     @property
-    @classmethod
     def system_name(self) -> str:
         return "tensorrt"
 
@@ -138,6 +138,11 @@ class TRTFactory(BackendFactory):
         stream.synchronize()
         # Return only the host outputs.
         return [out.host for out in outputs]
+
+    @classmethod
+    def skip_dtypes(cls) -> List[DType]:
+        # TRT will truncate f64 -> f32 and i64 -> i32
+        return [DType.float64, DType.int64]
 
 
 @patch_requires(TRTFactory.system_name, "core.Pool2d")

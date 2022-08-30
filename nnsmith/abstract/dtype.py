@@ -1,20 +1,20 @@
-from enum import Enum, auto, unique
+from enum import Enum, unique
 
 import numpy as np
 
 # TODO(@ganler): add float16 support.
 @unique
 class DType(Enum):
-    float16 = auto()
-    float32 = auto()
-    float64 = auto()
-    int8 = auto()
-    int16 = auto()
-    int32 = auto()
-    int64 = auto()
-    bool = auto()
-    complex64 = auto()
-    complex128 = auto()
+    float16 = "float16"
+    float32 = "float32"
+    float64 = "float64"
+    int8 = "int8"
+    int16 = "int16"
+    int32 = "int32"
+    int64 = "int64"
+    bool = "bool"
+    complex64 = "complex64"
+    complex128 = "complex128"
 
     def __repr__(self) -> str:
         return self.name

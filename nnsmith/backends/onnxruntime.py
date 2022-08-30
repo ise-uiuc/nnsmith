@@ -18,11 +18,11 @@ OPT_LEVELS = [
 
 
 class ORTFactory(BackendFactory):
-    def __init__(self, device, opt_options, **kwargs):
+    def __init__(self, device, optmax, **kwargs):
         """opt_level ranges from 0 to 3, stands for ORT_DISABLE_ALL, ORT_ENABLE_BASIC, ORT_ENABLE_EXTENDED and ORT_ENABLE_ALL.
         See https://onnxruntime.ai/docs/performance/graph-optimizations.html for detail"""
-        super().__init__(device, opt_options, **kwargs)
-        opt_max = cast(bool, opt_options)
+        super().__init__(device, optmax, **kwargs)
+        opt_max = cast(bool, optmax)
         self.opt_level = OPT_LEVELS[-1 if opt_max else 0]
         self.providers = ["CPUExecutionProvider"]
         if device in ["cuda", "gpu"]:

@@ -346,7 +346,6 @@ class AbsOpBase(ABC):
 
 def concretize_op(op: AbsOpBase, model: Optional[z3.ModelRef]) -> AbsOpBase:
     if isinstance(op, Constant) or isinstance(op, Input):
-        assert not hasattr(op, "torch_loss")
         ret_op = deepcopy(op)
         values = []
 
@@ -618,6 +617,7 @@ class Input(AbsOpBase):
         super().__init__()
         self.inp_ranks = []
         self.out_ranks = [(dim,)]
+        self.abs_tensor: AbsTensor = None
 
     def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         SanityCheck.eq(len(input_shapes), 0)
@@ -1612,7 +1612,7 @@ class Flatten(Reshape):
     # Inputs are target shape.
 
     def __init__(self, dim0: Union[int, z3.ExprRef]):
-        super().__init__(1, dim0)
+        super().__init__(dim0)
         self.dim0 = dim0
 
 

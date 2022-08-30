@@ -1,4 +1,4 @@
-from typing import Dict, Tuple, List, Set, Type, cast
+from typing import Dict, Tuple, List, Set, Type
 from collections import defaultdict, namedtuple
 import math
 import textwrap
@@ -13,13 +13,11 @@ import uuid
 
 import networkx as nx
 import z3
-import pydot
 
 from nnsmith.util import set_seed
 from nnsmith.error import SanityCheck, ConstraintError
 from nnsmith.abstract.op import *
 from nnsmith.abstract.op import __MAX_RANK__ as __MAX_RANK__
-from nnsmith.materialize import Model, Schedule
 
 
 NNSMITH_LIMNF_V = os.getenv("NNSMITH_LIMNF_V", "0")
@@ -143,7 +141,6 @@ class SimpleGenerator:
         syms = self.new_syms(
             ["v%s_%s" % (self.monotonic_placeholder_id, k) for k in range(rank)]
         )
-        print(self.random_dtype())
         shapevar = AbsTensor(
             shape=syms, dtype=dtype if dtype is not None else self.random_dtype()
         )
@@ -223,8 +220,9 @@ class SimpleGenerator:
         z3.set_param(
             "smt.phase_selection",
             5,
-            "smt.arith.random_initial_value",
-            True,
+            # TODO(@ganler): re-enable this when having a usable op memory estimator.
+            # "smt.arith.random_initial_value",
+            # True,
             "sat.phase",
             "random",
             "timeout",
@@ -1094,103 +1092,4 @@ def viz(G, filename: str = None):
     elif filename.endswith("svg"):
         nx.drawing.nx_pydot.to_pydot(G).write_svg(filename)
     else:
-        raise ValueError(f"Unsupported image format: {fmt}")
-
-
-if __name__ == "__main__":
-    # Generate a random ONNX model
-    # TODO(@ganler): generate arbitrary model given things like `format=tf`.
-    # TODO(@ganler): clean terminal outputs.
-
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--max_nodes", type=int, default=10)
-    parser.add_argument("--init_rank", type=int, default=4)
-    parser.add_argument("--timeout_ms", type=int, default=50000)
-    parser.add_argument("--output", type=str, default="output", help="Output directory")
-    parser.add_argument("--seed", type=int)
-    # TODO(@ganler): use logging to control verbosity
-    parser.add_argument("--verbose", action="store_true")
-    parser.add_argument("--img", type=str, help="Output image format", default="png")
-    parser.add_argument(
-        "--viz", action="store_true", help="Visualize the model in given format."
-    )
-    parser.set_defaults(limnf=True)
-    parser.add_argument(
-        "--no_limnf",
-        dest="limnf",
-        action="store_false",
-        help="Disable the limit on the number of floats",
-    )
-    parser.add_argument(
-        "--limnf",
-        dest="limnf",
-        action="store_true",
-        help="Enable the limit on the number of floats",
-    )
-    parser.add_argument("--use_cuda", action="store_true")
-    parser.add_argument("--forward_prob", type=float)
-    parser.add_argument("--diff_can_overwrite", action="store_true")
-    parser.add_argument("--print_grad", type=int, default=0)
-    parser.add_argument(
-        "--framework", type=str, help="deep learning framework to use", default="torch"
-    )
-
-    args = parser.parse_args()
-
-    # TODO(@ganler): re-enable generating differentiable models.
-    seed = random.getrandbits(32) if args.seed is None else args.seed
-
-    print(f"Using seed {seed}")
-
-    # TODO(@ganler): skip operators outside of model gen.
-    from nnsmith.materialize import TestCase
-    from nnsmith.util import mkdir
-
-    strt_time = time.time()
-
-    if args.framework == "torch":
-        from nnsmith.materialize.onnx import ONNXModel as Model
-    elif args.framework == "tensorflow":
-        from nnsmith.materialize.tensorflow import TFModel as Model
-
-    Model.add_seed_setter()
-
-    gen = random_model_gen(
-        opset=Model.operators(),
-        init_rank=args.init_rank,
-        seed=seed,
-        max_nodes=args.max_nodes,
-        timeout_ms=args.timeout_ms,
-        verbose=args.verbose,
-        limnf=args.limnf,
-        forward_prob=args.forward_prob,
-    )
-    print(
-        f"{len(gen.get_solutions())} symbols and {len(gen.solver.assertions())} constraints."
-    )
-
-    if args.verbose:
-        print("solution:", ", ".join(map(str, gen.get_solutions())))
-
-    fixed_graph, concrete_abstensors = concretize_graph(
-        gen.abstract_graph, gen.tensor_dataflow, gen.get_solutions()
-    )
-
-    schedule = Schedule.init(fixed_graph, concrete_abstensors)
-
-    model = Model.from_schedule(schedule)
-    if args.framework == "torch":
-        model.refine_weights()  # either random generated or gradient-based.
-    oracle = model.make_oracle()
-
-    testcase = TestCase(model, oracle)
-
-    mkdir(args.output)
-    testcase.dump(root_folder=args.output)
-
-    if args.verbose or args.viz:
-        G = fixed_graph
-        fmt = args.img.replace(".", "")
-        viz(G, os.path.join(args.output, f"graph.{fmt}"))
+        raise ValueError(f"Unsupported image format: {filename}")

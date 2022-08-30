@@ -3,9 +3,8 @@ import pickle
 
 import torch
 
-from nnsmith.graph_gen import Schedule
 from nnsmith.abstract.op import AbsTensor, AbsOpBase
-from nnsmith.materialize import Model, Oracle
+from nnsmith.materialize import Model, Oracle, Schedule
 from nnsmith.materialize.torch.forward import ALL_TORCH_OPS
 from nnsmith.materialize.torch.input_gen import PracticalHybridSearch
 from nnsmith.materialize.torch.symbolnet import SymbolNet

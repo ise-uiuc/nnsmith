@@ -12,13 +12,16 @@ tmp/
 *.lz4
 *.profraw
 fuzz_report/
-config
-.vscode
+nnsmith_output/
+
+# hydra
+outputs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+*.pkl_memoize_py3
 
 # C extensions
 *.so
@@ -122,6 +125,7 @@ celerybeat.pid
 *.sage.py
 
 # Environments
+.vscode
 .env
 .venv
 env/
