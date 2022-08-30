@@ -14,7 +14,7 @@ runs:
       id: set-dep-path
       run: |
         if [ ${{ inputs.mode == 'all' }} ]; then
-          echo "::set-output name=dep-path::'requirements/**/*.txt'"
+          echo "::set-output name=dep-path::'requirements/*.txt'"
         elif [ ${{ inputs.mode == 'none' }} ]; then
           echo "::set-output name=dep-path::''"
         else
