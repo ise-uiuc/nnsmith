@@ -10,6 +10,7 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           mode: all
+
       - name: Test core
         run: |
           pytest tests/core

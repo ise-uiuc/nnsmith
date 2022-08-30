@@ -24,6 +24,7 @@ runs:
         fi
         ls -l
         ls -l requirements
+        ls -l ${{ github.action_path }}
       shell: bash
     - name: Set up Python 3.10 with cache
       uses: actions/setup-python@v4
