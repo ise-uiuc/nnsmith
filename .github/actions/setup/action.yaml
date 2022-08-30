@@ -39,6 +39,7 @@ runs:
       shell: bash
     - name: Install dependencies
       run: |
+        exit 1
         if [ ${{ inputs.mode == 'all' }} ]; then
           bash requirements/install_all.sh
         fi
