@@ -7,3 +7,4 @@ multipledispatch
 gitpython
 hydra-core
 appdirs
+graphviz
