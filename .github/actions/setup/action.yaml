@@ -22,7 +22,7 @@ runs:
           echo "Wrong mode ${{ inputs.mode }}"
           exit 1
         fi
-        cp -r requirements ${{ github.action_path }}
+        # cp -r requirements ${{ github.action_path }}
         ls -l ${{ github.action_path }}
       shell: bash
     - name: ${{ steps.set-dep-path.outputs.dep-path }}
