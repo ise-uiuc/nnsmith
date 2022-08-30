@@ -1,6 +1,6 @@
-from typing import List, Type
-import types
 import functools
+import types
+from typing import List, Type
 
 from nnsmith.abstract.op import AbsOpBase
 from nnsmith.abstract.tensor import AbsTensor

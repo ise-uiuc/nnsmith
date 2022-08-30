@@ -1,12 +1,13 @@
-from typing import Callable, Dict
+from typing import Callable, Dict, cast
 
-from multipledispatch import dispatch
 import numpy as np
 import onnx
 import onnxruntime as ort
+from multipledispatch import dispatch
 
-from nnsmith.macro import NNSMITH_ORT_INTRA_OP_THREAD
 from nnsmith.backends import BackendFactory
+from nnsmith.backends.factory import BackendCallable
+from nnsmith.macro import NNSMITH_ORT_INTRA_OP_THREAD
 from nnsmith.materialize.onnx import ONNXModel
 
 OPT_LEVELS = [
@@ -38,8 +39,9 @@ class ORTFactory(BackendFactory):
 
     @dispatch(ONNXModel)
     def make_backend(
-        self, model: ONNXModel
-    ) -> Callable[[Dict[str, np.ndarray]], Dict[str, np.ndarray]]:
+        self,
+        model: ONNXModel,
+    ) -> BackendCallable:
         sess_options = ort.SessionOptions()
         sess_options.graph_optimization_level = self.opt_level
         # https://github.com/microsoft/onnxruntime/issues/8313

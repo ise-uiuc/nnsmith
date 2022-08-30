@@ -2,9 +2,7 @@ from typing import Union
 
 import z3
 
-
 from nnsmith.error import SanityCheck
-
 
 ARITH_MAX_WIDTH: int = 64
 

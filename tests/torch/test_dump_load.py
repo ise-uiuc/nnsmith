@@ -1,11 +1,10 @@
-import pytest
-
 import numpy as np
+import pytest
 import torch
 
-from nnsmith.materialize import TestCase
+from nnsmith.graph_gen import concretize_graph, random_model_gen
+from nnsmith.materialize import Schedule, TestCase
 from nnsmith.materialize.onnx import ONNXModel
-from nnsmith.graph_gen import random_model_gen, concretize_graph, make_schedule
 
 TestCase.__test__ = False  # supress PyTest warning
 
@@ -25,7 +24,7 @@ def test_onnx_load_dump(tmp_path):
         gen.abstract_graph, gen.tensor_dataflow, gen.get_solutions()
     )
 
-    schedule = make_schedule(fixed_graph, concrete_abstensors)
+    schedule = Schedule.init(fixed_graph, concrete_abstensors)
 
     model = ONNXModel.from_schedule(schedule)
 
@@ -71,7 +70,7 @@ def test_bug_report_load_dump(tmp_path):
         gen.abstract_graph, gen.tensor_dataflow, gen.get_solutions()
     )
 
-    schedule = make_schedule(fixed_graph, concrete_abstensors)
+    schedule = Schedule.init(fixed_graph, concrete_abstensors)
 
     model = ONNXModel.from_schedule(schedule)
 

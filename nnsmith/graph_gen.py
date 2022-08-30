@@ -1,24 +1,23 @@
-from collections import defaultdict, namedtuple
-import math
-import textwrap
-from typing import Dict, Tuple, List, Set, Type
-from inspect import signature
-import traceback
-import random
-import time
-import os
 import copy
-import warnings
+import math
+import os
+import random
+import textwrap
+import time
+import traceback
 import uuid
+import warnings
+from collections import defaultdict, namedtuple
+from inspect import signature
+from typing import Dict, List, Set, Tuple, Type
 
 import networkx as nx
 import z3
 
-from nnsmith.util import set_seed
-from nnsmith.error import SanityCheck, ConstraintError
-from nnsmith.abstract.op import *
 from nnsmith.abstract.op import __MAX_RANK__ as __MAX_RANK__
-
+from nnsmith.abstract.op import *
+from nnsmith.error import ConstraintError, SanityCheck
+from nnsmith.util import set_seed
 
 NNSMITH_LIMNF_V = os.getenv("NNSMITH_LIMNF_V", "0")
 assert NNSMITH_LIMNF_V in ["0", "1"]
@@ -35,57 +34,12 @@ __TEXTWRAP_WIDTH__ = 30
 
 TensorCtx = namedtuple("TensorCtx", ["op_id", "type", "output_idx"])
 # Every tensor is represented by a (unique) integer key.
-Instruction: Tuple[AbsOpBase, List[int], List[int]] = namedtuple(
-    "Instruction", ["op", "inputs", "outputs"]
-)
-
-
-# Minimal information for constructing a graph.
-class Schedule:
-    def __init__(self, instructions, input_keys, leaf_keys, key2type):
-        self.instructions: List[Instruction] = instructions
-        self.input_keys: List[int] = input_keys
-        self.leaf_keys: List[int] = leaf_keys
-        self.key2type: Dict[int, AbsTensor] = key2type
-
-
-def make_schedule(graph: nx.MultiDiGraph, key2type: Dict[int, AbsTensor]):
-    # The input graph should be a concretized graph.
-    instructions: List[Instruction] = []
-    input_keys = []
-    user_keys = set()
-
-    # freeze node with static attributes in label;
-    for node_id in nx.topological_sort(graph):
-        node = graph.nodes[node_id]
-        op = node["op"]
-
-        if isinstance(op, Input):
-            input_keys.append(node["otensor_idx"][0])
-
-        for used_idx in node["itensor_idx"]:
-            user_keys.add(used_idx)
-
-        # TODO(@ganler): Better name than "otensor_idx"
-        # TODO(@ganler): Add refcnt or last ref mechanism to save memory
-        instructions.append(
-            Instruction(
-                op=op,
-                inputs=node["itensor_idx"],
-                outputs=node["otensor_idx"],
-            )
-        )
-
-    # simplify the statements above
-    leaf_keys = [key for key in key2type if key not in user_keys]
-
-    return Schedule(instructions, input_keys, leaf_keys, key2type)
 
 
 def concretize_graph(
     graph: nx.MultiDiGraph, dataflow: List[TensorCtx], model: z3.ModelRef
-) -> Tuple[nx.MultiDiGraph,]:
-    concrete_shapes = {}
+) -> Tuple[nx.MultiDiGraph, Dict[int, AbsTensor]]:
+    concrete_shapes: Dict[int, AbsTensor] = {}
 
     # freeze node with static attributes in label;
     for node_id in nx.topological_sort(graph):
@@ -1137,4 +1091,4 @@ def viz(G, filename: str = None):
     elif filename.endswith("svg"):
         nx.drawing.nx_pydot.to_pydot(G).write_svg(filename)
     else:
-        raise ValueError(f"Unsupported image format: {fmt}")
+        raise ValueError(f"Unsupported image format: {filename}")

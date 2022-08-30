@@ -6,3 +6,4 @@ termcolor
 multipledispatch
 gitpython
 hydra-core
+appdirs

@@ -1,9 +1,9 @@
 import pytest
 
 from nnsmith.abstract.dtype import DType
-from nnsmith.materialize import TestCase, Model
-from nnsmith.graph_gen import random_model_gen, concretize_graph, make_schedule
 from nnsmith.backends import BackendFactory
+from nnsmith.graph_gen import concretize_graph, random_model_gen
+from nnsmith.materialize import Model, Schedule, TestCase
 from nnsmith.narrow_spec import load_topset_from_auto_cache
 
 TestCase.__test__ = False  # supress PyTest warning
@@ -26,7 +26,7 @@ def test_synthesized_onnx_model(tmp_path):
         gen.abstract_graph, gen.tensor_dataflow, gen.get_solutions()
     )
 
-    schedule = make_schedule(fixed_graph, concrete_abstensors)
+    schedule = Schedule.init(fixed_graph, concrete_abstensors)
 
     model = ONNXModel.from_schedule(schedule)
 

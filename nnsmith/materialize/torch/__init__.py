@@ -1,11 +1,11 @@
-from typing import Dict, List, Type
 import pickle
+from os import PathLike
+from typing import Dict, List, Type
 
 import torch
 
-from nnsmith.graph_gen import Schedule
-from nnsmith.abstract.op import AbsTensor, AbsOpBase
-from nnsmith.materialize import Model, Oracle
+from nnsmith.abstract.op import AbsOpBase, AbsTensor
+from nnsmith.materialize import Model, Oracle, Schedule
 from nnsmith.materialize.torch.forward import ALL_TORCH_OPS
 from nnsmith.materialize.torch.input_gen import PracticalHybridSearch
 from nnsmith.materialize.torch.symbolnet import SymbolNet
@@ -58,7 +58,7 @@ class TorchModel(Model):
 
         return Oracle(input_dict, output_dict)
 
-    def dump(self, path: str):
+    def dump(self, path: PathLike):
         torch.save(self.torch_model.state_dict(), path)
         schedule_path = path.replace(
             TorchModel.name_prefix() + TorchModel.name_suffix(),
@@ -68,7 +68,7 @@ class TorchModel(Model):
             pickle.dump(self.torch_model.schedule, f)
 
     @staticmethod
-    def load(path: str) -> "TorchModel":
+    def load(path: PathLike) -> "TorchModel":
         ret = TorchModel()
         schedule_path = path.replace(
             TorchModel.name_prefix() + TorchModel.name_suffix(),

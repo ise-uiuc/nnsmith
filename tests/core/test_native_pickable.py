@@ -1,10 +1,10 @@
-import pytest
-
 import pickle
 
+import pytest
+
 from nnsmith.abstract.dtype import DType
-from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.abstract.op import MaxPool2d
+from nnsmith.abstract.tensor import AbsTensor
 
 
 def test_dtype_picklable():

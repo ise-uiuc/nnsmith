@@ -36,7 +36,9 @@ We want **code simplicity**: keeping minimal dependencies and focusing on a smal
 Run tests before commit:
 
 ```shell
-pytest tests -s
+# env of torch & tf will conflict so split their unit tests.
+pytest tests/torch -s
+pytest tests/tensorflow -s
 ```
 
 ## Commands

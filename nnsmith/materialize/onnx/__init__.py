@@ -1,22 +1,23 @@
-from typing import Dict, Tuple, Union
-import warnings
-import random
 import os
+import random
+import warnings
 from io import BytesIO
+from os import PathLike
+from typing import Dict, Tuple, Union
 
-import torch
-import torch.onnx
 import onnx
 import onnx.checker
 import onnx.helper
-from onnx.tools import update_model_dims
+import torch
+import torch.onnx
 from onnx.external_data_helper import load_external_data_for_model
+from onnx.tools import update_model_dims
 
 from nnsmith.abstract.dtype import DType
 from nnsmith.abstract.op import AbsTensor
-from nnsmith.graph_gen import Schedule
-from nnsmith.materialize.torch import TorchModel, SymbolNet
 from nnsmith.macro import onnx2external_data_dir
+from nnsmith.materialize import Schedule
+from nnsmith.materialize.torch import SymbolNet, TorchModel
 
 
 def create_deadcode_onnx(onnx_model, name_mask) -> onnx.ModelProto:
@@ -107,7 +108,6 @@ def analyze_onnx_io(
     model: onnx.ModelProto,
 ) -> Tuple[Dict[str, AbsTensor], Dict[str, AbsTensor]]:
     """Return input and output types in dictionaries."""
-    print(model)
     input_types = {}
     output_types = {}
     for input in model.graph.input:
@@ -214,7 +214,7 @@ class ONNXModel(TorchModel):
     def output_like(self) -> Dict[str, AbsTensor]:
         return self.masked_output_like
 
-    def dump(self, path: str) -> None:
+    def dump(self, path: PathLike) -> None:
         if self.with_torch:
             TorchModel.dump(
                 self, path.replace(self.name_suffix(), TorchModel.name_suffix())
@@ -224,7 +224,7 @@ class ONNXModel(TorchModel):
         onnx.save(self.onnx_model, path)
 
     @staticmethod
-    def load(path: str) -> "ONNXModel":
+    def load(path: PathLike) -> "ONNXModel":
         ret = ONNXModel()
         ret.onnx_model = onnx.load(path)
 

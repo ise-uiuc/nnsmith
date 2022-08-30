@@ -1,8 +1,8 @@
 import hydra
 from omegaconf import DictConfig
 
-from nnsmith.materialize import Model
 from nnsmith.backends import BackendFactory
+from nnsmith.materialize import Model
 from nnsmith.narrow_spec import load_topset_from_auto_cache
 
 

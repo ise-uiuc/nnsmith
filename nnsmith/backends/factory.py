@@ -1,17 +1,19 @@
-from abc import ABC, abstractmethod
-from typing import Callable, Dict, Optional, Union, List
 import traceback
+from abc import ABC, abstractmethod
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
-from nnsmith.abstract.dtype import DType
 
+from nnsmith.abstract.dtype import DType
 from nnsmith.abstract.tensor import AbsTensor
-from nnsmith.materialize import BugReport, Oracle, Stage, Symptom, TestCase, Model
 from nnsmith.difftest import assert_allclose
+from nnsmith.materialize import BugReport, Model, Oracle, Stage, Symptom, TestCase
+
+BackendCallable = Callable[[Dict[str, np.ndarray]], Dict[str, np.ndarray]]
 
 
 class BackendFactory(ABC):
-    def __init__(self, device="cpu", optmax=True, catch_process_crash=True):
+    def __init__(self, device="cpu", optmax: bool = False, catch_process_crash=True):
         super().__init__()
         self.device = device
         self.optmax = optmax
@@ -25,9 +27,7 @@ class BackendFactory(ABC):
         pass
 
     def __str__(self) -> str:
-        return (
-            f"{self.system_name} (opt={'max' if self.optmax else 'min'}-{self.device})"
-        )
+        return f"{self.system_name} ({self.device}  opt: {self.optmax})"
 
     @staticmethod
     def make_random_input(
@@ -45,9 +45,7 @@ class BackendFactory(ABC):
         return []
 
     @abstractmethod
-    def make_backend(
-        self, model: Model
-    ) -> Callable[[Dict[str, np.ndarray]], Dict[str, np.ndarray]]:
+    def make_backend(self, model: Model) -> BackendCallable:
         raise NotImplementedError
 
     def verify_testcase(self, testcase: TestCase) -> Optional[BugReport]:

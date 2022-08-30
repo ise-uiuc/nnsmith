@@ -1,10 +1,13 @@
+from ast import operator
+from functools import partial
 from typing import Set, Type
-from multipledispatch import dispatch
 
 import torch
+from multipledispatch import dispatch
 
-from nnsmith.error import SanityCheck
 from nnsmith.abstract.op import *
+from nnsmith.error import SanityCheck
+from nnsmith.materialize import framework_operator_impl
 from nnsmith.materialize.torch.dialect import Linear
 
 # Implementation of operators.
@@ -13,25 +16,7 @@ from nnsmith.materialize.torch.dialect import Linear
 TORCH_REALIZABLE_OPS = FULL_OPERATOR_SETS["core"] + FULL_OPERATOR_SETS["torch"]
 ALL_TORCH_OPS: List[Type[AbsOpBase]] = []
 
-
-def operator_impl(op_type, *args, **kwargs):
-    SanityCheck.true(
-        issubclass(op_type, AbsOpBase),
-        f"Decorator operator_impl takes AbsOpBase subclass, but got {op_type}",
-    )
-    if op_type is not Constant:  # Constant comes from placeholder.
-        dispatchables = [
-            rtype for rtype in TORCH_REALIZABLE_OPS if issubclass(rtype, op_type)
-        ]
-        for rtype in dispatchables:
-            ALL_TORCH_OPS.append(rtype)
-
-        SanityCheck.true(
-            len(dispatchables) != 0,
-            f"Decorator operator_impl only take types decorated by `mark_realize`, but got {op_type}",
-        )
-    return dispatch(op_type, *args, **kwargs)
-
+operator_impl = partial(framework_operator_impl, TORCH_REALIZABLE_OPS, ALL_TORCH_OPS)
 
 # forward_fn:  forward
 
@@ -41,7 +26,7 @@ class StopFoldConst(torch.nn.Module):
         super().__init__()
         self.dtype = data.dtype
         self.param = torch.nn.parameter.Parameter(
-            data, requires_grad=data.is_floating_point()
+            data, requires_grad=data.is_floating_point()  # TODO Colin trainable const?
         )
 
     @torch.no_grad()

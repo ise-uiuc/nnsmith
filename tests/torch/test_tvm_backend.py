@@ -1,29 +1,21 @@
 import pytest
-
-import GPUtil
-
-if not GPUtil.getAvailable():
-    pytest.skip(
-        "Skipping TensorRT tests due to no GPU detected.", allow_module_level=True
-    )
+import tvm
 
 from nnsmith.abstract.dtype import DType
-from nnsmith.materialize import TestCase
-from nnsmith.materialize import Model
-from nnsmith.graph_gen import random_model_gen, concretize_graph, make_schedule
 from nnsmith.backends import BackendFactory
+from nnsmith.graph_gen import concretize_graph, random_model_gen
+from nnsmith.materialize import Model, Schedule, TestCase
 from nnsmith.narrow_spec import load_topset_from_auto_cache
 
 TestCase.__test__ = False  # supress PyTest warning
 
 
 def test_synthesized_onnx_model(tmp_path):
-    d = tmp_path / "test_trt_onnx"
+    d = tmp_path / "test_tvm_onnx"
     d.mkdir()
 
     ONNXModel = Model.init("onnx")
 
-    # TODO(@ganler): do dtype first.
     gen = random_model_gen(
         opset=ONNXModel.operators(),
         init_rank=4,
@@ -35,7 +27,7 @@ def test_synthesized_onnx_model(tmp_path):
         gen.abstract_graph, gen.tensor_dataflow, gen.get_solutions()
     )
 
-    schedule = make_schedule(fixed_graph, concrete_abstensors)
+    schedule = Schedule.init(fixed_graph, concrete_abstensors)
 
     model = ONNXModel.from_schedule(schedule)
 
@@ -48,15 +40,23 @@ def test_synthesized_onnx_model(tmp_path):
     testcase.dump(root_folder=d)
 
     assert (
-        BackendFactory.init("tensorrt", device="gpu", optmax=True).verify_testcase(
-            testcase
-        )
+        BackendFactory.init(
+            "tvm", device="cpu", optmax=False, catch_process_crash=False
+        ).verify_testcase(testcase)
         is None
     )
 
+    if tvm.cuda(0).exist:
+        assert (
+            BackendFactory.init(
+                "tvm", device="cuda", optmax=False, catch_process_crash=False
+            ).verify_testcase(testcase)
+            is None
+        )
+
 
 def test_narrow_spec_cache_make_and_reload():
-    factory = BackendFactory.init("tensorrt", device="gpu", optmax=True)
+    factory = BackendFactory.init("tvm", device="cpu", optmax=True)
     ONNXModel = Model.init("onnx")
     opset_lhs = load_topset_from_auto_cache(ONNXModel, factory)
     assert opset_lhs, "Should not be empty... Something must go wrong."

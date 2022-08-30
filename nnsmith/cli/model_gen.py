@@ -4,7 +4,8 @@ import random
 import hydra
 from omegaconf import DictConfig
 
-from nnsmith.graph_gen import random_model_gen, viz, concretize_graph, make_schedule
+from nnsmith.graph_gen import concretize_graph, random_model_gen, viz
+from nnsmith.materialize import Schedule
 
 
 @hydra.main(version_base=None, config_path="../config", config_name="main")
@@ -16,8 +17,7 @@ def main(cfg: DictConfig):
     print(f"Using seed {seed}")
 
     # TODO(@ganler): skip operators outside of model gen with `cfg[exclude]`
-    from nnsmith.materialize import TestCase
-    from nnsmith.materialize import Model
+    from nnsmith.materialize import Model, TestCase
     from nnsmith.util import mkdir
 
     model_cfg = cfg["model"]
@@ -43,7 +43,7 @@ def main(cfg: DictConfig):
         gen.abstract_graph, gen.tensor_dataflow, gen.get_solutions()
     )
 
-    schedule = make_schedule(fixed_graph, concrete_abstensors)
+    schedule = Schedule.init(fixed_graph, concrete_abstensors)
 
     model = ModelType.from_schedule(schedule)
     model.refine_weights()  # either random generated or gradient-based.

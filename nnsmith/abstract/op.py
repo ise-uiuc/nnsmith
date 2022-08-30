@@ -1,24 +1,24 @@
+import fnmatch
+import os
+import random
 from abc import ABC, abstractmethod
 from copy import deepcopy
-import fnmatch
 from functools import reduce
-import os
-from typing import List, Optional, Tuple, Union, Dict, Type
 from inspect import signature
-import random
+from typing import Dict, List, Optional, Tuple, Type, Union
 
 import z3
 
-from nnsmith.error import SanityCheck, ConstraintCheck
+from nnsmith.abstract.arith import *
 from nnsmith.abstract.dtype import (
-    DType,
     DTYPE_ALL,
-    DTYPE_NON_BOOLS,
     DTYPE_FLOATS,
     DTYPE_INTS,
+    DTYPE_NON_BOOLS,
+    DType,
 )
-from nnsmith.abstract.arith import *
 from nnsmith.abstract.tensor import AbsTensor
+from nnsmith.error import ConstraintCheck, SanityCheck
 
 # There are following types of constraints at this point:
 # 1. Shape variables must be greater than 0;

@@ -1,19 +1,19 @@
-from dataclasses import dataclass
 import warnings
+from dataclasses import dataclass
 from typing import List
 
-import onnx
 import numpy as np
-import tensorrt as trt
+import onnx
 import pycuda.driver as cuda
-from pycuda.driver import DeviceAllocation
+import tensorrt as trt
 from multipledispatch import dispatch
+from pycuda.driver import DeviceAllocation
 
+from nnsmith.abstract.arith import *
+from nnsmith.abstract.dtype import DType
+from nnsmith.abstract.extension import patch_requires
 from nnsmith.abstract.op import AbsOpBase
 from nnsmith.abstract.tensor import AbsTensor
-from nnsmith.abstract.dtype import DType
-from nnsmith.abstract.arith import *
-from nnsmith.abstract.extension import patch_requires
 from nnsmith.backends import BackendFactory
 from nnsmith.materialize.onnx import ONNXModel
 

@@ -1,19 +1,113 @@
-import pickle
-import os
 import json
+import os
+import pickle
 from abc import ABC, abstractmethod
+from collections import namedtuple
+from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Type
+from os import PathLike
+from typing import Any, Dict, List, Set, Tuple, Type
 
+import networkx as nx
 import numpy as np
+from multipledispatch import dispatch
 
-from nnsmith.abstract.op import AbsOpBase
+from nnsmith.abstract.op import AbsOpBase, Constant, Input
 from nnsmith.abstract.tensor import AbsTensor
-from nnsmith.graph_gen import Schedule
+from nnsmith.error import SanityCheck
+
+
+def framework_operator_impl(
+    framework_realizable_ops: List[Type[AbsOpBase]],
+    all_framework_ops: List[Type[AbsOpBase]],
+    op_type: AbsOpBase,
+    *args,
+    **kwargs,
+):
+    """When implementing `forward_fn` for an operator class, add this operator into all_framework_ops list.
+
+    Usage:
+        In `forward.py`, define `operator_impl = partial(framework_operator_impl, FW_REALIZABLE_OPS, ALL_FM_OPS)`.
+        Then add `@operator_impl(OpClass)` when implementing `forward_fn` for `OpClass`.
+
+    Args:
+        framework_realizable_ops (List[Type[AbsOpBase]]): all realizable ops in the framework. Usually it can be obtained by FULL_OPERATOR_SETS["core"].union(FULL_OPERATOR_SETS["framework_name"])
+        all_framework_ops (List[Type[AbsOpBase]]): list of operator classes that are implemented `forward_fn` in the framework.
+        op_type (AbsOpBase): operator class
+    """
+    SanityCheck.true(
+        issubclass(op_type, AbsOpBase),
+        f"Decorator operator_impl takes AbsOpBase subclass, but got {op_type}",
+    )
+    if op_type is not Constant:  # Constant comes from placeholder.
+        dispatchables = [
+            rtype for rtype in framework_realizable_ops if issubclass(rtype, op_type)
+        ]
+        for rtype in dispatchables:
+            all_framework_ops.append(rtype)
+
+        SanityCheck.true(
+            len(dispatchables) != 0,
+            f"Decorator operator_impl only take types decorated by `mark_realize`, but got {op_type}",
+        )
+    return dispatch(op_type, *args, **kwargs)
+
+
+Instruction: Tuple[AbsOpBase, List[int], List[int]] = namedtuple(
+    "Instruction", ["op", "inputs", "outputs"]
+)
+
+
+@dataclass
+class Schedule:
+    """Minimal information for constructing a graph."""
+
+    instructions: List[Instruction]
+    input_keys: List[int]
+    leaf_keys: List[int]
+    key2type: Dict[int, AbsTensor]
+
+    @staticmethod
+    def init(graph: nx.MultiDiGraph, key2type: Dict[int, AbsTensor]) -> "Schedule":
+        # The input graph should be a concretized graph.
+        instructions: List[Instruction] = []
+        input_keys = []
+        user_keys = set()
+
+        # freeze node with static attributes in label;
+        for node_id in nx.topological_sort(graph):
+            node = graph.nodes[node_id]
+            op = node["op"]
+
+            if isinstance(op, Input):
+                input_keys.append(node["otensor_idx"][0])
+
+            for used_idx in node["itensor_idx"]:
+                user_keys.add(used_idx)
+
+            # TODO(@ganler): Better name than "otensor_idx"
+            # TODO(@ganler): Add refcnt or last ref mechanism to save memory
+            instructions.append(
+                Instruction(
+                    op=op,
+                    inputs=node["itensor_idx"],
+                    outputs=node["otensor_idx"],
+                )
+            )
+
+        # simplify the statements above
+        leaf_keys = [key for key in key2type if key not in user_keys]
+
+        return Schedule(instructions, input_keys, leaf_keys, key2type)
 
 
 class Oracle:
-    def __init__(self, input, output, provider: str = "unknown") -> None:
+    def __init__(
+        self,
+        input: Dict[str, np.ndarray],
+        output: Dict[str, np.ndarray],
+        provider: str = "unknown",
+    ) -> None:
         self.input: Dict[str, np.ndarray] = input
         self.output: Dict[str, np.ndarray] = output
         self._provider = provider
@@ -29,7 +123,7 @@ class Oracle:
     def provider(self) -> str:
         return self._provider
 
-    def dump(self, path: str) -> None:
+    def dump(self, path: PathLike) -> None:
         with open(path, "wb") as f:
             to_dump = {
                 "input": self.input,
@@ -39,7 +133,7 @@ class Oracle:
             pickle.dump(to_dump, f)
 
     @staticmethod
-    def load(path: str) -> "Oracle":
+    def load(path: PathLike) -> "Oracle":
         with open(path, "rb") as f:
             to_load = pickle.load(f)
             return Oracle(to_load["input"], to_load["output"], to_load["provider"])
@@ -58,21 +152,21 @@ class Model(ABC):
 
     @staticmethod
     @abstractmethod
-    def from_schedule(self, instructions: Schedule, **kwargs) -> "Model":
+    def from_schedule(schedule: Schedule, **kwargs) -> "Model":
         pass
 
     @staticmethod
     @abstractmethod
-    def load(path) -> "Model":
+    def load(path: PathLike) -> "Model":
         pass
 
     @abstractmethod
-    def dump(self, path):
+    def dump(self, path: PathLike) -> None:
         pass
 
     @property
     @abstractmethod
-    def native_model(self):
+    def native_model(self) -> Any:
         pass
 
     @staticmethod
@@ -93,7 +187,12 @@ class Model(ABC):
         pass
 
     @staticmethod
-    def name_prefix():
+    @abstractmethod
+    def operators() -> List[Type[AbsOpBase]]:
+        pass
+
+    @staticmethod
+    def name_prefix() -> str:
         return "model"
 
     @staticmethod
@@ -114,6 +213,10 @@ class Model(ABC):
             from nnsmith.materialize.onnx import ONNXModel
 
             return ONNXModel
+        elif name == "tensorflow":
+            from nnsmith.materialize.tensorflow import TFModel
+
+            return TFModel
         else:
             raise ValueError(f"Unknown or unsupported model type: {name}")
 
@@ -124,7 +227,9 @@ class TestCase:
         self.model = model
 
     @staticmethod
-    def load(model_type: Model, root_folder: str, allow_no_oracle=False) -> "TestCase":
+    def load(
+        model_type: Type[Model], root_folder: str, allow_no_oracle=False
+    ) -> "TestCase":
         model_path = os.path.join(
             root_folder, model_type.name_prefix() + model_type.name_suffix()
         )
