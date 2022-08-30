@@ -21,7 +21,6 @@ runs:
           echo "Wrong mode ${{ inputs.mode }}"
           exit 1
         fi
-    - uses: actions/checkout@v3
     - name: Set up Python 3.10 with cache
       uses: actions/setup-python@v4
       id: py310
