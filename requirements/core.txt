@@ -7,3 +7,4 @@ multipledispatch
 psutil
 gitpython
 hydra-core
+appdir
