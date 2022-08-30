@@ -1,12 +1,12 @@
-from typing import cast, Callable, List, Dict
 from dataclasses import dataclass
+from typing import Callable, Dict, List, cast
 
 import tensorflow as tf
 
-from nnsmith.materialize import Schedule
 from nnsmith.abstract.op import AbsOpBase, Input
-from nnsmith.materialize.tensorflow.forward import forward_fn
 from nnsmith.error import SanityCheck
+from nnsmith.materialize import Schedule
+from nnsmith.materialize.tensorflow.forward import forward_fn
 
 
 @dataclass

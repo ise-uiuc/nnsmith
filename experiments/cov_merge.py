@@ -1,8 +1,8 @@
-import os
 import multiprocessing
+import os
 import pickle
-from pathlib import Path
 from copy import deepcopy
+from pathlib import Path
 
 import lz4.frame
 

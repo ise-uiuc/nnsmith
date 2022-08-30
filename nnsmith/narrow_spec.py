@@ -18,20 +18,20 @@ to narrow those specifications, we look at the following methods:
 
 
 import os
-from os import PathLike
-from dataclasses import dataclass
-from typing import List, Dict, Type
 from copy import deepcopy
+from dataclasses import dataclass
+from os import PathLike
+from typing import Dict, List, Type
 
-from omegaconf import OmegaConf
-from appdirs import user_cache_dir
 import z3
+from appdirs import user_cache_dir
+from omegaconf import OmegaConf
 
-from nnsmith.abstract.op import Input, Constant, AbsOpBase, AbsTensor, concretize_op
 from nnsmith.abstract.dtype import DType
+from nnsmith.abstract.op import AbsOpBase, AbsTensor, Constant, Input, concretize_op
 from nnsmith.backends import BackendFactory
-from nnsmith.materialize import Model, TestCase, Instruction, Schedule
-from nnsmith.cli.util import succ_print, fail_print, note_print
+from nnsmith.cli.util import fail_print, note_print, succ_print
+from nnsmith.materialize import Instruction, Model, Schedule, TestCase
 
 NNSMITH_CACHE_DIR = user_cache_dir("nnsmith")
 

@@ -2,6 +2,7 @@ from enum import Enum, unique
 
 import numpy as np
 
+
 # TODO(@ganler): add float16 support.
 @unique
 class DType(Enum):

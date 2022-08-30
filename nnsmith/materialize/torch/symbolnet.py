@@ -1,17 +1,17 @@
 import os
 import time
 import warnings
-from typing import Optional, Dict
+from typing import Dict, Optional
 
 import torch
 from torch import nn
 
+from nnsmith.abstract.op import Input
+from nnsmith.error import ConstraintCheck, ConstraintError, SanityCheck
+from nnsmith.materialize import Schedule
+from nnsmith.materialize.torch.forward import forward_fn
 from nnsmith.materialize.torch.numeric import loss_fn, numeric_valid
 from nnsmith.materialize.torch.proxy_grad import proxy_fn
-from nnsmith.materialize.torch.forward import forward_fn
-from nnsmith.materialize import Schedule
-from nnsmith.error import ConstraintCheck, ConstraintError, SanityCheck
-from nnsmith.abstract.op import Input
 
 __MB_LIM__ = 6 * 1024
 __INPUT_FOUND_NAN_MSG__ = "[NaN] in model inputs!"

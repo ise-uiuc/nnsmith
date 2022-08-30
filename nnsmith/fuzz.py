@@ -1,40 +1,40 @@
-import glob
-from multiprocessing import Process
-import subprocess
-from pathlib import Path
-import pickle
-import sys
-import time
-import os
-import uuid
 import datetime
+import glob
+import os
+import pickle
 import random
 import shutil
-from typing import Iterable, Union, List
 import socket
-import warnings
+import subprocess
+import sys
+import time
 import traceback
+import uuid
+import warnings
+from multiprocessing import Process
+from os import PathLike
+from pathlib import Path
+from typing import Iterable, List, Union
 
 import git
-import torch
-import numpy as np
 import networkx as nx
-
+import numpy as np
 import rich
-from rich.progress import Progress, BarColumn, ProgressColumn
-from rich.panel import Panel
-from rich.console import RenderableType
+import torch
 from rich.columns import Columns
+from rich.console import RenderableType
+from rich.panel import Panel
+from rich.progress import BarColumn, Progress, ProgressColumn
 
 from nnsmith.abstract.op import ALL_OP_TYPES, config_skip_op
-from nnsmith.error import InternalError
-from nnsmith.difftest import assert_allclose
-from nnsmith.graph_gen import random_model_gen, SymbolNet
-from nnsmith.dtype_test import rewrite_op_dtype
-from nnsmith.materialize.torch.input_gen import PracticalHybridSearch
-from nnsmith.materialize.onnx.export import torch2onnx
 from nnsmith.backends import BackendFactory, mk_factory
+from nnsmith.difftest import assert_allclose
+from nnsmith.dtype_test import rewrite_op_dtype
+from nnsmith.error import InternalError
+from nnsmith.graph_gen import SymbolNet, random_model_gen
 from nnsmith.macro import onnx2external_data_dir
+from nnsmith.materialize.onnx.export import torch2onnx
+from nnsmith.materialize.torch.input_gen import PracticalHybridSearch
 
 _METADATA_NAME_ = "meta.txt"
 
@@ -178,12 +178,12 @@ class Reporter:  # From Tzer.
     def report_bug(
         self,
         err_type: Exception,
-        buggy_onnx_path: str,
-        buggy_torch_path: str,
+        buggy_onnx_path: PathLike,
+        buggy_torch_path: PathLike,
         message: str,
         stdout: str,
         stderr: str,
-        graph_path: str,
+        graph_path: PathLike,
         sat_inputs=None,
     ):
         dir = f"{type(err_type).__name__}__{self.n_bug}"

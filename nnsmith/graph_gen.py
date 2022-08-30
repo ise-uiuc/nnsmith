@@ -1,24 +1,23 @@
-from typing import Dict, Tuple, List, Set, Type
-from collections import defaultdict, namedtuple
-import math
-import textwrap
-from inspect import signature
-import traceback
-import random
-import time
-import os
 import copy
-import warnings
+import math
+import os
+import random
+import textwrap
+import time
+import traceback
 import uuid
+import warnings
+from collections import defaultdict, namedtuple
+from inspect import signature
+from typing import Dict, List, Set, Tuple, Type
 
 import networkx as nx
 import z3
 
-from nnsmith.util import set_seed
-from nnsmith.error import SanityCheck, ConstraintError
-from nnsmith.abstract.op import *
 from nnsmith.abstract.op import __MAX_RANK__ as __MAX_RANK__
-
+from nnsmith.abstract.op import *
+from nnsmith.error import ConstraintError, SanityCheck
+from nnsmith.util import set_seed
 
 NNSMITH_LIMNF_V = os.getenv("NNSMITH_LIMNF_V", "0")
 assert NNSMITH_LIMNF_V in ["0", "1"]

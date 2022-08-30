@@ -1,11 +1,13 @@
 from __future__ import annotations
-from typing import Any, Callable, Dict, List, Tuple, Type
-from multipledispatch import dispatch  # type: ignore
+
 import os
 import pickle
-import numpy as np
+from os import PathLike
+from typing import Any, Callable, Dict, List, Tuple, Type
 
+import numpy as np
 import tensorflow as tf  # type: ignore
+from multipledispatch import dispatch  # type: ignore
 
 
 def configure_tensorflow():
@@ -17,7 +19,7 @@ def configure_tensorflow():
 
 configure_tensorflow()
 
-from nnsmith.abstract.op import AbsTensor, AbsOpBase
+from nnsmith.abstract.op import AbsOpBase, AbsTensor
 from nnsmith.materialize import Model, Oracle, Schedule
 from nnsmith.materialize.tensorflow.forward import ALL_TF_OPS
 from nnsmith.materialize.tensorflow.tfnet import TFNet, TFNetOutDict
@@ -122,7 +124,7 @@ class TFModel(Model):
 
         return Oracle(input_dict, output_dict)
 
-    def dump(self, path: str = "saved_tfmodel") -> None:
+    def dump(self, path: PathLike = "saved_tfmodel") -> None:
         os.makedirs(path, exist_ok=True)
         # schedule.pkl
         with open(os.path.join(path, TFModel.schedule_pkl_name()), "wb") as f:
@@ -137,7 +139,7 @@ class TFModel(Model):
 
     def dump_with_oracle(
         self,
-        path: str = "saved_tfmodel",
+        path: PathLike = "saved_tfmodel",
         inputs: Dict[str, tf.Tensor | tf.TensorSpec] = None,
     ) -> None:
         self.dump(path)
@@ -146,7 +148,7 @@ class TFModel(Model):
 
     def dump_tfnet(
         self,
-        path: str = "saved_tfnet",
+        path: PathLike = "saved_tfnet",
         inputs: Dict[str, tf.Tensor | tf.TensorSpec] = None,
     ) -> TFNetCallable:
         concrete_net = self.concrete_net(inputs)
@@ -160,7 +162,7 @@ class TFModel(Model):
         return tf.saved_model.load(saved_dir)
 
     @staticmethod
-    def load(path: str = "saved_tfmodel") -> "TFModel":
+    def load(path: PathLike = "saved_tfmodel") -> "TFModel":
         with open(os.path.join(path, TFModel.schedule_pkl_name()), "rb") as f:
             schedule: Schedule = pickle.load(f)
         model = TFModel(schedule)
@@ -168,7 +170,7 @@ class TFModel(Model):
 
     @staticmethod
     def load_with_oracle(
-        path: str = "saved_tfmodel",
+        path: PathLike = "saved_tfmodel",
     ) -> Tuple["TFModel", TFNetInputDict, TFNetOutDict]:
         model = TFModel.load(path)
         oracle = Oracle.load(os.path.join(path, Oracle.name()))

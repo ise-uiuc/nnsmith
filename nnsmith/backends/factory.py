@@ -1,14 +1,13 @@
-from typing import Callable, Dict, Optional, Any
-from abc import ABC, abstractmethod
-from typing import Callable, Dict, Optional, Union, List
 import traceback
+from abc import ABC, abstractmethod
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
-from nnsmith.abstract.dtype import DType
 
+from nnsmith.abstract.dtype import DType
 from nnsmith.abstract.tensor import AbsTensor
-from nnsmith.materialize import BugReport, Oracle, Stage, Symptom, TestCase, Model
 from nnsmith.difftest import assert_allclose
+from nnsmith.materialize import BugReport, Model, Oracle, Stage, Symptom, TestCase
 
 BackendCallable = Callable[[Dict[str, np.ndarray]], Dict[str, np.ndarray]]
 

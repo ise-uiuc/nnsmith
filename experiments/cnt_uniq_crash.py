@@ -1,6 +1,6 @@
 import os
 
-from nnsmith.backends import mk_factory, BackendFactory
+from nnsmith.backends import BackendFactory, mk_factory
 
 if __name__ == "__main__":
     import argparse

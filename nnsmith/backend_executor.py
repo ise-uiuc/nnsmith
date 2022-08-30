@@ -1,14 +1,14 @@
-import random
 import pickle
-from pathlib import Path
+import random
 import time
+from pathlib import Path
 
 import onnx
 import onnx.checker
 
 from nnsmith import difftest
-from nnsmith.util import is_invalid
 from nnsmith.backends import BackendFactory, gen_one_input_rngs, mk_factory
+from nnsmith.util import is_invalid
 
 if __name__ == "__main__":
     import argparse

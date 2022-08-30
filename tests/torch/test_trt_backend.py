@@ -1,6 +1,5 @@
-import pytest
-
 import GPUtil
+import pytest
 
 if not GPUtil.getAvailable():
     pytest.skip(
@@ -8,10 +7,9 @@ if not GPUtil.getAvailable():
     )
 
 from nnsmith.abstract.dtype import DType
-from nnsmith.materialize import TestCase
-from nnsmith.materialize import Model, Schedule
-from nnsmith.graph_gen import random_model_gen, concretize_graph
 from nnsmith.backends import BackendFactory
+from nnsmith.graph_gen import concretize_graph, random_model_gen
+from nnsmith.materialize import Model, Schedule, TestCase
 from nnsmith.narrow_spec import load_topset_from_auto_cache
 
 TestCase.__test__ = False  # supress PyTest warning

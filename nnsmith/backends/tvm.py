@@ -1,6 +1,6 @@
 import tvm
-from tvm import relay
 from multipledispatch import dispatch
+from tvm import relay
 
 from nnsmith.backends import BackendFactory
 from nnsmith.materialize.onnx import ONNXModel

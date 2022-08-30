@@ -1,37 +1,38 @@
-from typing import Dict, Tuple, List, Set, Any, Type
+import json
+import os
 import pickle
+from abc import ABC, abstractmethod
 from collections import namedtuple
 from dataclasses import dataclass
-import os
-import json
-from abc import ABC, abstractmethod
 from enum import Enum
-from multipledispatch import dispatch
+from os import PathLike
+from typing import Any, Dict, List, Set, Tuple, Type
 
 import networkx as nx
 import numpy as np
+from multipledispatch import dispatch
 
-from nnsmith.error import SanityCheck
-from nnsmith.abstract.op import AbsOpBase, Input, Constant
+from nnsmith.abstract.op import AbsOpBase, Constant, Input
 from nnsmith.abstract.tensor import AbsTensor
+from nnsmith.error import SanityCheck
 
 
 def framework_operator_impl(
-    FRAMEWORK_REALIZABLE_OPS: List[Type[AbsOpBase]],
-    ALL_FRAMEWORK_OPS: List[Type[AbsOpBase]],
+    framework_realizable_ops: List[Type[AbsOpBase]],
+    all_framework_ops: List[Type[AbsOpBase]],
     op_type: AbsOpBase,
     *args,
     **kwargs,
 ):
-    """When implementing `forward_fn` for an operator class, add this operator into ALL_FRAMEWORK_OPS list.
+    """When implementing `forward_fn` for an operator class, add this operator into all_framework_ops list.
 
     Usage:
         In `forward.py`, define `operator_impl = partial(framework_operator_impl, FW_REALIZABLE_OPS, ALL_FM_OPS)`.
         Then add `@operator_impl(OpClass)` when implementing `forward_fn` for `OpClass`.
 
     Args:
-        FRAMEWORK_REALIZABLE_OPS (List[Type[AbsOpBase]]): all realizable ops in the framework. Usually it can be obtained by FULL_OPERATOR_SETS["core"].union(FULL_OPERATOR_SETS["framework_name"])
-        ALL_FRAMEWORK_OPS (List[Type[AbsOpBase]]): list of operator classes that are implemented `forward_fn` in the framework.
+        framework_realizable_ops (List[Type[AbsOpBase]]): all realizable ops in the framework. Usually it can be obtained by FULL_OPERATOR_SETS["core"].union(FULL_OPERATOR_SETS["framework_name"])
+        all_framework_ops (List[Type[AbsOpBase]]): list of operator classes that are implemented `forward_fn` in the framework.
         op_type (AbsOpBase): operator class
     """
     SanityCheck.true(
@@ -40,10 +41,10 @@ def framework_operator_impl(
     )
     if op_type is not Constant:  # Constant comes from placeholder.
         dispatchables = [
-            rtype for rtype in FRAMEWORK_REALIZABLE_OPS if issubclass(rtype, op_type)
+            rtype for rtype in framework_realizable_ops if issubclass(rtype, op_type)
         ]
         for rtype in dispatchables:
-            ALL_FRAMEWORK_OPS.append(rtype)
+            all_framework_ops.append(rtype)
 
         SanityCheck.true(
             len(dispatchables) != 0,
@@ -122,7 +123,7 @@ class Oracle:
     def provider(self) -> str:
         return self._provider
 
-    def dump(self, path: str) -> None:
+    def dump(self, path: PathLike) -> None:
         with open(path, "wb") as f:
             to_dump = {
                 "input": self.input,
@@ -132,7 +133,7 @@ class Oracle:
             pickle.dump(to_dump, f)
 
     @staticmethod
-    def load(path: str) -> "Oracle":
+    def load(path: PathLike) -> "Oracle":
         with open(path, "rb") as f:
             to_load = pickle.load(f)
             return Oracle(to_load["input"], to_load["output"], to_load["provider"])
@@ -156,11 +157,11 @@ class Model(ABC):
 
     @staticmethod
     @abstractmethod
-    def load(path: str) -> "Model":
+    def load(path: PathLike) -> "Model":
         pass
 
     @abstractmethod
-    def dump(self, path: str) -> None:
+    def dump(self, path: PathLike) -> None:
         pass
 
     @property

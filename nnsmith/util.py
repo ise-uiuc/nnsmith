@@ -1,10 +1,9 @@
 import os
-import shutil
 import random
+import shutil
 from typing import Callable, Dict, List
 
 import numpy as np
-
 
 SEED_SETTERS = {
     "random": random.seed,

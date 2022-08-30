@@ -1,12 +1,11 @@
+import argparse
 import os
 import re
-import argparse
 
-import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-import pandas as pd
+import matplotlib.pyplot as plt
 import numpy as np
-
+import pandas as pd
 
 SMALL_SIZE = 10
 MEDIUM_SIZE = 13

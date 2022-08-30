@@ -1,8 +1,8 @@
 from typing import List, Tuple, Union
 
 from nnsmith.abstract.arith import *
-from nnsmith.abstract.op import int_from, UnaryOpBase, mark_materialize
 from nnsmith.abstract.dtype import DType
+from nnsmith.abstract.op import UnaryOpBase, int_from, mark_materialize
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import ConstraintCheck
 

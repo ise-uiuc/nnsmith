@@ -1,9 +1,8 @@
-import pickle
 import argparse
 import os
+import pickle
 
 import numpy as np
-
 from tvm.contrib import coverage
 
 

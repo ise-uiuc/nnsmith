@@ -1,11 +1,10 @@
 import pytest
-
-from nnsmith.materialize import TestCase, Schedule
-from nnsmith.graph_gen import random_model_gen, concretize_graph
-from nnsmith.backends.tflite import TFLiteFactory
-from nnsmith.materialize.tensorflow import TFModel
-
 import tensorflow as tf
+
+from nnsmith.backends.tflite import TFLiteFactory
+from nnsmith.graph_gen import concretize_graph, random_model_gen
+from nnsmith.materialize import Schedule, TestCase
+from nnsmith.materialize.tensorflow import TFModel
 
 TestCase.__test__ = False  # supress PyTest warning
 

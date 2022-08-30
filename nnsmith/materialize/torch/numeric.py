@@ -1,5 +1,5 @@
-from multipledispatch import dispatch
 import torch
+from multipledispatch import dispatch
 
 from nnsmith.abstract.op import *
 

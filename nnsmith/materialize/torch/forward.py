@@ -1,12 +1,12 @@
 from ast import operator
-from typing import Set, Type
-from multipledispatch import dispatch
 from functools import partial
+from typing import Set, Type
 
 import torch
+from multipledispatch import dispatch
 
-from nnsmith.error import SanityCheck
 from nnsmith.abstract.op import *
+from nnsmith.error import SanityCheck
 from nnsmith.materialize import framework_operator_impl
 from nnsmith.materialize.torch.dialect import Linear
 

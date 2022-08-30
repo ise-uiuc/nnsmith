@@ -4,8 +4,8 @@ import random
 import hydra
 from omegaconf import DictConfig
 
+from nnsmith.graph_gen import concretize_graph, random_model_gen, viz
 from nnsmith.materialize import Schedule
-from nnsmith.graph_gen import random_model_gen, viz, concretize_graph
 
 
 @hydra.main(version_base=None, config_path="../config", config_name="main")
@@ -17,8 +17,7 @@ def main(cfg: DictConfig):
     print(f"Using seed {seed}")
 
     # TODO(@ganler): skip operators outside of model gen with `cfg[exclude]`
-    from nnsmith.materialize import TestCase
-    from nnsmith.materialize import Model
+    from nnsmith.materialize import Model, TestCase
     from nnsmith.util import mkdir
 
     model_cfg = cfg["model"]

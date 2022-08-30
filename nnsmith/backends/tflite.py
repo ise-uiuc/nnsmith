@@ -1,11 +1,11 @@
+from os import PathLike
 from typing import Callable, Dict
-from multipledispatch import dispatch
 
 import numpy as np
-
 import tensorflow as tf  # type: ignore
+from multipledispatch import dispatch
 
-from nnsmith.backends.factory import BackendFactory, BackendCallable
+from nnsmith.backends.factory import BackendCallable, BackendFactory
 from nnsmith.materialize.tensorflow import (
     TFModel,
     TFNetCallable,
@@ -45,7 +45,7 @@ class TFLiteFactory(BackendFactory):
 
     @property
     def system_name(self) -> str:
-        "TFLite"
+        "tflite"
 
     @dispatch(TFModel)
     def make_backend(
@@ -60,7 +60,7 @@ class TFLiteFactory(BackendFactory):
 
     def make_backend_from_path(
         self,
-        path: str,
+        path: PathLike,
     ) -> BackendCallable:
         """Create TFLite callable from path of a TF SavedModel.
         Ref: https://www.tensorflow.org/api_docs/python/tf/lite/TFLiteConverter#from_saved_model
@@ -121,7 +121,7 @@ class TFLiteFactory(BackendFactory):
     @dispatch(str)
     def make_content(
         self,
-        path: str,
+        path: PathLike,
     ) -> bytes:
         """Create TFLite content from path of a saved model.
         Ref: https://www.tensorflow.org/api_docs/python/tf/lite/TFLiteConverter#from_saved_model
@@ -150,13 +150,13 @@ class TFLiteFactory(BackendFactory):
         tflite_bytes = converter.convert()
         return tflite_bytes
 
-    def dump_backend(self, path: str, content: bytes) -> None:
+    def dump_backend(self, path: PathLike, content: bytes) -> None:
         with open(path, "wb") as f:
             f.write(content)
 
-    def load_content(self, path: str) -> bytes:
+    def load_content(self, path: PathLike) -> bytes:
         with open(path, "rb") as f:
             return f.read()
 
-    def load_backend(self, path: str) -> BackendCallable:
+    def load_backend(self, path: PathLike) -> BackendCallable:
         return self.make_backend_from_content(self.load_content(path))

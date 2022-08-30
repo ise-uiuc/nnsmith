@@ -1,15 +1,14 @@
-from typing import List, Type
-from multipledispatch import dispatch
 from functools import partial
+from typing import List, Type
 
 import tensorflow as tf  # type: ignore
-from tensorflow import keras
 from keras import layers
+from multipledispatch import dispatch
+from tensorflow import keras
 
 from nnsmith.abstract.op import *
 from nnsmith.materialize import framework_operator_impl
 from nnsmith.materialize.tensorflow.dialect import Dense
-
 
 # core dialect + some future PyTorch-only Operators.
 # TF_REALIZABLE_OPS = FULL_OPERATOR_SETS["core"] + FULL_OPERATOR_SETS["tensorflow"]

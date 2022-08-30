@@ -1,11 +1,10 @@
-import pytest
-
 import numpy as np
+import pytest
 import torch
 
-from nnsmith.materialize import TestCase, Schedule
+from nnsmith.graph_gen import concretize_graph, random_model_gen
+from nnsmith.materialize import Schedule, TestCase
 from nnsmith.materialize.onnx import ONNXModel
-from nnsmith.graph_gen import random_model_gen, concretize_graph
 
 TestCase.__test__ = False  # supress PyTest warning
 

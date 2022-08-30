@@ -2,30 +2,29 @@
 simply generate a bunch of models and see if the can find viable inputs.
 """
 
-from multiprocessing import Process
-import shutil
-import traceback
-import uuid
-import time
 import argparse
-import random
 import os
 import pickle
-import psutil
+import random
+import shutil
+import time
+import traceback
+import uuid
+from multiprocessing import Process
 
-import torch
+import networkx as nx
 import numpy as np
 import pandas as pd
+import psutil
+import torch
 from tqdm import tqdm
-import networkx as nx
 
-
-from nnsmith.materialize.onnx.export import torch2onnx
-from nnsmith.util import mkdir
-from nnsmith.graph_gen import random_model_gen, SymbolNet, random_tensor
-from nnsmith.materialize.torch.input_gen import GradSearch, SamplingSearch
-from nnsmith.dtype_test import rewrite_op_dtype
 from nnsmith.abstract.op import ALL_OP_TYPES
+from nnsmith.dtype_test import rewrite_op_dtype
+from nnsmith.graph_gen import SymbolNet, random_model_gen, random_tensor
+from nnsmith.materialize.onnx.export import torch2onnx
+from nnsmith.materialize.torch.input_gen import GradSearch, SamplingSearch
+from nnsmith.util import mkdir
 
 
 def mknet(args, differentiable_ops=None):

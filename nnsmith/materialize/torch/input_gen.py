@@ -1,12 +1,12 @@
 import time
-from typing import List, Tuple, Dict
 from abc import ABC, abstractmethod
+from typing import Dict, List, Tuple
 
-import torch
 import numpy as np
+import torch
 
-from nnsmith.materialize.torch.symbolnet import SymbolNet, random_tensor
 from nnsmith.abstract.op import DType
+from nnsmith.materialize.torch.symbolnet import SymbolNet, random_tensor
 
 
 class InputSearchBase(ABC):

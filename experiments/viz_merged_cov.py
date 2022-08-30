@@ -1,12 +1,10 @@
-import matplotlib.pyplot as plt
-import matplotlib
-from matplotlib_venn import venn2, _venn2, venn3, _venn3
-import numpy as np
-
 import os
 
+import matplotlib
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
-
+from matplotlib_venn import _venn2, _venn3, venn2, venn3
 
 SMALL_SIZE = 10
 MEDIUM_SIZE = 14

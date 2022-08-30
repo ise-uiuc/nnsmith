@@ -1,14 +1,15 @@
 import os
-import sys
-import random
-import numpy as np
 import pickle
+import random
+import sys
 
-from nnsmith.error import IncorrectResult
+import numpy as np
+
 from nnsmith.backends import BackendFactory, mk_factory
 from nnsmith.difftest import assert_allclose
-from nnsmith.util import gen_one_input
+from nnsmith.error import IncorrectResult
 from nnsmith.fuzz import simple_bug_report
+from nnsmith.util import gen_one_input
 
 
 def mcov_write(path):

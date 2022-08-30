@@ -1,7 +1,8 @@
 import argparse
+import os
+
 import matplotlib.pyplot as plt
 import pandas
-import os
 
 
 class Ploter:

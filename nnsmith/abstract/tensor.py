@@ -3,9 +3,9 @@ from typing import List, Union
 
 import z3
 
-from nnsmith.error import SanityCheck, ConstraintCheck
-from nnsmith.abstract.dtype import DType
 from nnsmith.abstract.arith import *
+from nnsmith.abstract.dtype import DType
+from nnsmith.error import ConstraintCheck, SanityCheck
 
 
 class AbsTensor:
