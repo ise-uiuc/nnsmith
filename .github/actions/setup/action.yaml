@@ -21,6 +21,7 @@ runs:
           echo "Wrong mode ${{ inputs.mode }}"
           exit 1
         fi
+      shell: bash
     - name: Set up Python 3.10 with cache
       uses: actions/setup-python@v4
       id: py310
@@ -29,9 +30,11 @@ runs:
         cache: 'pip'
         cache-dependency-path: ${{ steps.set-dep-path.outputs.dep-path }}
     - run: echo '${{ steps.py310.outputs.cache-hit }}'
+      shell: bash
     - name: Install dependencies
       run: |
         if [ ${{ inputs.mode == 'all' }} ]; then
           bash requirements/install_all.sh
         fi
         echo "PYTHONPATH=$PYTHONPATH:${GITHUB_WORKSPACE}" >> $GITHUB_ENV
+      shell: bash
