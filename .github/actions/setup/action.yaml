@@ -21,6 +21,8 @@ runs:
           echo "Wrong mode ${{ inputs.mode }}"
           exit 1
         fi
+        ls -l
+        ls -l requirements
       shell: bash
     - name: Set up Python 3.10 with cache
       uses: actions/setup-python@v4
