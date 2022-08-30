@@ -16,9 +16,7 @@ def list_eq(a, b):
 
 
 class TVMFactory(BackendFactory):
-    def __init__(
-        self, device="cpu", optmax=True, executor="graph", **kwargs
-    ) -> None:
+    def __init__(self, device="cpu", optmax=True, executor="graph", **kwargs) -> None:
         super().__init__(device, optmax, **kwargs)
         # WARNING: setting opt_level 4 sometimes causes false alarms
         # as in this level fast_math is enabled where slight numerical

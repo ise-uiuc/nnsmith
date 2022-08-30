@@ -1,0 +1,20 @@
+name: CI
+
+on: [push]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: .github/actions/setup
+        with:
+          mode: all
+      - name: Test core
+        run: |
+          pytest tests/core
+      - name: Test torch
+        run: |
+          pytest tests/torch
+      - name: Test TensorFlow
+        run: |
+          pytest tests/tensorflow
