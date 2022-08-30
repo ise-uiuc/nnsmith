@@ -13,6 +13,7 @@ runs:
     - uses: actions/checkout@v3
     - name: install graphviz from apt
       run: sudo apt install -y graphviz
+      shell: bash
     - name: set path to dependencies
       id: set-dep-path
       run: |
