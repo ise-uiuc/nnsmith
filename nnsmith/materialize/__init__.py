@@ -213,6 +213,10 @@ class Model(ABC):
             from nnsmith.materialize.onnx import ONNXModel
 
             return ONNXModel
+        elif name == "tensorflow":
+            from nnsmith.materialize.tensorflow import TFModel
+
+            return TFModel
         else:
             raise ValueError(f"Unknown or unsupported model type: {name}")
 

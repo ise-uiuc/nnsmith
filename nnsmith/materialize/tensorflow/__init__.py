@@ -212,7 +212,7 @@ class TFModel(Model):
         return self.net.__call__.get_concrete_function(**inputs)
 
     def refine_weights(self) -> None:
-        raise NotImplementedError()
+        pass
 
     def run_eagerly(self, inputs: TFNetInputDict) -> TFNetOutDict:
         tf.config.run_functions_eagerly(True)
