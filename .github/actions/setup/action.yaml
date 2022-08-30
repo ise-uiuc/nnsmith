@@ -11,6 +11,8 @@ runs:
   using: composite
   steps:
     - uses: actions/checkout@v3
+    - name: install graphviz from apt
+      run: sudo apt install -y graphviz
     - name: set path to dependencies
       id: set-dep-path
       run: |
@@ -23,7 +25,7 @@ runs:
           exit 1
         fi
       shell: bash
-    - name: Set up Python with cache
+    - name: set up Python with cache
       uses: actions/setup-python@v4
       id: py
       with:
@@ -32,7 +34,7 @@ runs:
         cache-dependency-path: ${{ steps.set-dep-path.outputs.dep-path }}
     - run: echo "cache hit ${{ steps.py.outputs.cache-hit }}"
       shell: bash
-    - name: Install dependencies
+    - name: install dependencies
       run: |
         if [ ${{ inputs.mode == 'all' }} ]; then
           bash requirements/install_all.sh
