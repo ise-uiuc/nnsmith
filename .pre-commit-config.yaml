@@ -11,6 +11,10 @@ repos:
                 nnsmith/fuzz.py   |
                 nnsmith/backend_executor.py
             )$
+-   repo: https://github.com/psf/black
+    rev: 22.6.0
+    hooks:
+    -   id: black
 -   repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.3.0
     hooks:
