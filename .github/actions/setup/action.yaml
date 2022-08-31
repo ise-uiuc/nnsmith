@@ -30,7 +30,7 @@ runs:
       id: py
       with:
         python-version: '3.10'
-        cache: 'pip'
+        # cache: 'pip'
         # cache-dependency-path: ${{ steps.set-dep-path.outputs.dep-path }}
     - run: echo "cache hit ${{ steps.py.outputs.cache-hit }}"
       shell: bash
