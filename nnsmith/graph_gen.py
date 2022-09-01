@@ -299,10 +299,6 @@ class SimpleGenerator:
         cres = self.solver.check(*assumptions)
 
         checking_time = int((time.time() - start) * 1000)
-        if checking_time > 3000 and self.cur_node:  # 3s
-            warnings.warn(
-                f"[WARNING] check {self.cur_node} {checking_time} ms at phase {self.cur_phase}"
-            )
 
         if self.verbose:
             print(cres, "<-- checking time:", checking_time, "ms")
@@ -690,7 +686,6 @@ class PureSymbolGen(SimpleGenerator):
             for c in shape.gt_zero():
                 constraints.append(c)
 
-        self.cur_node = node
         # constraints.extend(self.extra_constraints(node, input_shapes))
         if self.limnf:
             if NNSMITH_LIMNF_V == "0":
@@ -767,7 +762,6 @@ class PureSymbolGen(SimpleGenerator):
             constraints.extend(shape.eq(occupied_holder_shapes[i]))
             constraints.extend(shape.gt_zero())
 
-        self.cur_node = node
         # constraints.extend(self.extra_constraints(node, input_shapes))
 
         # TODO: consider nfloats.
