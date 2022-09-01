@@ -4,19 +4,30 @@ This project is under heavy development at this point.
 
 Bug hunting: [google sheet](https://docs.google.com/spreadsheets/d/15YY88x_JyZWom2YGNW2JO0JdqNVYWzPbaaRyhVxBJ_Y/edit#gid=0).
 
-## Setup
+## Quick Start
+
+```shell
+python3 -m pip install -i https://test.pypi.org/simple/ nnsmith"[torch,onnx]" --upgrade
+```
+
+```shell
+# Generate a 5-node graph:
+nnsmith.model_gen model.max_nodes=5 debug.viz=true
+# Output model:         output/output.onnx
+# Output visualization: output/graph.png
+```
+
+See other commands under `nnsmith/cli`. We use [hydra](https://hydra.cc/) to manage configurations. See `nnsmith/config/main.yaml`.
+
+## Developer Notes
 
 - `pip install -r requirements/core.txt` to run generation and fuzzing;
 - `pip install --upgrade -r requirements/sys/[system].txt` to allow generating and running specific frameworks;
   -  **Why "--upgrade"?** In fact, all the sources under `requirements/sys/` are nightly release (except tvm) as we want to "save the world" by catching new bugs;
 
 ```shell
-export PYTHONPATH=$PYTHONPATH:$(pwd) # A workaround to import nnsmith before having a pip package.
+export PYTHONPATH=$PYTHONPATH:$(pwd)
 ```
-
-*A pip package will come soon.*
-
-## Developer Notes
 
 You can use `pre-commit` to simpify development:
 
@@ -37,23 +48,13 @@ Run tests before commit:
 
 ```shell
 # env of torch & tf will conflict so split their unit tests.
+pytest tests/core -s
 pytest tests/torch -s
 pytest tests/tensorflow -s
 ```
 
-## Commands
 
-### Quick Start
-
-```shell
-# Generate a 5-node graph:
-python nnsmith/cli/model_gen.py model.max_nodes=5 debug.viz=true
-# Output model:         output/output.onnx
-# Output visualization: output/graph.png
-```
-
-See other commands under `nnsmith/cli`. We use [hydra](https://hydra.cc/) to manage configurations. See `nnsmith/config/main.yaml`.
-
+<!--
 ### Coverage Evaluation
 
 **WIP: Scripts under `experiments/` are not ready yet due to recent refactors.**
@@ -154,4 +155,4 @@ bash experiments/input_search_exp.sh 30
 python experiments/plot_inp_search_merge.py --root 512-model-10-node-exp \
                                                    512-model-20-node-exp \
                                                    512-model-30-node-exp
-```
+``` -->

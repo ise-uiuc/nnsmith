@@ -1,9 +1,9 @@
 z3-solver==4.8.14
+networkx==2.7
+hydra-core>=1.1.0
 pydot
 rich
-networkx==2.7
 termcolor
 multipledispatch
 gitpython
-hydra-core
 appdirs
