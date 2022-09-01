@@ -7,7 +7,7 @@ Bug hunting: [google sheet](https://docs.google.com/spreadsheets/d/15YY88x_JyZWo
 ## Quick Start
 
 ```shell
-python3 -m pip install -i https://test.pypi.org/simple/ nnsmith"[torch,onnx]"
+python3 -m pip install -i https://test.pypi.org/simple/ nnsmith"[torch,onnx]" --upgrade
 ```
 
 ```shell
