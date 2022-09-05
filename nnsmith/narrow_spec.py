@@ -30,8 +30,8 @@ from omegaconf import OmegaConf
 from nnsmith.abstract.dtype import DType
 from nnsmith.abstract.op import AbsOpBase, AbsTensor, Constant, Input, concretize_op
 from nnsmith.backends import BackendFactory
-from nnsmith.cli.util import fail_print, note_print, succ_print
 from nnsmith.materialize import Instruction, Model, Schedule, TestCase
+from nnsmith.util import fail_print, note_print, succ_print
 
 NNSMITH_CACHE_DIR = user_cache_dir("nnsmith")
 
