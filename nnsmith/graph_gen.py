@@ -2,11 +2,11 @@ import copy
 import math
 import os
 import random
+import shutil
 import textwrap
 import time
 import traceback
 import uuid
-import warnings
 from collections import defaultdict, namedtuple
 from inspect import signature
 from typing import Dict, List, Set, Tuple, Type
@@ -17,7 +17,7 @@ import z3
 from nnsmith.abstract.op import __MAX_RANK__ as __MAX_RANK__
 from nnsmith.abstract.op import *
 from nnsmith.error import ConstraintError, SanityCheck
-from nnsmith.util import set_seed
+from nnsmith.util import note_print, set_seed
 
 NNSMITH_LIMNF_V = os.getenv("NNSMITH_LIMNF_V", "0")
 assert NNSMITH_LIMNF_V in ["0", "1"]
@@ -1077,12 +1077,43 @@ def random_model_gen(
     return gen
 
 
+_DOT_EXIST = shutil.which("dot") is not None
+_CONDA_EXIST = shutil.which("conda") is not None
+_APT_EXIST = shutil.which("apt") is not None
+_BREW_EXIST = shutil.which("brew") is not None
+
+
+def _check_dot_install():
+    if not _DOT_EXIST:
+        note_print("`dot` not found.")
+        if _CONDA_EXIST or _APT_EXIST or _BREW_EXIST:
+            note_print("To install via:")
+            if _CONDA_EXIST:
+                note_print(" conda:\t conda install -c anaconda graphviz -y")
+
+            if _APT_EXIST:
+                note_print(" apt:\t sudo apt install graphviz -y")
+
+            if _BREW_EXIST:
+                note_print(" brew:\t brew install graphviz")
+
+        note_print("Also see: https://graphviz.org/download/")
+        return False
+
+    return True
+
+
 def viz(G, filename: str = None):
-    if filename is None:
-        filename = f"graph.png"
-    if filename.endswith("png"):
-        nx.drawing.nx_pydot.to_pydot(G).write_png(filename)
-    elif filename.endswith("svg"):
-        nx.drawing.nx_pydot.to_pydot(G).write_svg(filename)
+    if _check_dot_install():
+        if filename is None:
+            filename = f"graph.png"
+        if filename.endswith("png"):
+            nx.drawing.nx_pydot.to_pydot(G).write_png(filename)
+        elif filename.endswith("svg"):
+            nx.drawing.nx_pydot.to_pydot(G).write_svg(filename)
+        else:
+            raise ValueError(f"Unsupported image format: {filename}")
     else:
-        raise ValueError(f"Unsupported image format: {filename}")
+        note_print(
+            f"Skipping visualizing `{filename}` due to missing `dot` (graphviz)."
+        )

@@ -7,14 +7,13 @@ Bug hunting: [google sheet](https://docs.google.com/spreadsheets/d/15YY88x_JyZWo
 ## Quick Start
 
 ```shell
-python3 -m pip install -i https://test.pypi.org/simple/ nnsmith"[torch,onnx]" --upgrade
-```
-
-```shell
+python3 -m pip install "nnsmith[torch,onnx]"                     \
+                       --upgrade                                 \
+                       --index-url https://test.pypi.org/simple/ \
+                       --extra-index-url https://pypi.org/simple/
 # Generate a 5-node graph:
 nnsmith.model_gen model.max_nodes=5 debug.viz=true
-# Output model:         output/output.onnx
-# Output visualization: output/graph.png
+# see "nnsmith_outputs/*"
 ```
 
 See other commands under `nnsmith/cli`. We use [hydra](https://hydra.cc/) to manage configurations. See `nnsmith/config/main.yaml`.
