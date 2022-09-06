@@ -186,6 +186,10 @@ class Model(ABC):
     def refine_weights(self) -> None:
         pass
 
+    @abstractmethod
+    def make_oracle(self) -> Oracle:
+        pass
+
     @staticmethod
     @abstractmethod
     def operators() -> List[Type[AbsOpBase]]:

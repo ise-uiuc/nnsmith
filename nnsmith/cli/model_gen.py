@@ -5,7 +5,8 @@ import hydra
 from omegaconf import DictConfig
 
 from nnsmith.graph_gen import concretize_graph, random_model_gen, viz
-from nnsmith.materialize import Schedule
+from nnsmith.materialize import Model, Schedule, TestCase
+from nnsmith.util import mkdir
 
 
 @hydra.main(version_base=None, config_path="../config", config_name="main")
@@ -17,9 +18,6 @@ def main(cfg: DictConfig):
     print(f"Using seed {seed}")
 
     # TODO(@ganler): skip operators outside of model gen with `cfg[exclude]`
-    from nnsmith.materialize import Model, TestCase
-    from nnsmith.util import mkdir
-
     model_cfg = cfg["model"]
     ModelType = Model.init(model_cfg["type"])
     ModelType.add_seed_setter()
@@ -51,13 +49,13 @@ def main(cfg: DictConfig):
 
     testcase = TestCase(model, oracle)
 
-    mkdir(model_cfg["output_dir"])
-    testcase.dump(root_folder=model_cfg["output_dir"])
+    mkdir(cfg["gen"]["output"])
+    testcase.dump(root_folder=cfg["gen"]["output"])
 
     if cfg["debug"]["viz"]:
         G = fixed_graph
         fmt = cfg["debug"]["viz_fmt"].replace(".", "")
-        viz(G, os.path.join(model_cfg["output_dir"], f"graph.{fmt}"))
+        viz(G, os.path.join(cfg["gen"]["output"], f"graph.{fmt}"))
 
 
 if __name__ == "__main__":

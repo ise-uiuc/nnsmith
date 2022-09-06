@@ -1,0 +1,24 @@
+backend:
+  type: "onnxruntime"
+  optmax: true
+  device: "cpu"
+
+model:
+  type: "onnx"
+  path: "???" # can be multiple files tho.
+
+oracle: "auto"
+# "auto": use `oracle.pkl` in local path;
+# PathLike: get the oracle from somewhere else;
+# null: fallback to random.
+raw_input: null    # path to raw input data (Dict[str, np.ndarray])
+output: null       # save oracle or bug report some where.
+equal_nan: true    # skip regarding it as a bug if with fp exception values.
+
+cmp_with: null
+  # type: "tvm"
+  # optmax: true
+  # device: "cpu"
+
+seed: null
+bug_presence: "crash" # or "report"

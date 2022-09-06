@@ -1,8 +1,6 @@
 # NNSmith: DNN Model Generation in the Wild
 
-This project is under heavy development at this point.
-
-Bug hunting: [google sheet](https://docs.google.com/spreadsheets/d/15YY88x_JyZWom2YGNW2JO0JdqNVYWzPbaaRyhVxBJ_Y/edit#gid=0).
+[![](https://github.com/ise-uiuc/nnsmith/actions/workflows/ci.yaml/badge.svg)](https://github.com/ise-uiuc/nnsmith/actions/workflows/ci.yaml) [![](https://img.shields.io/pypi/v/nnsmith?color=g)](https://pypi.org/project/nnsmith/) [![](https://img.shields.io/pypi/l/nnsmith)](https://github.com/ise-uiuc/nnsmith/blob/main/LICENSE)
 
 ## Quick Start
 

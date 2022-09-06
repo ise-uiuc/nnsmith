@@ -1,6 +1,3 @@
-from typing import Callable, Dict, cast
-
-import numpy as np
 import onnx
 import onnxruntime as ort
 from multipledispatch import dispatch

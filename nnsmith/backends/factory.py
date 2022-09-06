@@ -1,6 +1,6 @@
 import traceback
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Callable, Dict, List, Optional, Union
 
 import numpy as np
 
@@ -48,12 +48,9 @@ class BackendFactory(ABC):
     def make_backend(self, model: Model) -> BackendCallable:
         raise NotImplementedError
 
-    def verify_testcase(self, testcase: TestCase) -> Optional[BugReport]:
-        # TODO(@ganler): impl fault catching in subprocess
-        assert not self.catch_process_crash, "not implemented"
-
+    def checked_compile(self, testcase: TestCase) -> Union[BackendCallable, BugReport]:
         try:  # compilation
-            executable = self.make_backend(testcase.model)
+            return self.make_backend(testcase.model)
         except Exception:
             return BugReport(
                 testcase=testcase,
@@ -63,14 +60,18 @@ class BackendFactory(ABC):
                 log=traceback.format_exc(),
             )
 
-        if not testcase.oracle:
-            # generate inputs automatically.
+    def checked_exec(
+        self, executable: BackendCallable, testcase: TestCase
+    ) -> Union[Dict[str, np.ndarray], BugReport]:
+        input = testcase.oracle.input
+        if input is None:
             input = self.make_random_input(testcase.model.input_like)
-        else:
-            input = testcase.oracle.input
+            testcase = TestCase(
+                model=testcase.model, oracle=Oracle(input=input, output=None)
+            )
 
         try:  # execution
-            output = executable(input)
+            return executable(input)
         except Exception:
             return BugReport(
                 testcase=testcase,
@@ -80,22 +81,48 @@ class BackendFactory(ABC):
                 log=traceback.format_exc(),
             )
 
-        if not testcase.oracle.output:
-            try:  # verification
-                assert_allclose(
-                    output,
-                    testcase.oracle.output,
-                    self.__str__(),
-                    testcase.oracle.provider,
-                )
-            except AssertionError:
-                return BugReport(
-                    testcase=testcase,
-                    system=self.system_name,
-                    symptom=Symptom.INCONSISTENCY,
-                    stage=Stage.VERIFICATION,
-                    log=traceback.format_exc(),
-                )
+    def checked_compile_and_exec(self, testcase: TestCase):
+        executable = self.checked_compile(testcase)
+        if isinstance(executable, BugReport):
+            return executable
+        return self.checked_exec(executable, testcase)
+
+    def verify_results(
+        self, output: Dict[str, np.ndarray], testcase: TestCase, equal_nan=True
+    ) -> Optional[BugReport]:
+        try:  # verification
+            assert_allclose(
+                output,
+                testcase.oracle.output,
+                self.__str__(),
+                testcase.oracle.provider,
+                equal_nan=equal_nan,
+            )
+        except AssertionError:
+            return BugReport(
+                testcase=testcase,
+                system=self.system_name,
+                symptom=Symptom.INCONSISTENCY,
+                stage=Stage.VERIFICATION,
+                log=traceback.format_exc(),
+            )
+
+    def verify_testcase(
+        self, testcase: TestCase, equal_nan=True
+    ) -> Optional[BugReport]:
+        # TODO(@ganler): impl fault catching in subprocess
+        assert not self.catch_process_crash, "not implemented"
+
+        executable = self.checked_compile(testcase)
+        if isinstance(executable, BugReport):
+            return executable
+
+        output = self.checked_exec(executable, testcase)
+        if isinstance(output, BugReport):
+            return output
+
+        if testcase.oracle.output is not None:
+            return self.verify_results(output, testcase, equal_nan=equal_nan)
 
         return None
 

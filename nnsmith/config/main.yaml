@@ -27,7 +27,6 @@ model:
   max_nodes: 10
   gen_timeout_ms: 50000
   verbose: false # WARNING: temporary; later should go categorized logging
-  output_dir: "nnsmith_output"
 
 # backend config
 backend:
@@ -44,3 +43,6 @@ seed: null # means random seed
 debug:
   viz: false
   viz_fmt: "png" # or "svg" for much smaller figure size and precision;
+
+gen:
+  output: "nnsmith_output"

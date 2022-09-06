@@ -1,5 +1,5 @@
 from os import PathLike
-from typing import Callable, Dict
+from typing import Dict
 
 import numpy as np
 import tensorflow as tf  # type: ignore
@@ -9,8 +9,6 @@ from nnsmith.backends.factory import BackendCallable, BackendFactory
 from nnsmith.materialize.tensorflow import (
     TFModel,
     TFNetCallable,
-    TFNetInputDict,
-    TFNetOutDict,
     np_dict_from_tf,
     tf_dict_from_np,
 )
