@@ -8,11 +8,11 @@ from tensorflow import keras
 
 from nnsmith.abstract.op import *
 from nnsmith.materialize import framework_operator_impl
-from nnsmith.materialize.tensorflow.dialect import Dense
+from nnsmith.materialize.tensorflow.dialect import *
 
 # core dialect + some future PyTorch-only Operators.
 TF_REALIZABLE_OPS = FULL_OPERATOR_SETS["core"] + FULL_OPERATOR_SETS["tensorflow"]
-# TF_REALIZABLE_OPS = [Add, Dense]
+# TF_REALIZABLE_OPS = [Dense, LocalRespNorm]
 ALL_TF_OPS: List[Type[AbsOpBase]] = []
 
 operator_impl = partial(framework_operator_impl, TF_REALIZABLE_OPS, ALL_TF_OPS)
@@ -344,3 +344,17 @@ def forward_fn(op: Dense):
     return layers.Dense(
         units=op.ofeat, dtype=op.input_like[0].dtype.tensorflow(), autocast=False
     )
+
+
+@operator_impl(LocalRespNorm)
+def forward_fn(op: LocalRespNorm):
+    def _lrn(x):
+        return tf.raw_ops.LRN(
+            input=x,
+            depth_radius=op.depth_radius,
+            bias=op.bias,
+            alpha=op.alpha,
+            beta=1 / op.inv_beta,
+        )
+
+    return _lrn

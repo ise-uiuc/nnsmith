@@ -43,6 +43,12 @@ def main(cfg: DictConfig):
         gen.abstract_graph, gen.tensor_dataflow, gen.get_solutions()
     )
 
+    mkdir(model_cfg["output_dir"])
+    if cfg["debug"]["viz"]:
+        G = fixed_graph
+        fmt = cfg["debug"]["viz_fmt"].replace(".", "")
+        viz(G, os.path.join(model_cfg["output_dir"], f"graph.{fmt}"))
+
     schedule = Schedule.init(fixed_graph, concrete_abstensors)
 
     model = ModelType.from_schedule(schedule)
@@ -51,13 +57,7 @@ def main(cfg: DictConfig):
 
     testcase = TestCase(model, oracle)
 
-    mkdir(model_cfg["output_dir"])
     testcase.dump(root_folder=model_cfg["output_dir"])
-
-    if cfg["debug"]["viz"]:
-        G = fixed_graph
-        fmt = cfg["debug"]["viz_fmt"].replace(".", "")
-        viz(G, os.path.join(model_cfg["output_dir"], f"graph.{fmt}"))
 
 
 if __name__ == "__main__":
