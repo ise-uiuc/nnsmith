@@ -1,5 +1,5 @@
-z3-solver==4.8.14
-networkx==2.7
+z3-solver>=4.11.0
+networkx>=2.6.3
 hydra-core>=1.1.0
 pydot
 rich

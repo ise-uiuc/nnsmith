@@ -42,7 +42,7 @@ def torch2onnx(
     exportable: Union[str, BytesIO],
     verbose=False,
     dummy_inputs=None,
-    do_constant_folding=True,
+    do_constant_folding=False,
 ) -> None:
     """Convert PyTorch model to ONNX format."""
     proxy_enabled = model.proxy_enabled

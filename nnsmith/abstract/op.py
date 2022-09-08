@@ -636,7 +636,7 @@ class Constant(AbsOpBase):
     out_dtypes = [(i,) for i in DTYPE_ALL]
 
     def __str__(self) -> str:
-        return super().__str__() + " " + str(self.extra_attrs)
+        return self.name() + " " + str(self.extra_attrs).replace(":", "=")
 
     def __init__(self, dim: int):
         super().__init__()
@@ -972,7 +972,7 @@ class Slice(UnaryOpBase):
             tail["end"] = self.end
         if isinstance(self.step, int):
             tail["step"] = self.step
-        return super().__str__() + " " + str(tail)
+        return self.name() + " " + str(tail).replace(":", "=")
 
     def _get_attrs(self, ndims):
         ConstraintCheck.true(ndims > 0)
@@ -1060,8 +1060,7 @@ class Pad(UnaryOpBase):
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
     def __str__(self) -> str:
-        attr = {"padding_list": self.padding_list}
-        return super().__str__() + " " + str(attr)
+        return f"{self.name()} (padding={list(self.padding_list)})"
 
     def __init__(self, padding_list, pad_t):
         super().__init__()
@@ -1723,7 +1722,7 @@ class ReduceBase(UnaryOpBase, ABC):
 
     def __str__(self) -> str:
         return (
-            super().__str__()
+            self.name()
             + f'(dim={self.extra_attrs["reduce_dim"] if "reduce_dim" in self.extra_attrs else None})'
         )
 
@@ -1877,7 +1876,9 @@ class Concat(AbsOpBase):
     out_dtypes = [(i,) for i in DTYPE_ALL]
 
     def __str__(self) -> str:
-        return "Concat " + str(self.extra_attrs)
+        # DON'T USE `:` in string
+        # See https://github.com/pydot/pydot/issues/258
+        return "Concat " + str(self.extra_attrs).replace(":", "=")
 
     def __init__(self, arity):
         super().__init__()
@@ -1973,7 +1974,7 @@ class Cast(ElementWiseUnaryOp, ABC):
         self.extra_attrs = {"to": dtype}
 
     def __str__(self) -> str:
-        return "Cast " + str(self.extra_attrs)
+        return "Cast " + str(self.extra_attrs).replace(":", "=")
 
     def requires(self, input_shapes: List[AbsTensor]) -> List[z3.ExprRef]:
         return []

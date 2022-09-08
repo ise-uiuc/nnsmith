@@ -4,6 +4,20 @@ import shutil
 from typing import Callable, Dict, List
 
 import numpy as np
+from termcolor import colored
+
+
+def succ_print(*args):
+    return print(*[colored(x, "green") for x in args])
+
+
+def fail_print(*args):
+    return print(*[colored(x, "red") for x in args])
+
+
+def note_print(*args):
+    return print(*[colored(x, "yellow") for x in args])
+
 
 SEED_SETTERS = {
     "random": random.seed,
@@ -34,13 +48,13 @@ def mkdir(dir, yes=False):
         if yes:
             decision = "y"
         while decision.lower() not in ["y", "n"]:
-            decision = input(
+            note_print(
                 "Report folder already exists. Press [Y/N] to continue or exit..."
             )
+            decision = input()
         if decision.lower() == "n":
-            raise RuntimeError(
-                f"{dir} already exist... Remove it or use a different name."
-            )
+            fail_print(f"{dir} already exist... Remove it or use a different name.")
+            raise RuntimeError("Folder already exists")
         else:
             shutil.rmtree(dir)
 
