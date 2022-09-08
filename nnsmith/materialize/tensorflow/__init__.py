@@ -216,7 +216,8 @@ class TFModel(Model):
 
     def run_eagerly(self, inputs: TFNetInputDict) -> TFNetOutDict:
         tf.config.run_functions_eagerly(True)
-        return self.net(**inputs)
+        with tf.device("/cpu:0"):
+            return self.net(**inputs)
 
     @staticmethod
     def operators() -> List[Type[AbsOpBase]]:
