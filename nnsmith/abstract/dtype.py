@@ -159,5 +159,5 @@ DTYPE_ALL = [
     DType.bool,
 ]
 DTYPE_NON_BOOLS = [dtype for dtype in DTYPE_ALL if dtype != DType.bool]
-DTYPE_FLOATS = [DType.float16, DType.float32, DType.float64]
+DTYPE_FLOATS = [DType.float32, DType.float64]
 DTYPE_INTS = [DType.int8, DType.int16, DType.int32, DType.int64]
