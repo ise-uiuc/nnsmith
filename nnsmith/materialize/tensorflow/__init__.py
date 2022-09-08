@@ -22,10 +22,9 @@ configure_tensorflow()
 from nnsmith.abstract.op import AbsOpBase, AbsTensor
 from nnsmith.materialize import Model, Oracle, Schedule
 from nnsmith.materialize.tensorflow.forward import ALL_TF_OPS
-from nnsmith.materialize.tensorflow.tfnet import TFNet, TFNetOutDict
+from nnsmith.materialize.tensorflow.tfnet import TFNet
 
-TFNetInputDict = Dict[str, tf.Tensor]
-TFNetCallable = Callable[..., TFNetOutDict]
+TFNetCallable = Callable[..., Dict[str, tf.Tensor]]
 
 
 @dispatch(dict)
@@ -171,7 +170,7 @@ class TFModel(Model):
     @staticmethod
     def load_with_oracle(
         path: PathLike = "saved_tfmodel",
-    ) -> Tuple["TFModel", TFNetInputDict, TFNetOutDict]:
+    ) -> Tuple["TFModel", Dict[str, tf.Tensor], Dict[str, tf.Tensor]]:
         model = TFModel.load(path)
         oracle = Oracle.load(os.path.join(path, Oracle.name()))
         input_dict = {name: tf.convert_to_tensor(v) for name, v in oracle.input.items()}
@@ -192,7 +191,7 @@ class TFModel(Model):
     def tfnet_dir_name():
         return "tfnet"
 
-    def random_inputs(self) -> TFNetInputDict:
+    def random_inputs(self) -> Dict[str, tf.Tensor]:
         return {
             spec.name: tf.cast(
                 tf.random.normal(
@@ -214,7 +213,7 @@ class TFModel(Model):
     def refine_weights(self) -> None:
         pass
 
-    def run_eagerly(self, inputs: TFNetInputDict) -> TFNetOutDict:
+    def run_eagerly(self, inputs: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
         tf.config.run_functions_eagerly(True)
         with tf.device("/cpu:0"):
             return self.net(**inputs)

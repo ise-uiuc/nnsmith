@@ -9,8 +9,6 @@ from nnsmith.backends.factory import BackendCallable, BackendFactory
 from nnsmith.materialize.tensorflow import (
     TFModel,
     TFNetCallable,
-    TFNetInputDict,
-    TFNetOutDict,
     np_dict_from_tf,
     tf_dict_from_np,
 )
