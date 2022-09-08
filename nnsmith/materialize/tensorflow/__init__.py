@@ -65,6 +65,7 @@ class TFModel(Model):
     ) -> None:
         """Must provide a schedule to avoid NoneType errors"""
         super().__init__()
+        self.schedule = schedule
         self.net: TFNet = TFNet(
             schedule=schedule,
             verbose=verbose,
@@ -84,22 +85,22 @@ class TFModel(Model):
     @property
     def input_like(self) -> Dict[str, AbsTensor]:
         return {
-            f"i{i_inp}": self.net.schedule.key2type[key]
-            for i_inp, key in enumerate(self.net.schedule.input_keys)
+            f"i{i_inp}": self.schedule.key2type[key]
+            for i_inp, key in enumerate(self.schedule.input_keys)
         }
 
     @property
     def output_like(self) -> Dict[str, AbsTensor]:
         return {
-            f"o{i_out}": self.net.schedule.key2type[key]
-            for i_out, key in enumerate(self.net.schedule.leaf_keys)
+            f"o{i_out}": self.schedule.key2type[key]
+            for i_out, key in enumerate(self.schedule.leaf_keys)
         }
 
     @property
     def input_specs(self) -> Dict[str, tf.TensorSpec]:
         ret: Dict[str, tf.TensorSpec] = {}
-        for i_inp, key in enumerate(self.net.schedule.input_keys):
-            abs_tensor = self.net.schedule.key2type[key]
+        for i_inp, key in enumerate(self.schedule.input_keys):
+            abs_tensor = self.schedule.key2type[key]
             ret[f"i{i_inp}"] = tf.TensorSpec(
                 abs_tensor.shape, abs_tensor.dtype.tensorflow(), f"i{i_inp}"
             )
@@ -127,7 +128,7 @@ class TFModel(Model):
         os.makedirs(path, exist_ok=True)
         # schedule.pkl
         with open(os.path.join(path, TFModel.schedule_pkl_name()), "wb") as f:
-            pickle.dump(self.net.schedule, f)
+            pickle.dump(self.schedule, f)
         # tfnet
         concrete_net = self.concrete_net(self.input_specs)
         tf.saved_model.save(
@@ -165,6 +166,7 @@ class TFModel(Model):
         with open(os.path.join(path, TFModel.schedule_pkl_name()), "rb") as f:
             schedule: Schedule = pickle.load(f)
         model = TFModel(schedule)
+        model.net = tf.saved_model.load(os.path.join(path, TFModel.tfnet_dir_name()))
         return model
 
     @staticmethod
@@ -215,6 +217,8 @@ class TFModel(Model):
 
     def run_eagerly(self, inputs: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
         tf.config.run_functions_eagerly(True)
+        # return self.net(**inputs)
+        # TODO some op can only run on GPU (e.g. conv with NCHW)
         with tf.device("/cpu:0"):
             return self.net(**inputs)
 

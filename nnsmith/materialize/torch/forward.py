@@ -305,6 +305,7 @@ def forward_fn(op: NCHWConv2d):
         kernel_size=(op.kernel_h_size, op.kernel_w_size),
         stride=op.stride,
         padding=op.padding,
+        dilation=(op.dilation_h, op.dilation_w),
     )
 
 
