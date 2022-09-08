@@ -116,10 +116,16 @@ class DType(Enum):
         import tensorflow as tf
 
         return {
+            DType.float16: tf.float16,
             DType.float32: tf.float32,
             DType.float64: tf.float64,
+            DType.int8: tf.int8,
+            DType.int16: tf.int16,
             DType.int32: tf.int32,
             DType.int64: tf.int64,
+            DType.complex64: tf.complex64,
+            DType.complex128: tf.complex128,
+            DType.bool: tf.bool,
         }[self]
 
     @staticmethod
@@ -127,14 +133,31 @@ class DType(Enum):
         import tensorflow as tf
 
         return {
+            tf.float16: DType.float16,
             tf.float32: DType.float32,
             tf.float64: DType.float64,
+            tf.int8: DType.int8,
+            tf.int16: DType.int16,
             tf.int32: DType.int32,
             tf.int64: DType.int64,
+            tf.complex64: DType.complex64,
+            tf.complex128: DType.complex128,
+            tf.bool: DType.bool,
         }[dtype]
 
 
-DTYPE_ALL = [DType.float32, DType.float64, DType.int32, DType.int64, DType.bool]
+DTYPE_ALL = [
+    DType.float16,
+    DType.float32,
+    DType.float64,
+    DType.int8,
+    DType.int16,
+    DType.int32,
+    DType.int64,
+    DType.complex64,
+    DType.complex128,
+    DType.bool,
+]
 DTYPE_NON_BOOLS = [dtype for dtype in DTYPE_ALL if dtype != DType.bool]
-DTYPE_FLOATS = [DType.float32, DType.float64]
-DTYPE_INTS = [DType.int32, DType.int64]
+DTYPE_FLOATS = [DType.float16, DType.float32, DType.float64]
+DTYPE_INTS = [DType.int8, DType.int16, DType.int32, DType.int64]
