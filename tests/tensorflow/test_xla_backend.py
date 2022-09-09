@@ -1,7 +1,7 @@
 import pytest
 import tensorflow as tf
 
-from nnsmith.backends.tflite import TFLiteFactory
+from nnsmith.backends.xla import XLAFactory
 from nnsmith.graph_gen import concretize_graph, random_model_gen
 from nnsmith.materialize import Schedule, TestCase
 from nnsmith.materialize.tensorflow import TFModel
@@ -10,7 +10,7 @@ TestCase.__test__ = False  # supress PyTest warning
 
 
 def test_synthesized_tf_model(tmp_path):
-    d = tmp_path / "test_tflite"
+    d = tmp_path / "test_xla"
     d.mkdir()
 
     # TODO(@ganler): do dtype first.
@@ -35,9 +35,14 @@ def test_synthesized_tf_model(tmp_path):
     testcase = TestCase(model, oracle)
     testcase.dump(root_folder=d)
 
-    assert (
-        TFLiteFactory(
-            device="cpu", optmax=False, catch_process_crash=False
-        ).verify_testcase(testcase)
-        is None
-    )
+    devices = ["cpu"]
+    if tf.config.list_logical_devices("GPU"):
+        devices.append("gpu")
+
+    for device in devices:
+        assert (
+            XLAFactory(
+                device=device, optmax=False, catch_process_crash=False
+            ).verify_testcase(testcase)
+            is None
+        )

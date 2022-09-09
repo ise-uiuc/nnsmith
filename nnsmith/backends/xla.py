@@ -25,14 +25,16 @@ class XLAFactory(BackendFactory):
     @dispatch(TFModel)
     def make_backend(self, model: TFModel) -> BackendCallable:
         concrete_net: TFNetCallable = model.concrete_net()
+        device: tf.device
+
+        if self.device == "cpu":
+            device = tf.device("/device:cpu:0")
+        elif self.device == "gpu":
+            device = tf.device(tf.config.list_logical_devices("GPU")[0].name)
+        else:
+            raise ValueError(f"Unknown device: {self.device}")
 
         def closure(inputs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
-            device: tf.device
-            # TODO
-            if self.device == "cpu":
-                device = tf.device("/cpu:0")
-            elif self.device == "gpu":
-                device = tf.config.experimental.list_physical_devices("GPU")[0]
             tf.config.run_functions_eagerly(False)
             with device:
                 return np_dict_from_tf(concrete_net(**tf_dict_from_np(inputs)))
