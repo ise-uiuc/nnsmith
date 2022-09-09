@@ -3,6 +3,8 @@ from typing import List, Tuple, Union
 from nnsmith.abstract.arith import *
 from nnsmith.abstract.dtype import DType
 from nnsmith.abstract.op import (
+    FLOPS_LIM,
+    Z3_CONS_FLOPS,
     BcastBinaryOp,
     ElementWiseUnaryOp,
     UnaryOpBase,
@@ -98,3 +100,200 @@ class LocalRespNorm(ElementWiseUnaryOp):
         cons.append(nnsmith_ge(self.inv_beta, 1))
         cons.append(nnsmith_le(self.inv_beta, 100))
         return cons
+
+
+class NHWCConv2d(UnaryOpBase):
+    in_dtypes = [(DType.float16,), (DType.float32,), (DType.float64,)]
+    out_dtypes = [(DType.float16,), (DType.float32,), (DType.float64,)]
+
+    def __init__(
+        self,
+        in_channels: Union[int, z3.ExprRef],
+        out_channels: Union[int, z3.ExprRef],
+        kernel_h_size: Union[int, z3.ExprRef],
+        kernel_w_size: Union[int, z3.ExprRef],
+        stride: Union[int, z3.ExprRef],
+        dilation_h: Union[int, z3.ExprRef],
+        dilation_w: Union[int, z3.ExprRef],
+        padding: str,
+    ):
+        """See https://www.tensorflow.org/api_docs/python/tf/keras/layers/Conv2D"""
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_h_size = kernel_h_size
+        self.kernel_w_size = kernel_w_size
+        self.stride = stride
+        self.dilation_h = dilation_h
+        self.dilation_w = dilation_w
+        self.extra_attrs["padding"] = padding
+        # NHWC
+        self.inp_ranks = [(4,)]
+        self.out_ranks = [(4,)]
+
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+        abs_tensor = AbsTensor(
+            [
+                input_shapes[0].shape[0],
+            ],
+            dtype=input_shapes[0].dtype,
+        )  # batch size N
+        if self.extra_attrs["padding"] == "valid":
+            mimic_kh = self.kernel_h_size + (self.dilation_h - 1) * (
+                self.kernel_h_size - 1
+            )
+            mimic_kw = self.kernel_w_size + (self.dilation_w - 1) * (
+                self.kernel_w_size - 1
+            )
+
+            abs_tensor.shape.append(
+                (
+                    nnsmith_div(
+                        nnsmith_sub(input_shapes[0].shape[2], mimic_kh),
+                        self.stride,
+                    )
+                    + 1
+                )
+            )  # H
+            abs_tensor.shape.append(
+                (
+                    nnsmith_div(
+                        nnsmith_sub(input_shapes[0].shape[3], mimic_kw),
+                        self.stride,
+                    )
+                    + 1
+                )
+            )  # W
+        elif self.extra_attrs["padding"] == "same":
+            abs_tensor.shape.append(nnsmith_div(input_shapes[0].shape[2], self.stride))
+            abs_tensor.shape.append(nnsmith_div(input_shapes[0].shape[3], self.stride))
+        else:
+            raise ValueError(f"Unknown padding type {self.extra_attrs['padding']}")
+        abs_tensor.shape.append(self.out_channels)  # C
+        return [abs_tensor]
+
+    def requires(self, input_shapes):
+        cons = []
+        cons.append(nnsmith_eq(self.in_channels, input_shapes[0].shape[3]))
+        cons.append(nnsmith_ge(self.out_channels, 1))
+        cons.append(nnsmith_ge(self.dilation_h, 1))
+        cons.append(nnsmith_ge(self.dilation_w, 1))
+        mimic_kh = self.kernel_h_size + (self.dilation_h - 1) * (self.kernel_h_size - 1)
+        mimic_kw = self.kernel_w_size + (self.dilation_w - 1) * (self.kernel_w_size - 1)
+        cons.append(nnsmith_ge(mimic_kh, 1))
+        cons.append(nnsmith_ge(mimic_kw, 1))
+        cons.append(nnsmith_ge(self.stride, 1))
+        # limit FLOPS
+        if Z3_CONS_FLOPS:
+            cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
+        return cons
+
+    def flops(self, input_shapes):
+        w = AbsTensor(
+            [
+                self.out_channels,
+                self.in_channels,
+                self.kernel_h_size,
+                self.kernel_w_size,
+            ],
+            dtype=input_shapes[0].dtype,
+        )
+        return nnsmith_mul(
+            nnsmith_mul(
+                nnsmith_mul(
+                    self.type_transfer(input_shapes)[0].nelement(), self.in_channels
+                ),
+                self.kernel_h_size,
+            ),
+            self.kernel_w_size,
+        )
+
+    def n_floats(self, input_shapes):
+        # FIXME: maybe need to take dilation into account?
+        padding = 0
+        padded_data = AbsTensor(input_shapes[0].shape, dtype=input_shapes[0].dtype)
+        padded_data.shape[2] = nnsmith_add(
+            padded_data.shape[2], nnsmith_mul(2, padding)
+        )
+        padded_data.shape[3] = nnsmith_add(
+            padded_data.shape[3], nnsmith_mul(2, padding)
+        )
+        w = AbsTensor(
+            [
+                self.out_channels,
+                self.in_channels,
+                self.kernel_h_size,
+                self.kernel_w_size,
+            ],
+            dtype=input_shapes[0].dtype,
+        )
+        outs = super().n_floats(input_shapes)
+        return nnsmith_add(nnsmith_add(w.nelement(), padded_data.nelement()), outs)
+
+    def deduct_inp_ranks_and_dtype(
+        self, out_abs_tensor: List[AbsTensor]
+    ) -> List[Tuple[int, DType]]:
+        return [(4, out_abs_tensor[0].dtype)]
+
+    def __repr__(self) -> str:
+        repr = f"Conv2d({self.in_channels}, {self.out_channels}, k=({self.kernel_h_size},{self.kernel_w_size})"
+        if not isinstance(self.stride, int) or self.stride != 1:
+            repr += f", s={self.stride}"
+        if not isinstance(self.padding, int) or self.padding != 0:
+            repr += f", p={self.padding}"
+        if (
+            not isinstance(self.dilation_h, int)
+            or self.dilation_h != 1
+            or self.dilation_w != 1
+        ):
+            repr += f", d=({self.dilation_h}, {self.dilation_w})"
+        repr += ")"
+        return repr
+
+
+@mark_materialize("tensorflow")
+class NHWCConv2dValidPad(NHWCConv2d):
+    def __init__(
+        self,
+        in_channels: Union[int, z3.ExprRef],
+        out_channels: Union[int, z3.ExprRef],
+        kernel_h_size: Union[int, z3.ExprRef],
+        kernel_w_size: Union[int, z3.ExprRef],
+        stride: Union[int, z3.ExprRef],
+        dilation_h: Union[int, z3.ExprRef],
+        dilation_w: Union[int, z3.ExprRef],
+    ):
+        super().__init__(
+            in_channels,
+            out_channels,
+            kernel_h_size,
+            kernel_w_size,
+            stride,
+            dilation_h,
+            dilation_w,
+            "valid",
+        )
+
+
+@mark_materialize("tensorflow")
+class NHWCConv2dSamePad(NHWCConv2d):
+    def __init__(
+        self,
+        in_channels: Union[int, z3.ExprRef],
+        out_channels: Union[int, z3.ExprRef],
+        kernel_h_size: Union[int, z3.ExprRef],
+        kernel_w_size: Union[int, z3.ExprRef],
+        stride: Union[int, z3.ExprRef],
+        dilation_h: Union[int, z3.ExprRef],
+        dilation_w: Union[int, z3.ExprRef],
+    ):
+        super().__init__(
+            in_channels,
+            out_channels,
+            kernel_h_size,
+            kernel_w_size,
+            stride,
+            dilation_h,
+            dilation_w,
+            "same",
+        )
