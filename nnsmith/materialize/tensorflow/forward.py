@@ -40,7 +40,10 @@ def forward_fn(op: Constant):
 
 @operator_impl(ReLU)
 def forward_fn(op: ReLU):
-    return layers.ReLU()
+    return layers.ReLU(
+        dtype=op.input_like[0].dtype.tensorflow(),
+        autocast=False,
+    )
 
 
 @operator_impl(GELU)
@@ -50,12 +53,19 @@ def forward_fn(op: GELU):
 
 @operator_impl(LeakyReLU)
 def forward_fn(op: LeakyReLU):
-    return layers.LeakyReLU(alpha=op.negative_slope)
+    return layers.LeakyReLU(
+        alpha=op.negative_slope,
+        dtype=op.input_like[0].dtype.tensorflow(),
+        autocast=False,
+    )
 
 
 @operator_impl(PReLU)
 def forward_fn(op: PReLU):
-    return layers.PReLU()
+    return layers.PReLU(
+        dtype=op.input_like[0].dtype.tensorflow(),
+        autocast=False,
+    )
 
 
 @operator_impl(Sigmoid)
@@ -212,7 +222,11 @@ def forward_fn(op: Neg):
 
 @operator_impl(Softmax)
 def forward_fn(op: Softmax):
-    return layers.Softmax(axis=op.dim)
+    return layers.Softmax(
+        axis=op.dim,
+        dtype=op.input_like[0].dtype.tensorflow(),
+        autocast=False,
+    )
 
 
 # @operator_impl(MaxPool2d)
@@ -283,7 +297,11 @@ def forward_fn(op: Slice):
 
 @operator_impl(BatchNorm2d)
 def forward_fn(op: BatchNorm2d):
-    return layers.BatchNormalization(axis=1)  # NCHW
+    return layers.BatchNormalization(
+        axis=1,
+        dtype=op.input_like[0].dtype.tensorflow(),
+        autocast=False,
+    )  # NCHW
 
 
 # @operator_impl(Conv1d)
@@ -309,7 +327,11 @@ def forward_fn(op: BatchNorm2d):
 
 @operator_impl(Reshape)
 def forward_fn(op: Reshape):
-    return layers.Reshape(tuple(op.target_shape))
+    return layers.Reshape(
+        tuple(op.target_shape),
+        dtype=op.input_like[0].dtype.tensorflow(),
+        autocast=False,
+    )
 
 
 # @operator_impl(Flatten)
@@ -367,4 +389,6 @@ def forward_fn(op: NHWCConv2d):
         data_format="channels_last",
         dilation_rate=(op.dilation_h, op.dilation_w),
         padding=op.extra_attrs["padding"],
+        dtype=op.input_like[0].dtype.tensorflow(),
+        autocast=False,
     )
