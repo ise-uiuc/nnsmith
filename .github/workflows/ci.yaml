@@ -22,6 +22,6 @@ jobs:
           pytest tests/tensorflow
       - name: Test CLI
         run: |
-          yes | python nnsmith/cli/model_gen.py model.max_nodes=5 debug.viz=true model.type=torch
-          yes | python nnsmith/cli/model_gen.py model.max_nodes=5 debug.viz=true model.type=onnx
-          yes | python nnsmith/cli/model_gen.py model.max_nodes=5 debug.viz=true model.type=tensorflow
+          yes | python nnsmith/cli/model_gen.py mgen.max_nodes=5 debug.viz=true model.type=torch
+          yes | python nnsmith/cli/model_gen.py mgen.max_nodes=5 debug.viz=true model.type=onnx
+          yes | python nnsmith/cli/model_gen.py mgen.max_nodes=5 debug.viz=true model.type=tensorflow
