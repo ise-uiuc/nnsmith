@@ -1,9 +1,9 @@
 z3-solver>=4.11.0
 networkx>=2.6.3
 hydra-core>=1.1.0
-pygraphviz
 rich
 termcolor
 multipledispatch
 gitpython
 appdirs
+pygraphviz
