@@ -22,19 +22,22 @@ def main(cfg: DictConfig):
     ModelType = Model.init(model_cfg["type"])
     ModelType.add_seed_setter()
 
+    mgen_cfg = cfg["mgen"]
+    verbose = mgen_cfg["verbose"]
+
     gen = random_model_gen(
         opset=ModelType.operators(),
-        init_rank=model_cfg["init_rank"],
+        init_rank=mgen_cfg["init_rank"],
         seed=seed,
-        max_nodes=model_cfg["max_nodes"],
-        timeout_ms=model_cfg["gen_timeout_ms"],
-        verbose=model_cfg["verbose"],
+        max_nodes=mgen_cfg["max_nodes"],
+        timeout_ms=mgen_cfg["timeout_ms"],
+        verbose=verbose,
     )
     print(
         f"{len(gen.get_solutions())} symbols and {len(gen.solver.assertions())} constraints."
     )
 
-    if model_cfg["verbose"]:
+    if verbose:
         print("solution:", ", ".join(map(str, gen.get_solutions())))
 
     fixed_graph, concrete_abstensors = concretize_graph(
@@ -49,13 +52,13 @@ def main(cfg: DictConfig):
 
     testcase = TestCase(model, oracle)
 
-    mkdir(cfg["gen"]["output"])
-    testcase.dump(root_folder=cfg["gen"]["output"])
+    mkdir(mgen_cfg["save"])
+    testcase.dump(root_folder=mgen_cfg["save"])
 
     if cfg["debug"]["viz"]:
         G = fixed_graph
         fmt = cfg["debug"]["viz_fmt"].replace(".", "")
-        viz(G, os.path.join(cfg["gen"]["output"], f"graph.{fmt}"))
+        viz(G, os.path.join(mgen_cfg["save"], f"graph.{fmt}"))
 
 
 if __name__ == "__main__":

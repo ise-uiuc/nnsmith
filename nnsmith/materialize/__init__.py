@@ -6,7 +6,7 @@ from collections import namedtuple
 from dataclasses import dataclass
 from enum import Enum
 from os import PathLike
-from typing import Any, Dict, List, Set, Tuple, Type
+from typing import Any, Dict, List, Tuple, Type
 
 import networkx as nx
 import numpy as np

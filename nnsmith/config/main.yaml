@@ -23,9 +23,13 @@ topset_from_file: null # Path that contains a YAML file that contains a topset d
 # model gen config
 model:
   type: "onnx"
+  path: "???" # can be multiple files tho.
+
+mgen: # model gen.
   init_rank: 4
   max_nodes: 10
-  gen_timeout_ms: 50000
+  timeout_ms: 50000
+  save: "nnsmith_output"
   verbose: false # WARNING: temporary; later should go categorized logging
 
 # backend config
@@ -44,5 +48,25 @@ debug:
   viz: false
   viz_fmt: "png" # or "svg" for much smaller figure size and precision;
 
-gen:
-  output: "nnsmith_output"
+fuzz:
+  time: 14400
+  root: null
+
+cmp:
+  equal_nan: true    # skip regarding it as a bug if with fp exception values.
+
+  raw_input: null    # path to raw input data (Dict[str, np.ndarray])
+
+  oracle: "auto"
+  # "auto": use `oracle.pkl` in local path;
+  # PathLike: get the oracle from somewhere else;
+  # null: fallback to random.
+
+  with: null
+    # type: "tvm"
+    # optmax: true
+    # device: "cpu"
+
+  seed: null
+  bug_presence: "report" # or "crash"
+  save: null # path to save the bug report if `bug_presence` is "report"
