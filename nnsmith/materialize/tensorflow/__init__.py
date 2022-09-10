@@ -216,8 +216,7 @@ class TFModel(Model):
         pass
 
     def run_eagerly(self, inputs: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
-        tf.config.run_functions_eagerly(True)
-        # return self.net(**inputs)
+        tf.config.run_functions_eagerly(True)  # disable graph execution
         # TODO some op can only run on GPU (e.g. conv with NCHW)
         with tf.device("/cpu:0"):
             return self.net(**inputs)

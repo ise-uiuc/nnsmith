@@ -34,9 +34,13 @@ class XLAFactory(BackendFactory):
         else:
             raise ValueError(f"Unknown device: {self.device}")
 
-        def closure(inputs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+        @tf.function(jit_compile=True)
+        def compiled_net(**inputs) -> Dict[str, tf.Tensor]:
+            return concrete_net(**inputs)
+
+        def closure(inputs: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
             tf.config.run_functions_eagerly(False)
             with device:
-                return np_dict_from_tf(concrete_net(**tf_dict_from_np(inputs)))
+                return np_dict_from_tf(compiled_net(**tf_dict_from_np(inputs)))
 
         return closure
