@@ -30,7 +30,8 @@ def verify_testcase(
     def check_result(bug_report_or, msg=None) -> bool:  # succ?
         msg = "" if msg is None else msg
         if not isinstance(bug_report_or, BugReport):
-            succ_print(f"[PASS] {msg}")
+            if cmp_cfg["verbose"]:
+                succ_print(f"[PASS] {msg}")
             return True
         else:
             bug_report = bug_report_or

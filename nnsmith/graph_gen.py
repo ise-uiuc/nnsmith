@@ -7,6 +7,7 @@ import textwrap
 import time
 import traceback
 import uuid
+from abc import abstractmethod
 from collections import defaultdict, namedtuple
 from inspect import signature
 from typing import Dict, List, Set, Tuple, Type
@@ -14,10 +15,19 @@ from typing import Dict, List, Set, Tuple, Type
 import networkx as nx
 import z3
 
-from nnsmith.abstract.op import __MAX_RANK__ as __MAX_RANK__
-from nnsmith.abstract.op import *
+from nnsmith.abstract.arith import *
+from nnsmith.abstract.dtype import *
+from nnsmith.abstract.op import (
+    __MAX_RANK__,
+    AbsOpBase,
+    AbsTensor,
+    Expand,
+    Placeholder,
+    concretize_op,
+    random_group,
+)
 from nnsmith.error import ConstraintError, SanityCheck
-from nnsmith.util import note_print, set_seed
+from nnsmith.util import note_print, set_seed, viz_dot
 
 NNSMITH_LIMNF_V = os.getenv("NNSMITH_LIMNF_V", "0")
 assert NNSMITH_LIMNF_V in ["0", "1"]
@@ -156,16 +166,7 @@ class SimpleGenerator:
         pass
 
     def new_sym(self, name, bv_size=None):
-        if self.use_bitvec:
-            bv_size = bv_size or NNSMITH_BV_SIZE
-            if isinstance(bv_size, str) and bv_size.startswith("random"):
-                bv_size = random.randint(1, int(bv_size[len("random") :]))
-            elif isinstance(bv_size, str):
-                bv_size = int(bv_size)
-            zero_size = ARITH_MAX_WIDTH - bv_size
-            return z3.ZeroExt(zero_size, z3.BitVec(name, bv_size))
-        else:
-            return z3.Int(name)
+        return z3.Int(name)
 
     def new_syms(self, names):
         if self.use_bitvec:
@@ -1104,16 +1105,4 @@ def _check_dot_install():
 
 
 def viz(G, filename: str = None):
-    if _check_dot_install():
-        if filename is None:
-            filename = f"graph.png"
-        if filename.endswith("png"):
-            nx.drawing.nx_pydot.to_pydot(G).write_png(filename)
-        elif filename.endswith("svg"):
-            nx.drawing.nx_pydot.to_pydot(G).write_svg(filename)
-        else:
-            raise ValueError(f"Unsupported image format: {filename}")
-    else:
-        note_print(
-            f"Skipping visualizing `{filename}` due to missing `dot` (graphviz)."
-        )
+    viz_dot(nx.drawing.nx_pydot.to_pydot(G), filename)

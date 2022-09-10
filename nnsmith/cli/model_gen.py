@@ -13,7 +13,9 @@ from nnsmith.util import mkdir
 def main(cfg: DictConfig):
     # Generate a random ONNX model
     # TODO(@ganler): clean terminal outputs.
-    seed = random.getrandbits(32) if cfg["seed"] is None else cfg["seed"]
+    mgen_cfg = cfg["mgen"]
+
+    seed = random.getrandbits(32) if mgen_cfg["seed"] is None else mgen_cfg["seed"]
 
     print(f"Using seed {seed}")
 
@@ -22,7 +24,6 @@ def main(cfg: DictConfig):
     ModelType = Model.init(model_cfg["type"])
     ModelType.add_seed_setter()
 
-    mgen_cfg = cfg["mgen"]
     verbose = mgen_cfg["verbose"]
 
     gen = random_model_gen(

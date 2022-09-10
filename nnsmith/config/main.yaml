@@ -27,9 +27,10 @@ model:
 
 mgen: # model gen.
   init_rank: 4
-  max_nodes: 10
+  max_nodes: 5
   timeout_ms: 50000
   save: "nnsmith_output"
+  seed: null
   verbose: false # WARNING: temporary; later should go categorized logging
 
 # backend config
@@ -49,6 +50,7 @@ fuzz:
   time: 14400
   root: "???"
   seed: null
+  verbose: false
 
 cmp:
   equal_nan: true    # skip regarding it as a bug if with fp exception values.
@@ -68,3 +70,5 @@ cmp:
   seed: null
   bug_presence: "report" # or "crash"
   save: null # path to save the bug report if `bug_presence` is "report"
+
+  verbose: false

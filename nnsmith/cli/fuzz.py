@@ -31,6 +31,7 @@ class FuzzingLoop:
     ):
         self.cfg = cfg
 
+        self.verbose = cfg["fuzz"]["verbose"]
         self.reporter = Reporter(cfg["fuzz"]["root"])
 
         self.factory = BackendFactory.init(

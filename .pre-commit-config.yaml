@@ -7,8 +7,7 @@ repos:
         args: ["--profile", "black"]
         exclude: |
             (?x)^(
-                experiments/.*.py |
-                nnsmith/fuzz.py
+                experiments/.*.py
             )$
 -   repo: https://github.com/psf/black
     rev: 22.6.0
