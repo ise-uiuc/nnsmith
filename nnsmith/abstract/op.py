@@ -1873,8 +1873,6 @@ class Concat(AbsOpBase):
     out_dtypes = [(i,) for i in DTYPE_ALL]
 
     def __str__(self) -> str:
-        # DON'T USE `:` in string
-        # See https://github.com/pydot/pydot/issues/258
         return "Concat " + str(self.extra_attrs).replace(":", "=")
 
     def __init__(self, arity):

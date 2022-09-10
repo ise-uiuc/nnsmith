@@ -1078,31 +1078,5 @@ def random_model_gen(
     return gen
 
 
-_DOT_EXIST = shutil.which("dot") is not None
-_CONDA_EXIST = shutil.which("conda") is not None
-_APT_EXIST = shutil.which("apt") is not None
-_BREW_EXIST = shutil.which("brew") is not None
-
-
-def _check_dot_install():
-    if not _DOT_EXIST:
-        note_print("`dot` not found.")
-        if _CONDA_EXIST or _APT_EXIST or _BREW_EXIST:
-            note_print("To install via:")
-            if _CONDA_EXIST:
-                note_print(" conda:\t conda install -c anaconda graphviz -y")
-
-            if _APT_EXIST:
-                note_print(" apt:\t sudo apt install graphviz -y")
-
-            if _BREW_EXIST:
-                note_print(" brew:\t brew install graphviz")
-
-        note_print("Also see: https://graphviz.org/download/")
-        return False
-
-    return True
-
-
 def viz(G, filename: str = None):
-    viz_dot(nx.drawing.nx_pydot.to_pydot(G), filename)
+    viz_dot(nx.nx_agraph.to_agraph(G).to_string(), filename)

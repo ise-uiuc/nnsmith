@@ -1,10 +1,10 @@
 import os
 import random
 import shutil
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Union
 
 import numpy as np
-import pydot
+import pygraphviz as pgv
 from termcolor import colored
 
 
@@ -95,16 +95,16 @@ def _check_dot_install():
     return True
 
 
-def viz_dot(dotobj: pydot.Dot, filename: str = None):
+def viz_dot(dotobj: Union[pgv.AGraph, str], filename: str = None):
     if _check_dot_install():
         if filename is None:
             filename = f"graph.png"
-        if filename.endswith("png"):
-            dotobj.write_png(filename)
-        elif filename.endswith("svg"):
-            dotobj.write_svg(filename)
-        else:
-            raise ValueError(f"Unsupported image format: {filename}")
+
+        if isinstance(dotobj, str):
+            dotobj = pgv.AGraph(dotobj)
+
+        dotobj.layout("dot")
+        dotobj.draw(filename)
     else:
         note_print(
             f"Skipping visualizing `{filename}` due to missing `dot` (graphviz)."
