@@ -123,18 +123,15 @@ def forward_fn(op: Mul):
     return tf.multiply
 
 
-# @operator_impl(Div)
-# def forward_fn(op: Div):
-#     def _div(up, down):
-#         if DType.from_tensorflow(up.dtype) in DTYPE_INTS:
-#             return tf.math.floordiv(up, down)
-#         else:
-#             return tf.divide(up, down)
+@operator_impl(Div)
+def forward_fn(op: Div):
+    def _div(up, down):
+        if DType.from_tensorflow(up.dtype) in DTYPE_INTS:
+            return tf.math.floordiv(up, down)
+        else:
+            return tf.divide(up, down)
 
-#     return _div
-
-
-# TODO
+    return _div
 
 
 @operator_impl(Max)
@@ -229,28 +226,6 @@ def forward_fn(op: Softmax):
     )
 
 
-# @operator_impl(MaxPool2d)
-# def forward_fn(op: MaxPool2d):
-#     return layers.MaxPool2D(
-#         pool_size=(op.kernel_h_size, op.kernel_w_size),
-#         strides=op.stride,
-#         padding=op.padding,  # TODO https://www.tensorflow.org/api_docs/python/tf/keras/layers/MaxPool2D
-#         data_format="channels_first",  # NCHW
-#     )
-
-
-# @operator_impl(AvgPool2d)
-# def forward_fn(op: AvgPool2d):
-#     return lambda x: tf.nn.avg_pool2d(
-#         x,
-#         ksize=(op.kernel_h_size, op.kernel_w_size),
-#         strides=(op.stride, op.stride),
-#         padding=op.padding,
-#         data_format="NCHW",
-#     )
-# # TODO
-
-
 @operator_impl(Slice)
 def forward_fn(op: Slice):
     reg = op.extra_attrs["region"]
@@ -274,27 +249,6 @@ def forward_fn(op: Slice):
     return _slice
 
 
-# TODO
-
-
-# @operator_impl(Pad)
-# def forward_fn(op: Pad):
-#     if op.extra_attrs["type"] == "constant":
-#         # 0 easily cause division by zero...
-#         # 1 easily cause false positives (sqrt(1) = 0.99999... != 1 in ORT, so floor(sqrt(1))=0)
-#         return lambda x: tf.pad(
-#             x, op.padding_list, "CONSTANT", value=0.5
-#         )
-#     elif op.extra_attrs["type"] == "replicate" or op.extra_attrs["type"] == "reflect":
-#         return lambda x: tf.pad(
-#             x, op.padding_list, op.extra_attrs["type"]
-#         )
-#     # TODO no replicate https://www.tensorflow.org/api_docs/python/tf/pad
-
-
-# TODO expand
-
-
 @operator_impl(BatchNorm2d)
 def forward_fn(op: BatchNorm2d):
     return layers.BatchNormalization(
@@ -304,27 +258,6 @@ def forward_fn(op: BatchNorm2d):
     )  # NCHW
 
 
-# @operator_impl(Conv1d)
-# def forward_fn(op: Conv1d):
-#     paddings = tf.constant([[0, 0], [0, 0], [op.padding, op.padding]])
-
-#     class _Conv1D(tf.Module):
-#         def __init__(self):
-#             self.layer = layers.Conv1D(
-#                 filters=op.out_channels,
-#                 kernel_size=op.kernel_size,
-#                 strides=op.stride,
-#                 data_format="channels_first",  # NCL NOTE: can only run on GPU
-#                 dilation_rate=op.dilation,
-#             )
-
-#         def __call__(self, x):
-#             x = tf.pad(x, paddings=paddings)
-#             return self.layer(x)
-
-#     return _Conv1D()
-
-
 @operator_impl(Reshape)
 def forward_fn(op: Reshape):
     return layers.Reshape(
@@ -332,11 +265,6 @@ def forward_fn(op: Reshape):
         dtype=op.input_like[0].dtype.tensorflow(),
         autocast=False,
     )
-
-
-# @operator_impl(Flatten)
-# def forward_fn(op: Flatten):
-#     return layers.Flatten() # TODO this version doesn't affect batch size
 
 
 @operator_impl(Flatten)
