@@ -41,3 +41,22 @@ def test_synthesized_tf_model(tmp_path):
         ).verify_testcase(testcase)
         is None
     )
+
+
+def test_narrow_spec_cache_make_and_reload():
+    factory = BackendFactory.init("onnxruntime", device="cpu", optmax=True)
+    ONNXModel = Model.init("onnx")
+    opset_lhs = load_topset_from_auto_cache(ONNXModel, factory)
+    assert opset_lhs, "Should not be empty... Something must go wrong."
+    opset_rhs = load_topset_from_auto_cache(ONNXModel, factory)
+    assert opset_lhs == opset_rhs
+
+    # Assert types
+    assert isinstance(opset_lhs["core.ReLU"].in_dtypes[0][0], DType)
+
+    # Assert Dictionary Type Equality
+    assert type(opset_lhs) == type(opset_rhs)
+    assert type(opset_lhs["core.ReLU"]) == type(opset_rhs["core.ReLU"])
+    assert type(opset_lhs["core.ReLU"].in_dtypes[0][0]) == type(
+        opset_rhs["core.ReLU"].in_dtypes[0][0]
+    )

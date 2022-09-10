@@ -260,11 +260,10 @@ def forward_fn(op: BatchNorm2d):
 
 @operator_impl(Reshape)
 def forward_fn(op: Reshape):
-    return layers.Reshape(
-        tuple(op.target_shape),
-        dtype=op.input_like[0].dtype.tensorflow(),
-        autocast=False,
-    )
+    def _reshape(x):
+        return tf.reshape(x, op.target_shape)
+
+    return _reshape
 
 
 @operator_impl(Flatten)
