@@ -8,8 +8,7 @@ repos:
         exclude: |
             (?x)^(
                 experiments/.*.py |
-                nnsmith/fuzz.py   |
-                nnsmith/backend_executor.py
+                nnsmith/fuzz.py
             )$
 -   repo: https://github.com/psf/black
     rev: 22.6.0

@@ -291,9 +291,8 @@ class BugReport(ABC):
         self.trigger_hash = trigger_hash
         self.log = log
 
-    @property
-    @classmethod
-    def error_msg_name(cls):
+    @staticmethod
+    def error_msg_name():
         return "err.log"
 
     def __repr__(self) -> str:
@@ -308,7 +307,7 @@ class BugReport(ABC):
         # oracle.pkl
         self.testcase.dump(root_folder)
         # err.log
-        with open(os.path.join(root_folder, self.error_msg_name), "w") as f:
+        with open(os.path.join(root_folder, self.error_msg_name()), "w") as f:
             f.write(self.log)
         # meta.json
         with open(os.path.join(root_folder, "meta.json"), "w") as f:
@@ -349,8 +348,8 @@ class BugReport(ABC):
         testcase = TestCase.load(model_type, root_folder, allow_partial)
 
         log = None
-        if os.path.exists(os.path.join(root_folder, BugReport.error_msg_name)):
-            with open(os.path.join(root_folder, BugReport.error_msg_name), "r") as f:
+        if os.path.exists(os.path.join(root_folder, BugReport.error_msg_name())):
+            with open(os.path.join(root_folder, BugReport.error_msg_name()), "r") as f:
                 log = f.read()
 
         return BugReport(testcase, symptom, stage, system, version, trigger_hash, log)

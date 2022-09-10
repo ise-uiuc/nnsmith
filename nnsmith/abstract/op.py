@@ -680,14 +680,11 @@ class Placeholder:
         return "Placeholder"
 
 
-# FIXME: Div will cause fuzzing crash.
-Div = mark_materialize("core")(
-    type(
-        "Div",
-        (BcastBinaryOp1,),
-        {"__module__": __name__},
-    )
-)
+# FIXME: Div will cause fuzzing crash. No integer to avoid division by zero.
+@mark_materialize("core")
+class Div(BcastBinaryOp):
+    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
 
 @mark_materialize("core")

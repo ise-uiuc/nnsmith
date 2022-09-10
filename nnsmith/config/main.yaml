@@ -41,16 +41,14 @@ backend:
 cache:
   topset: true # Run dtype test with automatically maintained cache
 
-# seeds:
-seed: null # means random seed
-
 debug:
   viz: false
   viz_fmt: "png" # or "svg" for much smaller figure size and precision;
 
 fuzz:
   time: 14400
-  root: null
+  root: "???"
+  seed: null
 
 cmp:
   equal_nan: true    # skip regarding it as a bug if with fp exception values.

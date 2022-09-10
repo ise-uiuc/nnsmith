@@ -3,9 +3,9 @@ Example usage:
 # compile + run the model (in ORT by default); verify with the oracle under `nnsmith_output`;
  nnsmith.model_exec model.path=nnsmith_output/model.onnx
 # compile + run the model; verify with the oracle with fallback mode (random input)
- nnsmith.model_exec model.path=nnsmith_output/model.onnx oracle=null
+ nnsmith.model_exec model.path=nnsmith_output/model.onnx cmp.oracle=null
 # differential testing with tvm
- nnsmith.model_exec model.path=nnsmith_output/model.onnx cmp_with='{type:tvm, optmax:true, device:cpu}'
+ nnsmith.model_exec model.path=nnsmith_output/model.onnx cmp.with='{type:tvm, optmax:true, device:cpu}'
 """
 
 import os
@@ -22,9 +22,12 @@ from nnsmith.util import fail_print, note_print, succ_print
 
 
 def verify_testcase(
-    cmp_cfg: DictConfig, this_fac: BackendFactory, testcase: TestCase, output_dir
-) -> None:
-    def emit_testcase(bug_report_or, msg=None) -> bool:  # succ?
+    cmp_cfg: DictConfig,
+    factory: BackendFactory,
+    testcase: TestCase,
+    output_dir: os.PathLike,
+) -> bool:
+    def check_result(bug_report_or, msg=None) -> bool:  # succ?
         msg = "" if msg is None else msg
         if not isinstance(bug_report_or, BugReport):
             succ_print(f"[PASS] {msg}")
@@ -38,18 +41,21 @@ def verify_testcase(
                 bug_report.dump(output_dir)
             return False
 
-    bug_or_res = this_fac.checked_compile_and_exec(testcase)
-    if emit_testcase(bug_or_res, msg="Compile + Execution"):
+    bug_or_res = factory.checked_compile_and_exec(testcase)
+    if check_result(bug_or_res, msg="Compile + Execution"):
         if testcase.oracle.output is not None:  # we have output results && no bug yet
             # do result verification
-            emit_testcase(
-                this_fac.verify_results(
+            if not check_result(
+                factory.verify_results(
                     bug_or_res,
                     testcase,
                     equal_nan=cmp_cfg["equal_nan"],
                 ),
                 msg="Result Verification w/ Oracle",
-            )
+            ):
+                return False
+    else:
+        return False
 
     # Compare with
     if cmp_cfg["with"] is not None:
@@ -62,15 +68,20 @@ def verify_testcase(
         cmp_testcase = cmp_fac.make_testcase(
             testcase.model, input=testcase.oracle.input
         )
-        if emit_testcase(cmp_testcase, "Compile + Execution (`cmp.with`)"):
-            emit_testcase(
-                this_fac.verify_results(
+        if check_result(cmp_testcase, "Compile + Execution (`cmp.with`)"):
+            if not check_result(
+                factory.verify_results(
                     bug_or_res,
                     cmp_testcase,
                     equal_nan=cmp_cfg["equal_nan"],
                 ),
                 msg="Result Verification w/ Reference Backend",
-            )
+            ):
+                return False
+        else:
+            return False
+
+    return True
 
 
 @hydra.main(version_base=None, config_path="../config", config_name="main")
