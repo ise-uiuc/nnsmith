@@ -4,6 +4,23 @@
 
 ## Quick Start
 
+<details><summary><b>Setting up graphviz for debugging</b> <i>[click to expand]</i></summary>
+<div>
+
+Graphviz provides `dot` for visualizing graphs in nice pictures. But it needs to be installed via the following methods:
+
+```shell
+sudo apt-get install graphviz graphviz-dev      # Linux
+brew install graphviz                           # MacOS
+conda install --channel conda-forge pygraphviz  # Conda
+choco install graphviz                          # Windows
+```
+
+Also see [pygraphviz install guidance](https://pygraphviz.github.io/documentation/stable/install.html).
+
+</div>
+</details>
+
 ```shell
 python3 -m pip install "nnsmith[torch,onnx]"                     \
                        --upgrade                                 \

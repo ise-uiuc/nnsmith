@@ -60,3 +60,9 @@ Many compilers do not support a full set of operators (in ONNX and TensorFlow). 
 nnsmith.dtype_test model.type="onnx" backend.type="onnxruntime"
 # Results are often cached in `~/.cache/nnsmith`.
 ```
+
+## Fuzzing
+
+```shell
+nnsmith.fuzz fuzz.time=30s fuzz.root=fuzz_report debug.viz=true
+```
