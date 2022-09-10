@@ -1,10 +1,12 @@
 import pytest
 import tensorflow as tf
 
-from nnsmith.backends.tflite import TFLiteFactory
+from nnsmith.abstract.dtype import DType
+from nnsmith.backends import BackendFactory
 from nnsmith.graph_gen import concretize_graph, random_model_gen
-from nnsmith.materialize import Schedule, TestCase
+from nnsmith.materialize import Model, Schedule, TestCase
 from nnsmith.materialize.tensorflow import TFModel
+from nnsmith.narrow_spec import load_topset_from_auto_cache
 
 TestCase.__test__ = False  # supress PyTest warning
 
@@ -12,6 +14,8 @@ TestCase.__test__ = False  # supress PyTest warning
 def test_synthesized_tf_model(tmp_path):
     d = tmp_path / "test_tflite"
     d.mkdir()
+
+    ModelType = Model.init("tensorflow")
 
     # TODO(@ganler): do dtype first.
     gen = random_model_gen(
@@ -27,7 +31,7 @@ def test_synthesized_tf_model(tmp_path):
 
     schedule = Schedule.init(fixed_graph, concrete_abstensors)
 
-    model = TFModel.from_schedule(schedule)
+    model = ModelType.from_schedule(schedule)
 
     # model.refine_weights()  # either random generated or gradient-based.
     oracle = model.make_oracle()
@@ -36,19 +40,19 @@ def test_synthesized_tf_model(tmp_path):
     testcase.dump(root_folder=d)
 
     assert (
-        TFLiteFactory(
-            device="cpu", optmax=False, catch_process_crash=False
+        BackendFactory.init(
+            "tflite", device="cpu", optmax=False, catch_process_crash=False
         ).verify_testcase(testcase)
         is None
     )
 
 
 def test_narrow_spec_cache_make_and_reload():
-    factory = BackendFactory.init("onnxruntime", device="cpu", optmax=True)
-    ONNXModel = Model.init("onnx")
-    opset_lhs = load_topset_from_auto_cache(ONNXModel, factory)
+    factory = BackendFactory.init("tflite", device="cpu", optmax=True)
+    ModelType = Model.init("tensorflow")
+    opset_lhs = load_topset_from_auto_cache(ModelType, factory)
     assert opset_lhs, "Should not be empty... Something must go wrong."
-    opset_rhs = load_topset_from_auto_cache(ONNXModel, factory)
+    opset_rhs = load_topset_from_auto_cache(ModelType, factory)
     assert opset_lhs == opset_rhs
 
     # Assert types

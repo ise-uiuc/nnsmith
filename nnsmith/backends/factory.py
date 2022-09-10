@@ -188,5 +188,23 @@ class BackendFactory(ABC):
                 catch_process_crash=catch_process_crash,
                 **kwargs,
             )
+        elif name == "tflite":
+            from nnsmith.backends.tflite import TFLiteFactory
+
+            return TFLiteFactory(
+                device=device,
+                optmax=optmax,
+                catch_process_crash=catch_process_crash,
+                **kwargs,
+            )
+        elif name == "xla":
+            from nnsmith.backends.xla import XLAFactory
+
+            return XLAFactory(
+                device=device,
+                optmax=optmax,
+                catch_process_crash=catch_process_crash,
+                **kwargs,
+            )
         else:
             raise ValueError(f"unknown backend: {name}")
