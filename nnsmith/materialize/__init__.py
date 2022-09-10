@@ -15,6 +15,7 @@ from multipledispatch import dispatch
 from nnsmith.abstract.op import AbsOpBase, Constant, Input
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import SanityCheck
+from nnsmith.util import viz_dot
 
 
 def framework_operator_impl(
@@ -207,6 +208,12 @@ class Model(ABC):
     def add_seed_setter() -> None:
         pass
 
+    def attach_viz(self, dotstring: str) -> None:
+        self.dotstring = dotstring
+
+    def dump_viz(self, path: PathLike) -> None:
+        viz_dot(self.dotstring, path)
+
     @staticmethod
     def init(name) -> Type["Model"]:
         if name == "torch":
@@ -251,6 +258,9 @@ class TestCase:
         return TestCase(model, oracle)
 
     def dump(self, root_folder: str):
+        if self.model and hasattr(self.model, "dotstring"):
+            self.model.dump_viz(os.path.join(root_folder, "graph.png"))
+
         self.model.dump(
             os.path.join(
                 root_folder, self.model.name_prefix() + self.model.name_suffix()

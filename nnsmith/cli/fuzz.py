@@ -3,6 +3,7 @@ import time
 from pathlib import Path
 
 import hydra
+import networkx as nx
 from omegaconf import DictConfig
 
 from nnsmith.backends.factory import BackendFactory
@@ -80,6 +81,9 @@ class FuzzingLoop:
         schedule = Schedule.init(fixed_graph, concrete_abstensors)
 
         model = self.ModelType.from_schedule(schedule)
+        if self.cfg["debug"]["viz"]:
+            model.attach_viz(nx.nx_agraph.to_agraph(fixed_graph).to_string())
+
         model.refine_weights()  # either random generated or gradient-based.
         oracle = model.make_oracle()
         return TestCase(model, oracle)

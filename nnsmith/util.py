@@ -7,6 +7,8 @@ import numpy as np
 import pygraphviz as pgv
 from termcolor import colored
 
+from nnsmith.logging import VIZ_LOG
+
 
 def succ_print(*args):
     return print(*[colored(x, "green") for x in args])
@@ -74,22 +76,26 @@ _CONDA_EXIST = shutil.which("conda") is not None
 _APT_EXIST = shutil.which("apt") is not None
 _BREW_EXIST = shutil.which("brew") is not None
 
+_CALL_ONCE = False
+
 
 def _check_dot_install():
-    if not _DOT_EXIST:
-        note_print("`dot` not found.")
+    global _CALL_ONCE
+    if not _DOT_EXIST and not _CALL_ONCE:
+        _CALL_ONCE = True
+        VIZ_LOG.warn("`dot` not found.")
         if _CONDA_EXIST or _APT_EXIST or _BREW_EXIST:
-            note_print("To install via:")
+            VIZ_LOG.warn("To install via:")
             if _CONDA_EXIST:
-                note_print(" conda:\t conda install -c anaconda graphviz -y")
+                VIZ_LOG.warn(" conda:\t conda install -c anaconda graphviz -y")
 
             if _APT_EXIST:
-                note_print(" apt:\t sudo apt install graphviz -y")
+                VIZ_LOG.warn(" apt:\t sudo apt install graphviz -y")
 
             if _BREW_EXIST:
-                note_print(" brew:\t brew install graphviz")
+                VIZ_LOG.warn(" brew:\t brew install graphviz")
 
-        note_print("Also see: https://graphviz.org/download/")
+        VIZ_LOG.warn("Also see: https://graphviz.org/download/")
         return False
 
     return True
@@ -105,7 +111,3 @@ def viz_dot(dotobj: Union[pgv.AGraph, str], filename: str = None):
 
         dotobj.layout("dot")
         dotobj.draw(filename)
-    else:
-        note_print(
-            f"Skipping visualizing `{filename}` due to missing `dot` (graphviz)."
-        )
