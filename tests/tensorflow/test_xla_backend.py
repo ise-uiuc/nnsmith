@@ -37,7 +37,7 @@ def test_synthesized_tf_model(tmp_path):
 
     devices = ["cpu"]
     if tf.config.list_logical_devices("GPU"):
-        devices.append("gpu")
+        devices.append("cuda")
 
     for device in devices:
         assert (

@@ -24,23 +24,23 @@ The initializer of Abstract Operators (AO) takes a list of symbolic integers. In
 
 ```python
 class Pool2d(UnaryOpBase):
-		def __init__(self, kw, kh, stride, pad):
-		    # Step 1: Invoke daddy's constructor
-		    super().__init__()
+    def __init__(self, kw, kh, stride, pad):
+        # Step 1: Invoke daddy's constructor
+        super().__init__()
 
-		    # Step 2: Take arguments as attributes
-		    self.kw, self.kh = kw, kh
-		    self.stride = stride
-		    self.pad = pad
+        # Step 2: Take arguments as attributes
+        self.kw, self.kh = kw, kh
+        self.stride = stride
+        self.pad = pad
 
-		    # Step 3: Define desired operator input and output ranks
-		    # Typing: List[Tuple] where each tuple has some ranks
-		    # [ input.0(ok_rank.0, ok_rank.1, ...), input.1(...), ... ]
-		    # Why [(4,)]?
-		    #  1. Pooling2D only takes one input/output => one tuple;
-		    #  2. Pooling2D only accepts NCHW tensors   => the only viable dim is 4;
-		    self.inp_ranks = [(4,)]
-		    self.out_ranks = [(4,)]
+        # Step 3: Define desired operator input and output ranks
+        # Typing: List[Tuple] where each tuple has some ranks
+        # [ input.0(ok_rank.0, ok_rank.1, ...), input.1(...), ... ]
+        # Why [(4,)]?
+        #  1. Pooling2D only takes one input/output => one tuple;
+        #  2. Pooling2D only accepts NCHW tensors   => the only viable dim is 4;
+        self.inp_ranks = [(4,)]
+        self.out_ranks = [(4,)]
 ```
 
 ### `type_transfer(itensors{.shape, .dtype}) => otensors{.shape, .dtype}`
@@ -71,7 +71,7 @@ def requires(self, itensors: List[AbsTensor]):
     ]
 ```
 
-### Extra Attributes
+### Class members
 
 - Viable data types:
     - `inp_dtypes`: Similar to `self.inp_ranks`, it contains a list of independent and viable input data types.

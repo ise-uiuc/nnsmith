@@ -24,7 +24,7 @@ class TVMFactory(BackendFactory):
         self.opt_level = 4 if optmax else 0
         if device == "cpu":
             self.target = tvm.target.Target("llvm")
-        elif device == "cuda" or device == "gpu":
+        elif device == "cuda":
             self.target = tvm.target.Target("cuda")
         else:
             raise ValueError(f"Unknown device `{device}`")

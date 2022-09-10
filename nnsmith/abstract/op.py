@@ -680,14 +680,11 @@ class Placeholder:
         return "Placeholder"
 
 
-# FIXME: Div will cause fuzzing crash.
-Div = mark_materialize("core")(
-    type(
-        "Div",
-        (BcastBinaryOp1,),
-        {"__module__": __name__},
-    )
-)
+# FIXME: Div will cause fuzzing crash. No integer to avoid division by zero.
+@mark_materialize("core")
+class Div(BcastBinaryOp):
+    in_dtypes = [(i, i) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
 
 @mark_materialize("core")
@@ -1876,8 +1873,6 @@ class Concat(AbsOpBase):
     out_dtypes = [(i,) for i in DTYPE_ALL]
 
     def __str__(self) -> str:
-        # DON'T USE `:` in string
-        # See https://github.com/pydot/pydot/issues/258
         return "Concat " + str(self.extra_attrs).replace(":", "=")
 
     def __init__(self, arity):

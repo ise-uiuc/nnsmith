@@ -11,7 +11,7 @@ runs:
   using: composite
   steps:
     - name: install graphviz from apt
-      run: sudo apt install -y graphviz
+      run: sudo apt install -y graphviz graphviz-dev
       shell: bash
     - name: set path to dependencies
       id: set-dep-path

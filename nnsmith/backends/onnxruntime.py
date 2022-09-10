@@ -1,6 +1,3 @@
-from typing import Callable, Dict, cast
-
-import numpy as np
 import onnx
 import onnxruntime as ort
 from multipledispatch import dispatch
@@ -25,7 +22,7 @@ class ORTFactory(BackendFactory):
         super().__init__(device, optmax, **kwargs)
         self.opt_level = OPT_LEVELS[-1 if optmax else 0]
         self.providers = ["CPUExecutionProvider"]
-        if device in ["cuda", "gpu"]:
+        if device == "cuda":
             self.providers = [
                 "CUDAExecutionProvider",
                 "CPUExecutionProvider",

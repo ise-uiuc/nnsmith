@@ -46,7 +46,7 @@ def test_synthesized_onnx_model(tmp_path):
     testcase.dump(root_folder=d)
 
     assert (
-        BackendFactory.init("tensorrt", device="gpu", optmax=True).verify_testcase(
+        BackendFactory.init("tensorrt", device="cuda", optmax=True).verify_testcase(
             testcase
         )
         is None
@@ -54,7 +54,7 @@ def test_synthesized_onnx_model(tmp_path):
 
 
 def test_narrow_spec_cache_make_and_reload():
-    factory = BackendFactory.init("tensorrt", device="gpu", optmax=True)
+    factory = BackendFactory.init("tensorrt", device="cuda", optmax=True)
     ONNXModel = Model.init("onnx")
     opset_lhs = load_topset_from_auto_cache(ONNXModel, factory)
     assert opset_lhs, "Should not be empty... Something must go wrong."
