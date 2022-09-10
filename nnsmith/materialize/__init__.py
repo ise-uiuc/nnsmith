@@ -6,7 +6,7 @@ from collections import namedtuple
 from dataclasses import dataclass
 from enum import Enum
 from os import PathLike
-from typing import Any, Dict, List, Set, Tuple, Type
+from typing import Any, Dict, List, Tuple, Type
 
 import networkx as nx
 import numpy as np
@@ -15,6 +15,7 @@ from multipledispatch import dispatch
 from nnsmith.abstract.op import AbsOpBase, Constant, Input
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import SanityCheck
+from nnsmith.util import viz_dot
 
 
 def framework_operator_impl(
@@ -186,6 +187,10 @@ class Model(ABC):
     def refine_weights(self) -> None:
         pass
 
+    @abstractmethod
+    def make_oracle(self) -> Oracle:
+        pass
+
     @staticmethod
     @abstractmethod
     def operators() -> List[Type[AbsOpBase]]:
@@ -202,6 +207,12 @@ class Model(ABC):
     @staticmethod
     def add_seed_setter() -> None:
         pass
+
+    def attach_viz(self, dotstring: str) -> None:
+        self.dotstring = dotstring
+
+    def dump_viz(self, path: PathLike) -> None:
+        viz_dot(self.dotstring, path)
 
     @staticmethod
     def init(name) -> Type["Model"]:
@@ -247,6 +258,9 @@ class TestCase:
         return TestCase(model, oracle)
 
     def dump(self, root_folder: str):
+        if self.model and hasattr(self.model, "dotstring"):
+            self.model.dump_viz(os.path.join(root_folder, "graph.png"))
+
         self.model.dump(
             os.path.join(
                 root_folder, self.model.name_prefix() + self.model.name_suffix()
@@ -287,9 +301,8 @@ class BugReport(ABC):
         self.trigger_hash = trigger_hash
         self.log = log
 
-    @property
-    @classmethod
-    def error_msg_name(cls):
+    @staticmethod
+    def error_msg_name():
         return "err.log"
 
     def __repr__(self) -> str:
@@ -304,7 +317,7 @@ class BugReport(ABC):
         # oracle.pkl
         self.testcase.dump(root_folder)
         # err.log
-        with open(os.path.join(root_folder, self.error_msg_name), "w") as f:
+        with open(os.path.join(root_folder, self.error_msg_name()), "w") as f:
             f.write(self.log)
         # meta.json
         with open(os.path.join(root_folder, "meta.json"), "w") as f:
@@ -345,8 +358,8 @@ class BugReport(ABC):
         testcase = TestCase.load(model_type, root_folder, allow_partial)
 
         log = None
-        if os.path.exists(os.path.join(root_folder, BugReport.error_msg_name)):
-            with open(os.path.join(root_folder, BugReport.error_msg_name), "r") as f:
+        if os.path.exists(os.path.join(root_folder, BugReport.error_msg_name())):
+            with open(os.path.join(root_folder, BugReport.error_msg_name()), "r") as f:
                 log = f.read()
 
         return BugReport(testcase, symptom, stage, system, version, trigger_hash, log)

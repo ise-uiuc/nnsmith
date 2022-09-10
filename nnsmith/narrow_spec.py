@@ -230,3 +230,14 @@ def load_topset_from_auto_cache(
         opset = infer_topset_from_scratch(model_cls, factory)
         dump_topset(opset, cache_path)
         return opset
+
+
+def opset_from_auto_cache(model_cls: Model, factory: BackendFactory, verbose=True):
+    topset_config = load_topset_from_auto_cache(model_cls, factory, verbose)
+    opset = model_cls.operators()
+    for i, op in enumerate(opset):
+        op.in_dtypes = topset_config[op.name()].in_dtypes
+        op.out_dtypes = topset_config[op.name()].out_dtypes
+        opset[i] = op
+    # TODO(@ganler): make patch.
+    return opset

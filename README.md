@@ -1,10 +1,25 @@
 # NNSmith: DNN Model Generation in the Wild
 
-This project is under heavy development at this point.
-
-Bug hunting: [google sheet](https://docs.google.com/spreadsheets/d/15YY88x_JyZWom2YGNW2JO0JdqNVYWzPbaaRyhVxBJ_Y/edit#gid=0).
+[![](https://github.com/ise-uiuc/nnsmith/actions/workflows/ci.yaml/badge.svg)](https://github.com/ise-uiuc/nnsmith/actions/workflows/ci.yaml) [![](https://img.shields.io/pypi/v/nnsmith?color=g)](https://pypi.org/project/nnsmith/) [![](https://img.shields.io/pypi/l/nnsmith)](https://github.com/ise-uiuc/nnsmith/blob/main/LICENSE)
 
 ## Quick Start
+
+<details><summary><b>Setting up graphviz for debugging</b> <i>[click to expand]</i></summary>
+<div>
+
+Graphviz provides `dot` for visualizing graphs in nice pictures. But it needs to be installed via the following methods:
+
+```shell
+sudo apt-get install graphviz graphviz-dev      # Linux
+brew install graphviz                           # MacOS
+conda install --channel conda-forge pygraphviz  # Conda
+choco install graphviz                          # Windows
+```
+
+Also see [pygraphviz install guidance](https://pygraphviz.github.io/documentation/stable/install.html).
+
+</div>
+</details>
 
 ```shell
 python3 -m pip install "nnsmith[torch,onnx]"                     \
