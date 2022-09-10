@@ -20,7 +20,7 @@ class XLAFactory(BackendFactory):
 
     @property
     def system_name(self) -> str:
-        "xla"
+        return "xla"
 
     @dispatch(TFModel)
     def make_backend(self, model: TFModel) -> BackendCallable:
@@ -28,7 +28,7 @@ class XLAFactory(BackendFactory):
         device: tf.device
 
         if self.device == "cpu":
-            device = tf.device("/device:cpu:0")
+            device = tf.device(tf.config.list_logical_devices("CPU")[0].name)
         elif self.device == "gpu":
             device = tf.device(tf.config.list_logical_devices("GPU")[0].name)
         else:
