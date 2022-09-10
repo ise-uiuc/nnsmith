@@ -15,7 +15,7 @@ from multipledispatch import dispatch
 from nnsmith.abstract.op import AbsOpBase, Constant, Input
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import SanityCheck
-from nnsmith.util import viz_dot
+from nnsmith.util import HAS_PYGRAPHVIZ, viz_dot
 
 
 def framework_operator_impl(
@@ -208,8 +208,9 @@ class Model(ABC):
     def add_seed_setter() -> None:
         pass
 
-    def attach_viz(self, dotstring: str) -> None:
-        self.dotstring = dotstring
+    def attach_viz(self, graph: nx.MultiDiGraph) -> None:
+        if HAS_PYGRAPHVIZ:
+            self.dotstring = nx.nx_agraph.to_agraph(graph).to_string()
 
     def dump_viz(self, path: PathLike) -> None:
         viz_dot(self.dotstring, path)

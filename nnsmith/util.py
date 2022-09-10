@@ -1,11 +1,25 @@
 import os
 import random
 import shutil
-from typing import Callable, Dict, List, Union
+from typing import Callable, Dict, List
 
 import numpy as np
-import pygraphviz as pgv
 from termcolor import colored
+
+try:
+    import pygraphviz as pgv
+
+    HAS_PYGRAPHVIZ = True
+except ImportError:
+    import warnings
+
+    warnings.warn(
+        "Install pygraphviz for visualization: https://pygraphviz.github.io/documentation/stable/install.html\n"
+        "Currently graph visualization is not enabled."
+    )
+    pgv = None
+    HAS_PYGRAPHVIZ = False
+
 
 from nnsmith.logging import VIZ_LOG
 
@@ -101,7 +115,7 @@ def _check_dot_install():
     return True
 
 
-def viz_dot(dotobj: Union[pgv.AGraph, str], filename: str = None):
+def viz_dot(dotobj, filename: str = None):
     if _check_dot_install():
         if filename is None:
             filename = f"graph.png"
