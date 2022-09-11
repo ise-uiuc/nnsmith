@@ -13,9 +13,9 @@ import pickle
 import random
 from pathlib import Path
 
+import hydra
 from omegaconf import DictConfig, ListConfig
 
-import hydra
 from nnsmith.backends import BackendFactory
 from nnsmith.logging import EXEC_LOG
 from nnsmith.materialize import BugReport, Model, Oracle, TestCase
