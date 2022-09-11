@@ -35,7 +35,10 @@ def test_synthesized_onnx_model(tmp_path):
 
     ONNXModel = Model.init("onnx")
     factory = BackendFactory.init(
-        "tvm", device="cuda", optmax=False, catch_process_crash=False
+        "tvm",
+        device="cuda" if tvm.cuda(0).exist else "cpu",
+        optmax=False,
+        catch_process_crash=False,
     )
 
     gen = random_model_gen(
@@ -61,12 +64,4 @@ def test_synthesized_onnx_model(tmp_path):
     testcase = TestCase(model, oracle)
     testcase.dump(root_folder=d)
 
-    assert (
-        BackendFactory.init(
-            "tvm", device="cpu", optmax=False, catch_process_crash=False
-        ).verify_testcase(testcase)
-        is None
-    )
-
-    if tvm.cuda(0).exist:
-        assert factory.verify_testcase(testcase) is None
+    assert factory.verify_testcase(testcase) is None
