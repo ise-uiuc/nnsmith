@@ -12,7 +12,7 @@ try:
 except ImportError:
     import warnings
 
-    warnings.warning(
+    warnings.warn(
         "Install pygraphviz for visualization: https://pygraphviz.github.io/documentation/stable/install.html\n"
         "Currently graph visualization is not enabled."
     )

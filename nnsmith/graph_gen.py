@@ -3,7 +3,6 @@ import logging
 import math
 import os
 import random
-import shutil
 import textwrap
 import time
 import traceback
@@ -29,7 +28,7 @@ from nnsmith.abstract.op import (
 )
 from nnsmith.error import ConstraintError, SanityCheck
 from nnsmith.logging import MGEN_LOG, SMT_LOG
-from nnsmith.util import set_seed, viz_dot
+from nnsmith.util import HAS_PYGRAPHVIZ, set_seed, viz_dot
 
 NNSMITH_LIMNF_V = os.getenv("NNSMITH_LIMNF_V", "0")
 assert NNSMITH_LIMNF_V in ["0", "1"]
@@ -1077,4 +1076,5 @@ def random_model_gen(
 
 
 def viz(G, filename: str = None):
-    viz_dot(nx.nx_agraph.to_agraph(G).to_string(), filename)
+    if HAS_PYGRAPHVIZ:
+        viz_dot(nx.nx_agraph.to_agraph(G).to_string(), filename)
