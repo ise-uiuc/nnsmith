@@ -234,12 +234,12 @@ def load_topset_from_auto_cache(
 
 def opset_from_auto_cache(model_cls: Model, factory: BackendFactory, verbose=True):
     topset_config = load_topset_from_auto_cache(model_cls, factory, verbose)
-    opset = model_cls.operators()
-    for i, op in enumerate(opset):
+    opset = []
+    for op in model_cls.operators():
         if op.name() not in topset_config:
             continue
         op.in_dtypes = topset_config[op.name()].in_dtypes
         op.out_dtypes = topset_config[op.name()].out_dtypes
-        opset[i] = op
+        opset.append(op)
     # TODO(@ganler): make patch.
     return opset

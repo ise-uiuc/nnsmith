@@ -155,7 +155,9 @@ class BackendFactory(ABC):
                 log=traceback.format_exc(),
             )
 
-        return TestCase(model, Oracle(input=input, output=output))
+        return TestCase(
+            model, Oracle(input=input, output=output, provider=self.system_name)
+        )
 
     @staticmethod
     def init(name, device="cpu", optmax=True, catch_process_crash=False, **kwargs):

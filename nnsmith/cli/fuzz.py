@@ -1,7 +1,6 @@
 import random
 import time
 from pathlib import Path
-import os
 
 import hydra
 from omegaconf import DictConfig
@@ -35,10 +34,6 @@ class FuzzingLoop:
         self.verbose = cfg["fuzz"]["verbose"]
         self.reporter = Reporter(cfg["fuzz"]["root"])
 
-        # TensorFlow made silent by default.
-        if cfg["model"]["type"] == "tensorflow":
-            os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
         self.factory = BackendFactory.init(
             cfg["backend"]["type"],
             device=cfg["backend"]["device"],
@@ -70,7 +65,7 @@ class FuzzingLoop:
     def make_testcase(self, seed) -> TestCase:
         mgen_cfg = self.cfg["mgen"]
         gen = random_model_gen(
-            opset=self.ModelType.operators(),
+            opset=self.opset,
             init_rank=mgen_cfg["init_rank"],
             seed=seed,
             max_nodes=mgen_cfg["max_nodes"],

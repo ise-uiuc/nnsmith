@@ -4,6 +4,10 @@ import os
 import pickle
 from os import PathLike
 from typing import Callable, Dict, List, Tuple, Type
+import logging
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+logging.getLogger("tensorflow").setLevel(logging.ERROR)
 
 import numpy as np
 import tensorflow as tf  # type: ignore
@@ -122,7 +126,7 @@ class TFModel(Model):
         input_dict = np_dict_from_tf(input_dict)
         output_dict = np_dict_from_tf(output_dict)
 
-        return Oracle(input_dict, output_dict)
+        return Oracle(input_dict, output_dict, provider="tf[cpu] eager")
 
     def dump(self, path: PathLike = "saved_tfmodel") -> None:
         os.makedirs(path, exist_ok=True)
