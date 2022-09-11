@@ -1,3 +1,4 @@
+import logging
 import os
 import random
 
@@ -5,6 +6,7 @@ import hydra
 from omegaconf import DictConfig
 
 from nnsmith.graph_gen import concretize_graph, random_model_gen, viz
+from nnsmith.logging import MGEN_LOG
 from nnsmith.materialize import Model, Schedule, TestCase
 from nnsmith.util import mkdir
 
@@ -17,14 +19,12 @@ def main(cfg: DictConfig):
 
     seed = random.getrandbits(32) if mgen_cfg["seed"] is None else mgen_cfg["seed"]
 
-    print(f"Using seed {seed}")
+    MGEN_LOG.info(f"Using seed {seed}")
 
     # TODO(@ganler): skip operators outside of model gen with `cfg[exclude]`
     model_cfg = cfg["model"]
     ModelType = Model.init(model_cfg["type"])
     ModelType.add_seed_setter()
-
-    verbose = mgen_cfg["verbose"]
 
     gen = random_model_gen(
         opset=ModelType.operators(),
@@ -32,14 +32,13 @@ def main(cfg: DictConfig):
         seed=seed,
         max_nodes=mgen_cfg["max_nodes"],
         timeout_ms=mgen_cfg["timeout_ms"],
-        verbose=verbose,
     )
-    print(
+    MGEN_LOG.info(
         f"{len(gen.get_solutions())} symbols and {len(gen.solver.assertions())} constraints."
     )
 
-    if verbose:
-        print("solution:", ", ".join(map(str, gen.get_solutions())))
+    if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
+        MGEN_LOG.debug("solution:" + ", ".join(map(str, gen.get_solutions())))
 
     fixed_graph, concrete_abstensors = concretize_graph(
         gen.abstract_graph, gen.tensor_dataflow, gen.get_solutions()
