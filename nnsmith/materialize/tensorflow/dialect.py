@@ -183,6 +183,18 @@ class NHWCConv2d(UnaryOpBase):
         cons.append(nnsmith_ge(mimic_kh, 1))
         cons.append(nnsmith_ge(mimic_kw, 1))
         cons.append(nnsmith_ge(self.stride, 1))
+        if self.extra_attrs["padding"] == "valid":
+            cons.append(nnsmith_lt(mimic_kh, input_shapes[0].shape[2]))
+            cons.append(nnsmith_lt(mimic_kw, input_shapes[0].shape[3]))
+        cons.append(
+            nnsmith_eq(
+                0,
+                nnsmith_mul(
+                    nnsmith_sub(self.stride, 1),
+                    nnsmith_sub(nnsmith_max(self.dilation_h, self.dilation_w), 1),
+                ),
+            )  # (stride - 1) * (dilation - 1) == 0 ==> assert (stride > 1 and dilation > 1) is False
+        )  # `strides > 1` not supported in conjunction with `dilation_rate > 1`
         # limit FLOPS
         if Z3_CONS_FLOPS:
             cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
@@ -234,21 +246,6 @@ class NHWCConv2d(UnaryOpBase):
         self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
         return [(4, out_abs_tensor[0].dtype)]
-
-    def __repr__(self) -> str:
-        repr = f"Conv2d({self.in_channels}, {self.out_channels}, k=({self.kernel_h_size},{self.kernel_w_size})"
-        if not isinstance(self.stride, int) or self.stride != 1:
-            repr += f", s={self.stride}"
-        if not isinstance(self.padding, int) or self.padding != 0:
-            repr += f", p={self.padding}"
-        if (
-            not isinstance(self.dilation_h, int)
-            or self.dilation_h != 1
-            or self.dilation_w != 1
-        ):
-            repr += f", d=({self.dilation_h}, {self.dilation_w})"
-        repr += ")"
-        return repr
 
 
 @mark_materialize("tensorflow")
