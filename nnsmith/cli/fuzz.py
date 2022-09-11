@@ -8,6 +8,7 @@ from omegaconf import DictConfig
 from nnsmith.backends.factory import BackendFactory
 from nnsmith.cli.model_exec import verify_testcase
 from nnsmith.graph_gen import concretize_graph, random_model_gen
+from nnsmith.macro import NNSMITH_BUG_PATTERN_TOKEN
 from nnsmith.materialize import Model, Schedule, TestCase
 from nnsmith.narrow_spec import opset_from_auto_cache
 from nnsmith.util import mkdir, set_seed
@@ -21,7 +22,7 @@ class Reporter:
         self.n_bugs = 0
 
     def get_next_bug_path(self):
-        return self.root / f"bug-{self.n_bugs}"
+        return self.root / f"bug-{NNSMITH_BUG_PATTERN_TOKEN}-{self.n_bugs}"
 
 
 class FuzzingLoop:
