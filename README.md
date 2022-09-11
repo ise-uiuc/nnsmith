@@ -47,6 +47,7 @@ You can use `pre-commit` to simpify development:
 
 - `pip install -r requirements/dev.txt`;
 - `pre-commit install`;
+- `pre-commit` will run upon a commit; To explicitly run `pre-commit` for all files: `pre-commit run --all-files`.
 
 <details><summary><b>More notes</b> <i>[click to expand]</i></summary>
 <div>

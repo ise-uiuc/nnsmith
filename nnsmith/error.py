@@ -69,13 +69,13 @@ class BaseChecker(ABC):
 class SanityCheck(BaseChecker):
     @classmethod
     def handler(cls, msg):
-        raise ConstraintError(msg)
+        logging.critical(msg)
+        raise InternalError(
+            msg + " | Reporting bugs @ https://github.com/ise-uiuc/nnsmith/issues"
+        )
 
 
 class ConstraintCheck(BaseChecker):
     @classmethod
     def handler(cls, msg):
-        logging.critical(msg)
-        raise InternalError(
-            msg + " | Reporting bugs @ https://github.com/ise-uiuc/nnsmith/issues"
-        )
+        raise ConstraintError(msg)
