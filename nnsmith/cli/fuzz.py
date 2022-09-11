@@ -1,6 +1,7 @@
 import random
 import time
 from pathlib import Path
+import os
 
 import hydra
 from omegaconf import DictConfig
@@ -33,6 +34,10 @@ class FuzzingLoop:
 
         self.verbose = cfg["fuzz"]["verbose"]
         self.reporter = Reporter(cfg["fuzz"]["root"])
+
+        # TensorFlow made silent by default.
+        if cfg["model"]["type"] == "tensorflow":
+            os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
         self.factory = BackendFactory.init(
             cfg["backend"]["type"],
