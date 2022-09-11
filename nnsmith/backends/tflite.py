@@ -43,7 +43,7 @@ class TFLiteFactory(BackendFactory):
 
     @property
     def system_name(self) -> str:
-        "tflite"
+        return "tflite"
 
     @dispatch(TFModel)
     def make_backend(
