@@ -6,6 +6,7 @@ We support the following logging "keys":
 
 - `fuzz`: fuzzing loop;
 - `mgen`: model generation;
+- `smt`: constraints in smt solving;
 - `exec`: model execution;
 - `viz`: graphviz visualization;
 - `dtest`: dtype_test;
