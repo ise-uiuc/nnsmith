@@ -13,6 +13,7 @@ tmp/
 *.profraw
 fuzz_report/
 nnsmith_output/
+nnsmith/_version.py
 
 # hydra
 outputs/
