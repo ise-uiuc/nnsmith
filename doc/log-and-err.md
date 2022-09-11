@@ -2,10 +2,11 @@
 
 We support the following logging "keys":
 
-- `fuzz`
-- `mgen`
-- `exec`
-- `viz`
+- `fuzz`: fuzzing loop;
+- `mgen`: model generation;
+- `exec`: model execution;
+- `viz`: graphviz visualization;
+- `dtest`: dtype_test;
 
 The show messages above "INFO" level (see [Python's logging module](https://docs.python.org/3/library/logging.html)). To show debug level message, add `hydra.verbose=[${keys}]` (also see [hydra.logging](https://hydra.cc/docs/1.2/tutorials/basic/running_your_app/logging/)).
 

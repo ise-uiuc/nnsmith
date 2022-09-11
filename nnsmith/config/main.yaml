@@ -49,7 +49,6 @@ fuzz:
   time: 14400
   root: "???"
   seed: null
-  verbose: false
 
 cmp:
   equal_nan: true    # skip regarding it as a bug if with fp exception values.
@@ -70,8 +69,6 @@ cmp:
   bug_presence: "report" # or "crash"
   save: null # path to save the bug report if `bug_presence` is "report"
 
-  verbose: false
-
 defaults:
-  - override hydra/job_logging: colorlog
+  - override hydra/job_logging: brief
   - override hydra/hydra_logging: colorlog

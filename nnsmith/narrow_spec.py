@@ -30,6 +30,7 @@ from omegaconf import OmegaConf
 from nnsmith.abstract.dtype import DType
 from nnsmith.abstract.op import AbsOpBase, AbsTensor, Constant, Input, concretize_op
 from nnsmith.backends import BackendFactory
+from nnsmith.logging import DTEST_LOG
 from nnsmith.materialize import Instruction, Model, Schedule, TestCase
 from nnsmith.util import fail_print, note_print, succ_print
 
@@ -98,7 +99,7 @@ def _make_single_op_schedules(
 
 
 def infer_topset_from_scratch(
-    model_cls: Model, factory: BackendFactory, op_types=None, verbose=True
+    model_cls: Model, factory: BackendFactory, op_types=None
 ) -> Dict[str, OpConfig]:
     if op_types is None:
         op_types = model_cls.operators()
@@ -110,8 +111,7 @@ def infer_topset_from_scratch(
         if node_t is Input or node_t is Constant:
             continue
 
-        if verbose:
-            note_print(f"[{idx + 1} / {n_ops}] ===> Trying {node_t}")
+        DTEST_LOG.info(f"[{idx + 1} / {n_ops}] ===> Trying {node_t}")
 
         available_idtypes = node_t.in_dtypes
 
@@ -170,18 +170,16 @@ def infer_topset_from_scratch(
             # Test compilation + simple inference;
             out = factory.make_testcase(model)
             if isinstance(out, TestCase):  # Pass
-                if verbose:
-                    succ_print(
-                        f"=====> [Success] at {concrete_op}({itypes}) => {otypes}"
-                    )
+                DTEST_LOG.info(
+                    f"=====> [Success] at {concrete_op}({itypes}) => {otypes}"
+                )
                 op_itypes.add(itypes)
                 op_otypes.add(otypes)
             else:  # Fail
-                if verbose:
-                    fail_print(
-                        f"=====> [Failure] at {concrete_op}({itypes}) => {otypes}"
-                    )
-                    fail_print(f"{out.log}")
+                DTEST_LOG.warn(
+                    f"=====> [Failure] at {concrete_op}({itypes}) => {otypes}"
+                )
+                DTEST_LOG.debug(f"{out.log}")
 
         if op_itypes:
             topset[op.name()] = OpConfig(
@@ -210,7 +208,7 @@ def dump_topset(topset: Dict[str, OpConfig], path: PathLike):
 
 
 def load_topset_from_auto_cache(
-    model_cls: Model, factory: BackendFactory, verbose=True
+    model_cls: Model, factory: BackendFactory
 ) -> Dict[str, OpConfig]:
     cache_path = os.path.join(
         NNSMITH_CACHE_DIR, get_cache_name(model_cls, factory) + ".yaml"
@@ -219,21 +217,19 @@ def load_topset_from_auto_cache(
     if not os.path.exists(NNSMITH_CACHE_DIR):
         os.makedirs(NNSMITH_CACHE_DIR)
     if os.path.exists(cache_path):
-        if verbose:
-            succ_print(f"Loading topset from {cache_path}.")
-            note_print("To regenerate the topset, delete the cache file and restart.")
-            note_print(f"rm {cache_path}")
+        DTEST_LOG.info(f"Loading topset from {cache_path}.")
+        DTEST_LOG.info("To regenerate the topset, delete the cache file and restart.")
+        DTEST_LOG.info(f"rm {cache_path}")
         return load_topset(cache_path)
     else:
-        if verbose:
-            note_print(f"Inferring topset from scratch and cache it to {cache_path}.")
+        DTEST_LOG.info(f"Inferring topset from scratch and cache it to {cache_path}.")
         opset = infer_topset_from_scratch(model_cls, factory)
         dump_topset(opset, cache_path)
         return opset
 
 
-def opset_from_auto_cache(model_cls: Model, factory: BackendFactory, verbose=True):
-    topset_config = load_topset_from_auto_cache(model_cls, factory, verbose)
+def opset_from_auto_cache(model_cls: Model, factory: BackendFactory):
+    topset_config = load_topset_from_auto_cache(model_cls, factory)
     opset = model_cls.operators()
     for i, op in enumerate(opset):
         op.in_dtypes = topset_config[op.name()].in_dtypes

@@ -13,12 +13,12 @@ import pickle
 import random
 from pathlib import Path
 
-import hydra
 from omegaconf import DictConfig, ListConfig
 
+import hydra
 from nnsmith.backends import BackendFactory
+from nnsmith.logging import EXEC_LOG
 from nnsmith.materialize import BugReport, Model, Oracle, TestCase
-from nnsmith.util import fail_print, note_print, succ_print
 
 
 def verify_testcase(
@@ -30,20 +30,19 @@ def verify_testcase(
     def check_result(bug_report_or, msg=None) -> bool:  # succ?
         msg = "" if msg is None else msg
         if not isinstance(bug_report_or, BugReport):
-            if cmp_cfg["verbose"]:
-                succ_print(f"[PASS] {msg}")
+            EXEC_LOG.info(f"[PASS] {msg}")
             return True
         else:
             bug_report = bug_report_or
-            fail_print("[FAIL] ")
-            fail_print(bug_report.log)
+            EXEC_LOG.warn("[FAIL] ")
+            EXEC_LOG.warn(bug_report.log)
             if output_dir is not None:
-                note_print("Saving bug report to {}".format(output_dir))
+                EXEC_LOG.debug("Saving bug report to {}".format(output_dir))
                 bug_report.dump(output_dir)
             return False
 
     bug_or_res = factory.checked_compile_and_exec(testcase)
-    if check_result(bug_or_res, msg="Compile + Execution"):
+    if check_result(bug_or_res, msg=f"Compile + Execution [{factory}]"):
         if testcase.oracle.output is not None:  # we have output results && no bug yet
             # do result verification
             if not check_result(
@@ -52,7 +51,7 @@ def verify_testcase(
                     testcase,
                     equal_nan=cmp_cfg["equal_nan"],
                 ),
-                msg="Result Verification w/ Oracle",
+                msg=f"Result Verification w/ Oracle from {testcase.oracle.provider}",
             ):
                 return False
     else:
@@ -69,7 +68,7 @@ def verify_testcase(
         cmp_testcase = cmp_fac.make_testcase(
             testcase.model, input=testcase.oracle.input
         )
-        if check_result(cmp_testcase, "Compile + Execution (`cmp.with`)"):
+        if check_result(cmp_testcase, f"Compile + Execution [`cmp.with`: {cmp_fac}]"):
             if not check_result(
                 factory.verify_results(
                     bug_or_res,
@@ -89,7 +88,7 @@ def verify_testcase(
 def main(cfg: DictConfig):
     cmp_cfg = cfg["cmp"]
     seed = random.getrandbits(32) if cmp_cfg["seed"] is None else cmp_cfg["seed"]
-    note_print(f"Using seed {seed}")
+    EXEC_LOG.info(f"Using seed {seed}")
 
     model_cfg = cfg["model"]
     ModelType = Model.init(model_cfg["type"])
@@ -119,7 +118,9 @@ def main(cfg: DictConfig):
 
         # 1. Use raw_input as test_inputs if specified;
         if cmp_cfg["raw_input"] is not None:
-            note_print("Using raw input from {} as oracle".format(cmp_cfg["raw_input"]))
+            EXEC_LOG.info(
+                "Using raw input from {} as oracle".format(cmp_cfg["raw_input"])
+            )
             test_inputs = pickle.load(Path(cmp_cfg["raw_input"]).open("rb"))
             assert isinstance(
                 test_inputs, dict
@@ -138,14 +139,14 @@ def main(cfg: DictConfig):
                 oracle_path = cmp_cfg["oracle"]
 
             if oracle_path is not None:
-                note_print("Using oracle from {}".format(oracle_path))
+                EXEC_LOG.info("Using oracle from {}".format(oracle_path))
                 res = pickle.load(Path(oracle_path).open("rb"))
                 test_inputs = res["input"]
                 test_outputs = res["output"]
                 provider = res["provider"]
 
         if test_inputs is None:
-            note_print("Generating input data from BackendFactory.make_random_input")
+            EXEC_LOG.info("Generating input data from BackendFactory.make_random_input")
             test_inputs = BackendFactory.make_random_input(model.input_like)
             provider = f"random inputs"
 
