@@ -13,13 +13,13 @@ jobs:
 
       - name: Test core
         run: |
-          pytest -p no:logging tests/core
+          pytest --capture=no --log-cli-level=INFO tests/core
       - name: Test torch
         run: |
-          pytest -p no:logging tests/torch
+          pytest --capture=no --log-cli-level=INFO tests/torch
       - name: Test TensorFlow
         run: |
-          pytest -p no:logging tests/tensorflow
+          pytest --capture=no --log-cli-level=INFO tests/tensorflow
       - name: Test CLI
         run: |
           yes | python nnsmith/cli/model_gen.py mgen.max_nodes=5 debug.viz=true model.type=torch
