@@ -31,7 +31,6 @@ class FuzzingLoop:
     ):
         self.cfg = cfg
 
-        self.verbose = cfg["fuzz"]["verbose"]
         self.reporter = Reporter(cfg["fuzz"]["root"])
 
         self.factory = BackendFactory.init(
@@ -70,7 +69,6 @@ class FuzzingLoop:
             seed=seed,
             max_nodes=mgen_cfg["max_nodes"],
             timeout_ms=mgen_cfg["timeout_ms"],
-            verbose=mgen_cfg["verbose"],
         )
 
         fixed_graph, concrete_abstensors = concretize_graph(
