@@ -1,4 +1,6 @@
-## Logging in NNSmith
+## Logging
+
+### Modularization
 
 We support the following logging "keys":
 
@@ -17,7 +19,13 @@ ${NNSMITH_CMD} hydra.verbose=fuzz
 ${NNSMITH_CMD} hydra.verbose=[fuzz,exec]
 ```
 
-## Error in NNSmith
+#### Logging things into file
+
+By default, NNSmith logs things in `console` mode where loggings will only be flushed to STDIO.
+
+To log outputs into a file, add flag `hydra/job_logging=file`. The log file will be in [`${hydra.runtime.output_dir}/${hydra.job.name}.log`](https://hydra.cc/docs/1.2/tutorials/basic/running_your_app/working_directory/) (e.g., `output/${DATE}/${JOB_ID}/${APP}.log`).
+
+## Errors
 
 See `nnsmith/error.py`:
 
