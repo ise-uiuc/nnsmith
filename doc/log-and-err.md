@@ -6,9 +6,11 @@ We support the following logging "keys":
 
 - `fuzz`: fuzzing loop;
 - `mgen`: model generation;
+- `smt`: constraints in smt solving;
 - `exec`: model execution;
 - `viz`: graphviz visualization;
 - `dtest`: dtype_test;
+- `core`: seed setting, etc;
 
 The show messages above "INFO" level (see [Python's logging module](https://docs.python.org/3/library/logging.html)). To show debug level message, add `hydra.verbose=[${keys}]` (also see [hydra.logging](https://hydra.cc/docs/1.2/tutorials/basic/running_your_app/logging/)).
 
@@ -16,7 +18,7 @@ The show messages above "INFO" level (see [Python's logging module](https://docs
 # Show debug information related to `fuzz`:
 ${NNSMITH_CMD} hydra.verbose=fuzz
 # Show debug info for `fuzz` and `exec`:
-${NNSMITH_CMD} hydra.verbose=[fuzz,exec]
+${NNSMITH_CMD} hydra.verbose="[fuzz,exec]"
 ```
 
 #### Logging things into file

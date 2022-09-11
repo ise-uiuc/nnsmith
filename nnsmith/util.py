@@ -4,7 +4,6 @@ import shutil
 from typing import Callable, Dict, List
 
 import numpy as np
-from termcolor import colored
 
 try:
     import pygraphviz as pgv
@@ -21,20 +20,7 @@ except ImportError:
     HAS_PYGRAPHVIZ = False
 
 
-from nnsmith.logging import VIZ_LOG
-
-
-def succ_print(*args):
-    return print(*[colored(x, "green") for x in args])
-
-
-def fail_print(*args):
-    return print(*[colored(x, "red") for x in args])
-
-
-def note_print(*args):
-    return print(*[colored(x, "yellow") for x in args])
-
+from nnsmith.logging import CORE_LOG, VIZ_LOG
 
 SEED_SETTERS = {
     "random": random.seed,
@@ -50,6 +36,7 @@ def register_seed_setter(
     if not overwrite:
         assert name not in SEED_SETTERS, f"{name} is already registered"
     SEED_SETTERS[name] = fn
+    CORE_LOG.debug(f"Register seed setter for {name}")
 
 
 def set_seed(seed: int, names: List = None):
@@ -65,12 +52,12 @@ def mkdir(dir: os.PathLike, yes=False):
         if yes:
             decision = "y"
         while decision.lower() not in ["y", "n"]:
-            note_print(
+            CORE_LOG.warning(
                 "Report folder already exists. Press [Y/N] to continue or exit..."
             )
             decision = input()
         if decision.lower() == "n":
-            fail_print(f"{dir} already exist... Remove it or use a different name.")
+            CORE_LOG.error(f"{dir} already exist... Remove it or use a different name.")
             raise RuntimeError("Folder already exists")
         else:
             shutil.rmtree(dir)
@@ -97,19 +84,19 @@ def _check_dot_install():
     global _CALL_ONCE
     if not _DOT_EXIST and not _CALL_ONCE:
         _CALL_ONCE = True
-        VIZ_LOG.warn("`dot` not found.")
+        VIZ_LOG.warning("`dot` not found.")
         if _CONDA_EXIST or _APT_EXIST or _BREW_EXIST:
-            VIZ_LOG.warn("To install via:")
+            VIZ_LOG.warning("To install via:")
             if _CONDA_EXIST:
-                VIZ_LOG.warn(" conda:\t conda install -c anaconda graphviz -y")
+                VIZ_LOG.warning(" conda:\t conda install -c anaconda graphviz -y")
 
             if _APT_EXIST:
-                VIZ_LOG.warn(" apt:\t sudo apt install graphviz -y")
+                VIZ_LOG.warning(" apt:\t sudo apt install graphviz -y")
 
             if _BREW_EXIST:
-                VIZ_LOG.warn(" brew:\t brew install graphviz")
+                VIZ_LOG.warning(" brew:\t brew install graphviz")
 
-        VIZ_LOG.warn("Also see: https://graphviz.org/download/")
+        VIZ_LOG.warning("Also see: https://graphviz.org/download/")
         return False
 
     return True

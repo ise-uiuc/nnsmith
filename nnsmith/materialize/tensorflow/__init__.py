@@ -1,31 +1,26 @@
 from __future__ import annotations
 
+import logging
 import os
 import pickle
 from os import PathLike
-from typing import Any, Callable, Dict, List, Tuple, Type
+from typing import Callable, Dict, List, Tuple, Type
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+logging.getLogger("tensorflow").setLevel(logging.ERROR)
+logging.getLogger("absl").disabled = True
 
 import numpy as np
 import tensorflow as tf  # type: ignore
 from multipledispatch import dispatch  # type: ignore
 
-
-def configure_tensorflow():
-    # https://github.com/tensorflow/tensorflow/issues/57359
-    # tf.config.experimental.enable_tensor_float_32_execution(False)
-    for gpu in tf.config.experimental.list_physical_devices("GPU"):
-        tf.config.experimental.set_memory_growth(gpu, True)
-
-
-configure_tensorflow()
-
 from nnsmith.abstract.op import AbsOpBase, AbsTensor
 from nnsmith.materialize import Model, Oracle, Schedule
 from nnsmith.materialize.tensorflow.forward import ALL_TF_OPS
-from nnsmith.materialize.tensorflow.tfnet import TFNet, TFNetOutDict
+from nnsmith.materialize.tensorflow.tfnet import TFNet
+from nnsmith.util import register_seed_setter
 
-TFNetInputDict = Dict[str, tf.Tensor]
-TFNetCallable = Callable[..., TFNetOutDict]
+TFNetCallable = Callable[..., Dict[str, tf.Tensor]]
 
 
 @dispatch(dict)
@@ -66,6 +61,7 @@ class TFModel(Model):
     ) -> None:
         """Must provide a schedule to avoid NoneType errors"""
         super().__init__()
+        self.schedule = schedule
         self.net: TFNet = TFNet(
             schedule=schedule,
             verbose=verbose,
@@ -85,22 +81,22 @@ class TFModel(Model):
     @property
     def input_like(self) -> Dict[str, AbsTensor]:
         return {
-            f"i{i_inp}": self.net.schedule.key2type[key]
-            for i_inp, key in enumerate(self.net.schedule.input_keys)
+            f"i{i_inp}": self.schedule.key2type[key]
+            for i_inp, key in enumerate(self.schedule.input_keys)
         }
 
     @property
     def output_like(self) -> Dict[str, AbsTensor]:
         return {
-            f"o{i_out}": self.net.schedule.key2type[key]
-            for i_out, key in enumerate(self.net.schedule.leaf_keys)
+            f"o{i_out}": self.schedule.key2type[key]
+            for i_out, key in enumerate(self.schedule.leaf_keys)
         }
 
     @property
     def input_specs(self) -> Dict[str, tf.TensorSpec]:
         ret: Dict[str, tf.TensorSpec] = {}
-        for i_inp, key in enumerate(self.net.schedule.input_keys):
-            abs_tensor = self.net.schedule.key2type[key]
+        for i_inp, key in enumerate(self.schedule.input_keys):
+            abs_tensor = self.schedule.key2type[key]
             ret[f"i{i_inp}"] = tf.TensorSpec(
                 abs_tensor.shape, abs_tensor.dtype.tensorflow(), f"i{i_inp}"
             )
@@ -122,13 +118,13 @@ class TFModel(Model):
         input_dict = np_dict_from_tf(input_dict)
         output_dict = np_dict_from_tf(output_dict)
 
-        return Oracle(input_dict, output_dict)
+        return Oracle(input_dict, output_dict, provider="tf[cpu] eager")
 
     def dump(self, path: PathLike = "saved_tfmodel") -> None:
         os.makedirs(path, exist_ok=True)
         # schedule.pkl
         with open(os.path.join(path, TFModel.schedule_pkl_name()), "wb") as f:
-            pickle.dump(self.net.schedule, f)
+            pickle.dump(self.schedule, f)
         # tfnet
         concrete_net = self.concrete_net(self.input_specs)
         tf.saved_model.save(
@@ -166,12 +162,13 @@ class TFModel(Model):
         with open(os.path.join(path, TFModel.schedule_pkl_name()), "rb") as f:
             schedule: Schedule = pickle.load(f)
         model = TFModel(schedule)
+        model.net = tf.saved_model.load(os.path.join(path, TFModel.tfnet_dir_name()))
         return model
 
     @staticmethod
     def load_with_oracle(
         path: PathLike = "saved_tfmodel",
-    ) -> Tuple["TFModel", TFNetInputDict, TFNetOutDict]:
+    ) -> Tuple["TFModel", Dict[str, tf.Tensor], Dict[str, tf.Tensor]]:
         model = TFModel.load(path)
         oracle = Oracle.load(os.path.join(path, Oracle.name()))
         input_dict = {name: tf.convert_to_tensor(v) for name, v in oracle.input.items()}
@@ -192,7 +189,7 @@ class TFModel(Model):
     def tfnet_dir_name():
         return "tfnet"
 
-    def random_inputs(self) -> TFNetInputDict:
+    def random_inputs(self) -> Dict[str, tf.Tensor]:
         return {
             spec.name: tf.cast(
                 tf.random.normal(
@@ -214,10 +211,16 @@ class TFModel(Model):
     def refine_weights(self) -> None:
         pass
 
-    def run_eagerly(self, inputs: TFNetInputDict) -> TFNetOutDict:
-        tf.config.run_functions_eagerly(True)
-        return self.net(**inputs)
+    def run_eagerly(self, inputs: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
+        tf.config.run_functions_eagerly(True)  # disable graph execution
+        # TODO some op can only run on GPU (e.g. conv with NCHW)
+        with tf.device("/cpu:0"):
+            return self.net(**inputs)
 
     @staticmethod
     def operators() -> List[Type[AbsOpBase]]:
         return list(ALL_TF_OPS)
+
+    @staticmethod
+    def add_seed_setter() -> None:
+        register_seed_setter("tensorflow", tf.random.set_seed, overwrite=True)

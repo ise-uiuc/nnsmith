@@ -181,3 +181,28 @@ def nnsmith_min(left, right):
         return min(left, right)
     left, right = align_bvs(left, right)
     return z3.If(nnsmith_le(left, right), left, right)
+
+
+def nnsmith_max(left, right):
+    if isinstance(left, int) and isinstance(right, int):
+        return min(left, right)
+    left, right = align_bvs(left, right)
+    return z3.If(nnsmith_ge(left, right), left, right)
+
+
+def nnsmith_and(left, right):
+    if isinstance(left, bool) and isinstance(right, bool):
+        return left and right
+    return z3.And(left, right)
+
+
+def nnsmith_or(left, right):
+    if isinstance(left, bool) and isinstance(right, bool):
+        return left or right
+    return z3.Or(left, right)
+
+
+def nnsmith_not(expr):
+    if isinstance(expr, bool):
+        return not expr
+    return z3.Not(expr)

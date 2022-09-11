@@ -155,7 +155,9 @@ class BackendFactory(ABC):
                 log=traceback.format_exc(),
             )
 
-        return TestCase(model, Oracle(input=input, output=output))
+        return TestCase(
+            model, Oracle(input=input, output=output, provider=self.system_name)
+        )
 
     @staticmethod
     def init(name, device="cpu", optmax=True, catch_process_crash=False, **kwargs):
@@ -183,6 +185,24 @@ class BackendFactory(ABC):
             from nnsmith.backends.tensorrt import TRTFactory
 
             return TRTFactory(
+                device=device,
+                optmax=optmax,
+                catch_process_crash=catch_process_crash,
+                **kwargs,
+            )
+        elif name == "tflite":
+            from nnsmith.backends.tflite import TFLiteFactory
+
+            return TFLiteFactory(
+                device=device,
+                optmax=optmax,
+                catch_process_crash=catch_process_crash,
+                **kwargs,
+            )
+        elif name == "xla":
+            from nnsmith.backends.xla import XLAFactory
+
+            return XLAFactory(
                 device=device,
                 optmax=optmax,
                 catch_process_crash=catch_process_crash,

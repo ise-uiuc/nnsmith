@@ -1512,7 +1512,7 @@ class Reshape(UnaryOpBase):
         super().__init__()
         self.inp_ranks = [int_range(1, 4)]
         self.out_ranks = [(len(target_shape),)]
-        self.target_shape: List[Union[int, z3.ExprRef]] = target_shape
+        self.target_shape: List[Union[int, z3.ExprRef]] = list(target_shape)
 
     def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         __MAX_SOLVE_SYMBOL__ = 8
@@ -1603,16 +1603,6 @@ class Reshape(UnaryOpBase):
 
 
 @mark_materialize("core")
-class Flatten(Reshape):
-    num_var_param = None
-    # Inputs are target shape.
-
-    def __init__(self, dim0: Union[int, z3.ExprRef]):
-        super().__init__(dim0)
-        self.dim0 = dim0
-
-
-@mark_materialize("core")
 class Transpose(UnaryOpBase):
     in_dtypes = [(i,) for i in DTYPE_ALL]
 
@@ -1665,7 +1655,7 @@ class InterpBase(UnaryOpBase):
 
     def __init__(self, *size):
         super().__init__()
-        self.size = size
+        self.size = list(size)
         self.inp_ranks = [(len(size) + 2,)]
         self.out_ranks = [(len(size) + 2,)]
 

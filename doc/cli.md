@@ -66,3 +66,7 @@ nnsmith.dtype_test model.type="onnx" backend.type="onnxruntime"
 ```shell
 nnsmith.fuzz fuzz.time=30s fuzz.root=fuzz_report debug.viz=true
 ```
+
+## Misc
+
+TensorFlow logging can be very noisy. Use `TF_CPP_MIN_LOG_LEVEL=3` as environmental variable to depress that.

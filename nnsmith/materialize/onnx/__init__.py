@@ -219,6 +219,8 @@ class ONNXModel(TorchModel):
             TorchModel.dump(
                 self, path.replace(self.name_suffix(), TorchModel.name_suffix())
             )
+            if self.onnx_model is None:
+                self.onnx_model = self.get_onnx_from_torch()
 
         onnx.checker.check_model(self.onnx_model, full_check=True)
         onnx.save(self.onnx_model, path)

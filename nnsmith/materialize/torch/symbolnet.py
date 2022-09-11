@@ -48,9 +48,8 @@ class SymbolNet(nn.Module):
         self.megabyte_lim = megabyte_lim
         self.verbose = verbose
         self.print_grad = print_grad
-        self.instructions = (
-            []
-        )  # <TorchFunc, <keys -> inputs>, <keys -> outputs>, original op>
+        # <TorchFunc, <keys -> inputs>, <keys -> outputs>, original op>
+        self.instructions = []
         self.n_vulnerable_op = 0
 
         self.proxy_enabled_ = False

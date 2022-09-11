@@ -18,6 +18,7 @@ from omegaconf import DictConfig, ListConfig
 
 from nnsmith.backends import BackendFactory
 from nnsmith.logging import EXEC_LOG
+from nnsmith.macro import NNSMITH_BUG_PATTERN_TOKEN
 from nnsmith.materialize import BugReport, Model, Oracle, TestCase
 
 
@@ -26,23 +27,31 @@ def verify_testcase(
     factory: BackendFactory,
     testcase: TestCase,
     output_dir: os.PathLike,
+    supress_succ=True,
 ) -> bool:
-    def check_result(bug_report_or, msg=None) -> bool:  # succ?
+    def check_result(bug_report_or, odir, msg=None) -> bool:  # succ?
         msg = "" if msg is None else msg
         if not isinstance(bug_report_or, BugReport):
-            EXEC_LOG.info(f"[PASS] {msg}")
+            if not supress_succ:
+                EXEC_LOG.info(f"[PASS] {msg}")
             return True
         else:
             bug_report = bug_report_or
-            EXEC_LOG.warn("[FAIL] ")
-            EXEC_LOG.warn(bug_report.log)
-            if output_dir is not None:
-                EXEC_LOG.debug("Saving bug report to {}".format(output_dir))
-                bug_report.dump(output_dir)
+            EXEC_LOG.warning("[FAIL] ")
+            EXEC_LOG.warning(bug_report.log)
+            if odir is not None:
+                odir = str(odir).replace(
+                    NNSMITH_BUG_PATTERN_TOKEN,
+                    f"{bug_report.symptom}-{bug_report.stage}",
+                )
+                EXEC_LOG.debug("Saving bug report to {}".format(odir))
+                bug_report.dump(odir)
             return False
 
     bug_or_res = factory.checked_compile_and_exec(testcase)
-    if check_result(bug_or_res, msg=f"Compile + Execution [{factory}]"):
+    if check_result(
+        bug_or_res, odir=output_dir, msg=f"Compile + Execution [{factory}]"
+    ):
         if testcase.oracle.output is not None:  # we have output results && no bug yet
             # do result verification
             if not check_result(
@@ -51,6 +60,7 @@ def verify_testcase(
                     testcase,
                     equal_nan=cmp_cfg["equal_nan"],
                 ),
+                odir=output_dir,
                 msg=f"Result Verification w/ Oracle from {testcase.oracle.provider}",
             ):
                 return False
@@ -68,13 +78,19 @@ def verify_testcase(
         cmp_testcase = cmp_fac.make_testcase(
             testcase.model, input=testcase.oracle.input
         )
-        if check_result(cmp_testcase, f"Compile + Execution [`cmp.with`: {cmp_fac}]"):
+        if check_result(
+            cmp_testcase,
+            odir=output_dir,
+            msg=f"Compile + Execution [`cmp.with`: {cmp_fac}]",
+        ):
             if not check_result(
                 factory.verify_results(
                     bug_or_res,
                     cmp_testcase,
+                    odir=output_dir,
                     equal_nan=cmp_cfg["equal_nan"],
                 ),
+                odir=output_dir,
                 msg="Result Verification w/ Reference Backend",
             ):
                 return False

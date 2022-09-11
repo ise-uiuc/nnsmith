@@ -3,7 +3,6 @@ import logging
 import math
 import os
 import random
-import shutil
 import textwrap
 import time
 import traceback
@@ -28,8 +27,8 @@ from nnsmith.abstract.op import (
     random_group,
 )
 from nnsmith.error import ConstraintError, SanityCheck
-from nnsmith.logging import MGEN_LOG
-from nnsmith.util import note_print, set_seed, viz_dot
+from nnsmith.logging import MGEN_LOG, SMT_LOG
+from nnsmith.util import HAS_PYGRAPHVIZ, set_seed, viz_dot
 
 NNSMITH_LIMNF_V = os.getenv("NNSMITH_LIMNF_V", "0")
 assert NNSMITH_LIMNF_V in ["0", "1"]
@@ -93,7 +92,7 @@ class SimpleGenerator:
         forward_prob=None,
         init_fp=False,
     ):
-        if seed:
+        if seed is not None:
             set_seed(seed)
 
         self.op_candidates = opset
@@ -243,7 +242,7 @@ class SimpleGenerator:
             node_t = self.pick_next_op_type()
             self.try_insert_node_type(node_t)
         if abs(self.num_op() - max_node_size) >= 3:
-            MGEN_LOG.warn(
+            MGEN_LOG.warning(
                 f"[WARNING]: graph size: {len(self.abstract_graph.nodes)} < expected size: {max_node_size}"
             )
         self.cur_phase = "post_process"
@@ -290,23 +289,23 @@ class SimpleGenerator:
             for assump in assumptions:
                 self.check_arith_ref(assump)
 
-        if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
+        if SMT_LOG.getEffectiveLevel() <= logging.DEBUG:
             if self.solver.assertions():
-                MGEN_LOG.debug(
+                SMT_LOG.debug(
                     f"existing constraints: {', '.join(map(str, self.solver.assertions()))}"
                 )
             if assumptions:
-                MGEN_LOG.debug(f"new constraints: {', '.join(map(str, assumptions))}")
+                SMT_LOG.debug(f"new constraints: {', '.join(map(str, assumptions))}")
 
         cres = self.solver.check(*assumptions)
 
         checking_time = int((time.time() - start) * 1000)
 
-        if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
-            MGEN_LOG.debug(f"{cres} <-- checking time: {checking_time} ms")
+        if SMT_LOG.getEffectiveLevel() <= logging.DEBUG:
+            SMT_LOG.debug(f"{cres} <-- checking time: {checking_time} ms")
 
             if cres == z3.unsat:
-                MGEN_LOG.debug(f"Unsat core: {self.solver.unsat_core()}")
+                SMT_LOG.debug(f"Unsat core: {self.solver.unsat_core()}")
 
         if cres == z3.sat:
             self.last_solution = self.solver.model()
@@ -536,7 +535,7 @@ class SimpleGenerator:
     def try_insert_node_type(self, node_t, max_tensor_pick_time=3) -> bool:
         if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
             MGEN_LOG.debug(
-                f"Inserting node #{len(self.abstract_graph.nodes)}: "
+                f"@[Node #{len(self.abstract_graph.nodes)}] <-- "
                 f"trying to insert node type {node_t.__name__}"
             )
 
@@ -671,8 +670,8 @@ class PureSymbolGen(SimpleGenerator):
         input_shapes = [self.tensor_dataflow[idx][1] for idx in itensor_idx]
         constraints = node.checked_requires(input_shapes)
 
-        if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
-            MGEN_LOG.debug(f"---> Trying to solve: {node} ~ {constraints}")
+        if SMT_LOG.getEffectiveLevel() <= logging.DEBUG:
+            SMT_LOG.debug(f"---> Trying to solve: {node} ~ {constraints}")
 
         # make a copy
         output_shapes = node.checked_type_transfer(input_shapes)
@@ -711,7 +710,7 @@ class PureSymbolGen(SimpleGenerator):
                 self.n_floats_cons = tmp_n_floats_cons
 
         if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
-            MGEN_LOG.debug(f">> Forward insertion node: {node}")
+            MGEN_LOG.debug(f">> Forward insert: {node}")
             MGEN_LOG.debug(f"\tinputs:  {input_shapes}")
             MGEN_LOG.debug(f"\toutputs: {output_shapes}")
 
@@ -773,7 +772,7 @@ class PureSymbolGen(SimpleGenerator):
             return False
 
         if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
-            MGEN_LOG.debug(f">> Backward insertion node: {node}")
+            MGEN_LOG.debug(f">> Backward insert: {node}")
             MGEN_LOG.debug(f"\tinputs:  {new_inp_placeholders}")
             MGEN_LOG.debug(f"\toutputs: {to_occupy}")
 
@@ -1077,4 +1076,5 @@ def random_model_gen(
 
 
 def viz(G, filename: str = None):
-    viz_dot(nx.nx_agraph.to_agraph(G).to_string(), filename)
+    if HAS_PYGRAPHVIZ:
+        viz_dot(nx.nx_agraph.to_agraph(G).to_string(), filename)

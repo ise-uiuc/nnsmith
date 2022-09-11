@@ -56,7 +56,7 @@ class TorchModel(Model):
         for oname, val in zip(self.output_like.keys(), outputs):
             output_dict[oname] = val.cpu().detach().numpy()
 
-        return Oracle(input_dict, output_dict)
+        return Oracle(input_dict, output_dict, provider="torch[cpu] eager")
 
     def dump(self, path: PathLike):
         torch.save(self.torch_model.state_dict(), path)
