@@ -17,8 +17,8 @@ import hydra
 from omegaconf import DictConfig, ListConfig
 
 from nnsmith.backends import BackendFactory
-from nnsmith.macro import NNSMITH_BUG_PATTERN_TOKEN
 from nnsmith.logging import EXEC_LOG
+from nnsmith.macro import NNSMITH_BUG_PATTERN_TOKEN
 from nnsmith.materialize import BugReport, Model, Oracle, TestCase
 
 
