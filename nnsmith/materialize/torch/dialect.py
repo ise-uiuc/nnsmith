@@ -2,7 +2,7 @@ from math import prod
 from typing import List, Tuple, Union
 
 from nnsmith.abstract.arith import *
-from nnsmith.abstract.dtype import DType, DTYPE_ALL
+from nnsmith.abstract.dtype import DTYPE_ALL, DType
 from nnsmith.abstract.op import UnaryOpBase, int_from, mark_materialize
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import ConstraintCheck

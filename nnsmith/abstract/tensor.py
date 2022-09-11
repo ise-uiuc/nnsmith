@@ -10,7 +10,9 @@ from nnsmith.error import ConstraintCheck, SanityCheck
 
 class AbsTensor:
     def __init__(self, shape: List[Union[int, z3.ExprRef]], dtype: DType):
-        assert isinstance(shape, (list, tuple)), f"Shape must be a list/tuple, but got {shape}"
+        assert isinstance(
+            shape, (list, tuple)
+        ), f"Shape must be a list/tuple, but got {shape}"
         self.shape = list(shape)
         self.dtype = DType(dtype)
 

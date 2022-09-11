@@ -20,8 +20,7 @@ except ImportError:
     HAS_PYGRAPHVIZ = False
 
 
-from nnsmith.logging import VIZ_LOG, CORE_LOG
-
+from nnsmith.logging import CORE_LOG, VIZ_LOG
 
 SEED_SETTERS = {
     "random": random.seed,

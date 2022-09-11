@@ -5,7 +5,7 @@ import torch
 
 from nnsmith.abstract.op import *
 from nnsmith.materialize import framework_operator_impl
-from nnsmith.materialize.torch.dialect import Linear, Flatten
+from nnsmith.materialize.torch.dialect import Flatten, Linear
 
 # Implementation of operators.
 
