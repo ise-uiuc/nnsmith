@@ -2,6 +2,18 @@
 
 [![](https://github.com/ise-uiuc/nnsmith/actions/workflows/ci.yaml/badge.svg)](https://github.com/ise-uiuc/nnsmith/actions/workflows/ci.yaml) [![](https://img.shields.io/pypi/v/nnsmith?color=g)](https://pypi.org/project/nnsmith/) [![](https://img.shields.io/pypi/l/nnsmith)](https://github.com/ise-uiuc/nnsmith/blob/main/LICENSE)
 
+## Backend-Model Support
+
+| Backend\Model | ONNX/PyTorch | TensorFlow |
+| ------------- | ------------ | ---------- |
+| TVM           | ✅            |            |
+| ONNXRuntime   | ✅            |            |
+| TensorRT      | ✅            |            |
+| TFLite        |              | ⚠️          |
+| XLA           |              | ⚠️          |
+
+✅: Supported; ⚠️: Beta support; Others are not supported yet -- Contributions are welcome!
+
 ## Quick Start
 
 <details><summary><b>Setting up graphviz for debugging</b> <i>[click to expand]</i></summary>
