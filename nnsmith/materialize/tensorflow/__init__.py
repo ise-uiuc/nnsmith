@@ -8,25 +8,17 @@ from typing import Callable, Dict, List, Tuple, Type
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 logging.getLogger("tensorflow").setLevel(logging.ERROR)
+logging.getLogger("absl").disabled = True
 
 import numpy as np
 import tensorflow as tf  # type: ignore
 from multipledispatch import dispatch  # type: ignore
 
-
-def configure_tensorflow():
-    # https://github.com/tensorflow/tensorflow/issues/57359
-    # tf.config.experimental.enable_tensor_float_32_execution(False)
-    for gpu in tf.config.experimental.list_physical_devices("GPU"):
-        tf.config.experimental.set_memory_growth(gpu, True)
-
-
-configure_tensorflow()
-
 from nnsmith.abstract.op import AbsOpBase, AbsTensor
 from nnsmith.materialize import Model, Oracle, Schedule
 from nnsmith.materialize.tensorflow.forward import ALL_TF_OPS
 from nnsmith.materialize.tensorflow.tfnet import TFNet
+from nnsmith.util import register_seed_setter
 
 TFNetCallable = Callable[..., Dict[str, tf.Tensor]]
 
@@ -228,3 +220,7 @@ class TFModel(Model):
     @staticmethod
     def operators() -> List[Type[AbsOpBase]]:
         return list(ALL_TF_OPS)
+
+    @staticmethod
+    def add_seed_setter() -> None:
+        register_seed_setter("tensorflow", tf.random.set_seed, overwrite=True)

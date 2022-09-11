@@ -4,7 +4,6 @@ import shutil
 from typing import Callable, Dict, List
 
 import numpy as np
-from termcolor import colored
 
 try:
     import pygraphviz as pgv
@@ -21,19 +20,7 @@ except ImportError:
     HAS_PYGRAPHVIZ = False
 
 
-from nnsmith.logging import VIZ_LOG
-
-
-def succ_print(*args):
-    return print(*[colored(x, "green") for x in args])
-
-
-def fail_print(*args):
-    return print(*[colored(x, "red") for x in args])
-
-
-def note_print(*args):
-    return print(*[colored(x, "yellow") for x in args])
+from nnsmith.logging import VIZ_LOG, CORE_LOG
 
 
 SEED_SETTERS = {
@@ -50,6 +37,7 @@ def register_seed_setter(
     if not overwrite:
         assert name not in SEED_SETTERS, f"{name} is already registered"
     SEED_SETTERS[name] = fn
+    CORE_LOG.debug(f"Register seed setter for {name}")
 
 
 def set_seed(seed: int, names: List = None):
@@ -65,12 +53,12 @@ def mkdir(dir: os.PathLike, yes=False):
         if yes:
             decision = "y"
         while decision.lower() not in ["y", "n"]:
-            note_print(
+            CORE_LOG.warn(
                 "Report folder already exists. Press [Y/N] to continue or exit..."
             )
             decision = input()
         if decision.lower() == "n":
-            fail_print(f"{dir} already exist... Remove it or use a different name.")
+            CORE_LOG.error(f"{dir} already exist... Remove it or use a different name.")
             raise RuntimeError("Folder already exists")
         else:
             shutil.rmtree(dir)

@@ -1,14 +1,11 @@
-from ast import operator
 from functools import partial
-from typing import Set, Type
+from typing import Type
 
 import torch
-from multipledispatch import dispatch
 
 from nnsmith.abstract.op import *
-from nnsmith.error import SanityCheck
 from nnsmith.materialize import framework_operator_impl
-from nnsmith.materialize.torch.dialect import Linear
+from nnsmith.materialize.torch.dialect import Linear, Flatten
 
 # Implementation of operators.
 

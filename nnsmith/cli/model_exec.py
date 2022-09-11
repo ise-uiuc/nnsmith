@@ -27,11 +27,13 @@ def verify_testcase(
     factory: BackendFactory,
     testcase: TestCase,
     output_dir: os.PathLike,
+    supress_succ=True,
 ) -> bool:
     def check_result(bug_report_or, odir, msg=None) -> bool:  # succ?
         msg = "" if msg is None else msg
         if not isinstance(bug_report_or, BugReport):
-            EXEC_LOG.info(f"[PASS] {msg}")
+            if not supress_succ:
+                EXEC_LOG.info(f"[PASS] {msg}")
             return True
         else:
             bug_report = bug_report_or

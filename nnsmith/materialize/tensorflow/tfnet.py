@@ -65,7 +65,7 @@ class TFNet(tf.Module):
         else:
             raise ValueError("Either user args only or kwargs only")
 
-        for i_instr, instr in enumerate(self.instructions):
+        for instr in self.instructions:
             # get inputs
             inp_tensors = [key2tensor[key] for key in instr.inp_keys]
 

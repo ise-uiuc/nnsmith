@@ -126,90 +126,72 @@ class NHWCConv2d(UnaryOpBase):
         self.stride = stride
         self.dilation_h = dilation_h
         self.dilation_w = dilation_w
+        SanityCheck.true(padding in ["valid", "same"])
         self.extra_attrs["padding"] = padding
-        # NHWC
         self.inp_ranks = [(4,)]
         self.out_ranks = [(4,)]
 
+    def __str__(self) -> str:
+        return (
+            self.name()
+            + "\n"
+            + f"kernel={(self.kernel_h_size,self.kernel_w_size)}\n"
+            + f"stride={self.stride}\n"
+            + f"dilation={(self.dilation_h,self.dilation_w)}\n"
+            + f"ochannels={self.out_channels}"
+        )
+
     def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
-        abs_tensor = AbsTensor(
-            [
-                input_shapes[0].shape[0],
-            ],
-            dtype=input_shapes[0].dtype,
-        )  # batch size N
-        if self.extra_attrs["padding"] == "valid":
-            mimic_kh = self.kernel_h_size + (self.dilation_h - 1) * (
-                self.kernel_h_size - 1
-            )
-            mimic_kw = self.kernel_w_size + (self.dilation_w - 1) * (
-                self.kernel_w_size - 1
-            )
-
-            abs_tensor.shape.append(
-                (
-                    nnsmith_div(
-                        nnsmith_sub(input_shapes[0].shape[2], mimic_kh),
-                        self.stride,
-                    )
-                    + 1
-                )
-            )  # H
-            abs_tensor.shape.append(
-                (
-                    nnsmith_div(
-                        nnsmith_sub(input_shapes[0].shape[3], mimic_kw),
-                        self.stride,
-                    )
-                    + 1
-                )
-            )  # W
-        elif self.extra_attrs["padding"] == "same":
-            abs_tensor.shape.append(nnsmith_div(input_shapes[0].shape[2], self.stride))
-            abs_tensor.shape.append(nnsmith_div(input_shapes[0].shape[3], self.stride))
-        else:
-            raise ValueError(f"Unknown padding type {self.extra_attrs['padding']}")
-        abs_tensor.shape.append(self.out_channels)  # C
-        return [abs_tensor]
-
-    def requires(self, input_shapes):
-        cons = []
-        cons.append(nnsmith_eq(self.in_channels, input_shapes[0].shape[3]))
-        cons.append(nnsmith_ge(self.out_channels, 1))
-        cons.append(nnsmith_ge(self.dilation_h, 1))
-        cons.append(nnsmith_ge(self.dilation_w, 1))
+        # https://www.tensorflow.org/api_docs/python/tf/nn#notes_on_padding_2
+        ni, hi, wi, _ = input_shapes[0].shape
+        no = ni
+        co = self.out_channels
         mimic_kh = self.kernel_h_size + (self.dilation_h - 1) * (self.kernel_h_size - 1)
         mimic_kw = self.kernel_w_size + (self.dilation_w - 1) * (self.kernel_w_size - 1)
-        cons.append(nnsmith_ge(mimic_kh, 1))
-        cons.append(nnsmith_ge(mimic_kw, 1))
-        cons.append(nnsmith_ge(self.stride, 1))
         if self.extra_attrs["padding"] == "valid":
-            cons.append(nnsmith_lt(mimic_kh, input_shapes[0].shape[2]))
-            cons.append(nnsmith_lt(mimic_kw, input_shapes[0].shape[3]))
-        cons.append(
-            nnsmith_eq(
-                0,
-                nnsmith_mul(
-                    nnsmith_sub(self.stride, 1),
-                    nnsmith_sub(nnsmith_max(self.dilation_h, self.dilation_w), 1),
+            ho = nnsmith_div(hi - mimic_kh, self.stride) + 1
+            wo = nnsmith_div(wi - mimic_kw, self.stride) + 1
+        elif self.extra_attrs["padding"] == "same":
+            ho = nnsmith_div(hi + self.stride - 1, self.stride)
+            wo = nnsmith_div(wi + self.stride - 1, self.stride)
+        return [AbsTensor(shape=[no, ho, wo, co], dtype=input_shapes[0].dtype)]
+
+    def requires(self, input_shapes):
+        _, hi, wi, ci = input_shapes[0].shape
+        mimic_kh = self.kernel_h_size + (self.dilation_h - 1) * (self.kernel_h_size - 1)
+        mimic_kw = self.kernel_w_size + (self.dilation_w - 1) * (self.kernel_w_size - 1)
+
+        cons = [
+            nnsmith_eq(self.in_channels, ci),
+            nnsmith_ge(self.out_channels, 1),
+            nnsmith_ge(self.dilation_h, 1),
+            nnsmith_ge(self.dilation_w, 1),
+            nnsmith_ge(mimic_kh, 1),
+            nnsmith_ge(mimic_kw, 1),
+            nnsmith_ge(self.stride, 1),
+        ]
+
+        if self.extra_attrs["padding"] == "valid":
+            cons.append(nnsmith_le(mimic_kh, hi))
+            cons.append(nnsmith_le(mimic_kw, wi))
+
+        # The following constraint is from TensorFlow tracing:
+        # `strides > 1` not supported in conjunction with `dilation_rate > 1`
+        cons.append(  # 0 == (stride - 1) * (max(dh, dw) - 1)
+            nnsmith_or(
+                nnsmith_eq(self.stride, 1),
+                nnsmith_and(
+                    nnsmith_eq(self.dilation_h, 1),
+                    nnsmith_eq(self.dilation_w, 1),
                 ),
-            )  # (stride - 1) * (dilation - 1) == 0 ==> assert (stride > 1 and dilation > 1) is False
-        )  # `strides > 1` not supported in conjunction with `dilation_rate > 1`
+            )
+        )
         # limit FLOPS
         if Z3_CONS_FLOPS:
             cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
         return cons
 
     def flops(self, input_shapes):
-        w = AbsTensor(
-            [
-                self.out_channels,
-                self.in_channels,
-                self.kernel_h_size,
-                self.kernel_w_size,
-            ],
-            dtype=input_shapes[0].dtype,
-        )
         return nnsmith_mul(
             nnsmith_mul(
                 nnsmith_mul(

@@ -265,15 +265,6 @@ def forward_fn(op: Reshape):
     return _reshape
 
 
-@operator_impl(Flatten)
-def forward_fn(op: Flatten):
-    def _flatten(x):
-        dim = tf.reduce_prod(x.shape)
-        return tf.reshape(x, [dim])
-
-    return _flatten
-
-
 @operator_impl(Transpose)
 def forward_fn(op: Transpose):
     def _transpose(x: tf.Tensor):

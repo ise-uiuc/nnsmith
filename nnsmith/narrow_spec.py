@@ -32,7 +32,6 @@ from nnsmith.abstract.op import AbsOpBase, AbsTensor, Constant, Input, concretiz
 from nnsmith.backends import BackendFactory
 from nnsmith.logging import DTEST_LOG
 from nnsmith.materialize import Instruction, Model, Schedule, TestCase
-from nnsmith.util import fail_print, note_print, succ_print
 
 NNSMITH_CACHE_DIR = user_cache_dir("nnsmith")
 

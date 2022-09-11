@@ -1,7 +1,8 @@
+from math import prod
 from typing import List, Tuple, Union
 
 from nnsmith.abstract.arith import *
-from nnsmith.abstract.dtype import DType
+from nnsmith.abstract.dtype import DType, DTYPE_ALL
 from nnsmith.abstract.op import UnaryOpBase, int_from, mark_materialize
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import ConstraintCheck
@@ -41,3 +42,26 @@ class Linear(UnaryOpBase):
         self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
         return [(out_abs_tensor[0].ndims, DType.float32)]
+
+
+@mark_materialize("torch")
+class Flatten(UnaryOpBase):
+    in_dtypes = [(i,) for i in DTYPE_ALL]
+    out_dtypes = [(i,) for i in DTYPE_ALL]
+
+    def __init__(self):
+        super().__init__()
+        self.inp_ranks = [int_from(1)]
+        self.out_ranks = [(1,)]
+
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+        inp = input_shapes[0]
+        return [
+            AbsTensor(
+                shape=[prod(inp.shape)],
+                dtype=inp.dtype,
+            )
+        ]
+
+    def requires(self, input_shapes):
+        return []

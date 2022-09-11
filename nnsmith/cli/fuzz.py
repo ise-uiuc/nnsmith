@@ -8,6 +8,7 @@ from omegaconf import DictConfig
 from nnsmith.backends.factory import BackendFactory
 from nnsmith.cli.model_exec import verify_testcase
 from nnsmith.graph_gen import concretize_graph, random_model_gen
+from nnsmith.logging import FUZZ_LOG
 from nnsmith.macro import NNSMITH_BUG_PATTERN_TOKEN
 from nnsmith.materialize import Model, Schedule, TestCase
 from nnsmith.narrow_spec import opset_from_auto_cache
@@ -49,6 +50,10 @@ class FuzzingLoop:
         seed = cfg["fuzz"]["seed"] or random.getrandbits(32)
         set_seed(seed)
 
+        FUZZ_LOG.info(
+            f"Test success info supressed -- only showing logs for failed tests"
+        )
+
         # Time budget checking.
         self.timeout_s = self.cfg["fuzz"]["time"]
         if isinstance(self.timeout_s, str):
@@ -86,7 +91,7 @@ class FuzzingLoop:
         oracle = model.make_oracle()
         return TestCase(model, oracle)
 
-    def validate_and_report(self, testcase: TestCase) -> None:
+    def validate_and_report(self, testcase: TestCase) -> bool:
         if not verify_testcase(
             self.cfg["cmp"],
             factory=self.factory,
@@ -94,13 +99,17 @@ class FuzzingLoop:
             output_dir=self.reporter.get_next_bug_path(),
         ):
             self.reporter.n_bugs += 1
+            return False
+        return True
 
     def run(self):
         start_time = time.time()
         while time.time() - start_time < self.timeout_s:
             seed = random.getrandbits(32)
+            FUZZ_LOG.debug(f"Making testcase with seed: {seed}")
             testcase = self.make_testcase(seed)
-            self.validate_and_report(testcase)
+            if not self.validate_and_report(testcase):
+                FUZZ_LOG.warn(f"Failed model seed: {seed}")
             self.reporter.n_testcases += 1
 
 
