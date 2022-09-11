@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import logging
 import os
 import pickle
 from os import PathLike
 from typing import Callable, Dict, List, Tuple, Type
-import logging
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 logging.getLogger("tensorflow").setLevel(logging.ERROR)
