@@ -15,8 +15,9 @@ class ConstraintError(Exception):
 
 
 class BaseChecker(ABC):
+    @classmethod
     @abstractmethod
-    def handler(self, msg):
+    def handler(cls, msg):
         pass
 
     @classmethod
@@ -66,12 +67,14 @@ class BaseChecker(ABC):
 
 
 class SanityCheck(BaseChecker):
-    def handler(self, msg):
+    @classmethod
+    def handler(cls, msg):
         raise ConstraintError(msg)
 
 
 class ConstraintCheck(BaseChecker):
-    def handler(self, msg):
+    @classmethod
+    def handler(cls, msg):
         logging.critical(msg)
         raise InternalError(
             msg + " | Reporting bugs @ https://github.com/ise-uiuc/nnsmith/issues"
