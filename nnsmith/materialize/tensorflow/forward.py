@@ -3,7 +3,6 @@ from typing import List, Type
 
 import tensorflow as tf  # type: ignore
 from keras import layers
-from multipledispatch import dispatch
 from tensorflow import keras
 
 from nnsmith.abstract.op import *

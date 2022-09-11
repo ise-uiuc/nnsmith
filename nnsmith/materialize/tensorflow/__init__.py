@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import pickle
 from os import PathLike
-from typing import Any, Callable, Dict, List, Tuple, Type
+from typing import Callable, Dict, List, Tuple, Type
 
 import numpy as np
 import tensorflow as tf  # type: ignore

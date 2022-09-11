@@ -1,6 +1,5 @@
 import numpy as np
 import pytest
-import torch
 
 from nnsmith.graph_gen import concretize_graph, random_model_gen
 from nnsmith.materialize import Schedule, TestCase

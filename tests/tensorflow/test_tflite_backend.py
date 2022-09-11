@@ -1,5 +1,4 @@
 import pytest
-import tensorflow as tf
 
 from nnsmith.abstract.dtype import DType
 from nnsmith.backends import BackendFactory
