@@ -8,6 +8,7 @@ from omegaconf import DictConfig
 from nnsmith.graph_gen import concretize_graph, random_model_gen, viz
 from nnsmith.logging import MGEN_LOG
 from nnsmith.materialize import Model, Schedule, TestCase
+from nnsmith.narrow_spec import opset_from_auto_cache
 from nnsmith.util import mkdir
 
 
@@ -27,7 +28,7 @@ def main(cfg: DictConfig):
     ModelType.add_seed_setter()
 
     gen = random_model_gen(
-        opset=ModelType.operators(),
+        opset=opset_from_auto_cache(ModelType),
         init_rank=mgen_cfg["init_rank"],
         seed=seed,
         max_nodes=mgen_cfg["max_nodes"],

@@ -34,7 +34,7 @@ class TRTFactory(BackendFactory):
         if optmax is False:
             # TODO(@ganler): support non-optimized TensorRT by using performing
             # inference over a model that marks all nodes as outputs.
-            warnings.warn("There is not O0 mode for TensorRT so far.", UserWarning)
+            warnings.warning("There is not O0 mode for TensorRT so far.", UserWarning)
 
     @property
     def system_name(self) -> str:

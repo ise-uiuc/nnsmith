@@ -12,7 +12,7 @@ try:
 except ImportError:
     import warnings
 
-    warnings.warn(
+    warnings.warning(
         "Install pygraphviz for visualization: https://pygraphviz.github.io/documentation/stable/install.html\n"
         "Currently graph visualization is not enabled."
     )
@@ -52,7 +52,7 @@ def mkdir(dir: os.PathLike, yes=False):
         if yes:
             decision = "y"
         while decision.lower() not in ["y", "n"]:
-            CORE_LOG.warn(
+            CORE_LOG.warning(
                 "Report folder already exists. Press [Y/N] to continue or exit..."
             )
             decision = input()
@@ -84,19 +84,19 @@ def _check_dot_install():
     global _CALL_ONCE
     if not _DOT_EXIST and not _CALL_ONCE:
         _CALL_ONCE = True
-        VIZ_LOG.warn("`dot` not found.")
+        VIZ_LOG.warning("`dot` not found.")
         if _CONDA_EXIST or _APT_EXIST or _BREW_EXIST:
-            VIZ_LOG.warn("To install via:")
+            VIZ_LOG.warning("To install via:")
             if _CONDA_EXIST:
-                VIZ_LOG.warn(" conda:\t conda install -c anaconda graphviz -y")
+                VIZ_LOG.warning(" conda:\t conda install -c anaconda graphviz -y")
 
             if _APT_EXIST:
-                VIZ_LOG.warn(" apt:\t sudo apt install graphviz -y")
+                VIZ_LOG.warning(" apt:\t sudo apt install graphviz -y")
 
             if _BREW_EXIST:
-                VIZ_LOG.warn(" brew:\t brew install graphviz")
+                VIZ_LOG.warning(" brew:\t brew install graphviz")
 
-        VIZ_LOG.warn("Also see: https://graphviz.org/download/")
+        VIZ_LOG.warning("Also see: https://graphviz.org/download/")
         return False
 
     return True

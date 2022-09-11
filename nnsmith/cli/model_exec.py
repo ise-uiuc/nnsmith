@@ -37,8 +37,8 @@ def verify_testcase(
             return True
         else:
             bug_report = bug_report_or
-            EXEC_LOG.warn("[FAIL] ")
-            EXEC_LOG.warn(bug_report.log)
+            EXEC_LOG.warning("[FAIL] ")
+            EXEC_LOG.warning(bug_report.log)
             if odir is not None:
                 odir = str(odir).replace(
                     NNSMITH_BUG_PATTERN_TOKEN,

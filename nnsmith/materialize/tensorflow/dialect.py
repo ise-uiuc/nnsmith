@@ -134,11 +134,10 @@ class NHWCConv2d(UnaryOpBase):
     def __str__(self) -> str:
         return (
             self.name()
-            + "\n"
-            + f"kernel={(self.kernel_h_size,self.kernel_w_size)}\n"
-            + f"stride={self.stride}\n"
-            + f"dilation={(self.dilation_h,self.dilation_w)}\n"
-            + f"ochannels={self.out_channels}"
+            + f" (kernel={(self.kernel_h_size,self.kernel_w_size)}, "
+            + f"stride={self.stride}, "
+            + f"dilation={(self.dilation_h,self.dilation_w)}, "
+            + f"ochannels={self.out_channels})"
         )
 
     def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:

@@ -243,7 +243,7 @@ class SimpleGenerator:
             node_t = self.pick_next_op_type()
             self.try_insert_node_type(node_t)
         if abs(self.num_op() - max_node_size) >= 3:
-            MGEN_LOG.warn(
+            MGEN_LOG.warning(
                 f"[WARNING]: graph size: {len(self.abstract_graph.nodes)} < expected size: {max_node_size}"
             )
         self.cur_phase = "post_process"

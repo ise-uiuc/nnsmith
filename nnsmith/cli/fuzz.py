@@ -109,7 +109,7 @@ class FuzzingLoop:
             FUZZ_LOG.debug(f"Making testcase with seed: {seed}")
             testcase = self.make_testcase(seed)
             if not self.validate_and_report(testcase):
-                FUZZ_LOG.warn(f"Failed model seed: {seed}")
+                FUZZ_LOG.warning(f"Failed model seed: {seed}")
             self.reporter.n_testcases += 1
 
 

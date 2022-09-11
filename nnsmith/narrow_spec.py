@@ -18,10 +18,11 @@ to narrow those specifications, we look at the following methods:
 
 
 import os
+import tempfile
 from copy import deepcopy
 from dataclasses import dataclass
 from os import PathLike
-from typing import Dict, List, Type
+from typing import Dict, List, Optional, Type
 
 import z3
 from appdirs import user_cache_dir
@@ -37,6 +38,8 @@ NNSMITH_CACHE_DIR = user_cache_dir("nnsmith")
 
 
 def get_cache_name(model_cls: Type[Model], factory: BackendFactory) -> str:
+    if factory is None:
+        return f"{model_cls.__name__}_exportable"
     return f"{model_cls.__name__}_{factory.system_name}_{factory.device}"
 
 
@@ -98,7 +101,7 @@ def _make_single_op_schedules(
 
 
 def infer_topset_from_scratch(
-    model_cls: Model, factory: BackendFactory, op_types=None
+    model_cls: Model, factory: Optional[BackendFactory], op_types=None
 ) -> Dict[str, OpConfig]:
     if op_types is None:
         op_types = model_cls.operators()
@@ -155,30 +158,50 @@ def infer_topset_from_scratch(
             concrete_op, concre_input_shapes, available_idtypes
         )
 
-        schedule_sets = [
-            sset
-            for sset in schedule_sets
-            if set(factory.skip_dtypes()).isdisjoint(sset[0] + sset[1])
-        ]
+        if factory:
+            schedule_sets = [
+                sset
+                for sset in schedule_sets
+                if set(factory.skip_dtypes()).isdisjoint(sset[0] + sset[1])
+            ]
 
         op_itypes = set()
         op_otypes = set()
 
         for itypes, otypes, sched in schedule_sets:
             model = model_cls.from_schedule(sched)
-            # Test compilation + simple inference;
-            out = factory.make_testcase(model)
-            if isinstance(out, TestCase):  # Pass
-                DTEST_LOG.info(
-                    f"=====> [Success] at {concrete_op}({itypes}) => {otypes}"
-                )
-                op_itypes.add(itypes)
-                op_otypes.add(otypes)
-            else:  # Fail
-                DTEST_LOG.warn(
-                    f"=====> [Failure] at {concrete_op}({itypes}) => {otypes}"
-                )
-                DTEST_LOG.debug(f"{out.log}")
+
+            if factory:
+                # Test compilation + simple inference;
+                out = factory.make_testcase(model)
+                if isinstance(out, TestCase):  # Pass
+                    DTEST_LOG.info(
+                        f"=====> [Success] at {concrete_op}({itypes}) => {otypes}"
+                    )
+                    op_itypes.add(itypes)
+                    op_otypes.add(otypes)
+                else:  # Fail
+                    DTEST_LOG.warning(
+                        f"=====> [Failure] at {concrete_op}({itypes}) => {otypes}"
+                    )
+                    DTEST_LOG.debug(f"{out.log}")
+            else:  # Test model dumping
+                with tempfile.TemporaryDirectory() as tmpdirname:
+                    try:
+                        model_path = os.path.join(
+                            tmpdirname, model.name_prefix() + model.name_suffix()
+                        )
+                        model.dump(model_path)
+                        DTEST_LOG.info(
+                            f"=====> [Success] at {concrete_op}({itypes}) => {otypes}"
+                        )
+                        op_itypes.add(itypes)
+                        op_otypes.add(otypes)
+                    except Exception as e:
+                        DTEST_LOG.warning(
+                            f"=====> [Failure] at {concrete_op}({itypes}) => {otypes}"
+                        )
+                        DTEST_LOG.debug(f"{e}")
 
         if op_itypes:
             topset[op.name()] = OpConfig(
@@ -207,7 +230,7 @@ def dump_topset(topset: Dict[str, OpConfig], path: PathLike):
 
 
 def load_topset_from_auto_cache(
-    model_cls: Model, factory: BackendFactory
+    model_cls: Model, factory: Optional[BackendFactory]
 ) -> Dict[str, OpConfig]:
     cache_path = os.path.join(
         NNSMITH_CACHE_DIR, get_cache_name(model_cls, factory) + ".yaml"
@@ -227,7 +250,8 @@ def load_topset_from_auto_cache(
         return opset
 
 
-def opset_from_auto_cache(model_cls: Model, factory: BackendFactory):
+def opset_from_auto_cache(model_cls: Model, factory: Optional[BackendFactory] = None):
+    # None means only test model exportation.
     topset_config = load_topset_from_auto_cache(model_cls, factory)
     opset = []
     for op in model_cls.operators():
