@@ -1,4 +1,5 @@
-from abc import ABC
+import logging
+from abc import ABC, abstractmethod
 
 
 class InternalError(Exception):
@@ -14,61 +15,64 @@ class ConstraintError(Exception):
 
 
 class BaseChecker(ABC):
-    _EXCEPTION_TYPE = None
+    @abstractmethod
+    def handler(self, msg):
+        pass
 
     @classmethod
     def eq(cls, lhs, rhs, msg=""):
         if lhs != rhs:
-            raise cls._EXCEPTION_TYPE(f"Failed asertion :: {msg} | {lhs} != {rhs}")
+            cls.handler(f"Failed asertion :: {msg} | {lhs} != {rhs}")
 
     @classmethod
     def gt(cls, lhs, rhs, msg=""):
         if lhs <= rhs:
-            raise cls._EXCEPTION_TYPE(f"Failed asertion :: {msg} | {lhs} <= {rhs}")
+            cls.handler(f"Failed asertion :: {msg} | {lhs} <= {rhs}")
 
     @classmethod
     def ge(cls, lhs, rhs, msg=""):
         if lhs < rhs:
-            raise cls._EXCEPTION_TYPE(f"Failed asertion :: {msg} | {lhs} < {rhs}")
+            cls.handler(f"Failed asertion :: {msg} | {lhs} < {rhs}")
 
     @classmethod
     def lt(cls, lhs, rhs, msg=""):
         if lhs >= rhs:
-            raise cls._EXCEPTION_TYPE(f"Failed asertion :: {msg} | {lhs} >= {rhs}")
+            cls.handler(f"Failed asertion :: {msg} | {lhs} >= {rhs}")
 
     @classmethod
     def le(cls, lhs, rhs, msg=""):
         if lhs > rhs:
-            raise cls._EXCEPTION_TYPE(f"Failed asertion :: {msg} | {lhs} > {rhs}")
+            cls.handler(f"Failed asertion :: {msg} | {lhs} > {rhs}")
 
     @classmethod
     def none(cls, obj, msg=""):
         if obj is not None:
-            raise cls._EXCEPTION_TYPE(f"Failed asertion :: {msg} | expr is not None")
+            cls.handler(f"Failed asertion :: {msg} | expr is not None")
 
     @classmethod
     def not_none(cls, obj, msg=""):
         if obj is None:
-            raise cls._EXCEPTION_TYPE(f"Failed asertion :: {msg} | expr is None")
+            cls.handler(f"Failed asertion :: {msg} | expr is None")
 
     @classmethod
     def true(cls, cond, msg=""):
         if not cond:
-            raise cls._EXCEPTION_TYPE(
-                f"Failed asertion :: {msg} | condition is not True"
-            )
+            cls.handler(f"Failed asertion :: {msg} | condition is not True")
 
     @classmethod
     def false(cls, cond, msg=""):
         if cond:
-            raise cls._EXCEPTION_TYPE(
-                f"Failed asertion :: {msg} | condition is not False"
-            )
+            cls.handler(f"Failed asertion :: {msg} | condition is not False")
 
 
 class SanityCheck(BaseChecker):
-    _EXCEPTION_TYPE = InternalError
+    def handler(self, msg):
+        raise ConstraintError(msg)
 
 
 class ConstraintCheck(BaseChecker):
-    _EXCEPTION_TYPE = ConstraintError
+    def handler(self, msg):
+        logging.critical(msg)
+        raise InternalError(
+            msg + " | Reporting bugs @ https://github.com/ise-uiuc/nnsmith/issues"
+        )

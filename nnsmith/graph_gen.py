@@ -1,4 +1,5 @@
 import copy
+import logging
 import math
 import os
 import random
@@ -27,6 +28,7 @@ from nnsmith.abstract.op import (
     random_group,
 )
 from nnsmith.error import ConstraintError, SanityCheck
+from nnsmith.logging import MGEN_LOG
 from nnsmith.util import note_print, set_seed, viz_dot
 
 NNSMITH_LIMNF_V = os.getenv("NNSMITH_LIMNF_V", "0")
@@ -87,7 +89,6 @@ class SimpleGenerator:
         init_rank=4,
         megabyte_lim=__MB_LIM__,
         seed=None,
-        verbose=False,
         limnf=True,
         forward_prob=None,
         init_fp=False,
@@ -95,7 +96,6 @@ class SimpleGenerator:
         if seed:
             set_seed(seed)
 
-        self.verbose = verbose
         self.op_candidates = opset
         self.solver = z3.Solver()
 
@@ -243,7 +243,7 @@ class SimpleGenerator:
             node_t = self.pick_next_op_type()
             self.try_insert_node_type(node_t)
         if abs(self.num_op() - max_node_size) >= 3:
-            print(
+            MGEN_LOG.warn(
                 f"[WARNING]: graph size: {len(self.abstract_graph.nodes)} < expected size: {max_node_size}"
             )
         self.cur_phase = "post_process"
@@ -290,22 +290,23 @@ class SimpleGenerator:
             for assump in assumptions:
                 self.check_arith_ref(assump)
 
-        if self.verbose:
-            print(
-                "---> total constraints:\n",
-                ", ".join(map(str, list(self.solver.assertions()))),
-                ", ".join(map(str, list(assumptions))),
-            )
+        if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
+            if self.solver.assertions():
+                MGEN_LOG.debug(
+                    f"existing constraints: {', '.join(map(str, self.solver.assertions()))}"
+                )
+            if assumptions:
+                MGEN_LOG.debug(f"new constraints: {', '.join(map(str, assumptions))}")
 
         cres = self.solver.check(*assumptions)
 
         checking_time = int((time.time() - start) * 1000)
 
-        if self.verbose:
-            print(cres, "<-- checking time:", checking_time, "ms")
+        if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
+            MGEN_LOG.debug(f"{cres} <-- checking time: {checking_time} ms")
 
             if cres == z3.unsat:
-                print(f"Unsat core: {self.solver.unsat_core()}")
+                MGEN_LOG.debug(f"Unsat core: {self.solver.unsat_core()}")
 
         if cres == z3.sat:
             self.last_solution = self.solver.model()
@@ -533,8 +534,8 @@ class SimpleGenerator:
         return False
 
     def try_insert_node_type(self, node_t, max_tensor_pick_time=3) -> bool:
-        if self.verbose:
-            print(
+        if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
+            MGEN_LOG.debug(
                 f"Inserting node #{len(self.abstract_graph.nodes)}: "
                 f"trying to insert node type {node_t.__name__}"
             )
@@ -558,12 +559,12 @@ class SimpleGenerator:
                     if self.try_backward_insert(op):
                         return True
         except RequiredDimNotFound:
-            if self.verbose:
-                traceback.print_exc()
+            if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
+                MGEN_LOG.debug(traceback.format_exc())
             return False
         except ConstraintError:
-            if self.verbose:
-                traceback.print_exc()
+            if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
+                MGEN_LOG.debug(traceback.format_exc())
             return False
 
         return False
@@ -614,8 +615,8 @@ class SimpleGenerator:
         """
 
         abs_tensor_candidates = []
-        if self.verbose:
-            print("Input data types candidates:", dtype_combs_spec)
+        if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
+            MGEN_LOG.debug(f"Input data types candidates: {dtype_combs_spec}")
 
         all_can_dtypes = []
         for i, ndims in enumerate(ndim_list):
@@ -670,8 +671,8 @@ class PureSymbolGen(SimpleGenerator):
         input_shapes = [self.tensor_dataflow[idx][1] for idx in itensor_idx]
         constraints = node.checked_requires(input_shapes)
 
-        if self.verbose:
-            print("---> Trying to solve: ", node, constraints)
+        if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
+            MGEN_LOG.debug(f"---> Trying to solve: {node} ~ {constraints}")
 
         # make a copy
         output_shapes = node.checked_type_transfer(input_shapes)
@@ -709,10 +710,10 @@ class PureSymbolGen(SimpleGenerator):
             elif NNSMITH_LIMNF_V == "1":
                 self.n_floats_cons = tmp_n_floats_cons
 
-        if self.verbose:
-            print(">> Forward insertion node: ", node)
-            print("\tinputs:", input_shapes)
-            print("\toutputs:", output_shapes)
+        if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
+            MGEN_LOG.debug(f">> Forward insertion node: {node}")
+            MGEN_LOG.debug(f"\tinputs:  {input_shapes}")
+            MGEN_LOG.debug(f"\toutputs: {output_shapes}")
 
         self.forward_insert_node(node, itensor_idx, output_shapes)
         return True
@@ -720,8 +721,8 @@ class PureSymbolGen(SimpleGenerator):
     def try_occupy_placeholder(
         self, node: AbsOpBase, occ_holder_indices: List[int]
     ) -> bool:
-        if self.verbose:
-            print(
+        if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
+            MGEN_LOG.debug(
                 f"---> Trying to occupy placeholder: {occ_holder_indices} for node {node}"
             )
         # S2 - create X: X can be
@@ -771,10 +772,10 @@ class PureSymbolGen(SimpleGenerator):
         if check_res != z3.sat:
             return False
 
-        if self.verbose:
-            print(">> Backward insertion node: ", node)
-            print("\tinputs:", new_inp_placeholders)
-            print("\toutputs:", to_occupy)
+        if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
+            MGEN_LOG.debug(f">> Backward insertion node: {node}")
+            MGEN_LOG.debug(f"\tinputs:  {new_inp_placeholders}")
+            MGEN_LOG.debug(f"\toutputs: {to_occupy}")
 
         for c in constraints:
             self.solver.add(c)
@@ -948,7 +949,6 @@ def __GROUP_RESHAPE(node, inp_shps, construct_param_dict, bin=True):
                 lb, ub = bins[bin_id].sample_range()
                 ret.extend(range_constrain(param, lb, ub))
 
-    # print('reshape ng:', ng, 'cons:', ret)
     return ret
 
 
@@ -1053,8 +1053,8 @@ class GuidedGen(PureSymbolGen):
             if len(cur_cons) == 0:
                 break
         self.solver.add(cur_cons)
-        if self.verbose:
-            print("# guidance applied: {} / {}".format(len(cur_cons), len(all_cons)))
+        if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
+            MGEN_LOG.debug(f"# guidance applied: {len(cur_cons)} / {len(all_cons)}")
 
 
 def random_model_gen(
@@ -1063,14 +1063,12 @@ def random_model_gen(
     max_nodes=5,
     seed=None,
     timeout_ms=20000,
-    verbose=False,
     **kwargs,
 ):
     gen = PureSymbolGen(
         opset=opset,
         init_rank=init_rank,
         seed=seed,
-        verbose=verbose,
         **kwargs,
     )
     gen.abstract_gen(max_node_size=max_nodes, max_gen_millisec=timeout_ms)

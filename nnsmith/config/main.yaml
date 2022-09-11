@@ -31,7 +31,6 @@ mgen: # model gen.
   timeout_ms: 50000
   save: "nnsmith_output"
   seed: null
-  verbose: false # WARNING: temporary; later should go categorized logging
 
 # backend config
 backend:
@@ -72,3 +71,7 @@ cmp:
   save: null # path to save the bug report if `bug_presence` is "report"
 
   verbose: false
+
+defaults:
+  - override hydra/job_logging: colorlog
+  - override hydra/hydra_logging: colorlog
