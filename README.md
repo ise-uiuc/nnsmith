@@ -16,13 +16,13 @@
 
 ## Setup
 
-**Install latest stable:**
+**Install latest stable release:**
 
 ```shell
 pip install nnsmith --upgrade
 ```
 
-<details><summary><b>Install latest pre-release: </b> <i>[click to expand]</i></summary>
+<details><summary><b>Install GitHub HEAD: </b> <i>[click to expand]</i></summary>
 <div>
 
 ```shell
