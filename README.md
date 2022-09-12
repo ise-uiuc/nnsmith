@@ -19,7 +19,7 @@
 **Install latest stable release:**
 
 ```shell
-pip install nnsmith --upgrade
+pip install "nnsmith[torch,onnx]" --upgrade
 ```
 
 <details><summary><b>Install GitHub HEAD: </b> <i>[click to expand]</i></summary>
