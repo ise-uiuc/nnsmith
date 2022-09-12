@@ -44,7 +44,7 @@ def verify_testcase(
                     NNSMITH_BUG_PATTERN_TOKEN,
                     f"{bug_report.symptom}-{bug_report.stage}",
                 )
-                EXEC_LOG.debug("Saving bug report to {}".format(odir))
+                EXEC_LOG.warning("Saving bug report to {}".format(odir))
                 bug_report.dump(odir)
             return False
 

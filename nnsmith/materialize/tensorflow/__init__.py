@@ -14,6 +14,18 @@ import numpy as np
 import tensorflow as tf  # type: ignore
 from multipledispatch import dispatch  # type: ignore
 
+
+def configure_tf_gpu_mem(max_megabytes=None):
+    for gpu in tf.config.list_physical_devices("GPU"):
+        tf.config.experimental.set_memory_growth(gpu, True)
+        if isinstance(max_megabytes, int):
+            tf.config.set_logical_device_configuration(
+                gpu, [tf.config.LogicalDeviceConfiguration(memory_limit=max_megabytes)]
+            )
+
+
+configure_tf_gpu_mem()
+
 from nnsmith.abstract.op import AbsOpBase, AbsTensor
 from nnsmith.materialize import Model, Oracle, Schedule
 from nnsmith.materialize.tensorflow.forward import ALL_TF_OPS
