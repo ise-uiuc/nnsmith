@@ -12,7 +12,7 @@
     - `"system"`: like `"tvm-gpu"` and `"ort-cpu"`
     - `"version"`: a version string hooked from `${SystemPackage}.__version__`
     - `"symptom"`: `"crash"` or `"inconsistency"`
-    - `"trigger-hash"` (optional): a git hash that can trigger this bug.
+    - `"trigger_hash"` (optional): a git hash that can trigger this bug.
 
 ## Abstract Operators (AO)
 

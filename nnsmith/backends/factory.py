@@ -1,3 +1,4 @@
+import sys
 import traceback
 from abc import ABC, abstractmethod
 from typing import Callable, Dict, List, Optional, Union
@@ -7,6 +8,8 @@ import numpy as np
 from nnsmith.abstract.dtype import DType
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.difftest import assert_allclose
+from nnsmith.error import InternalError
+from nnsmith.logging import CORE_LOG
 from nnsmith.materialize import BugReport, Model, Oracle, Stage, Symptom, TestCase
 
 BackendCallable = Callable[[Dict[str, np.ndarray]], Dict[str, np.ndarray]]
@@ -48,9 +51,21 @@ class BackendFactory(ABC):
     def make_backend(self, model: Model) -> BackendCallable:
         raise NotImplementedError
 
+    def checked_make_backend(self, model: Model) -> BackendCallable:
+        if self.make_backend.dispatch(type(model)):
+            return self.make_backend(model)
+        else:
+            CORE_LOG.critical(
+                f"[Not implemented] {type(self).__name__} for {type(model).__name__}!\n"
+                "Check https://github.com/ise-uiuc/nnsmith#backend-model-support for compatile `model.type` and `backend.type`."
+            )
+            sys.exit(1)
+
     def checked_compile(self, testcase: TestCase) -> Union[BackendCallable, BugReport]:
         try:  # compilation
-            return self.make_backend(testcase.model)
+            return self.checked_make_backend(testcase.model)
+        except InternalError as e:
+            raise e
         except Exception:
             return BugReport(
                 testcase=testcase,
@@ -72,6 +87,8 @@ class BackendFactory(ABC):
 
         try:  # execution
             return executable(input)
+        except InternalError as e:
+            raise e
         except Exception:
             return BugReport(
                 testcase=testcase,
@@ -130,7 +147,9 @@ class BackendFactory(ABC):
         self, model: Model, input: Dict[str, np.ndarray] = None
     ) -> Union[BugReport, TestCase]:
         try:  # compilation
-            executable = self.make_backend(model)
+            executable = self.checked_make_backend(model)
+        except InternalError as e:
+            raise e
         except Exception:
             return BugReport(
                 TestCase(model=model, oracle=None),  # None means no oracle
@@ -146,6 +165,8 @@ class BackendFactory(ABC):
 
         try:  # execution
             output = executable(input)
+        except InternalError as e:
+            raise e
         except Exception:
             return BugReport(
                 TestCase(model, Oracle(input=input, output=None)),
