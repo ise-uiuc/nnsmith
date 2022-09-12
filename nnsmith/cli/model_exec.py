@@ -87,7 +87,6 @@ def verify_testcase(
                 factory.verify_results(
                     bug_or_res,
                     cmp_testcase,
-                    odir=output_dir,
                     equal_nan=cmp_cfg["equal_nan"],
                 ),
                 odir=output_dir,

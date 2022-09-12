@@ -217,6 +217,11 @@ class Model(ABC):
 
     @staticmethod
     def init(name) -> Type["Model"]:
+        if name is None:
+            raise ValueError(
+                "Model type cannot be None. Use `model.type=[torch|onnx|tensorflow]`."
+            )
+
         if name == "torch":
             from nnsmith.materialize.torch import TorchModel
 

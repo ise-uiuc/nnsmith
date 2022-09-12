@@ -22,7 +22,7 @@ topset_from_file: null # Path that contains a YAML file that contains a topset d
 
 # model gen config
 model:
-  type: "onnx"
+  type: null
   path: "???" # can be multiple files tho.
 
 mgen: # model gen.
@@ -34,7 +34,7 @@ mgen: # model gen.
 
 # backend config
 backend:
-  type: "onnxruntime"
+  type: null
   optmax: true
   device: "cpu"
 

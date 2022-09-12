@@ -182,6 +182,11 @@ class BackendFactory(ABC):
 
     @staticmethod
     def init(name, device="cpu", optmax=True, catch_process_crash=False, **kwargs):
+        if name is None:
+            raise ValueError(
+                "Backend type cannot be None. Specify via `backend.type=[onnxruntime|tvm|tensorrt|tflite|xla]`"
+            )
+
         if name == "onnxruntime":
             from nnsmith.backends.onnxruntime import ORTFactory
 
