@@ -31,6 +31,7 @@ mgen: # model gen.
   timeout_ms: 50000
   save: "nnsmith_output"
   seed: null
+  use_backend: false
 
 # backend config
 backend:

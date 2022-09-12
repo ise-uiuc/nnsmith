@@ -250,7 +250,9 @@ def load_topset_from_auto_cache(
         return opset
 
 
-def opset_from_auto_cache(model_cls: Model, factory: Optional[BackendFactory] = None):
+def opset_from_auto_cache(
+    model_cls: Type[Model], factory: Optional[BackendFactory] = None
+):
     # None means only test model exportation.
     topset_config = load_topset_from_auto_cache(model_cls, factory)
     opset = []
