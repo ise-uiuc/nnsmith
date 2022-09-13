@@ -603,11 +603,6 @@ Xor = mark_materialize("core")(
     )
 )
 
-# TODO: support exactly what onnx spec says (e.g., int support in the rhs)
-# lhs_dtypes = (DType.int32, DType.int64, DType.float32, DType.float64)
-# rhs_dtypes = (DType.int32, DType.int64, DType.float32, DType.float64)
-# Pow.in_dtypes = itertools.product(lhs_dtypes, rhs_dtypes)
-
 
 class Input(AbsOpBase):
     in_dtypes = [()]
@@ -2014,7 +2009,7 @@ class CastBool(Cast):
         super().__init__(DType.bool)
 
 
-@mark_materialize("core")
+# @mark_materialize("core") # FIXME(@ganler): investigate why this blocks CI all the time.
 class Gemm(TernaryOpBase):
     # https://pytorch.org/docs/stable/generated/torch.addmm.html?highlight=addmm#torch.addmm
     in_dtypes = [(i, i, i) for i in DTYPE_NON_BOOLS]
