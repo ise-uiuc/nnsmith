@@ -8,6 +8,7 @@ from nnsmith.backends import BackendFactory
 from nnsmith.materialize.onnx import ONNXModel
 
 logging.getLogger("te_compiler").disabled = True
+logging.getLogger("autotvm").disabled = True
 
 
 def list_eq(a, b):

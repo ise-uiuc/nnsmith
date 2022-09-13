@@ -438,10 +438,6 @@ def forward_fn(op: Cast):
     return lambda x: x.to(dtype=op.extra_attrs["to"].torch())
 
 
-# Gemm
-@operator_impl(Gemm)
-def forward_fn(op: Gemm):
-    extra_attrs = op._set_or_get_extra_attrs()
-    return lambda *args: torch.addmm(
-        *args, beta=extra_attrs["beta"], alpha=extra_attrs["alpha"]
-    )
+@operator_impl(MatMul)
+def forward_fn(op: MatMul):
+    return torch.matmul
