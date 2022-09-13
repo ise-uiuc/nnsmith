@@ -11,6 +11,7 @@
 | TensorRT      | ✅            |            |
 | TFLite        |              | ⚠️          |
 | XLA           |              | ⚠️          |
+| IREE          |              | ⚠️          |
 
 ✅: Supported; ⚠️: Beta support; Others are not supported yet -- Contributions are welcome!
 
