@@ -36,7 +36,7 @@ mgen: # model gen.
 backend:
   type: null
   optmax: true
-  device: "cpu"
+  target: "cpu"
 
 cache:
   topset: true # Run dtype test with automatically maintained cache
@@ -63,7 +63,7 @@ cmp:
   with: null
     # type: "tvm"
     # optmax: true
-    # device: "cpu"
+    # target: "cpu"
 
   seed: null
   bug_presence: "report" # or "crash"

@@ -10,7 +10,7 @@ TestCase.__test__ = False  # supress PyTest warning
 
 
 def test_narrow_spec_cache_make_and_reload():
-    factory = BackendFactory.init("onnxruntime", device="cpu", optmax=True)
+    factory = BackendFactory.init("onnxruntime", target="cpu", optmax=True)
     ONNXModel = Model.init("onnx")
     opset_lhs = load_topset_from_auto_cache(ONNXModel, factory)
     assert opset_lhs, "Should not be empty... Something must go wrong."
@@ -34,7 +34,7 @@ def test_synthesized_onnx_model(tmp_path):
 
     ONNXModel = Model.init("onnx")
 
-    factory = BackendFactory.init("onnxruntime", device="cpu", optmax=False)
+    factory = BackendFactory.init("onnxruntime", target="cpu", optmax=False)
     gen = random_model_gen(
         opset=opset_from_auto_cache(ONNXModel, factory),
         init_rank=4,

@@ -37,7 +37,7 @@ class FuzzingLoop:
 
         self.factory = BackendFactory.init(
             cfg["backend"]["type"],
-            device=cfg["backend"]["device"],
+            target=cfg["backend"]["target"],
             optmax=cfg["backend"]["optmax"],
             catch_process_crash=False,
         )

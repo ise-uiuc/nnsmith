@@ -11,7 +11,7 @@ TestCase.__test__ = False  # supress PyTest warning
 
 
 def test_narrow_spec_cache_make_and_reload():
-    factory = BackendFactory.init("xla", device="cpu", optmax=True)
+    factory = BackendFactory.init("xla", target="cpu", optmax=True)
     ModelType = Model.init("tensorflow")
     opset_lhs = load_topset_from_auto_cache(ModelType, factory)
     assert opset_lhs, "Should not be empty... Something must go wrong."
@@ -33,14 +33,14 @@ def test_synthesized_tf_model(tmp_path):
     d = tmp_path / "test_xla"
     d.mkdir()
 
-    devices = ["cpu"]
+    targets = ["cpu"]
     if tf.config.list_logical_devices("GPU"):
-        devices.append("cuda")
+        targets.append("cuda")
 
     ModelType = Model.init("tensorflow")
-    for device in devices:
+    for target in targets:
         factory = BackendFactory.init(
-            "xla", device=device, optmax=False, catch_process_crash=False
+            "xla", target=target, optmax=False, catch_process_crash=False
         )
 
         gen = random_model_gen(

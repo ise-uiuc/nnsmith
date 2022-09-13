@@ -16,7 +16,7 @@ TestCase.__test__ = False  # supress PyTest warning
 
 
 def test_narrow_spec_cache_make_and_reload():
-    factory = BackendFactory.init("tensorrt", device="cuda", optmax=True)
+    factory = BackendFactory.init("tensorrt", target="cuda", optmax=True)
     ONNXModel = Model.init("onnx")
     opset_lhs = load_topset_from_auto_cache(ONNXModel, factory)
     assert opset_lhs, "Should not be empty... Something must go wrong."
@@ -39,7 +39,7 @@ def test_synthesized_onnx_model(tmp_path):
     d.mkdir()
 
     ONNXModel = Model.init("onnx")
-    factory = BackendFactory.init("tensorrt", device="cuda", optmax=True)
+    factory = BackendFactory.init("tensorrt", target="cuda", optmax=True)
 
     gen = random_model_gen(
         opset=opset_from_auto_cache(ONNXModel, factory),

@@ -11,7 +11,7 @@ TestCase.__test__ = False  # supress PyTest warning
 
 
 def test_narrow_spec_cache_make_and_reload():
-    factory = BackendFactory.init("tflite", device="cpu", optmax=True)
+    factory = BackendFactory.init("tflite", target="cpu", optmax=True)
     ModelType = Model.init("tensorflow")
     opset_lhs = load_topset_from_auto_cache(ModelType, factory)
     assert opset_lhs, "Should not be empty... Something must go wrong."
@@ -35,7 +35,7 @@ def test_synthesized_tf_model(tmp_path):
 
     ModelType = Model.init("tensorflow")
     factory = BackendFactory.init(
-        "tflite", device="cpu", optmax=False, catch_process_crash=False
+        "tflite", target="cpu", optmax=False, catch_process_crash=False
     )
 
     gen = random_model_gen(

@@ -31,7 +31,7 @@ def main(cfg: DictConfig):
     if cfg["backend"]["type"] is not None:
         factory = BackendFactory.init(
             cfg["backend"]["type"],
-            device=cfg["backend"]["device"],
+            target=cfg["backend"]["target"],
             optmax=cfg["backend"]["optmax"],
             catch_process_crash=False,
         )

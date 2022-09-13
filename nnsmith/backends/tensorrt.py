@@ -1,4 +1,3 @@
-import warnings
 from dataclasses import dataclass
 from typing import List
 
@@ -25,16 +24,16 @@ class HostDeviceMem:
 
 
 class TRTFactory(BackendFactory):
-    def __init__(self, device="cuda", optmax=True, **kwargs):
-        super().__init__(device, optmax, **kwargs)
+    def __init__(self, target="cuda", optmax=True, **kwargs):
+        super().__init__(target, optmax, **kwargs)
 
-        if device != "cuda":
+        if target != "cuda":
             raise ValueError("TensorRT backend only supports GPU!")
 
         if optmax is False:
             # TODO(@ganler): support non-optimized TensorRT by using performing
             # inference over a model that marks all nodes as outputs.
-            warnings.warning("There is not O0 mode for TensorRT so far.", UserWarning)
+            raise ValueError("There is not O0 mode for TensorRT so far.")
 
     @property
     def system_name(self) -> str:
