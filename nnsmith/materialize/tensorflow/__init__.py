@@ -139,7 +139,6 @@ class TFModel(Model):
             pickle.dump(self.schedule, f)
         # tfnet
         concrete_net = self.concrete_net(self.input_specs)
-        self.net.add_iree_fn()
         tf.saved_model.save(
             self.net,
             os.path.join(path, TFModel.tfnet_dir_name()),
