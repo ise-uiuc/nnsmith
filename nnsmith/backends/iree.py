@@ -50,10 +50,6 @@ class IREEFactory(BackendFactory):
             target_backends=[self.target],
             exported_names=["iree_fn"],
             optimize=self.optmax,
-            extra_args=[
-                "--iree-mhlo-demote-i64-to-i32=false",
-                "--iree-flow-demote-i64-to-i32",
-            ],
         )
 
         compiled_model = iree.runtime.load_vm_flatbuffer(
