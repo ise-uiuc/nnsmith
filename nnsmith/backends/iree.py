@@ -17,7 +17,7 @@ class IREEFactory(BackendFactory):
         Parameters
         ----------
         target : str, optional
-            The compilation target including "cpu" (same as "llvm-cpu"), "cuda", "vmvx", "vulkan-spirv", by default "cpu"
+            The compilation target including "cpu" (same as "llvm-cpu"), "vmvx", "vulkan-spirv", by default "cpu"
         optmax : bool, optional
             Release mode or not, by default False
         catch_process_crash : bool, optional
@@ -27,7 +27,6 @@ class IREEFactory(BackendFactory):
             target = "llvm-cpu"
         supported_backends = [
             "vmvx",
-            "cuda",
             "llvm-cpu",
             "vulkan-spirv",
         ]
