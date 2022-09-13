@@ -63,8 +63,8 @@ class IREEFactory(BackendFactory):
                 exported_names=["call_by_dict"],
                 optimize=self.optmax,
                 extra_args=[
-                    "--iree-mhlo-demote-i64-to-i32=false",
-                    "--iree-flow-demote-i64-to-i32",
+                    # "--iree-mhlo-demote-i64-to-i32=false",
+                    # "--iree-flow-demote-i64-to-i32",
                 ],
             )
 
