@@ -92,9 +92,25 @@ class SimpleGenerator:
         forward_prob=None,
         init_fp=False,
     ):
+        assert len(opset) > 0, "opset must not be empty"
         if seed is not None:
             set_seed(seed)
-        assert len(opset) > 0, "opset must not be empty"
+            z3.set_param(
+                "smt.phase_selection",
+                5,
+                # TODO(@ganler): re-enable this when having a usable op memory estimator.
+                # "smt.arith.random_initial_value",
+                # True,
+                "smt.random_seed",
+                seed,
+                "sat.random_seed",
+                seed,
+                "sat.phase",
+                "random",
+                "memory_max_size",
+                50 * 1024,  # MB
+            )
+
         self.op_candidates = opset
         self.solver = z3.Solver()
 
@@ -214,21 +230,7 @@ class SimpleGenerator:
             self.n_floats = nnsmith_add(self.n_floats, val.nelement())
 
     def abstract_gen(self, max_node_size=10, max_gen_millisec=2000):
-        self.max_gen_millisec = max_gen_millisec
-        self.cur_phase = "abstract_gen"
-        z3.set_param(
-            "smt.phase_selection",
-            5,
-            # TODO(@ganler): re-enable this when having a usable op memory estimator.
-            # "smt.arith.random_initial_value",
-            # True,
-            "sat.phase",
-            "random",
-            "timeout",
-            max_gen_millisec // 3,
-            "memory_max_size",
-            50 * 1024,  # MB
-        )
+        z3.set_param("timeout", max_gen_millisec // 3)
 
         init_time = time.time()
 
@@ -245,7 +247,6 @@ class SimpleGenerator:
             MGEN_LOG.warning(
                 f"[WARNING]: graph size: {len(self.abstract_graph.nodes)} < expected size: {max_node_size}"
             )
-        self.cur_phase = "post_process"
 
         self.recompute_n_floats()
         if (

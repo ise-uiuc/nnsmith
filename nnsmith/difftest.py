@@ -3,8 +3,6 @@ from typing import Dict
 import numpy as np
 from numpy import testing
 
-from nnsmith.error import *
-
 
 def assert_allclose(
     actual: Dict[str, np.ndarray],
@@ -20,14 +18,12 @@ def assert_allclose(
     if akeys != dkeys:
         raise KeyError(f"{actual_name}: {akeys} != {oracle_name}: {dkeys}")
 
-    try:
-        for key in akeys:
-            testing.assert_allclose(
-                actual[key],
-                desired[key],
-                equal_nan=equal_nan,
-                rtol=rtol,
-                atol=atol,
-            )
-    except AssertionError as err:
-        raise AssertionError(f"{actual_name} != {oracle_name} at {key}: {str(err)}")
+    for key in akeys:
+        testing.assert_allclose(
+            actual[key],
+            desired[key],
+            equal_nan=equal_nan,
+            rtol=rtol,
+            atol=atol,
+            err_msg=f"{actual_name} != {oracle_name} at {key}",
+        )

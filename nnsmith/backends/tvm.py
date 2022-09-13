@@ -1,9 +1,13 @@
+import logging
+
 import tvm
 from multipledispatch import dispatch
 from tvm import relay
 
 from nnsmith.backends import BackendFactory
 from nnsmith.materialize.onnx import ONNXModel
+
+logging.getLogger("te_compiler").disabled = True
 
 
 def list_eq(a, b):

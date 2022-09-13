@@ -44,7 +44,7 @@ def verify_testcase(
                     NNSMITH_BUG_PATTERN_TOKEN,
                     f"{bug_report.symptom}-{bug_report.stage}",
                 )
-                EXEC_LOG.debug("Saving bug report to {}".format(odir))
+                EXEC_LOG.warning("Saving bug report to {}".format(odir))
                 bug_report.dump(odir)
             return False
 
@@ -87,7 +87,6 @@ def verify_testcase(
                 factory.verify_results(
                     bug_or_res,
                     cmp_testcase,
-                    odir=output_dir,
                     equal_nan=cmp_cfg["equal_nan"],
                 ),
                 odir=output_dir,

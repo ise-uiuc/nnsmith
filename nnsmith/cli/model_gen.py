@@ -28,7 +28,7 @@ def main(cfg: DictConfig):
     ModelType = Model.init(model_cfg["type"])
     ModelType.add_seed_setter()
 
-    if mgen_cfg["use_backend"]:
+    if cfg["backend"]["type"] is not None:
         factory = BackendFactory.init(
             cfg["backend"]["type"],
             device=cfg["backend"]["device"],

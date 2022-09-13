@@ -9,7 +9,7 @@ from nnsmith.narrow_spec import load_topset_from_auto_cache
 @hydra.main(version_base=None, config_path="../config", config_name="main")
 def main(cfg: DictConfig):
     backend_cfg = cfg["backend"]
-    if backend_cfg is not None:
+    if backend_cfg["type"] is not None:
         factory = BackendFactory.init(
             name=backend_cfg["type"],
             device=backend_cfg["device"],

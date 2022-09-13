@@ -25,7 +25,7 @@ You can also have your own by extending `nnsmith.materialize.Model` and `nnsmith
 
 ```shell
 # Generate 5-node onnx model.
-nnsmith.model_gen mgen.max_nodes=5 debug.viz=true # model.type=onnx (default)
+nnsmith.model_gen mgen.max_nodes=5 model.type=onnx debug.viz=true
 # See: nnsmith_output/* (default output folder)
 
 # TensorFlow model.
@@ -39,16 +39,20 @@ nnsmith.model_gen debug.viz=true model.type=tensorflow mgen.save=tf_output
 
 ```python
 # Generate a onnx model
-nnsmith.model_gen mgen.max_nodes=5
+nnsmith.model_gen model.type=onnx mgen.max_nodes=5
 
 # Check the model
-nnsmith.model_exec model.path=nnsmith_output/model.onnx
+pip install onnxruntime # use ONNXRuntime to execute the model
+nnsmith.model_exec model.type=onnx backend.type=onnxruntime model.path=nnsmith_output/model.onnx
 # `model.path` should point to the exact model, instead of a folder.
 # It will first compile and run to see if there's any bug.
 # By default it will search `oracle.pkl` and do verification.
 
 # Check the model and do diff testing with tvm
-nnsmith.model_exec model.path=nnsmith_output/model.onnx cmp.with='{type:tvm, optmax:true, device:cpu}'
+nnsmith.model_exec  model.type=onnx                        \
+                    backend.type=onnxruntime               \
+                    model.path=nnsmith_output/model.onnx   \
+                    cmp.with='{type:tvm, optmax:true, device:cpu}'
 ```
 
 ## Data type testing

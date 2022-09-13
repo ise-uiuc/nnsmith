@@ -14,6 +14,38 @@
 
 ✅: Supported; ⚠️: Beta support; Others are not supported yet -- Contributions are welcome!
 
+## Setup
+
+**Install latest stable release:**
+
+```shell
+pip install "nnsmith[torch,onnx]" --upgrade
+```
+
+<details><summary><b>Install GitHub HEAD: </b> <i>[click to expand]</i></summary>
+<div>
+
+```shell
+pip install "git+https://github.com/ise-uiuc/nnsmith.git#egg=nnsmith[torch,onnx]"
+```
+
+</div>
+</details>
+
+<details><summary><b>Install latest pre-release: </b> <i>[click to expand]</i></summary>
+<div>
+
+```shell
+pip install "nnsmith[torch,onnx]"                     \
+            --upgrade                                 \
+            --index-url https://test.pypi.org/simple/ \
+            --extra-index-url https://pypi.org/simple/
+```
+
+</div>
+</details>
+
+
 ## Quick Start
 
 <details><summary><b>Setting up graphviz for debugging</b> <i>[click to expand]</i></summary>
@@ -26,6 +58,8 @@ sudo apt-get install graphviz graphviz-dev      # Linux
 brew install graphviz                           # MacOS
 conda install --channel conda-forge pygraphviz  # Conda
 choco install graphviz                          # Windows
+
+pip install pygraphviz  # Final step.
 ```
 
 Also see [pygraphviz install guidance](https://pygraphviz.github.io/documentation/stable/install.html).
@@ -34,16 +68,11 @@ Also see [pygraphviz install guidance](https://pygraphviz.github.io/documentatio
 </details>
 
 ```shell
-python3 -m pip install "nnsmith[torch,onnx]"                     \
-                       --upgrade                                 \
-                       --index-url https://test.pypi.org/simple/ \
-                       --extra-index-url https://pypi.org/simple/
-# Generate a 5-node graph:
-nnsmith.model_gen model.max_nodes=5 debug.viz=true
-# see "nnsmith_outputs/*"
+# Generate a random model in "nnsmith_outputs/*"
+nnsmith.model_gen model.type=onnx debug.viz=true
 ```
 
-See other commands under `nnsmith/cli`. We use [hydra](https://hydra.cc/) to manage configurations. See `nnsmith/config/main.yaml`.
+See other commands under [`doc/cli`](doc/cli.md). We use [hydra](https://hydra.cc/) to manage configurations. See `nnsmith/config/main.yaml`.
 
 ## Developer Notes
 

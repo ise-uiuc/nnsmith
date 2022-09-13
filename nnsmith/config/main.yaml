@@ -22,7 +22,7 @@ topset_from_file: null # Path that contains a YAML file that contains a topset d
 
 # model gen config
 model:
-  type: "onnx"
+  type: null
   path: "???" # can be multiple files tho.
 
 mgen: # model gen.
@@ -31,11 +31,10 @@ mgen: # model gen.
   timeout_ms: 50000
   save: "nnsmith_output"
   seed: null
-  use_backend: false
 
 # backend config
 backend:
-  type: "onnxruntime"
+  type: null
   optmax: true
   device: "cpu"
 
