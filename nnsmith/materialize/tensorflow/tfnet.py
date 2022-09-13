@@ -57,6 +57,15 @@ class TFNet(tf.Module):
     def call_by_dict(self, x: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
         return self.__forward(**x)
 
+    def add_iree_fn(self):
+        spec: Dict[str, tf.TensorSpec] = {}
+        for i_inp, key in enumerate(self.schedule.input_keys):
+            abs_tensor = self.schedule.key2type[key]
+            spec[f"i{i_inp}"] = tf.TensorSpec(
+                abs_tensor.shape, abs_tensor.dtype.tensorflow(), f"i{i_inp}"
+            )
+        self.iree_fn = tf.function(input_signature=[spec])(self.call_by_dict)
+
     @tf.function
     def __forward(self, *args, **kwargs) -> Dict[str, tf.Tensor]:
         if self.verbose:

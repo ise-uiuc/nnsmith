@@ -135,10 +135,11 @@ class TFModel(Model):
     def dump(self, path: PathLike = "saved_tfmodel") -> None:
         os.makedirs(path, exist_ok=True)
         # schedule.pkl
-        with open(os.path.join(path, TFModel.schedule_pkl_name()), "wb") as f:
+        with open(os.path.join(path, TFModel.schedule_name()), "wb") as f:
             pickle.dump(self.schedule, f)
         # tfnet
         concrete_net = self.concrete_net(self.input_specs)
+        self.net.add_iree_fn()
         tf.saved_model.save(
             self.net,
             os.path.join(path, TFModel.tfnet_dir_name()),
@@ -147,31 +148,16 @@ class TFModel(Model):
 
     def dump_with_oracle(
         self,
-        path: PathLike = "saved_tfmodel",
+        path: PathLike,
         inputs: Dict[str, tf.Tensor | tf.TensorSpec] = None,
     ) -> None:
         self.dump(path)
         oracle = self.make_oracle(inputs)
         oracle.dump(os.path.join(path, Oracle.name()))
 
-    def dump_tfnet(
-        self,
-        path: PathLike = "saved_tfnet",
-        inputs: Dict[str, tf.Tensor | tf.TensorSpec] = None,
-    ) -> TFNetCallable:
-        concrete_net = self.concrete_net(inputs)
-        tf.saved_model.save(self.net, path, signatures=concrete_net)
-        return concrete_net
-
     @staticmethod
-    def load_tfnet(
-        saved_dir: str = "saved_tfnet",
-    ) -> TFNetCallable:
-        return tf.saved_model.load(saved_dir)
-
-    @staticmethod
-    def load(path: PathLike = "saved_tfmodel") -> "TFModel":
-        with open(os.path.join(path, TFModel.schedule_pkl_name()), "rb") as f:
+    def load(path: PathLike) -> "TFModel":
+        with open(os.path.join(path, TFModel.schedule_name()), "rb") as f:
             schedule: Schedule = pickle.load(f)
         model = TFModel(schedule)
         model.net = tf.saved_model.load(os.path.join(path, TFModel.tfnet_dir_name()))
@@ -179,7 +165,7 @@ class TFModel(Model):
 
     @staticmethod
     def load_with_oracle(
-        path: PathLike = "saved_tfmodel",
+        path: PathLike,
     ) -> Tuple["TFModel", Dict[str, tf.Tensor], Dict[str, tf.Tensor]]:
         model = TFModel.load(path)
         oracle = Oracle.load(os.path.join(path, Oracle.name()))
@@ -190,7 +176,7 @@ class TFModel(Model):
         return model, input_dict, output_dict
 
     @staticmethod
-    def schedule_pkl_name():
+    def schedule_name():
         return "schedule.pkl"
 
     @staticmethod
@@ -224,7 +210,7 @@ class TFModel(Model):
         pass
 
     def run_eagerly(self, inputs: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
-        prev_eager_exec = tf.config.run_functions_eagerly()  # disable graph execution
+        prev_eager_exec = tf.config.functions_run_eagerly  # disable graph execution
         # TODO some op can only run on GPU (e.g. conv with NCHW)
         with tf.device("/cpu:0"):
             tf.config.run_functions_eagerly(True)

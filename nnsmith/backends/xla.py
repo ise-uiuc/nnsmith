@@ -38,7 +38,7 @@ class XLAFactory(BackendFactory):
             return concrete_net(**inputs)
 
         def closure(inputs: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
-            prev_eager_exec = tf.config.run_functions_eagerly()
+            prev_eager_exec = tf.config.run_functions_eagerly
             with self.device:
                 tf.config.run_functions_eagerly(False)
                 result = np_dict_from_tf(compiled_net(**tf_dict_from_np(inputs)))
