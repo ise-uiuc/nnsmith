@@ -32,6 +32,11 @@ class IREEFactory(BackendFactory):
         """
         if device == "cpu":
             device = "llvm-cpu"
+        assert device in [
+            "vmvx",
+            "llvm-cpu",
+            "vulkan-spirv",
+        ], f"Unsupported device {device}"
         super().__init__(device, optmax, catch_process_crash)
 
     @property
