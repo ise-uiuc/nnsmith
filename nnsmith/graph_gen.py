@@ -94,7 +94,7 @@ class SimpleGenerator:
     ):
         if seed is not None:
             set_seed(seed)
-
+        assert len(opset) > 0, "opset must not be empty"
         self.op_candidates = opset
         self.solver = z3.Solver()
 

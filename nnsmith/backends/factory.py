@@ -229,5 +229,14 @@ class BackendFactory(ABC):
                 catch_process_crash=catch_process_crash,
                 **kwargs,
             )
+        elif name == "iree":
+            from nnsmith.backends.iree import IREEFactory
+
+            return IREEFactory(
+                device=device,
+                optmax=optmax,
+                catch_process_crash=catch_process_crash,
+                **kwargs,
+            )
         else:
             raise ValueError(f"unknown backend: {name}")

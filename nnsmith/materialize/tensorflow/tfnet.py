@@ -51,6 +51,14 @@ class TFNet(tf.Module):
 
     @tf.function
     def __call__(self, *args, **kwargs) -> Dict[str, tf.Tensor]:
+        return self.__forward(*args, **kwargs)
+
+    @tf.function
+    def call_by_dict(self, x: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
+        return self.__forward(**x)
+
+    @tf.function
+    def __forward(self, *args, **kwargs) -> Dict[str, tf.Tensor]:
         if self.verbose:
             mode = "Running Eagerly" if tf.executing_eagerly() else "Tracing"
             print(f"{mode} with JIT config: {tf.config.optimizer.get_jit()}")
