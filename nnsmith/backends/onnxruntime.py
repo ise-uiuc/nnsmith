@@ -16,19 +16,23 @@ OPT_LEVELS = [
 
 
 class ORTFactory(BackendFactory):
-    def __init__(self, device, optmax, **kwargs):
+    def __init__(self, target, optmax, **kwargs):
         """opt_level ranges from 0 to 3, stands for ORT_DISABLE_ALL, ORT_ENABLE_BASIC, ORT_ENABLE_EXTENDED and ORT_ENABLE_ALL.
         See https://onnxruntime.ai/docs/performance/graph-optimizations.html for detail"""
-        super().__init__(device, optmax, **kwargs)
+        super().__init__(target, optmax, **kwargs)
         self.opt_level = OPT_LEVELS[-1 if optmax else 0]
-        self.providers = ["CPUExecutionProvider"]
-        if device == "cuda":
+
+        if target == "cuda":
             self.providers = [
                 "CUDAExecutionProvider",
                 "CPUExecutionProvider",
             ]  # ordered by precedence
-        elif device != "cpu":
-            raise ValueError(f"Unknown device `{device}`")
+        elif target == "cpu":
+            self.providers = ["CPUExecutionProvider"]
+        else:
+            raise ValueError(
+                f"Unknown target `{target}`. Only `cpu` and `cuda` are supported."
+            )
 
     @property
     def system_name(self) -> str:

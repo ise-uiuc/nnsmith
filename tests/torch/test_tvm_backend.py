@@ -11,7 +11,7 @@ TestCase.__test__ = False  # supress PyTest warning
 
 
 def test_narrow_spec_cache_make_and_reload():
-    factory = BackendFactory.init("tvm", device="cpu", optmax=True)
+    factory = BackendFactory.init("tvm", target="cpu", optmax=True)
     ONNXModel = Model.init("onnx")
     opset_lhs = load_topset_from_auto_cache(ONNXModel, factory)
     assert opset_lhs, "Should not be empty... Something must go wrong."
@@ -36,7 +36,7 @@ def test_synthesized_onnx_model(tmp_path):
     ONNXModel = Model.init("onnx")
     factory = BackendFactory.init(
         "tvm",
-        device="cuda" if tvm.cuda(0).exist else "cpu",
+        target="cuda" if tvm.cuda(0).exist else "cpu",
         optmax=False,
         catch_process_crash=False,
     )

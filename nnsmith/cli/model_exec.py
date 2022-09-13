@@ -5,7 +5,7 @@ Example usage:
 # compile + run the model; verify with the oracle with fallback mode (random input)
  nnsmith.model_exec model.path=nnsmith_output/model.onnx cmp.oracle=null
 # differential testing with tvm
- nnsmith.model_exec model.path=nnsmith_output/model.onnx cmp.with='{type:tvm, optmax:true, device:cpu}'
+ nnsmith.model_exec model.path=nnsmith_output/model.onnx cmp.with='{type:tvm, optmax:true, target:cpu}'
 """
 
 import os
@@ -71,7 +71,7 @@ def verify_testcase(
     if cmp_cfg["with"] is not None:
         cmp_fac = BackendFactory.init(
             cmp_cfg["with"]["type"],
-            device=cmp_cfg["with"]["device"],
+            target=cmp_cfg["with"]["target"],
             optmax=cmp_cfg["with"]["optmax"],
             catch_process_crash=False,
         )
@@ -171,7 +171,7 @@ def main(cfg: DictConfig):
 
         this_fac = BackendFactory.init(
             cfg["backend"]["type"],
-            device=cfg["backend"]["device"],
+            target=cfg["backend"]["target"],
             optmax=cfg["backend"]["optmax"],
             catch_process_crash=False,
         )

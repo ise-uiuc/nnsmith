@@ -47,10 +47,25 @@ class TFNet(tf.Module):
                 if not isinstance(op, tf.Module):
                     self.mlist.append(fwd_fn)  # Add tf.Module to track its parameters
                 self.instructions.append(Instr(fwd_fn, inp_keys, out_keys))
-        # end for
+
+        spec: Dict[str, tf.TensorSpec] = {}
+        for i_inp, key in enumerate(self.schedule.input_keys):
+            abs_tensor = self.schedule.key2type[key]
+            spec[f"i{i_inp}"] = tf.TensorSpec(
+                abs_tensor.shape, abs_tensor.dtype.tensorflow(), f"i{i_inp}"
+            )
+        self.iree_fn = tf.function(input_signature=[spec])(self.call_by_dict)
 
     @tf.function
     def __call__(self, *args, **kwargs) -> Dict[str, tf.Tensor]:
+        return self.__forward(*args, **kwargs)
+
+    @tf.function
+    def call_by_dict(self, x: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
+        return self.__forward(**x)
+
+    @tf.function
+    def __forward(self, *args, **kwargs) -> Dict[str, tf.Tensor]:
         if self.verbose:
             mode = "Running Eagerly" if tf.executing_eagerly() else "Tracing"
             print(f"{mode} with JIT config: {tf.config.optimizer.get_jit()}")

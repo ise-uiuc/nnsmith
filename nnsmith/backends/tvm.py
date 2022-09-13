@@ -8,6 +8,7 @@ from nnsmith.backends import BackendFactory
 from nnsmith.materialize.onnx import ONNXModel
 
 logging.getLogger("te_compiler").disabled = True
+logging.getLogger("autotvm").disabled = True
 
 
 def list_eq(a, b):
@@ -20,23 +21,28 @@ def list_eq(a, b):
 
 
 class TVMFactory(BackendFactory):
-    def __init__(self, device="cpu", optmax=True, executor="graph", **kwargs) -> None:
-        super().__init__(device, optmax, **kwargs)
+    def __init__(self, target="cpu", optmax=True, executor="graph", **kwargs) -> None:
+        super().__init__(target, optmax, **kwargs)
         # WARNING: setting opt_level 4 sometimes causes false alarms
         # as in this level fast_math is enabled where slight numerical
         # inconsistency is allowed and outputs for UB-input may differ.
         self.opt_level = 4 if optmax else 0
-        if device == "cpu":
+        if target == "cpu":
             self.target = tvm.target.Target("llvm")
-        elif device == "cuda":
-            self.target = tvm.target.Target("cuda")
         else:
-            raise ValueError(f"Unknown device `{device}`")
+            tvm_possible_targets = tvm.target.Target.list_kinds()
+            assert (
+                target in tvm_possible_targets
+            ), f"Unknown target {target}. Possible targets are {tvm_possible_targets}"
+            self.target = tvm.target.Target("cuda")
 
         self.executor_mode = executor
 
     def get_device(self):
-        if self.target.export()["kind"] == "cuda":
+        if (
+            self.target.export()["kind"] == "cuda"
+            or self.target.export()["kind"] == "nvptx"
+        ):
             return tvm.cuda()
         if self.target.export()["kind"] == "rocm":
             return tvm.rocm()

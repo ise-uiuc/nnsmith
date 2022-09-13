@@ -52,7 +52,7 @@ nnsmith.model_exec model.type=onnx backend.type=onnxruntime model.path=nnsmith_o
 nnsmith.model_exec  model.type=onnx                        \
                     backend.type=onnxruntime               \
                     model.path=nnsmith_output/model.onnx   \
-                    cmp.with='{type:tvm, optmax:true, device:cpu}'
+                    cmp.with='{type:tvm, optmax:true, target:cpu}'
 ```
 
 ## Data type testing

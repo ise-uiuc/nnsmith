@@ -16,9 +16,9 @@ BackendCallable = Callable[[Dict[str, np.ndarray]], Dict[str, np.ndarray]]
 
 
 class BackendFactory(ABC):
-    def __init__(self, device="cpu", optmax: bool = False, catch_process_crash=True):
+    def __init__(self, target="cpu", optmax: bool = False, catch_process_crash=True):
         super().__init__()
-        self.device = device
+        self.target = target
         self.optmax = optmax
         # If true, will run the compilation and execution in a subprocess.
         # and catch segfaults returned as BugReport.
@@ -30,7 +30,7 @@ class BackendFactory(ABC):
         pass
 
     def __str__(self) -> str:
-        return f"{self.system_name} ({self.device}  opt: {self.optmax})"
+        return f"{self.system_name} ({self.target} opt: {self.optmax})"
 
     @staticmethod
     def make_random_input(
@@ -181,7 +181,7 @@ class BackendFactory(ABC):
         )
 
     @staticmethod
-    def init(name, device="cpu", optmax=True, catch_process_crash=False, **kwargs):
+    def init(name, target="cpu", optmax=True, catch_process_crash=False, **kwargs):
         if name is None:
             raise ValueError(
                 "Backend type cannot be None. Specify via `backend.type=[onnxruntime|tvm|tensorrt|tflite|xla]`"
@@ -191,7 +191,7 @@ class BackendFactory(ABC):
             from nnsmith.backends.onnxruntime import ORTFactory
 
             return ORTFactory(
-                device=device,
+                target=target,
                 optmax=optmax,
                 catch_process_crash=catch_process_crash,
                 **kwargs,
@@ -202,7 +202,7 @@ class BackendFactory(ABC):
             # default executor is graph
             kwargs["executor"] = kwargs.get("executor", "graph")
             return TVMFactory(
-                device=device,
+                target=target,
                 optmax=optmax,
                 catch_process_crash=catch_process_crash,
                 **kwargs,
@@ -211,7 +211,7 @@ class BackendFactory(ABC):
             from nnsmith.backends.tensorrt import TRTFactory
 
             return TRTFactory(
-                device=device,
+                target=target,
                 optmax=optmax,
                 catch_process_crash=catch_process_crash,
                 **kwargs,
@@ -220,7 +220,7 @@ class BackendFactory(ABC):
             from nnsmith.backends.tflite import TFLiteFactory
 
             return TFLiteFactory(
-                device=device,
+                target=target,
                 optmax=optmax,
                 catch_process_crash=catch_process_crash,
                 **kwargs,
@@ -229,7 +229,16 @@ class BackendFactory(ABC):
             from nnsmith.backends.xla import XLAFactory
 
             return XLAFactory(
-                device=device,
+                target=target,
+                optmax=optmax,
+                catch_process_crash=catch_process_crash,
+                **kwargs,
+            )
+        elif name == "iree":
+            from nnsmith.backends.iree import IREEFactory
+
+            return IREEFactory(
+                target=target,
                 optmax=optmax,
                 catch_process_crash=catch_process_crash,
                 **kwargs,

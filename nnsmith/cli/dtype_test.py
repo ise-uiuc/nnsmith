@@ -12,7 +12,7 @@ def main(cfg: DictConfig):
     if backend_cfg["type"] is not None:
         factory = BackendFactory.init(
             name=backend_cfg["type"],
-            device=backend_cfg["device"],
+            target=backend_cfg["target"],
             optmax=backend_cfg["optmax"],
         )
     else:

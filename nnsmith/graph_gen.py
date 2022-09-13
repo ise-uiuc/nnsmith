@@ -92,6 +92,7 @@ class SimpleGenerator:
         forward_prob=None,
         init_fp=False,
     ):
+        assert len(opset) > 0, "opset must not be empty"
         if seed is not None:
             set_seed(seed)
             z3.set_param(

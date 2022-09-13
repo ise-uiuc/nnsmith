@@ -40,7 +40,7 @@ NNSMITH_CACHE_DIR = user_cache_dir("nnsmith")
 def get_cache_name(model_cls: Type[Model], factory: BackendFactory) -> str:
     if factory is None:
         return f"{model_cls.__name__}_exportable"
-    return f"{model_cls.__name__}_{factory.system_name}_{factory.device}"
+    return f"{model_cls.__name__}_{factory.system_name}_{factory.target}"
 
 
 @dataclass
@@ -250,7 +250,9 @@ def load_topset_from_auto_cache(
         return opset
 
 
-def opset_from_auto_cache(model_cls: Model, factory: Optional[BackendFactory] = None):
+def opset_from_auto_cache(
+    model_cls: Type[Model], factory: Optional[BackendFactory] = None
+):
     # None means only test model exportation.
     topset_config = load_topset_from_auto_cache(model_cls, factory)
     opset = []
