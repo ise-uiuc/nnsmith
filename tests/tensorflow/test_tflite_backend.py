@@ -38,7 +38,6 @@ def test_synthesized_tf_model(tmp_path):
         "tflite", device="cpu", optmax=False, catch_process_crash=False
     )
 
-    # TODO(@ganler): do dtype first.
     gen = random_model_gen(
         opset=opset_from_auto_cache(TFModel, factory),
         init_rank=4,

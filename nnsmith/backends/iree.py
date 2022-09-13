@@ -18,7 +18,20 @@ from nnsmith.materialize.tensorflow import (
 
 
 class IREEFactory(BackendFactory):
-    def __init__(self, device="cpu", optmax: bool = False, catch_process_crash=True):
+    def __init__(
+        self, device="llvm-cpu", optmax: bool = False, catch_process_crash=True
+    ):
+        """
+        Args:
+            device (str, optional):
+                'vmvx': CPU,
+                'llvm-cpu': CPU,
+                'vulkan-spirv': GPU/SwiftShader (requires additional drivers)
+                Defaults to 'llvm-cpu'.
+            optmax (bool, optional): Whether to apply some default high level optimizations. Defaults to False.
+        """
+        if device == "cpu":
+            device = "llvm-cpu"
         super().__init__(device, optmax, catch_process_crash)
 
     @property
@@ -27,28 +40,30 @@ class IREEFactory(BackendFactory):
 
     @dispatch(TFModel)
     def make_backend(self, model: TFModel) -> BackendCallable:
-        backend_choice = "llvm-cpu"  # 'vmvx'
-
-        tmp_path = os.path.join(tempfile.mkdtemp(), "saved_model")
-        tf.saved_model.save(
-            model.net,
-            tmp_path,
-            signatures=model.net.call_by_dict.get_concrete_function(model.input_specs),
-        )
-
-        vm_flatbuffer = iree.compiler.tf.compile_saved_model(
-            tmp_path,
-            target_backends=[backend_choice],
-            exported_names=["call_by_dict"],
-            extra_args=[
-                "--iree-mhlo-demote-i64-to-i32=false",
-                "--iree-flow-demote-i64-to-i32",
-            ],
-        )
+        # https://iree-python-api.readthedocs.io/en/latest/compiler/tools.html
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            saved_model_path = os.path.join(tmpdirname, "saved_model")
+            tf.saved_model.save(
+                model.net,
+                saved_model_path,
+                signatures=model.net.call_by_dict.get_concrete_function(
+                    model.input_specs
+                ),
+            )
+            vm_flatbuffer = iree.compiler.tf.compile_saved_model(
+                saved_model_path,
+                target_backends=[self.device],
+                exported_names=["call_by_dict"],
+                optimize=self.optmax,
+                extra_args=[
+                    "--iree-mhlo-demote-i64-to-i32=false",
+                    "--iree-flow-demote-i64-to-i32",
+                ],
+            )
 
         compiled_model = iree.runtime.load_vm_flatbuffer(
             vm_flatbuffer,
-            backend=backend_choice,
+            backend=self.device,
         )
 
         def closure(inputs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:

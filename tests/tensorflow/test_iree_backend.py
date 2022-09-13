@@ -41,7 +41,6 @@ def test_synthesized_tf_model(tmp_path):
             "iree", device=device, optmax=False, catch_process_crash=False
         )
 
-        # TODO(@ganler): do dtype first.
         gen = random_model_gen(
             opset=opset_from_auto_cache(ModelType, factory),
             init_rank=4,

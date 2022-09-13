@@ -41,7 +41,6 @@ def test_synthesized_onnx_model(tmp_path):
     ONNXModel = Model.init("onnx")
     factory = BackendFactory.init("tensorrt", device="cuda", optmax=True)
 
-    # TODO(@ganler): do dtype first.
     gen = random_model_gen(
         opset=opset_from_auto_cache(ONNXModel, factory),
         init_rank=4,
