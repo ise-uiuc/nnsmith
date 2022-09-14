@@ -27,7 +27,8 @@ pip install "nnsmith[torch,onnx]" --upgrade
 <div>
 
 ```shell
-pip install "git+https://github.com/ise-uiuc/nnsmith.git#egg=nnsmith[torch,onnx]"
+pip install "git+https://github.com/ise-uiuc/nnsmith.git#egg=nnsmith[torch,onnx]" --upgrade
+# or pip install "git+ssh://git@github.com/ise-uiuc/nnsmith.git#egg=nnsmith[torch,onnx]" --upgrade
 ```
 
 </div>

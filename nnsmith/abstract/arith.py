@@ -185,7 +185,7 @@ def nnsmith_min(left, right):
 
 def nnsmith_max(left, right):
     if isinstance(left, int) and isinstance(right, int):
-        return min(left, right)
+        return max(left, right)
     left, right = align_bvs(left, right)
     return z3.If(nnsmith_ge(left, right), left, right)
 

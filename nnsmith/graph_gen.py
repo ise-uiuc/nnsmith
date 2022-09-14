@@ -61,6 +61,7 @@ def concretize_graph(
         itensors = [concrete_shapes[df_idx] for df_idx in node["itensor_idx"]]
         otensors = op.checked_type_transfer(itensors)
         op.input_like = itensors
+        op.output_like = otensors
 
         node["op"] = op
         node["label"] = textwrap.fill(f"#{node_id} ~ {op}", width=__TEXTWRAP_WIDTH__)

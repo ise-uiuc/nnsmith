@@ -1,9 +1,10 @@
 from math import prod
+from random import randint
 from typing import List, Tuple, Union
 
 from nnsmith.abstract.arith import *
-from nnsmith.abstract.dtype import DTYPE_ALL, DType
-from nnsmith.abstract.op import UnaryOpBase, int_from, mark_materialize
+from nnsmith.abstract.dtype import DTYPE_ALL, DTYPE_NON_BOOLS, DType
+from nnsmith.abstract.op import ReduceBase, UnaryOpBase, int_from, mark_materialize
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import ConstraintCheck
 
@@ -65,3 +66,21 @@ class Flatten(UnaryOpBase):
 
     def requires(self, input_shapes):
         return []
+
+    def deduct_inp_ranks_and_dtype(
+        self, out_abs_tensor: List[AbsTensor]
+    ) -> List[Tuple[int, DType]]:
+        return [(randint(0, 4), out_abs_tensor[0].dtype)]
+
+
+@mark_materialize("torch")
+class TorchReduceSum(ReduceBase):
+    in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+    out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+        output = super().type_transfer(input_shapes)
+        # This is a PyTorch trick...
+        if input_shapes[0].dtype == DType.int32:
+            output[0].dtype = DType.int64
+        return output
