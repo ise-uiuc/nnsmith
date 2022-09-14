@@ -3,6 +3,7 @@ from typing import Type
 
 import torch
 
+from nnsmith.abstract.dtype import DTYPE_INTS
 from nnsmith.abstract.op import *
 from nnsmith.materialize import framework_operator_impl
 from nnsmith.materialize.torch.dialect import Flatten, Linear, TorchReduceSum
