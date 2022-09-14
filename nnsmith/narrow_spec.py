@@ -76,6 +76,7 @@ def _make_single_op_schedules(
         this_op = deepcopy(op)
         outputs = this_op.checked_type_transfer(inputs)
         this_op.input_like = inputs
+        this_op.output_like = outputs
 
         leaf_keys = list(range(len(inputs), len(inputs) + len(outputs)))
 

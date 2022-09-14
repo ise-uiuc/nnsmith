@@ -7,6 +7,7 @@ import torch
 from torch import nn
 
 from nnsmith.abstract.op import Input
+from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import ConstraintCheck, ConstraintError, SanityCheck
 from nnsmith.materialize import Schedule
 from nnsmith.materialize.torch.forward import forward_fn
@@ -16,6 +17,17 @@ from nnsmith.materialize.torch.proxy_grad import proxy_fn
 __MB_LIM__ = 6 * 1024
 __INPUT_FOUND_NAN_MSG__ = "[NaN] in model inputs!"
 __INPUT_FOUND_INF_MSG__ = "[Inf] in model inputs!"
+__ENABLE_RUNTIME_CHECK__ = os.getenv("NNSMITH_RUNTIME_CHECK", "0") == "1"
+
+
+def check_type(op, tensors, msg=""):
+    if __ENABLE_RUNTIME_CHECK__ and op is not None:
+        for i, ten in enumerate(tensors):
+            ttype = AbsTensor.from_torch(ten)
+            assert (
+                op.input_like[i] == ttype
+            ), f"{msg} {ttype} != {AbsTensor.from_torch(ten)} for {op} {op.input_like} -> {op.output_like}"
+
 
 # Probablistically, sampling at positive domain is beneficial.
 def random_tensor(shape, dtype, margin=4, base=5, use_cuda=False):
@@ -321,10 +333,14 @@ class SymbolNet(nn.Module):
         for stmt_idx, (inst, inps, outs, op) in enumerate(self.instructions):
             input_tensors = [tensor_map[idx] for idx in inps]
 
+            check_type(op, input_tensors, msg="input")
+
             # REAL FORWARD.
             output_tensors = inst(*input_tensors)
             if not isinstance(output_tensors, list):
                 output_tensors = [output_tensors]
+
+            check_type(op, output_tensors, msg="output")
 
             for i, out_key in enumerate(outs):
                 # put values back to tensor_map.

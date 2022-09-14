@@ -1,4 +1,3 @@
-import fnmatch
 import os
 import random
 from abc import ABC, abstractmethod
@@ -10,13 +9,7 @@ from typing import Dict, List, Optional, Tuple, Type, Union
 import z3
 
 from nnsmith.abstract.arith import *
-from nnsmith.abstract.dtype import (
-    DTYPE_ALL,
-    DTYPE_FLOATS,
-    DTYPE_INTS,
-    DTYPE_NON_BOOLS,
-    DType,
-)
+from nnsmith.abstract.dtype import DTYPE_ALL, DTYPE_FLOATS, DTYPE_NON_BOOLS, DType
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import ConstraintCheck, SanityCheck
 
@@ -315,6 +308,7 @@ class AbsOpBase(ABC):
     def requires(self, input_shapes: List[AbsTensor]) -> List[Union[z3.ExprRef, bool]]:
         return []
 
+    @abstractmethod
     def deduct_inp_ranks_and_dtype(
         self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
@@ -625,6 +619,11 @@ class Input(AbsOpBase):
     def __str__(self):
         return "Input"
 
+    def deduct_inp_ranks_and_dtype(
+        self, out_abs_tensor: List[AbsTensor]
+    ) -> List[Tuple[int, DType]]:
+        pass
+
 
 class Constant(AbsOpBase):
     in_dtypes = [()]
@@ -650,6 +649,11 @@ class Constant(AbsOpBase):
 
     def __str__(self):
         return "Constant"
+
+    def deduct_inp_ranks_and_dtype(
+        self, out_abs_tensor: List[AbsTensor]
+    ) -> List[Tuple[int, DType]]:
+        pass
 
 
 class Placeholder:
@@ -2030,7 +2034,7 @@ class MatMul(BinaryOpBase):
             batches = lbatch[: len(lbatch) - len(rbatch)]
             for x, y in zip(lbatch[len(batches) :], rbatch):
                 batches.append(nnsmith_max(x, y))
-        elif len(lbatch) < len(rbatch):
+        else:
             batches = rbatch[: len(rbatch) - len(lbatch)]
             for x, y in zip(lbatch, rbatch[len(batches) :]):
                 batches.append(nnsmith_max(x, y))
@@ -2061,23 +2065,39 @@ class MatMul(BinaryOpBase):
     def deduct_inp_ranks_and_dtype(
         self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
-        if out_abs_tensor[0].ndims == 1:
-            return [(1, out_abs_tensor[0].dtype), (1, out_abs_tensor[0].dtype)]
-        elif out_abs_tensor[0].ndims == 2:
-            # assume no batch.
-            return [(2, out_abs_tensor[0].dtype), (2, out_abs_tensor[0].dtype)]
-        else:
-            # assume no rank-1 tensor.
-            lranks = random.randint(2, out_abs_tensor[0].ndims)
-            rranks = random.randint(2, out_abs_tensor[0].ndims)
-            if lranks > rranks:
-                lranks = out_abs_tensor[0].ndims
+        # rank(a) = batch_rank(a) + rc_rank(a)
+        # rank(b) = batch_rank(b) + rc_rank(b)
+        # out_rank = max(br_a, br_b) + (rcr_a + rcr_b) - 2
+        # 1 <= rcr_a or rcr_b <= min(2, out_rank + 2)
+
+        # br_a = ranks[0], rcr_a = ranks[1]
+        # br_b = ranks[2], rcr_b = ranks[3]
+        ranks = [0, 1, 0, 1]
+
+        def check_sat():
+            return (
+                out_abs_tensor[0].ndims
+                == max(ranks[0], ranks[2]) + (ranks[1] + ranks[3]) - 2
+            )
+
+        while not check_sat():
+            inc_candidates = []
+            if ranks[1] < 2:
+                inc_candidates.append(1)
             else:
-                rranks = out_abs_tensor[0].ndims
-            return [
-                (lranks, out_abs_tensor[0].dtype),
-                (rranks, out_abs_tensor[0].dtype),
-            ]
+                inc_candidates.append(0)
+
+            if ranks[3] < 2:
+                inc_candidates.append(3)
+            else:
+                inc_candidates.append(2)
+            choice = random.choice(inc_candidates)
+            ranks[choice] += 1
+
+        return [
+            (ranks[0] + ranks[1], out_abs_tensor[0].dtype),
+            (ranks[2] + ranks[3], out_abs_tensor[0].dtype),
+        ]
 
 
 _PRAGMA_ONCE_CORE_OP = False

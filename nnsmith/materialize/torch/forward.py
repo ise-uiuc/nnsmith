@@ -5,7 +5,7 @@ import torch
 
 from nnsmith.abstract.op import *
 from nnsmith.materialize import framework_operator_impl
-from nnsmith.materialize.torch.dialect import Flatten, Linear
+from nnsmith.materialize.torch.dialect import Flatten, Linear, TorchReduceSum
 
 # Implementation of operators.
 
@@ -362,8 +362,8 @@ def forward_fn(op: Squeeze):
         return lambda x: x.squeeze()
 
 
-@operator_impl(ReduceSum)
-def forward_fn(op: ReduceSum):
+@operator_impl(TorchReduceSum)
+def forward_fn(op: TorchReduceSum):
     if op.extra_attrs["reduce_dim"] is not None:
         return lambda x: x.sum(op.extra_attrs["reduce_dim"])
     return lambda x: x.sum()
