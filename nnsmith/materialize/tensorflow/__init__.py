@@ -60,7 +60,7 @@ def assert_dict_eq_tf(x: Dict[str, tf.Tensor], y: Dict[str, tf.Tensor]) -> None:
         ), f"Tensors are NOT equal: x[{key}] = {x_v} != {y_v} = y[{key}]"
 
 
-class RunTFEagerly:
+class EagerModeCtx:
     def __init__(self, eagerly: bool) -> None:
         assert isinstance(
             eagerly, bool
@@ -224,7 +224,7 @@ class TFModel(Model):
         pass
 
     def run_eagerly(self, inputs: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
-        with RunTFEagerly(True), tf.device("/cpu:0"):  # disable graph execution
+        with EagerModeCtx(True), tf.device("/cpu:0"):  # disable graph execution
             # TODO some op can only run on GPU (e.g. conv with NCHW)
             results = self.net(**inputs)
         return results
