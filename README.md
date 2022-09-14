@@ -1,6 +1,12 @@
-# NNSmith: DNN Model Generation in the Wild
+<p align="center">
+    <img src="https://github.com/ganler/nnsmith-logo/raw/master/nnsmith-logo.svg", width="500">
+</p>
 
-[![](https://github.com/ise-uiuc/nnsmith/actions/workflows/ci.yaml/badge.svg)](https://github.com/ise-uiuc/nnsmith/actions/workflows/ci.yaml) [![](https://img.shields.io/pypi/v/nnsmith?color=g)](https://pypi.org/project/nnsmith/) [![](https://img.shields.io/pypi/l/nnsmith)](https://github.com/ise-uiuc/nnsmith/blob/main/LICENSE)
+<p align="center">
+    <a href="https://github.com/ise-uiuc/nnsmith/actions/workflows/ci.yaml"><img src="https://github.com/ise-uiuc/nnsmith/actions/workflows/ci.yaml/badge.svg">
+    <a href="https://pypi.org/project/nnsmith/"><img src="https://img.shields.io/pypi/v/nnsmith?color=g">
+    <a href="https://github.com/ise-uiuc/nnsmith/blob/main/LICENSE"><img src="https://img.shields.io/pypi/l/nnsmith"></a>
+</p>
 
 ## Backend-Model Support
 
@@ -92,7 +98,7 @@ You can use `pre-commit` to simpify development:
 - `pre-commit install`;
 - `pre-commit` will run upon a commit; To explicitly run `pre-commit` for all files: `pre-commit run --all-files`.
 
-<details><summary><b>More notes</b> <i>[click to expand]</i></summary>
+<details><summary><b>Simplify the code</b> <i>[click to expand]</i></summary>
 <div>
 
 *Simplicity is prerequisite for reliability.* --Edsger W. Dijkstra
@@ -102,7 +108,8 @@ We want **code simplicity**: keeping minimal dependencies and focusing on a smal
 </div>
 </details>
 
-Run tests before commit:
+<details><summary><b>Test before commit</b> <i>[click to expand]</i></summary>
+<div>
 
 ```shell
 # env of torch & tf will conflict so split their unit tests.
@@ -110,6 +117,9 @@ pytest tests/core -s
 pytest tests/torch -s
 pytest tests/tensorflow -s
 ```
+
+</div>
+</details>
 
 
 <!--
