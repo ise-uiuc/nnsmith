@@ -60,6 +60,21 @@ def assert_dict_eq_tf(x: Dict[str, tf.Tensor], y: Dict[str, tf.Tensor]) -> None:
         ), f"Tensors are NOT equal: x[{key}] = {x_v} != {y_v} = y[{key}]"
 
 
+class RunTFEagerly:
+    def __init__(self, eagerly: bool) -> None:
+        assert isinstance(
+            eagerly, bool
+        ), f"argument eagerly should not be {eagerly.__class__}. It must be a boolean."
+        self.eagerly = eagerly
+
+    def __enter__(self) -> None:
+        self.old_mode = tf.config.functions_run_eagerly()
+        tf.config.run_functions_eagerly(self.eagerly)
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        tf.config.run_functions_eagerly(self.old_mode)
+
+
 class TFModel(Model):
     """Wrapper class of TFNet (tf.Module)
     It only stores net. Other information like I/O info are temporarily generated.
@@ -209,13 +224,9 @@ class TFModel(Model):
         pass
 
     def run_eagerly(self, inputs: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
-        prev_eager_exec = tf.config.functions_run_eagerly  # disable graph execution
-        # TODO some op can only run on GPU (e.g. conv with NCHW)
-        with tf.device("/cpu:0"):
-            tf.config.run_functions_eagerly(True)  # disable graph execution
+        with RunTFEagerly(True), tf.device("/cpu:0"):  # disable graph execution
+            # TODO some op can only run on GPU (e.g. conv with NCHW)
             results = self.net(**inputs)
-            tf.config.run_functions_eagerly(prev_eager_exec)
-
         return results
 
     @staticmethod

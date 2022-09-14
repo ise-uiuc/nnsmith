@@ -5,6 +5,7 @@ from multipledispatch import dispatch
 
 from nnsmith.backends.factory import BackendCallable, BackendFactory
 from nnsmith.materialize.tensorflow import (
+    RunTFEagerly,
     TFModel,
     TFNetCallable,
     np_dict_from_tf,
@@ -38,12 +39,8 @@ class XLAFactory(BackendFactory):
             return concrete_net(**inputs)
 
         def closure(inputs: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
-            prev_eager_exec = tf.config.run_functions_eagerly
-            with self.device:
-                tf.config.run_functions_eagerly(False)
+            with RunTFEagerly(False), self.device:
                 result = np_dict_from_tf(compiled_net(**tf_dict_from_np(inputs)))
-                tf.config.run_functions_eagerly(prev_eager_exec)
-
             return result
 
         return closure

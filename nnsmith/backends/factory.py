@@ -184,7 +184,7 @@ class BackendFactory(ABC):
     def init(name, target="cpu", optmax=True, catch_process_crash=False, **kwargs):
         if name is None:
             raise ValueError(
-                "Backend type cannot be None. Specify via `backend.type=[onnxruntime|tvm|tensorrt|tflite|xla]`"
+                "Backend type cannot be None. Specify via `backend.type=[onnxruntime | tvm | tensorrt | tflite | xla | iree]`"
             )
 
         if name == "onnxruntime":
