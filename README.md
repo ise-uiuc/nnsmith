@@ -45,7 +45,7 @@ pip install "git+https://github.com/ise-uiuc/nnsmith.git#egg=nnsmith[torch,onnx]
 
 ```shell
 pip install "nnsmith[torch,onnx]"                     \
-            --upgrade                                 \
+            --pre --upgrade                           \
             --index-url https://test.pypi.org/simple/ \
             --extra-index-url https://pypi.org/simple/
 ```
