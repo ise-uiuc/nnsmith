@@ -7,11 +7,11 @@ Example usage:
 # differential testing with tvm
  nnsmith.model_exec model.path=nnsmith_output/model.onnx cmp.with='{type:tvm, optmax:true, target:cpu}'
 """
-
 import os
 import pickle
 import random
 from pathlib import Path
+from typing import List, Optional
 
 import hydra
 from omegaconf import DictConfig, ListConfig
@@ -28,8 +28,17 @@ def verify_testcase(
     testcase: TestCase,
     output_dir: os.PathLike,
     supress_succ=True,
+    keywords_ignore=None,
 ) -> bool:
-    def check_result(bug_report_or, odir, msg=None) -> bool:  # succ?
+    def existed_keyword(keywords: List[str], msg: str) -> Optional[str]:
+        for k in keywords:
+            if k in msg:
+                return k
+        return None
+
+    def check_result(
+        bug_report_or, odir, keywords_ignore=None, msg=None
+    ) -> bool:  # succ?
         msg = "" if msg is None else msg
         if not isinstance(bug_report_or, BugReport):
             if not supress_succ:
@@ -37,20 +46,27 @@ def verify_testcase(
             return True
         else:
             bug_report = bug_report_or
-            EXEC_LOG.warning("[FAIL] ")
-            EXEC_LOG.warning(bug_report.log)
-            if odir is not None:
-                odir = str(odir).replace(
-                    NNSMITH_BUG_PATTERN_TOKEN,
-                    f"{bug_report.symptom}-{bug_report.stage}",
-                )
-                EXEC_LOG.warning("Saving bug report to {}".format(odir))
-                bug_report.dump(odir)
+            kw = existed_keyword(keywords_ignore, bug_report.log)
+            if kw:
+                EXEC_LOG.info(f"[IGNORE] {kw}")
+            else:
+                EXEC_LOG.warning("[FAIL] ")
+                EXEC_LOG.warning(bug_report.log)
+                if odir is not None:
+                    odir = str(odir).replace(
+                        NNSMITH_BUG_PATTERN_TOKEN,
+                        f"{bug_report.symptom}-{bug_report.stage}",
+                    )
+                    EXEC_LOG.warning("Saving bug report to {}".format(odir))
+                    bug_report.dump(odir)
             return False
 
     bug_or_res = factory.checked_compile_and_exec(testcase)
     if check_result(
-        bug_or_res, odir=output_dir, msg=f"Compile + Execution [{factory}]"
+        bug_or_res,
+        odir=output_dir,
+        keywords_ignore=keywords_ignore,
+        msg=f"Compile + Execution [{factory}]",
     ):
         if testcase.oracle.output is not None:  # we have output results && no bug yet
             # do result verification

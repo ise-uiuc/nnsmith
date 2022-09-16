@@ -5,6 +5,7 @@ import tensorflow as tf  # type: ignore
 from keras import layers
 from tensorflow import keras
 
+from nnsmith.abstract.dtype import DTYPE_INTS
 from nnsmith.abstract.op import *
 from nnsmith.materialize import framework_operator_impl
 from nnsmith.materialize.tensorflow.dialect import *

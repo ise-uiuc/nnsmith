@@ -97,6 +97,7 @@ class FuzzingLoop:
             factory=self.factory,
             testcase=testcase,
             output_dir=self.reporter.get_next_bug_path(),
+            keywords_ignore=self.cfg["fuzz"]["ignore"],
         ):
             self.reporter.n_bugs += 1
             return False
