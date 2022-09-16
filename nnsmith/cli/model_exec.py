@@ -77,6 +77,7 @@ def verify_testcase(
                     equal_nan=cmp_cfg["equal_nan"],
                 ),
                 odir=output_dir,
+                keywords_ignore=keywords_ignore,
                 msg=f"Result Verification w/ Oracle from {testcase.oracle.provider}",
             ):
                 return False
@@ -97,6 +98,7 @@ def verify_testcase(
         if check_result(
             cmp_testcase,
             odir=output_dir,
+            keywords_ignore=keywords_ignore,
             msg=f"Compile + Execution [`cmp.with`: {cmp_fac}]",
         ):
             if not check_result(
@@ -106,6 +108,7 @@ def verify_testcase(
                     equal_nan=cmp_cfg["equal_nan"],
                 ),
                 odir=output_dir,
+                keywords_ignore=keywords_ignore,
                 msg="Result Verification w/ Reference Backend",
             ):
                 return False
