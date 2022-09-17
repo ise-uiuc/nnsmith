@@ -84,22 +84,17 @@ class TFModel(Model):
     def __init__(
         self,
         schedule: Schedule,
-        verbose: bool = False,
     ) -> None:
         """Must provide a schedule to avoid NoneType errors"""
         super().__init__()
         self.schedule = schedule
         self.net: TFNet = TFNet(
             schedule=schedule,
-            verbose=verbose,
         )
 
-    def set_verbose(self, verbose: bool = True) -> None:
-        self.net.verbose = verbose
-
     @staticmethod
-    def from_schedule(schedule: Schedule, **kwargs) -> "Model":
-        return TFModel(schedule, kwargs.get("verbose", False))
+    def from_schedule(schedule: Schedule, **kwargs) -> "TFModel":
+        return TFModel(schedule)
 
     @property
     def native_model(self) -> TFNet:
