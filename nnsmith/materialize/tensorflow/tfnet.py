@@ -44,7 +44,7 @@ class TFNet(tf.Module):
                 op = cast(AbsOpBase, op)
                 fwd_fn = forward_fn(op)
                 SanityCheck.true(fwd_fn is not None, f"Bad implementation for {op}")
-                if not isinstance(op, tf.Module):
+                if isinstance(fwd_fn, tf.Module):
                     self.mlist.append(fwd_fn)  # Add tf.Module to track its parameters
                 self.instructions.append(Instr(fwd_fn, inp_keys, out_keys))
 
@@ -66,12 +66,15 @@ class TFNet(tf.Module):
         if len(args) == len(self.schedule.input_keys):
             for i, key in enumerate(self.schedule.input_keys):
                 key2tensor[key] = args[i]
-        elif len(kwargs) == len(self.schedule.input_keys):
+        elif (
+            len(kwargs) == len(self.schedule.input_keys)
+            or len(kwargs) == len(self.schedule.input_keys) + 1
+            and "dummy" in kwargs
+        ):
             for i, key in enumerate(self.schedule.input_keys):
                 key2tensor[key] = kwargs[f"i{i}"]
         else:
-            raise ValueError("Either user args only or kwargs only")
-
+            raise ValueError("Either use args only or kwargs only")
         for instr in self.instructions:
             # get inputs
             inp_tensors = [key2tensor[key] for key in instr.inp_keys]

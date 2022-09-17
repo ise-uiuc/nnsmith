@@ -117,7 +117,7 @@ class FuzzingLoop:
     def run(self):
         start_time = time.time()
         while time.time() - start_time < self.timeout_s:
-            seed = 103509989  # random.getrandbits(32)
+            seed = random.getrandbits(32)
             FUZZ_LOG.debug(f"Making testcase with seed: {seed}")
             testcase = self.make_testcase(seed)
             if not self.validate_and_report(testcase):

@@ -139,14 +139,25 @@ class TFModel(Model):
                 schedule=self.schedule,
                 verbose=self.net.verbose,
             )
-            new_net(**self.random_inputs())  # create random weights
-            for i, fwd_fn in enumerate(self.net.mlist):  # restore weights
+            inp = self.random_inputs()
+            inp[f"dummy"] = tf.constant(1.0, dtype=tf.float32)
+            new_net(**inp)  # forward to create (random) weights
+            # restore weights
+            for i, fwd_fn in enumerate(self.net.mlist):
                 if hasattr(fwd_fn, "weights"):
                     weights = [w.numpy() for w in fwd_fn.weights]
                     new_net.mlist[i].set_weights(weights)
                 elif isinstance(fwd_fn, StopFoldConst):
                     new_net.mlist[i].data = tf.constant(
                         fwd_fn.data.numpy(), dtype=fwd_fn.data.dtype
+                    )
+            for i, instr in enumerate(self.net.instructions):
+                if hasattr(instr.fwd_fn, "weights"):
+                    weights = [w.numpy() for w in instr.fwd_fn.weights]
+                    new_net.instructions[i].fwd_fn.set_weights(weights)
+                elif isinstance(instr.fwd_fn, StopFoldConst):
+                    new_net.instructions[i].fwd_fn.data = tf.constant(
+                        instr.fwd_fn.data.numpy(), dtype=instr.fwd_fn.data.dtype
                     )
             self.net = new_net
 
