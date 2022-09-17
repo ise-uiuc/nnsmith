@@ -5,6 +5,7 @@ import tensorflow as tf
 
 from nnsmith.abstract.op import AbsOpBase, Input
 from nnsmith.error import SanityCheck
+from nnsmith.logging import FUZZ_LOG
 from nnsmith.materialize import Schedule
 from nnsmith.materialize.tensorflow.forward import forward_fn
 
@@ -26,7 +27,6 @@ class TFNet(tf.Module):
     def __init__(
         self,
         schedule: Schedule,
-        verbose: bool = False,
     ) -> None:
         """Build a TensorFlow model from schedule
 
@@ -34,7 +34,6 @@ class TFNet(tf.Module):
             schedule (Schedule): minimal information for constructing a concrete graph.
         """
         super().__init__()
-        self.verbose = verbose
         self.schedule: Schedule = schedule
         self.mlist: List[Callable] = []
         self.instructions: List[Instr] = []
@@ -58,9 +57,8 @@ class TFNet(tf.Module):
 
     @tf.function
     def __forward(self, *args, **kwargs) -> Dict[str, tf.Tensor]:
-        if self.verbose:
-            mode = "Running Eagerly" if tf.executing_eagerly() else "Tracing"
-            print(f"{mode} with JIT config: {tf.config.optimizer.get_jit()}")
+        mode = "Running Eagerly" if tf.executing_eagerly() else "Tracing"
+        FUZZ_LOG.debug(f"{mode} with JIT config: {tf.config.optimizer.get_jit()}")
 
         key2tensor: Dict[int, tf.Tensor] = {}
         if len(args) == len(self.schedule.input_keys):

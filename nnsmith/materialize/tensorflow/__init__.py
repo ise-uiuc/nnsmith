@@ -84,22 +84,17 @@ class TFModel(Model):
     def __init__(
         self,
         schedule: Schedule,
-        verbose: bool = False,
     ) -> None:
         """Must provide a schedule to avoid NoneType errors"""
         super().__init__()
         self.schedule = schedule
         self.net: TFNet = TFNet(
             schedule=schedule,
-            verbose=verbose,
         )
-
-    def set_verbose(self, verbose: bool = True) -> None:
-        self.net.verbose = verbose
 
     @staticmethod
     def from_schedule(schedule: Schedule, **kwargs) -> "TFModel":
-        return TFModel(schedule, kwargs.get("verbose", False))
+        return TFModel(schedule)
 
     @property
     def native_model(self) -> TFNet:
@@ -137,9 +132,10 @@ class TFModel(Model):
         with device:
             new_net = TFNet(
                 schedule=self.schedule,
-                verbose=self.net.verbose,
             )
             inp = self.random_inputs()
+            # add a dummy arg so that the old weights will not be used in the concrete function we want to use
+            # because the signature is different, which leads to re-tracing later
             inp[f"dummy"] = tf.constant(1.0, dtype=tf.float32)
             new_net(**inp)  # forward to create (random) weights
             # restore weights
