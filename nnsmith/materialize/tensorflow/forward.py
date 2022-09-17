@@ -21,7 +21,8 @@ operator_impl = partial(framework_operator_impl, TF_REALIZABLE_OPS, ALL_TF_OPS)
 class StopFoldConst(tf.Module):
     def __init__(self, data: tf.Tensor):
         super().__init__()
-        self.data = tf.Variable(data, trainable=False)  # default variable is trainable
+        # self.data = tf.Variable(data, trainable=False)  # default variable is trainable
+        self.data = tf.constant(data, dtype=data.dtype)
 
     def __call__(self, training=None):
         return self.data

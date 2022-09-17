@@ -49,7 +49,7 @@ fuzz:
   time: 14400
   root: "???"
   seed: null
-  ignore: []
+  ignore_list: null
 
 cmp:
   equal_nan: true    # skip regarding it as a bug if with fp exception values.

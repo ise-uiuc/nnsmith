@@ -28,7 +28,7 @@ configure_tf_gpu_mem()
 
 from nnsmith.abstract.op import AbsOpBase, AbsTensor
 from nnsmith.materialize import Model, Oracle, Schedule
-from nnsmith.materialize.tensorflow.forward import ALL_TF_OPS
+from nnsmith.materialize.tensorflow.forward import ALL_TF_OPS, StopFoldConst
 from nnsmith.materialize.tensorflow.tfnet import TFNet
 from nnsmith.util import register_seed_setter
 
@@ -98,7 +98,7 @@ class TFModel(Model):
         self.net.verbose = verbose
 
     @staticmethod
-    def from_schedule(schedule: Schedule, **kwargs) -> "Model":
+    def from_schedule(schedule: Schedule, **kwargs) -> "TFModel":
         return TFModel(schedule, kwargs.get("verbose", False))
 
     @property
@@ -132,6 +132,23 @@ class TFModel(Model):
     @staticmethod
     def name_suffix() -> str:
         return ""
+
+    def remake_net(self, device):
+        with device:
+            new_net = TFNet(
+                schedule=self.schedule,
+                verbose=self.net.verbose,
+            )
+            new_net(**self.random_inputs())  # create random weights
+            for i, fwd_fn in enumerate(self.net.mlist):  # restore weights
+                if hasattr(fwd_fn, "weights"):
+                    weights = [w.numpy() for w in fwd_fn.weights]
+                    new_net.mlist[i].set_weights(weights)
+                elif isinstance(fwd_fn, StopFoldConst):
+                    new_net.mlist[i].data = tf.constant(
+                        fwd_fn.data.numpy(), dtype=fwd_fn.data.dtype
+                    )
+            self.net = new_net
 
     def make_oracle(
         self, inputs: Dict[str, tf.Tensor | tf.TensorSpec] = None

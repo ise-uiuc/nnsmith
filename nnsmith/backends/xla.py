@@ -32,6 +32,8 @@ class XLAFactory(BackendFactory):
 
     @dispatch(TFModel)
     def make_backend(self, model: TFModel) -> BackendCallable:
+        model.remake_net(self.device)  # avoid device mismatch errors
+        # by rebuilding the network to drop the weights on the old device
         concrete_net: TFNetCallable = model.concrete_net()
 
         @tf.function(jit_compile=True)

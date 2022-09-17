@@ -1,6 +1,9 @@
+import json
+import os
 import random
 import time
 from pathlib import Path
+from typing import List
 
 import hydra
 from omegaconf import DictConfig
@@ -92,12 +95,20 @@ class FuzzingLoop:
         return TestCase(model, oracle)
 
     def validate_and_report(self, testcase: TestCase) -> bool:
+        keywords_ignore: List[str]
+        if self.cfg["fuzz"]["ignore_list"] is None:
+            keywords_ignore = []
+        elif isinstance(self.cfg["fuzz"]["ignore_list"], list):
+            keywords_ignore = self.cfg["fuzz"]["ignore_list"]
+        elif os.path.exists(self.cfg["fuzz"]["ignore_list"]):
+            with open(self.cfg["fuzz"]["ignore_list"]) as f:
+                keywords_ignore = json.load(f)
         if not verify_testcase(
             self.cfg["cmp"],
             factory=self.factory,
             testcase=testcase,
             output_dir=self.reporter.get_next_bug_path(),
-            keywords_ignore=self.cfg["fuzz"]["ignore"],
+            keywords_ignore=keywords_ignore,
         ):
             self.reporter.n_bugs += 1
             return False
@@ -106,7 +117,7 @@ class FuzzingLoop:
     def run(self):
         start_time = time.time()
         while time.time() - start_time < self.timeout_s:
-            seed = random.getrandbits(32)
+            seed = 103509989  # random.getrandbits(32)
             FUZZ_LOG.debug(f"Making testcase with seed: {seed}")
             testcase = self.make_testcase(seed)
             if not self.validate_and_report(testcase):

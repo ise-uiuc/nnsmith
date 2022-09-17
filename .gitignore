@@ -1,6 +1,7 @@
 # NNSmith-specific
 *.onnx
 tmp/
+*.json
 *.png
 *.pdf
 *.dot
