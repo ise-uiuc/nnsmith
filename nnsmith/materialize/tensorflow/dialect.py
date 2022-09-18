@@ -1,3 +1,4 @@
+import random
 from typing import List, Tuple, Union
 
 from nnsmith.abstract.arith import *
@@ -69,15 +70,13 @@ class LocalRespNorm(ElementWiseUnaryOp):
     def __init__(
         self,
         depth_radius: Union[int, z3.ExprRef],
-        bias: Union[float, z3.ExprRef],
-        alpha: Union[float, z3.ExprRef],
-        inv_beta: Union[float, z3.ExprRef],
     ):
         super().__init__()
         self.depth_radius = depth_radius
-        self.bias = bias
-        self.alpha = alpha
-        self.inv_beta = inv_beta
+        self.extra_attrs["bias"] = random.uniform(0.01, 100)
+        self.extra_attrs["alpha"] = random.uniform(0.01, 100)
+        # cuDNN requires beta >= 0.01
+        self.extra_attrs["beta"] = random.uniform(0.011, 1)
 
         self.inp_ranks = [(4,)]
         self.out_ranks = [(4,)]
@@ -94,11 +93,6 @@ class LocalRespNorm(ElementWiseUnaryOp):
                 self.depth_radius, nnsmith_div(nnsmith_sub(input_shape.shape[3], 1), 2)
             )
         )  # depth_radius <= (input_shape[3] - 1) / 2
-        cons.append(nnsmith_gt(self.bias, 0))
-        cons.append(nnsmith_gt(self.alpha, 0))
-        # cuDNN requires beta >= 0.01
-        cons.append(nnsmith_ge(self.inv_beta, 1))
-        cons.append(nnsmith_lt(self.inv_beta, 100))  # lt to avoid precision issue
         return cons
 
 

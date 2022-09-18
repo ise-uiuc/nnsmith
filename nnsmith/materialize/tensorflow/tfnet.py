@@ -5,7 +5,7 @@ import tensorflow as tf
 
 from nnsmith.abstract.op import AbsOpBase, Input
 from nnsmith.error import SanityCheck
-from nnsmith.logging import FUZZ_LOG
+from nnsmith.logging import TF_LOG
 from nnsmith.materialize import Schedule
 from nnsmith.materialize.tensorflow.forward import forward_fn
 
@@ -58,7 +58,7 @@ class TFNet(tf.Module):
     @tf.function
     def __forward(self, *args, **kwargs) -> Dict[str, tf.Tensor]:
         mode = "Running Eagerly" if tf.executing_eagerly() else "Tracing"
-        FUZZ_LOG.debug(f"{mode} with JIT config: {tf.config.optimizer.get_jit()}")
+        TF_LOG.debug(f"{mode} with JIT config: {tf.config.optimizer.get_jit()}")
 
         key2tensor: Dict[int, tf.Tensor] = {}
         if len(args) == len(self.schedule.input_keys):
