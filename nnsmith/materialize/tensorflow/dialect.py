@@ -98,7 +98,7 @@ class LocalRespNorm(ElementWiseUnaryOp):
         cons.append(nnsmith_gt(self.alpha, 0))
         # cuDNN requires beta >= 0.01
         cons.append(nnsmith_ge(self.inv_beta, 1))
-        cons.append(nnsmith_le(self.inv_beta, 100))
+        cons.append(nnsmith_lt(self.inv_beta, 100))  # lt to avoid precision issue
         return cons
 
 
