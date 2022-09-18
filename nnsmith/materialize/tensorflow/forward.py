@@ -289,9 +289,9 @@ def forward_fn(op: LocalRespNorm):
         return tf.raw_ops.LRN(
             input=x,
             depth_radius=op.depth_radius,
-            bias=op.bias,
-            alpha=op.alpha,
-            beta=1 / op.inv_beta,
+            bias=op.extra_attrs["bias"],
+            alpha=op.extra_attrs["alpha"],
+            beta=op.extra_attrs["beta"],
         )
 
     return _lrn

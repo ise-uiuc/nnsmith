@@ -7,3 +7,5 @@ SMT_LOG = logging.getLogger("smt")
 EXEC_LOG = logging.getLogger("exec")
 DTEST_LOG = logging.getLogger("dtest")
 CORE_LOG = logging.getLogger("core")
+
+TF_LOG = logging.getLogger("tf")
