@@ -33,8 +33,8 @@ pip install "nnsmith[torch,onnx]" --upgrade
 <div>
 
 ```shell
-pip install "git+https://github.com/ise-uiuc/nnsmith.git#egg=nnsmith[torch,onnx]" --upgrade
-# or pip install "git+ssh://git@github.com/ise-uiuc/nnsmith.git#egg=nnsmith[torch,onnx]" --upgrade
+pip install "git+https://github.com/ise-uiuc/nnsmith@main#egg=nnsmith[torch,onnx]" --upgrade
+# or pip install "git+ssh://git@github.com/ise-uiuc/nnsmith@main#egg=nnsmith[torch,onnx]" --upgrade
 ```
 
 </div>
@@ -88,15 +88,16 @@ See other commands under [`doc/cli`](doc/cli.md). We use [hydra](https://hydra.c
 - `pip install --upgrade -r requirements/sys/[system].txt` to allow generating and running specific frameworks;
   -  **Why "--upgrade"?** In fact, all the sources under `requirements/sys/` are nightly release (except tvm) as we want to "save the world" by catching new bugs;
 
-```shell
-export PYTHONPATH=$PYTHONPATH:$(pwd)
-```
-
 You can use `pre-commit` to simpify development:
 
 - `pip install -r requirements/dev.txt`;
 - `pre-commit install`;
 - `pre-commit` will run upon a commit; To explicitly run `pre-commit` for all files: `pre-commit run --all-files`.
+
+Local development:
+
+- Develop locally by setting `export PYTHONPATH=$PYTHONPATH:$(pwd)` (`pwd` should be this git folder.)
+- Set `PYTHONPATH=""` when doing `pip install nnsmith` from online version.
 
 <details><summary><b>Simplify the code</b> <i>[click to expand]</i></summary>
 <div>
