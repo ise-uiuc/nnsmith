@@ -3,7 +3,7 @@ import pytest
 
 from nnsmith.graph_gen import concretize_graph, random_model_gen
 from nnsmith.materialize import Schedule, TestCase
-from nnsmith.materialize.tensorflow import TFModel, tf_dict_from_np
+from nnsmith.materialize.tensorflow import TFModelCPU, tf_dict_from_np
 from nnsmith.narrow_spec import opset_from_auto_cache
 
 TestCase.__test__ = False  # supress PyTest warning
@@ -14,7 +14,7 @@ def test_onnx_load_dump(tmp_path):
     d.mkdir()
 
     gen = random_model_gen(
-        opset=opset_from_auto_cache(TFModel),
+        opset=opset_from_auto_cache(TFModelCPU),
         init_rank=4,
         seed=54341,
         max_nodes=5,
@@ -26,9 +26,7 @@ def test_onnx_load_dump(tmp_path):
 
     schedule = Schedule.init(fixed_graph, concrete_abstensors)
 
-    model = TFModel.from_schedule(schedule)
-
-    # assert model.with_torch
+    model = TFModelCPU.from_schedule(schedule)
 
     model.refine_weights()  # either random generated or gradient-based.
     oracle = model.make_oracle()

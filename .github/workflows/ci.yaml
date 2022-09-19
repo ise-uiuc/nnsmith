@@ -20,8 +20,13 @@ jobs:
       - name: Test TensorFlow
         run: |
           pytest tests/tensorflow
-      - name: Test CLI
+      - name: Test CLI [model_gen + model_exec]
         run: |
-          yes | python nnsmith/cli/model_gen.py mgen.max_nodes=5 debug.viz=true model.type=torch
-          yes | python nnsmith/cli/model_gen.py mgen.max_nodes=5 debug.viz=true model.type=onnx
-          yes | python nnsmith/cli/model_gen.py mgen.max_nodes=5 debug.viz=true model.type=tensorflow
+          yes | python nnsmith/cli/model_gen.py debug.viz=true model.type=torch
+          yes | python nnsmith/cli/model_gen.py model.type=onnx
+          python nnsmith/cli/model_exec.py model.type=onnx backend.type=onnxruntime model.path=nnsmith_output/model.onnx
+          yes | python nnsmith/cli/model_gen.py model.type=tensorflow
+          python nnsmith/cli/model_exec.py model.type=tensorflow backend.type=xla model.path=nnsmith_output/model/
+      - name: Test CLI [fuzz]
+        run: |
+          yes | python nnsmith/cli/fuzz.py fuzz.time=10s fuzz.root=fuzz_report model.type=tensorflow backend.type=xla

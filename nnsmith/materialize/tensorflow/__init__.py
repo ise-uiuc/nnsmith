@@ -3,8 +3,9 @@ from __future__ import annotations
 import logging
 import os
 import pickle
+from abc import ABC
 from os import PathLike
-from typing import Callable, Dict, List, Tuple, Type
+from typing import Callable, Dict, List, Type
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 logging.getLogger("tensorflow").setLevel(logging.ERROR)
@@ -51,15 +52,6 @@ def tf_dict_from_np(x: Dict[str, np.ndarray]) -> Dict[str, tf.Tensor]:
     return {key: tf.convert_to_tensor(value) for key, value in x.items()}
 
 
-def assert_dict_eq_tf(x: Dict[str, tf.Tensor], y: Dict[str, tf.Tensor]) -> None:
-    for key in x:
-        x_v, y_v = x[key], y[key]
-        assert tf.less_equal(
-            tf.reduce_max(tf.abs(x_v - y_v)),
-            tf.cast(1e-3, dtype=x_v.dtype),
-        ), f"Tensors are NOT equal: x[{key}] = {x_v} != {y_v} = y[{key}]"
-
-
 class EagerModeCtx:
     def __init__(self, eagerly: bool) -> None:
         assert isinstance(
@@ -75,16 +67,13 @@ class EagerModeCtx:
         tf.config.run_functions_eagerly(self.old_mode)
 
 
-class TFModel(Model):
+class TFModel(Model, ABC):  # Don't directly instantiate this class
     """Wrapper class of TFNet (tf.Module)
     It only stores net. Other information like I/O info are temporarily generated.
     Other values like I/O values should be managed by the user.
     """
 
-    def __init__(
-        self,
-        schedule: Schedule,
-    ) -> None:
+    def __init__(self, schedule: Schedule) -> None:
         """Must provide a schedule to avoid NoneType errors"""
         super().__init__()
         self.schedule = schedule
@@ -92,9 +81,9 @@ class TFModel(Model):
             schedule=schedule,
         )
 
-    @staticmethod
-    def from_schedule(schedule: Schedule, **kwargs) -> "TFModel":
-        return TFModel(schedule)
+    @classmethod
+    def from_schedule(cls, schedule: Schedule, **kwargs) -> "TFModel":
+        return cls(schedule)
 
     @property
     def native_model(self) -> TFNet:
@@ -164,25 +153,13 @@ class TFModel(Model):
         oracle = self.make_oracle(inputs)
         oracle.dump(os.path.join(path, Oracle.name()))
 
-    @staticmethod
-    def load(path: PathLike) -> "TFModel":
-        with open(os.path.join(path, TFModel.schedule_name()), "rb") as f:
+    @classmethod
+    def load(cls, path: PathLike) -> "TFModel":
+        with open(os.path.join(path, cls.schedule_name()), "rb") as f:
             schedule: Schedule = pickle.load(f)
-        model = TFModel(schedule)
+        model = cls(schedule)
         model.net = tf.saved_model.load(os.path.join(path, TFModel.tfnet_dir_name()))
         return model
-
-    @staticmethod
-    def load_with_oracle(
-        path: PathLike,
-    ) -> Tuple["TFModel", Dict[str, tf.Tensor], Dict[str, tf.Tensor]]:
-        model = TFModel.load(path)
-        oracle = Oracle.load(os.path.join(path, Oracle.name()))
-        input_dict = {name: tf.convert_to_tensor(v) for name, v in oracle.input.items()}
-        output_dict = {
-            name: tf.convert_to_tensor(v) for name, v in oracle.output.items()
-        }
-        return model, input_dict, output_dict
 
     @staticmethod
     def schedule_name():
@@ -219,7 +196,7 @@ class TFModel(Model):
         pass
 
     def run_eagerly(self, inputs: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
-        with EagerModeCtx(True), tf.device("/cpu:0"):  # disable graph execution
+        with EagerModeCtx(True), self.device:  # disable graph execution
             # TODO some op can only run on GPU (e.g. conv with NCHW)
             results = self.net(**inputs)
         return results
@@ -231,3 +208,16 @@ class TFModel(Model):
     @staticmethod
     def add_seed_setter() -> None:
         register_seed_setter("tensorflow", tf.random.set_seed, overwrite=True)
+
+
+class TFModelCPU(TFModel):
+    @property
+    def device(self) -> tf.device:
+        return tf.device("CPU:0")
+
+
+class TFModelGPU(TFModel):
+    @property
+    def device(self) -> tf.device:
+        assert tf.config.list_physical_devices("GPU"), "No GPU available"
+        return tf.device("GPU:0")

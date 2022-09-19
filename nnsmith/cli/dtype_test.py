@@ -17,7 +17,7 @@ def main(cfg: DictConfig):
         )
     else:
         factory = None
-    model_type = Model.init(cfg["model"]["type"])
+    model_type = Model.init(cfg["model"]["type"], backend_target=backend_cfg["target"])
     load_topset_from_auto_cache(model_type, factory)
 
 

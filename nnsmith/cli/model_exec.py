@@ -106,7 +106,7 @@ def main(cfg: DictConfig):
     EXEC_LOG.info(f"Using seed {seed}")
 
     model_cfg = cfg["model"]
-    ModelType = Model.init(model_cfg["type"])
+    ModelType = Model.init(model_cfg["type"], cfg["backend"]["target"])
     ModelType.add_seed_setter()
 
     if isinstance(model_cfg["path"], ListConfig):

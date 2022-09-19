@@ -37,11 +37,12 @@ def test_synthesized_tf_model(tmp_path):
     if tf.config.list_logical_devices("GPU"):
         targets.append("cuda")
 
-    ModelType = Model.init("tensorflow")
     for target in targets:
         factory = BackendFactory.init(
             "xla", target=target, optmax=False, catch_process_crash=False
         )
+
+        ModelType = Model.init("tensorflow", backend_target=target)
 
         gen = random_model_gen(
             opset=opset_from_auto_cache(ModelType, factory),
@@ -58,7 +59,6 @@ def test_synthesized_tf_model(tmp_path):
 
         model = ModelType.from_schedule(schedule)
 
-        # model.refine_weights()  # either random generated or gradient-based.
         oracle = model.make_oracle()
 
         testcase = TestCase(model, oracle)

@@ -56,7 +56,6 @@ def test_synthesized_tf_model(tmp_path):
 
         model = ModelType.from_schedule(schedule)
 
-        # model.refine_weights()  # either random generated or gradient-based.
         oracle = model.make_oracle()
 
         testcase = TestCase(model, oracle)
