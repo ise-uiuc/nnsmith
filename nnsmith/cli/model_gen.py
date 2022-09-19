@@ -25,7 +25,7 @@ def main(cfg: DictConfig):
 
     # TODO(@ganler): skip operators outside of model gen with `cfg[exclude]`
     model_cfg = cfg["model"]
-    ModelType = Model.init(model_cfg["type"])
+    ModelType = Model.init(model_cfg["type"], backend_target=cfg["backend"]["target"])
     ModelType.add_seed_setter()
 
     if cfg["backend"]["type"] is not None:

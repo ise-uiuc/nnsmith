@@ -183,16 +183,16 @@ class ONNXModel(TorchModel):
             dce_prob = float(dce_env)
         return dce_prob
 
-    @staticmethod
-    def from_schedule(schedule: Schedule, **kwargs) -> "ONNXModel":
-        ret = ONNXModel()
+    @classmethod
+    def from_schedule(cls, schedule: Schedule, **kwargs) -> "ONNXModel":
+        ret = cls()  # ONNXModel
         ret.torch_model = SymbolNet(schedule, **kwargs)
 
         ret.full_input_like = ret.torch_model.input_like
         ret.full_output_like = ret.torch_model.output_like
         ret.masked_output_like = ret.full_output_like
 
-        if random.random() < ONNXModel._dce_prob():
+        if random.random() < cls._dce_prob():
             ret.masked_output_like = ret._mask_outputs()
 
         return ret
@@ -225,12 +225,12 @@ class ONNXModel(TorchModel):
         onnx.checker.check_model(self.onnx_model, full_check=True)
         onnx.save(self.onnx_model, path)
 
-    @staticmethod
-    def load(path: PathLike) -> "ONNXModel":
-        ret = ONNXModel()
+    @classmethod
+    def load(cls, path: PathLike) -> "ONNXModel":
+        ret = cls()
         ret.onnx_model = onnx.load(path)
 
-        torch_path = path.replace(ONNXModel.name_suffix(), TorchModel.name_suffix())
+        torch_path = path.replace(cls.name_suffix(), TorchModel.name_suffix())
 
         ret.with_torch = False
         full_input_like, full_output_like = analyze_onnx_io(ret.onnx_model)

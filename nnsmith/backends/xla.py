@@ -7,7 +7,6 @@ from nnsmith.backends.factory import BackendCallable, BackendFactory
 from nnsmith.materialize.tensorflow import (
     EagerModeCtx,
     TFModel,
-    TFNetCallable,
     np_dict_from_tf,
     tf_dict_from_np,
 )
@@ -32,15 +31,12 @@ class XLAFactory(BackendFactory):
 
     @dispatch(TFModel)
     def make_backend(self, model: TFModel) -> BackendCallable:
-        concrete_net: TFNetCallable = model.concrete_net()
-
-        @tf.function(jit_compile=True)
-        def compiled_net(**inputs) -> Dict[str, tf.Tensor]:
-            return concrete_net(**inputs)
+        with self.device, EagerModeCtx(False):
+            compiled = tf.function(jit_compile=True)(model.concrete_net())
 
         def closure(inputs: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
-            with EagerModeCtx(False), self.device:
-                result = np_dict_from_tf(compiled_net(**tf_dict_from_np(inputs)))
+            with self.device, EagerModeCtx(False):
+                result = np_dict_from_tf(compiled(**tf_dict_from_np(inputs)))
             return result
 
         return closure

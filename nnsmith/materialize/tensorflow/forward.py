@@ -17,24 +17,14 @@ ALL_TF_OPS: List[Type[AbsOpBase]] = []
 operator_impl = partial(framework_operator_impl, TF_REALIZABLE_OPS, ALL_TF_OPS)
 
 
-class StopFoldConst(tf.Module):
-    def __init__(self, data: tf.Tensor):
-        super().__init__()
-        self.data = tf.Variable(data, trainable=False)  # default variable is trainable
-
-    def __call__(self, training=None):
-        return self.data
-
-
 """Implement TensorFlow forward Callables for operator classes"""
 
 
 @operator_impl(Constant)
 def forward_fn(op: Constant):
-    data = tf.cast(
-        tf.random.normal(op.abs_tensor.shape), op.abs_tensor.dtype.tensorflow()
-    )
-    return StopFoldConst(data)
+    dtype = op.abs_tensor.dtype.tensorflow()
+    data = tf.cast(tf.random.normal(op.abs_tensor.shape), dtype)
+    return lambda: tf.constant(data, dtype=dtype)
 
 
 @operator_impl(ReLU)
@@ -124,13 +114,7 @@ def forward_fn(op: Mul):
 
 @operator_impl(Div)
 def forward_fn(op: Div):
-    def _div(up, down):
-        if DType.from_tensorflow(up.dtype) in DTYPE_INTS:
-            return tf.math.floordiv(up, down)
-        else:
-            return tf.divide(up, down)
-
-    return _div
+    return tf.divide
 
 
 @operator_impl(Max)

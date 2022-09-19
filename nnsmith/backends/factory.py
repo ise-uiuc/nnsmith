@@ -187,6 +187,9 @@ class BackendFactory(ABC):
                 "Backend type cannot be None. Specify via `backend.type=[onnxruntime | tvm | tensorrt | tflite | xla | iree]`"
             )
 
+        if target == "gpu":
+            target = "cuda"  # `gpu` means `cuda` by default.
+
         if name == "onnxruntime":
             from nnsmith.backends.onnxruntime import ORTFactory
 

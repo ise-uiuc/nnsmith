@@ -151,14 +151,14 @@ class Model(ABC):
     def output_like(self) -> Dict[str, AbsTensor]:
         pass
 
-    @staticmethod
+    @classmethod
     @abstractmethod
-    def from_schedule(schedule: Schedule, **kwargs) -> "Model":
+    def from_schedule(cls, schedule: Schedule, **kwargs) -> "Model":
         pass
 
-    @staticmethod
+    @classmethod
     @abstractmethod
-    def load(path: PathLike) -> "Model":
+    def load(cls, path: PathLike) -> "Model":
         pass
 
     @abstractmethod
@@ -216,7 +216,7 @@ class Model(ABC):
         viz_dot(self.dotstring, path)
 
     @staticmethod
-    def init(name) -> Type["Model"]:
+    def init(name, backend_target=None) -> Type["Model"]:
         if name is None:
             raise ValueError(
                 "Model type cannot be None. Use `model.type=[torch|onnx|tensorflow]`."
@@ -225,17 +225,25 @@ class Model(ABC):
         if name == "torch":
             from nnsmith.materialize.torch import TorchModel
 
+            # PyTorch CPU - GPU implementation are quite the same.
             return TorchModel
         elif name == "onnx":
+            # device agnoistic
             from nnsmith.materialize.onnx import ONNXModel
 
             return ONNXModel
         elif name == "tensorflow":
-            from nnsmith.materialize.tensorflow import TFModel
+            from nnsmith.materialize.tensorflow import TFModelCPU, TFModelGPU
 
-            return TFModel
-        else:
-            raise ValueError(f"Unknown or unsupported model type: {name}")
+            if backend_target == "gpu" or backend_target == "cuda":
+                # XLA must align device location of eager mode execution.
+                return TFModelGPU
+            else:
+                return TFModelCPU
+
+        raise ValueError(
+            f"Unsupported: ModelType={name} for BackendTarget={backend_target}"
+        )
 
 
 class TestCase:

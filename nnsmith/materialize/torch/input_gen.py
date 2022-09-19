@@ -25,12 +25,12 @@ class InputSearchBase(ABC):
         self.use_cuda = use_cuda
 
     @abstractmethod
-    def search_one(self, start_inp, timeout_ms: int = None) -> List[torch.Tensor]:
+    def search_one(self, start_inp, timeout_ms: int = None) -> Dict[str, torch.Tensor]:
         pass
 
     def search(
-        self, max_time_ms: int = None, max_sample: int = 1, return_list=False
-    ) -> Tuple[int, Dict[str, np.ndarray]]:
+        self, max_time_ms: int = None, max_sample: int = 1
+    ) -> Tuple[int, Dict[str, torch.Tensor]]:
         n_try = 0
         sat_inputs = None
         start_time = time.time()
@@ -64,7 +64,7 @@ class InputSearchBase(ABC):
 
 class SamplingSearch(InputSearchBase):
     # Think about how people trivially generate inputs.
-    def search_one(self, start_inp, timeout_ms: int = None) -> List[torch.Tensor]:
+    def search_one(self, start_inp, timeout_ms: int = None) -> Dict[str, torch.Tensor]:
         with torch.no_grad():
             self.net.check_intermediate_numeric = True
             _ = self.net(**start_inp)
@@ -75,7 +75,7 @@ class SamplingSearch(InputSearchBase):
 
 
 class GradSearch(InputSearchBase):
-    def search_one(self, start_inp, timeout_ms: int = None) -> List[torch.Tensor]:
+    def search_one(self, start_inp, timeout_ms: int = None) -> Dict[str, torch.Tensor]:
         timeout_s = None if timeout_ms is None else timeout_ms / 1000
         return self.net.grad_input_gen(
             init_tensors=start_inp, use_cuda=self.use_cuda, max_time=timeout_s
@@ -99,7 +99,7 @@ class PracticalHybridSearch(InputSearchBase):
         else:
             self.differentiable = False
 
-    def search_one(self, start_inp, timeout_ms: int = None) -> List[torch.Tensor]:
+    def search_one(self, start_inp, timeout_ms: int = None) -> Dict[str, torch.Tensor]:
         # if this model is purely differentiable -> GradSearch
         # otherwise                              -> SamplingSearch
         # FIXME: Estimate gradient (e.g., proxy gradient) for non-differentiable inputs.

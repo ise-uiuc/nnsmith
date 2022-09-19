@@ -18,9 +18,9 @@ class TorchModel(Model):
         self.torch_model: SymbolNet = None
         self.sat_inputs = None
 
-    @staticmethod
-    def from_schedule(schedule: Schedule, **kwargs) -> "TorchModel":
-        ret = TorchModel()
+    @classmethod
+    def from_schedule(cls, schedule: Schedule, **kwargs) -> "TorchModel":
+        ret = cls()
         ret.torch_model = SymbolNet(schedule, **kwargs)
         return ret
 
@@ -32,7 +32,7 @@ class TorchModel(Model):
         self.torch_model.enable_proxy_grad()
         searcher = PracticalHybridSearch(self.torch_model)
         # TODO(@ganler): Can we directly get both inputs and outputs?
-        n_try, inputs = searcher.search(
+        _, inputs = searcher.search(
             max_time_ms=20,
             max_sample=2,
         )
@@ -67,12 +67,12 @@ class TorchModel(Model):
         with open(schedule_path, "wb") as f:
             pickle.dump(self.torch_model.schedule, f)
 
-    @staticmethod
-    def load(path: PathLike) -> "TorchModel":
-        ret = TorchModel()
+    @classmethod
+    def load(cls, path: PathLike) -> "TorchModel":
+        ret = cls()
         schedule_path = path.replace(
-            TorchModel.name_prefix() + TorchModel.name_suffix(),
-            TorchModel.schedule_name(),
+            cls.name_prefix() + cls.name_suffix(),
+            cls.schedule_name(),
         )
         with open(schedule_path, "rb") as f:
             schedule = pickle.load(f)

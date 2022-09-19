@@ -4,7 +4,7 @@ from nnsmith.abstract.dtype import DType
 from nnsmith.backends import BackendFactory
 from nnsmith.graph_gen import concretize_graph, random_model_gen
 from nnsmith.materialize import Model, Schedule, TestCase
-from nnsmith.materialize.tensorflow import TFModel
+from nnsmith.materialize.tensorflow import TFModelCPU
 from nnsmith.narrow_spec import load_topset_from_auto_cache, opset_from_auto_cache
 
 TestCase.__test__ = False  # supress PyTest warning
@@ -39,7 +39,7 @@ def test_synthesized_tf_model(tmp_path):
     )
 
     gen = random_model_gen(
-        opset=opset_from_auto_cache(TFModel, factory),
+        opset=opset_from_auto_cache(TFModelCPU, factory),
         init_rank=4,
         seed=23132,
         max_nodes=4,

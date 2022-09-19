@@ -43,7 +43,9 @@ class FuzzingLoop:
         )
 
         model_cfg = self.cfg["model"]
-        self.ModelType = Model.init(model_cfg["type"])
+        self.ModelType = Model.init(
+            model_cfg["type"], backend_target=cfg["backend"]["target"]
+        )
         self.ModelType.add_seed_setter()
         self.opset = opset_from_auto_cache(self.ModelType, self.factory)
 
