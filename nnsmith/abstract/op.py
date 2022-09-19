@@ -1778,8 +1778,8 @@ class ReduceMax(ReduceBase):
 
 @mark_materialize("core")
 class ReduceMean(ReduceBase):
-    in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
-    out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+    in_dtypes = [(i,) for i in DTYPE_FLOATS]
+    out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
 
 @mark_materialize("core")
