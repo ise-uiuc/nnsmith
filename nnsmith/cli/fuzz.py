@@ -57,10 +57,14 @@ class FuzzingLoop:
         # Time budget checking.
         self.timeout_s = self.cfg["fuzz"]["time"]
         if isinstance(self.timeout_s, str):
-            if self.timeout_s.endswith("hr") or self.timeout_s.endswith("h"):
+            if self.timeout_s.endswith("hr"):
                 self.timeout_s = int(self.timeout_s[:-2]) * 3600
-            elif self.timeout_s.endswith("min") or self.timeout_s.endswith("m"):
+            elif self.timeout_s.endswith("h"):
+                self.timeout_s = int(self.timeout_s[:-1]) * 3600
+            elif self.timeout_s.endswith("min"):
                 self.timeout_s = int(self.timeout_s[:-3]) * 60
+            elif self.timeout_s.endswith("m"):
+                self.timeout_s = int(self.timeout_s[:-1]) * 60
             elif self.timeout_s.endswith("s"):
                 self.timeout_s = int(self.timeout_s[:-1])
         assert isinstance(
