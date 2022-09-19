@@ -22,7 +22,7 @@ jobs:
           pytest tests/tensorflow
       - name: Test CLI [model_gen + model_exec]
         run: |
-          yes | python nnsmith/cli/model_gen.py backend.type=onnxruntime debug.viz=true model.type=torch
+          yes | python nnsmith/cli/model_gen.py debug.viz=true model.type=torch
           yes | python nnsmith/cli/model_gen.py model.type=onnx
           python nnsmith/cli/model_exec.py model.type=onnx backend.type=onnxruntime model.path=nnsmith_output/model.onnx
           yes | python nnsmith/cli/model_gen.py model.type=tensorflow
