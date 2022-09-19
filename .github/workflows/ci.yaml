@@ -29,4 +29,4 @@ jobs:
           python nnsmith/cli/model_exec.py model.type=tensorflow backend.type=xla model.path=nnsmith_output/model/
       - name: Test CLI [fuzz]
         run: |
-          yes | python nnsmith/cli/fuzz.py fuzz.time=10s fuzz.root=fuzz_report model.type=tensorflow backend.type=xla backend.target=cuda
+          yes | python nnsmith/cli/fuzz.py fuzz.time=10s fuzz.root=fuzz_report model.type=tensorflow backend.type=xla
