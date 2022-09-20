@@ -88,16 +88,26 @@ See other commands under [`doc/cli`](doc/cli.md). We use [hydra](https://hydra.c
 - `pip install --upgrade -r requirements/sys/[system].txt` to allow generating and running specific frameworks;
   -  **Why "--upgrade"?** In fact, all the sources under `requirements/sys/` are nightly release (except tvm) as we want to "save the world" by catching new bugs;
 
+<details><summary><b>Pre-commits</b> <i>[click to expand]</i></summary>
+<div>
+
 You can use `pre-commit` to simpify development:
 
 - `pip install -r requirements/dev.txt`;
 - `pre-commit install`;
 - `pre-commit` will run upon a commit; To explicitly run `pre-commit` for all files: `pre-commit run --all-files`.
 
-Local development:
+</div>
+</details>
+
+<details><summary><b>Local development</b> <i>[click to expand]</i></summary>
+<div>
 
 - Develop locally by setting `export PYTHONPATH=$PYTHONPATH:$(pwd)` (`pwd` should be this git folder.)
 - Set `PYTHONPATH=""` when doing `pip install nnsmith` from online version.
+
+</div>
+</details>
 
 <details><summary><b>Simplify the code</b> <i>[click to expand]</i></summary>
 <div>
@@ -121,6 +131,11 @@ pytest tests/tensorflow -s
 
 </div>
 </details>
+
+## Paper
+
+Our paper is accepted by ASPLOS'23 and the pre-print is now available on [![arXiv](https://img.shields.io/badge/arXiv-2207.13066-b31b1b.svg)](https://arxiv.org/abs/2207.13066).
+
 
 
 <!--
