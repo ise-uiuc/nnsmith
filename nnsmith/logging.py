@@ -8,4 +8,5 @@ EXEC_LOG = logging.getLogger("exec")
 DTEST_LOG = logging.getLogger("dtest")
 CORE_LOG = logging.getLogger("core")
 
-TF_LOG = logging.getLogger("mgen[tf]")
+TF_LOG = logging.getLogger("gen|tf")
+TORCH_LOG = logging.getLogger("gen|torch")

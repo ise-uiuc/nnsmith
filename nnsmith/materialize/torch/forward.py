@@ -19,23 +19,12 @@ operator_impl = partial(framework_operator_impl, TORCH_REALIZABLE_OPS, ALL_TORCH
 # forward_fn:  forward
 
 
-class StopFoldConst(torch.nn.Module):
-    def __init__(self, data: torch.Tensor):
-        super().__init__()
-        self.dtype = data.dtype
-        self.param = torch.nn.parameter.Parameter(
-            data, requires_grad=data.is_floating_point()  # TODO Colin trainable const?
-        )
-
-    @torch.no_grad()
-    def forward(self):
-        return self.param.to(dtype=self.dtype)
-
-
 @operator_impl(Constant)
 def forward_fn(op: Constant):
     data = torch.randn(op.abs_tensor.shape).to(op.abs_tensor.dtype.torch())
-    return StopFoldConst(data)
+    return lambda: torch.nn.parameter.Parameter(
+        data, requires_grad=data.is_floating_point()
+    )
 
 
 @operator_impl(ReLU)

@@ -33,7 +33,7 @@ def create_deadcode_onnx(onnx_model, name_mask) -> onnx.ModelProto:
         graph=graph_def, producer_name="nnsmith.deadcode"
     )
 
-    onnx.checker.check_model(model_def)
+    onnx.checker.check_model(model_def, full_check=True)
     return model_def
 
 
@@ -257,11 +257,13 @@ class ONNXModel(TorchModel):
         torch2onnx(self.torch_model, f)
         onnx_model = onnx.load_model_from_string(f.getvalue())
         # freeze input and output shapes.
-        return update_model_dims.update_inputs_outputs_dims(
+        onnx_model = update_model_dims.update_inputs_outputs_dims(
             onnx_model,
             {k: v.shape for k, v in self.torch_model.input_like.items()},
             {k: v.shape for k, v in self.torch_model.output_like.items()},
         )
+        onnx.checker.check_model(onnx_model, full_check=True)
+        return onnx_model
 
     @staticmethod
     def name_suffix() -> str:
