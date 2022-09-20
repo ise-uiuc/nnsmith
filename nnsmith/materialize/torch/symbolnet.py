@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 import warnings
@@ -9,6 +10,7 @@ from torch import nn
 from nnsmith.abstract.op import Input
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import ConstraintCheck, ConstraintError, SanityCheck
+from nnsmith.logging import TORCH_LOG
 from nnsmith.materialize import Schedule
 from nnsmith.materialize.torch.forward import forward_fn
 from nnsmith.materialize.torch.numeric import loss_fn, numeric_valid
@@ -17,16 +19,23 @@ from nnsmith.materialize.torch.proxy_grad import proxy_fn
 __MB_LIM__ = 6 * 1024
 __INPUT_FOUND_NAN_MSG__ = "[NaN] in model inputs!"
 __INPUT_FOUND_INF_MSG__ = "[Inf] in model inputs!"
-__ENABLE_RUNTIME_CHECK__ = os.getenv("NNSMITH_RUNTIME_CHECK", "0") == "1"
+__ENABLE_RT_CHECK__ = os.getenv("NNSMITH_RT_CHECK", "0") == "1"
 
 
-def check_type(op, tensors, msg=""):
-    if __ENABLE_RUNTIME_CHECK__ and op is not None:
+def check_type(op, tensors, is_input=True, msg=""):
+    if __ENABLE_RT_CHECK__ and op is not None:
+        like = op.input_like if is_input else op.output_like
+        ioro = "input" if is_input else "output"
+
+        assert len(like) == len(
+            tensors
+        ), f"{op}'s {ioro} has {len(like)} abs. input, but got {len(tensors)} real inputs."
+
         for i, ten in enumerate(tensors):
             ttype = AbsTensor.from_torch(ten)
             assert (
-                op.input_like[i] == ttype
-            ), f"{msg} {ttype} != {AbsTensor.from_torch(ten)} for {op} {op.input_like} -> {op.output_like}"
+                like[i] == ttype
+            ), f"{msg} {ioro} abstract type != concrete {AbsTensor.from_torch(ten)} for {op} {op.input_like} -> {op.output_like}"
 
 
 # Probablistically, sampling at positive domain is beneficial.
@@ -50,7 +59,6 @@ class SymbolNet(nn.Module):
     def __init__(
         self,
         schedule: Schedule,
-        verbose=False,
         record_intermediate=False,
         use_gradient=False,
         megabyte_lim=__MB_LIM__,
@@ -58,7 +66,6 @@ class SymbolNet(nn.Module):
     ):
         super(SymbolNet, self).__init__()
         self.megabyte_lim = megabyte_lim
-        self.verbose = verbose
         self.print_grad = print_grad
         # <TorchFunc, <keys -> inputs>, <keys -> outputs>, original op>
         self.instructions = []
@@ -171,7 +178,9 @@ class SymbolNet(nn.Module):
                         if i.grad is not None
                         else "None"
                     )
-                    print(f"Iter {self.iter_num} [{loss_name}] {name} grad: {msg}")
+                    TORCH_LOG.info(
+                        f"Iter {self.iter_num} [{loss_name}] {name} grad: {msg}"
+                    )
 
             nonzero = False
             with torch.no_grad():
@@ -273,12 +282,12 @@ class SymbolNet(nn.Module):
                                 )
                             )
                     continue
-                print(e)
+                TORCH_LOG.debug(e)
                 break
 
         self.stop_training()
         if sat_inputs is None:
-            print("[grad] no valid range found!!!")
+            TORCH_LOG.debug("[grad] no valid range found!!!")
 
         self.check_intermediate_numeric = last_check_intermediate_numeric
         return sat_inputs
@@ -333,14 +342,14 @@ class SymbolNet(nn.Module):
         for stmt_idx, (inst, inps, outs, op) in enumerate(self.instructions):
             input_tensors = [tensor_map[idx] for idx in inps]
 
-            check_type(op, input_tensors, msg="input")
+            check_type(op, input_tensors, is_input=True, msg="input")
 
             # REAL FORWARD.
             output_tensors = inst(*input_tensors)
             if not isinstance(output_tensors, list):
                 output_tensors = [output_tensors]
 
-            check_type(op, output_tensors, msg="output")
+            check_type(op, output_tensors, is_input=False, msg="output")
 
             for i, out_key in enumerate(outs):
                 # put values back to tensor_map.
@@ -351,14 +360,18 @@ class SymbolNet(nn.Module):
 
             # LOG.
             # TODO(@ganler): add node_id information by aligning instruction idx and node idx.
-            if self.verbose:
-                print(f">> statment {stmt_idx}")
+            if TORCH_LOG.isEnabledFor(logging.DEBUG):
+                TORCH_LOG.debug(f">> statment {stmt_idx}")
                 for inp_i, i in enumerate(input_tensors):
-                    print(f"  (shape={i.shape} dtype={i.dtype})")
-                    print(f"[inp]@{inp_i} :: {i.min().data:.5f} ~ {i.max().data:.5f}")
+                    TORCH_LOG.debug(f"  (shape={i.shape} dtype={i.dtype})")
+                    TORCH_LOG.debug(
+                        f"[inp]@{inp_i} :: {i.min().data:.5f} ~ {i.max().data:.5f}"
+                    )
                 for out_i, o in enumerate(output_tensors):
-                    print(f"  (shape={o.shape} dtype={o.dtype})")
-                    print(f"[out]@{out_i} :: {o.min().data:.5f} ~ {o.max().data:.5f}")
+                    TORCH_LOG.debug(f"  (shape={o.shape} dtype={o.dtype})")
+                    TORCH_LOG.debug(
+                        f"[out]@{out_i} :: {o.min().data:.5f} ~ {o.max().data:.5f}"
+                    )
 
             if self.print_grad >= 2:
                 if output_tensors[0].requires_grad:
@@ -383,7 +396,7 @@ class SymbolNet(nn.Module):
                 ):
                     if self.print_grad >= 1:
                         for inp_i, inp in enumerate(input_tensors):
-                            print(
+                            TORCH_LOG.info(
                                 f"[inp]@{inp_i} :: {inp.min().data:.5f} ~ {inp.max().data:.5f}"
                             )
 
@@ -396,7 +409,7 @@ class SymbolNet(nn.Module):
                     loss_suf, l = vul_op_loss
                     msg = f"loss_{loss_suf}: {l.min().data:.3f} ~ {l.max().data:.3f} ~ {torch.sum((l > 0) * l).item()}"
                     if self.print_grad >= 1:
-                        print(
+                        TORCH_LOG.info(
                             f"Iter #{self.iter_num} [NaN/Inf] in outputs ~ {op} :: {msg}"
                         )
 
