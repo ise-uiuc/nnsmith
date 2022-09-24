@@ -10,7 +10,7 @@ from nnsmith.abstract.dtype import DType
 from nnsmith.backends import BackendFactory
 from nnsmith.graph_gen import concretize_graph, random_model_gen
 from nnsmith.materialize import Model, Schedule, TestCase
-from nnsmith.narrow_spec import load_topset_from_auto_cache, opset_from_auto_cache
+from nnsmith.narrow_spec import auto_opconfig, auto_opset
 
 TestCase.__test__ = False  # supress PyTest warning
 
@@ -18,9 +18,9 @@ TestCase.__test__ = False  # supress PyTest warning
 def test_narrow_spec_cache_make_and_reload():
     factory = BackendFactory.init("tensorrt", target="cuda", optmax=True)
     ONNXModel = Model.init("onnx")
-    opset_lhs = load_topset_from_auto_cache(ONNXModel, factory)
+    opset_lhs = auto_opconfig(ONNXModel, factory)
     assert opset_lhs, "Should not be empty... Something must go wrong."
-    opset_rhs = load_topset_from_auto_cache(ONNXModel, factory)
+    opset_rhs = auto_opconfig(ONNXModel, factory)
     assert opset_lhs == opset_rhs
 
     # Assert types
@@ -42,7 +42,7 @@ def test_synthesized_onnx_model(tmp_path):
     factory = BackendFactory.init("tensorrt", target="cuda", optmax=True)
 
     gen = random_model_gen(
-        opset=opset_from_auto_cache(ONNXModel, factory),
+        opset=auto_opset(ONNXModel, factory),
         init_rank=4,
         seed=23132,
         max_nodes=1,

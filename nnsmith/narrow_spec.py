@@ -29,6 +29,7 @@ from appdirs import user_cache_dir
 from omegaconf import OmegaConf
 
 from nnsmith.abstract.dtype import DType
+from nnsmith.abstract.extension import BACKEND_REQUIRES
 from nnsmith.abstract.op import AbsOpBase, AbsTensor, Constant, Input, concretize_op
 from nnsmith.backends import BackendFactory
 from nnsmith.logging import DTEST_LOG
@@ -230,7 +231,7 @@ def dump_topset(topset: Dict[str, OpConfig], path: PathLike):
     OmegaConf.save({"topset": topset}, path)
 
 
-def load_topset_from_auto_cache(
+def auto_opconfig(
     model_cls: Model, factory: Optional[BackendFactory]
 ) -> Dict[str, OpConfig]:
     cache_path = os.path.join(
@@ -251,17 +252,22 @@ def load_topset_from_auto_cache(
         return opset
 
 
-def opset_from_auto_cache(
-    model_cls: Type[Model], factory: Optional[BackendFactory] = None
-):
+def auto_opset(model_cls: Type[Model], factory: Optional[BackendFactory] = None):
     # None means only test model exportation.
-    topset_config = load_topset_from_auto_cache(model_cls, factory)
+    topset_config = auto_opconfig(model_cls, factory)
     opset = []
     for op in model_cls.operators():
         if op.name() not in topset_config:
             continue
         op.in_dtypes = topset_config[op.name()].in_dtypes
         op.out_dtypes = topset_config[op.name()].out_dtypes
+
+        # check patch
+        if factory is not None and factory.system_name in BACKEND_REQUIRES:
+            rules = BACKEND_REQUIRES[factory.system_name]
+            if op.name() in rules:
+                op.requires = rules[op.name()]
+
         opset.append(op)
-    # TODO(@ganler): make patch.
+
     return opset

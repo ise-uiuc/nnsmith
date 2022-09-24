@@ -1,11 +1,10 @@
 import pytest
-import tensorflow as tf
 
 from nnsmith.abstract.dtype import DType
 from nnsmith.backends import BackendFactory
 from nnsmith.graph_gen import concretize_graph, random_model_gen
 from nnsmith.materialize import Model, Schedule, TestCase
-from nnsmith.narrow_spec import load_topset_from_auto_cache, opset_from_auto_cache
+from nnsmith.narrow_spec import auto_opconfig, auto_opset
 
 TestCase.__test__ = False  # supress PyTest warning
 
@@ -13,9 +12,9 @@ TestCase.__test__ = False  # supress PyTest warning
 def test_narrow_spec_cache_make_and_reload():
     factory = BackendFactory.init("iree", target="cpu", optmax=True)
     ModelType = Model.init("tensorflow")
-    opset_lhs = load_topset_from_auto_cache(ModelType, factory)
+    opset_lhs = auto_opconfig(ModelType, factory)
     assert opset_lhs, "Should not be empty... Something must go wrong."
-    opset_rhs = load_topset_from_auto_cache(ModelType, factory)
+    opset_rhs = auto_opconfig(ModelType, factory)
     assert opset_lhs == opset_rhs
 
     # Assert types
@@ -42,7 +41,7 @@ def test_synthesized_tf_model(tmp_path):
         )
 
         gen = random_model_gen(
-            opset=opset_from_auto_cache(ModelType, factory),
+            opset=auto_opset(ModelType, factory),
             init_rank=4,
             seed=23132,
             max_nodes=4,

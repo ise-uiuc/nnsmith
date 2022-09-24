@@ -9,7 +9,7 @@ from nnsmith.backends.factory import BackendFactory
 from nnsmith.graph_gen import concretize_graph, random_model_gen, viz
 from nnsmith.logging import MGEN_LOG
 from nnsmith.materialize import Model, Schedule, TestCase
-from nnsmith.narrow_spec import opset_from_auto_cache
+from nnsmith.narrow_spec import auto_opset
 from nnsmith.util import mkdir
 
 
@@ -39,7 +39,7 @@ def main(cfg: DictConfig):
         factory = None
 
     gen = random_model_gen(
-        opset=opset_from_auto_cache(ModelType, factory),
+        opset=auto_opset(ModelType, factory),
         init_rank=mgen_cfg["init_rank"],
         seed=seed,
         max_nodes=mgen_cfg["max_nodes"],

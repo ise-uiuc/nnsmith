@@ -70,5 +70,5 @@ cmp:
   save: null # path to save the bug report if `bug_presence` is "report"
 
 defaults:
-  - override hydra/job_logging: console
+  - override hydra/job_logging: file
   - override hydra/hydra_logging: colorlog
