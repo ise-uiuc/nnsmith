@@ -293,3 +293,86 @@ def forward_fn(op: NHWCConv2d):
         dtype=op.input_like[0].dtype.tensorflow(),
         autocast=False,
     )
+
+
+@operator_impl(Squeeze)
+def forward_fn(op: Squeeze):
+    if op.extra_attrs["reduce_dim"] is not None:
+        return lambda x: tf.squeeze(x, axis=op.extra_attrs["reduce_dim"])
+    else:
+        return lambda x: tf.squeeze(x)
+
+
+@operator_impl(ReduceSum)
+def forward_fn(op: ReduceSum):
+    if op.extra_attrs["reduce_dim"] is not None:
+        return lambda x: tf.math.reduce_sum(x, axis=op.extra_attrs["reduce_dim"])
+    return lambda x: tf.math.reduce_sum(x)
+
+
+@operator_impl(ReduceMin)
+def forward_fn(op: ReduceMin):
+    if op.extra_attrs["reduce_dim"] is not None:
+        return lambda x: tf.math.reduce_min(x, axis=op.extra_attrs["reduce_dim"])
+    return lambda x: tf.math.reduce_min(x)
+
+
+@operator_impl(ReduceMax)
+def forward_fn(op: ReduceMax):
+    if op.extra_attrs["reduce_dim"] is not None:
+        return lambda x: tf.math.reduce_max(x, axis=op.extra_attrs["reduce_dim"])
+    return lambda x: tf.math.reduce_max(x)
+
+
+@operator_impl(ReduceMean)
+def forward_fn(op: ReduceMean):
+    if op.extra_attrs["reduce_dim"] is not None:
+        return lambda x: tf.math.reduce_mean(x, axis=op.extra_attrs["reduce_dim"])
+    return lambda x: tf.math.reduce_mean(x)
+
+
+@operator_impl(ReduceProd)
+def forward_fn(op: ReduceProd):
+    if op.extra_attrs["reduce_dim"] is not None:
+        return lambda x: tf.math.reduce_prod(x, axis=op.extra_attrs["reduce_dim"])
+    return lambda x: tf.math.reduce_prod(x)
+
+
+@operator_impl(ArgMin)
+def forward_fn(op: ArgMin):
+    if op.extra_attrs["reduce_dim"] is not None:
+        return lambda x: tf.math.argmin(x, axis=op.extra_attrs["reduce_dim"])
+    return lambda x: tf.math.argmin(x)
+
+
+@operator_impl(ArgMin)
+def forward_fn(op: ArgMin):
+    if op.extra_attrs["reduce_dim"] is not None:
+        return lambda x: tf.math.argmax(x, axis=op.extra_attrs["reduce_dim"])
+    return lambda x: tf.math.argmax(x)
+
+
+@operator_impl(Tril)
+def forward_fn(op: Tril):
+    return lambda x: tf.experimental.numpy.tril(x, k=op.diagonal)
+
+
+@operator_impl(Triu)
+def forward_fn(op: Triu):
+    return lambda x: tf.experimental.numpy.triu(x, k=op.diagonal)
+
+
+@operator_impl(Concat)
+def forward_fn(op: Concat):
+    axis = op.extra_attrs["axis"]
+    return lambda *args: tf.concat(args, axis=axis)
+
+
+@operator_impl(Cast)
+def forward_fn(op: Cast):
+    return lambda x: tf.cast(x, dtype=op.extra_attrs["to"].torch())
+
+
+@operator_impl(MatMul)
+def forward_fn(op: MatMul):
+    return tf.linalg.matmul
