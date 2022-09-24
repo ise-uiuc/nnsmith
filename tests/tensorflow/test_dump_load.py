@@ -4,7 +4,7 @@ import pytest
 from nnsmith.graph_gen import concretize_graph, random_model_gen
 from nnsmith.materialize import Schedule, TestCase
 from nnsmith.materialize.tensorflow import TFModelCPU, tf_dict_from_np
-from nnsmith.narrow_spec import opset_from_auto_cache
+from nnsmith.narrow_spec import auto_opset
 
 TestCase.__test__ = False  # supress PyTest warning
 
@@ -14,7 +14,7 @@ def test_onnx_load_dump(tmp_path):
     d.mkdir()
 
     gen = random_model_gen(
-        opset=opset_from_auto_cache(TFModelCPU),
+        opset=auto_opset(TFModelCPU),
         init_rank=4,
         seed=54341,
         max_nodes=5,

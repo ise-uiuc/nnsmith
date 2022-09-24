@@ -1,11 +1,13 @@
 import sys
 import traceback
 from abc import ABC, abstractmethod
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable, Dict, List, Optional, Type, Union
 
 import numpy as np
 
 from nnsmith.abstract.dtype import DType
+from nnsmith.abstract.extension import BACKEND_REQUIRES
+from nnsmith.abstract.op import AbsOpBase
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.difftest import assert_allclose
 from nnsmith.error import InternalError
@@ -248,3 +250,11 @@ class BackendFactory(ABC):
             )
         else:
             raise ValueError(f"unknown backend: {name}")
+
+    def add_constraints(self, op_types: List[Type[AbsOpBase]]) -> List[Type[AbsOpBase]]:
+
+        for optype in op_types:
+            if optype.name() in BACKEND_REQUIRES[self.system_name]:
+                optype.requires = BACKEND_REQUIRES[self.system_name][optype.name()]
+
+        return op_types

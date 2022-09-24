@@ -13,7 +13,7 @@ from nnsmith.graph_gen import concretize_graph, random_model_gen
 from nnsmith.logging import FUZZ_LOG
 from nnsmith.macro import NNSMITH_BUG_PATTERN_TOKEN
 from nnsmith.materialize import Model, Schedule, TestCase
-from nnsmith.narrow_spec import opset_from_auto_cache
+from nnsmith.narrow_spec import auto_opset
 from nnsmith.util import mkdir, set_seed
 
 
@@ -49,7 +49,7 @@ class FuzzingLoop:
             model_cfg["type"], backend_target=cfg["backend"]["target"]
         )
         self.ModelType.add_seed_setter()
-        self.opset = opset_from_auto_cache(self.ModelType, self.factory)
+        self.opset = auto_opset(self.ModelType, self.factory)
 
         seed = cfg["fuzz"]["seed"] or random.getrandbits(32)
         set_seed(seed)
@@ -120,16 +120,16 @@ class FuzzingLoop:
             except InternalError as e:
                 raise e  # propagate internal errors
             except Exception:
-                FUZZ_LOG.warning(
+                FUZZ_LOG.error(
                     f"`make_testcase` failed. It could be a NNSmith bug or Generator bug (e.g., {self.cfg['model']['type']})."
                 )
-                FUZZ_LOG.warning(traceback.format_exc())
+                FUZZ_LOG.error(traceback.format_exc())
                 repro = "nnsmith.model_gen"
                 repro += f" mgen.seed={seed}"
                 repro += f" mgen.max_nodes={self.cfg['mgen']['max_nodes']}"
                 repro += f" model.type={self.cfg['model']['type']}"
                 repro += f" backend.target={self.cfg['backend']['target']}"
-                FUZZ_LOG.warning(f"repro with: {repro}")
+                FUZZ_LOG.error(f"repro with: {repro}")
                 continue
 
             if not self.validate_and_report(testcase):

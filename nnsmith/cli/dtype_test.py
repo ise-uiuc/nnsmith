@@ -3,7 +3,7 @@ from omegaconf import DictConfig
 
 from nnsmith.backends import BackendFactory
 from nnsmith.materialize import Model
-from nnsmith.narrow_spec import load_topset_from_auto_cache
+from nnsmith.narrow_spec import auto_opconfig
 
 
 @hydra.main(version_base=None, config_path="../config", config_name="main")
@@ -18,7 +18,7 @@ def main(cfg: DictConfig):
     else:
         factory = None
     model_type = Model.init(cfg["model"]["type"], backend_target=backend_cfg["target"])
-    load_topset_from_auto_cache(model_type, factory)
+    auto_opconfig(model_type, factory)
 
 
 if __name__ == "__main__":
