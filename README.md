@@ -10,16 +10,17 @@
 
 ## Backend-Model Support
 
-| Backend\Model | ONNX/PyTorch | TensorFlow |
-| ------------- | ------------ | ---------- |
-| TVM           | ✅            |            |
-| ONNXRuntime   | ✅            |            |
-| TensorRT      | ✅            |            |
-| TFLite        |              | ⚠️          |
-| XLA           |              | ⚠️          |
-| IREE          |              | ⚠️          |
+<center>
+
+| Model\Engine | [TVM](https://github.com/apache/tvm) | [ORT](https://github.com/microsoft/onnxruntime) | [TensorRT](https://github.com/NVIDIA/TensorRT) | [TFLite](https://www.tensorflow.org/lite) | [XLA](https://www.tensorflow.org/xla) | [IREE](https://github.com/iree-org/iree) |
+| ------------ | ------------------------------------ | ----------------------------------------------- | ---------------------------------------------- | ----------------------------------------- | ------------------------------------- | ---------------------------------------- |
+| PyTorch-ONNX | ✅                                    | ✅                                               | ✅                                              |                                           |                                       |                                          |
+| TensorFlow   |                                      |                                                 |                                                | ⚠️                                         | ⚠️                                     | ⚠️                                        |
+
 
 ✅: Supported; ⚠️: Beta support; Others are not supported yet -- Contributions are welcome!
+
+</center>
 
 ## Setup
 
@@ -135,108 +136,3 @@ pytest tests/tensorflow -s
 ## Paper
 
 Our paper is accepted by ASPLOS'23 and the pre-print is now available on [![arXiv](https://img.shields.io/badge/arXiv-2207.13066-b31b1b.svg)](https://arxiv.org/abs/2207.13066).
-
-
-
-<!--
-### Coverage Evaluation
-
-**WIP: Scripts under `experiments/` are not ready yet due to recent refactors.**
-
-To run coverage evaluation, first compile the DL framework with LLVM's [source-based code coverage](https://clang.llvm.org/docs/SourceBasedCodeCoverage.html). The commands below should be at least compatible with LLVM-14.
-
-<details><summary><b>NNSmith</b> <i>[click to expand]</i></summary>
-<div>
-
-```shell
-bash experiments/cov_exp.sh
-python experiments/cov_merge.py -f nnsmith-tvm-* nnsmith-ort-*  # generate merged_cov.pkl
-```
-
-</div>
-</details>
-
-
-<details><summary><b>LEMON</b> <i>[click to expand]</i></summary>
-<div>
-
-Please prepare 100GB disk space to store LEMON's outputs.
-
-```shell
-# step 1: Run LEMON to generate models (https://github.com/ganler/LEMON);
-# step 2:
-# For TVM
-python experiments/lemon_tf2onnx.py --lemon_output_dir /PATH/TO/LEMON/lemon_outputs/ --onnx_dir lemon-onnx
-python experiments/cov_eval.py --model_dir lemon-onnx    \
-                               --report_folder lemon-tvm \
-                               --backend tvm --lib '../tvm/build/libtvm.so ../tvm/build/libtvm_runtime.so' \
-                               --llvm-version 14 # if you compile tvm w/ llvm 14 instrumented on ubuntu.
-# For ORT:
-python experiments/cov_eval.py --model_dir lemon-onnx \
-                               --report_folder lemon-ort \
-                               --backend ort \
-                               --lib '../onnxruntime/build/Linux/RelWithDebInfo/libonnxruntime_providers_shared.so ../onnxruntime/build/Linux/RelWithDebInfo/libonnxruntime.so' \
-                               --llvm-version 14
-python experiments/cov_merge.py -f lemon-tvm lemon-ort # generate merged_cov.pkl
-```
-
-</div>
-</details>
-
-<details><summary><b>GraphFuzzer</b> <i>[click to expand]</i></summary>
-<div>
-
-*The original [paper](https://conf.researchr.org/details/icse-2021/icse-2021-papers/68/Graph-based-Fuzz-Testing-for-Deep-Learning-Inference-Engines) does not give it a name so we call it GraphFuzzer for convenience.*
-
-```shell
-# Make sure ORT dtype support config file is generated.
-python nnsmith/dtype_test.py --cache config/ort_cpu_dtype.pkl
-
-# TVM
-python experiments/graphfuzz.py --time_budget 14400 --onnx_dir /PATH/TO/LEMON/graphfuzz-tvm-onnx
-python experiments/cov_eval.py --model_dir /PATH/TO/LEMON/graphfuzz-tvm-onnx    \
-                               --report_folder graphfuzz-tvm \
-                               --backend tvm --lib '../tvm/build/libtvm.so ../tvm/build/libtvm_runtime.so' \
-                               --llvm-version 14
-
-# ORT
-python experiments/graphfuzz.py --time_budget 14400 --onnx_dir /PATH/TO/LEMON/graphfuzz-ort-onnx --ort_cache config/ort_cpu_dtype.pkl
-python experiments/cov_eval.py --model_dir /PATH/TO/LEMON/graphfuzz-ort-onnx \
-                               --report_folder graphfuzz-ort \
-                               --backend ort \
-                               --lib '../onnxruntime/build/Linux/RelWithDebInfo/libonnxruntime_providers_shared.so ../onnxruntime/build/Linux/RelWithDebInfo/libonnxruntime.so' \
-                               --llvm-version 14
-
-python experiments/cov_merge.py -f graphfuzz-tvm graphfuzz-ort # generate merged_cov.pkl
-```
-
-</div>
-</details>
-
-<details><summary><b>Visualization</b> <i>[click to expand]</i></summary>
-<div>
-
-```shell
-mkdir results # Store those files in results
-# TVM coverage.
-python experiments/viz_merged_cov.py --folders lemon-tvm graphfuzz-tvm nnsmith-tvm --tvm --pdf --tags 'LEMON' 'GraphFuzzer' 'NNSmith' --venn --output main_result
-# ORT coverage.
-python experiments/viz_merged_cov.py --folders lemon-ort graphfuzz-ort nnsmith-ort --ort --pdf --tags 'LEMON' 'GraphFuzzer' 'NNSmith' --venn --output main_result
-```
-
-</div>
-</details>
-
-### Evaluate input searching algorithm
-
-```shell
-# Run experiments.
-bash experiments/input_search_exp.sh 10
-bash experiments/input_search_exp.sh 20
-bash experiments/input_search_exp.sh 30
-
-# visualization
-python experiments/plot_inp_search_merge.py --root 512-model-10-node-exp \
-                                                   512-model-20-node-exp \
-                                                   512-model-30-node-exp
-``` -->
