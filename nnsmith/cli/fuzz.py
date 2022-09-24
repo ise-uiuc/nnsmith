@@ -119,11 +119,11 @@ class FuzzingLoop:
                 testcase = self.make_testcase(seed)
             except InternalError as e:
                 raise e  # propagate internal errors
-            except Exception as e:
+            except Exception:
                 FUZZ_LOG.warning(
                     f"`make_testcase` failed. It could be a NNSmith bug or Generator bug (e.g., {self.cfg['model']['type']})."
                 )
-                FUZZ_LOG.warning(traceback.format_exc(e))
+                FUZZ_LOG.warning(traceback.format_exc())
                 repro = "nnsmith.model_gen"
                 repro += f" mgen.seed={seed}"
                 repro += f" mgen.max_nodes={self.cfg['mgen']['max_nodes']}"
