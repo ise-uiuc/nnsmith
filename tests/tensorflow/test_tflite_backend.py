@@ -34,9 +34,7 @@ def test_synthesized_tf_model(tmp_path):
     d.mkdir()
 
     ModelType = Model.init("tensorflow")
-    factory = BackendFactory.init(
-        "tflite", target="cpu", optmax=False, catch_process_crash=False
-    )
+    factory = BackendFactory.init("tflite", target="cpu", optmax=False)
 
     gen = random_model_gen(
         opset=auto_opset(TFModelCPU, factory),

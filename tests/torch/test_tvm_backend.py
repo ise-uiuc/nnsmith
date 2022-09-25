@@ -38,7 +38,6 @@ def test_synthesized_onnx_model(tmp_path):
         "tvm",
         target="cuda" if tvm.cuda(0).exist else "cpu",
         optmax=False,
-        catch_process_crash=False,
     )
 
     gen = random_model_gen(

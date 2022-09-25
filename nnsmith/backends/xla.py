@@ -13,8 +13,8 @@ from nnsmith.materialize.tensorflow import (
 
 
 class XLAFactory(BackendFactory):
-    def __init__(self, target="cpu", optmax: bool = False, catch_process_crash=True):
-        super().__init__(target, optmax, catch_process_crash)
+    def __init__(self, target="cpu", optmax: bool = False):
+        super().__init__(target, optmax)
 
         if self.target == "cpu":
             self.device = tf.device(tf.config.list_logical_devices("CPU")[0].name)

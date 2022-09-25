@@ -6,12 +6,7 @@ import tensorflow as tf  # type: ignore
 from multipledispatch import dispatch
 
 from nnsmith.backends.factory import BackendCallable, BackendFactory
-from nnsmith.materialize.tensorflow import (
-    TFModel,
-    TFNetCallable,
-    np_dict_from_tf,
-    tf_dict_from_np,
-)
+from nnsmith.materialize.tensorflow import TFModel, TFNetCallable
 
 
 class TFLiteRunner:
@@ -20,12 +15,7 @@ class TFLiteRunner:
 
     def __call__(self, input: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
         return self.tfnet_callable(**input)
-        # https://github.com/tensorflow/tensorflow/issues/34536#issuecomment-565632906
-        # TFLite doesn't support NVIDIA GPU.
         # It can automatically convert input args to np.ndarray, and it outputs np.ndarray.
-        tf_input = tf_dict_from_np(input)
-        tf_output = self.tfnet_callable(**tf_input)
-        return np_dict_from_tf(tf_output)
 
 
 class TFLiteFactory(BackendFactory):
@@ -39,6 +29,9 @@ class TFLiteFactory(BackendFactory):
     """
 
     def __init__(self, target, optmax, **kwargs) -> None:
+        # https://github.com/tensorflow/tensorflow/issues/34536#issuecomment-565632906
+        # TFLite doesn't support NVIDIA GPU.
+        assert target != "cuda"
         super().__init__(target, optmax, **kwargs)
 
     @property

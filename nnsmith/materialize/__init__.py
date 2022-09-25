@@ -287,6 +287,7 @@ class Symptom(Enum):
     EXCEPTION = "exception"
     SEGFAULT = "segfault"
     INCONSISTENCY = "inconsistency"
+    TIMEOUT = "timeout"
     WORSE_PERF = "worse_perf"
 
 

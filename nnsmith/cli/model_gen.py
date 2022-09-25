@@ -33,7 +33,6 @@ def main(cfg: DictConfig):
             cfg["backend"]["type"],
             target=cfg["backend"]["target"],
             optmax=cfg["backend"]["optmax"],
-            catch_process_crash=False,
         )
     else:
         factory = None

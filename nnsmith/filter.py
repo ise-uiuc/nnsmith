@@ -1,4 +1,5 @@
 from inspect import signature
+from types import FunctionType
 from typing import Set, Type
 
 from nnsmith.materialize import BugReport, Stage, Symptom
@@ -20,7 +21,7 @@ class filter:
             assert (
                 caller_sig["self"] and len(caller_sig) == 2
             ), f"filter class {fn_or_cls.__name__} (aka {self.name}) should implement __call__(self, report: BugReport)."
-        elif callable(fn_or_cls):  # Function checks
+        elif isinstance(fn_or_cls, FunctionType):  # Function checks
             caller_sig = signature(fn_or_cls).parameters
             assert (
                 len(caller_sig) == 1
@@ -59,8 +60,11 @@ class FilterDup:
         self.seen: Set[int] = set()
 
     def __call__(self, report: BugReport) -> bool:
-        if report.symptom == Symptom.SEGFAULT:
-            return False  # don't filter segfaults
+        if (
+            report.symptom != Symptom.EXCEPTION
+            and report.symptom != Symptom.INCONSISTENCY
+        ):
+            return False  # don't filter bugs other than inconsistency/exception
 
         str_hash = hash(report.log)
         if str_hash in self.seen:
