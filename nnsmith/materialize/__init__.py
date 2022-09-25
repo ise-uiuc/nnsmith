@@ -304,7 +304,7 @@ class BugReport(ABC):
         stage: Stage,
         system: str,
         version: str = None,
-        trigger_hash: str = None,
+        version_id: str = None,
         log: str = None,
     ):
         self.testcase = testcase
@@ -312,7 +312,7 @@ class BugReport(ABC):
         self.system = system
         self.stage = stage
         self.version = version
-        self.trigger_hash = trigger_hash
+        self.version_id = version_id
         self.log = log
 
     @staticmethod
@@ -341,7 +341,7 @@ class BugReport(ABC):
                     "symptom": self.symptom.value,
                     "stage": self.stage.value,
                     "version": self.version,
-                    "trigger_hash": self.trigger_hash,
+                    "version_id": self.version_id,
                 },
                 f,
             )
@@ -352,7 +352,7 @@ class BugReport(ABC):
         symptom = None
         stage = None
         version = None
-        trigger_hash = None
+        version_id = None
         system = None
 
         assert allow_partial or os.path.exists(
@@ -367,7 +367,7 @@ class BugReport(ABC):
             symptom = Symptom(meta["symptom"])
             stage = Stage(meta["stage"])
             version = meta["version"]
-            trigger_hash = meta["trigger_hash"]
+            version_id = meta["version_id"]
 
         testcase = TestCase.load(model_type, root_folder, allow_partial)
 
@@ -376,4 +376,4 @@ class BugReport(ABC):
             with open(os.path.join(root_folder, BugReport.error_msg_name()), "r") as f:
                 log = f.read()
 
-        return BugReport(testcase, symptom, stage, system, version, trigger_hash, log)
+        return BugReport(testcase, symptom, stage, system, version, version_id, log)

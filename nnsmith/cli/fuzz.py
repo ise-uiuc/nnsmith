@@ -1,7 +1,10 @@
+import os
 import random
 import time
 import traceback
+from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
+from typing import Type
 
 import hydra
 from omegaconf import DictConfig
@@ -9,6 +12,7 @@ from omegaconf import DictConfig
 from nnsmith.backends.factory import BackendFactory
 from nnsmith.cli.model_exec import verify_testcase
 from nnsmith.error import InternalError
+from nnsmith.filter import FILTERS
 from nnsmith.graph_gen import concretize_graph, random_model_gen
 from nnsmith.logging import FUZZ_LOG
 from nnsmith.macro import NNSMITH_BUG_PATTERN_TOKEN
@@ -34,6 +38,44 @@ class FuzzingLoop:
         cfg: DictConfig,
     ):
         self.cfg = cfg
+
+        self.filters = []
+        # add filters.
+        filter_types = (
+            [cfg["filter"]["type"]]
+            if isinstance(cfg["filter"]["type"], str)
+            else cfg["filter"]["type"]
+        )
+        if filter_types:
+            patches = (
+                [cfg["filter"]["patch"]]
+                if isinstance(cfg["filter"]["patch"], str)
+                else cfg["filter"]["patch"]
+            )
+            for f in patches:
+                assert os.path.isfile(
+                    f
+                ), "filter.patch must be a list of file locations."
+                assert "@filter(" in open(f).read(), f"No filter found in the {f}."
+                spec = spec_from_file_location("module.name", f)
+                spec.loader.exec_module(module_from_spec(spec))
+                FUZZ_LOG.info(f"Imported filter patch: {f}")
+            for filter in filter_types:
+                filter = str(filter)
+                if filter not in FILTERS:
+                    raise ValueError(
+                        f"Filter {filter} not found. Available filters: {FILTERS.keys()}"
+                    )
+                fn_or_cls = FILTERS[filter]
+                if isinstance(fn_or_cls, Type):
+                    self.filters.append(fn_or_cls())
+                elif callable(fn_or_cls):
+                    self.filters.append(fn_or_cls)
+                else:
+                    raise InternalError(
+                        f"Invalid filter type: {fn_or_cls} (aka {filter})"
+                    )
+                FUZZ_LOG.info(f"Filter enabled: {filter}")
 
         self.status = StatusCollect(cfg["fuzz"]["root"])
 
@@ -105,6 +147,7 @@ class FuzzingLoop:
             factory=self.factory,
             testcase=testcase,
             output_dir=self.status.get_next_bug_path(),
+            filters=self.filters,
         ):
             self.status.n_bugs += 1
             return False
