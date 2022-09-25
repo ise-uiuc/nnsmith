@@ -49,6 +49,8 @@ fuzz:
   time: 14400
   root: "???"
   seed: null
+  crash_safe: true
+  test_timeout: null # second.
 
 filter:
   type: []
@@ -64,10 +66,10 @@ cmp:
   # PathLike: get the oracle from somewhere else;
   # null: fallback to random.
 
-  with: null
-    # type: "tvm"
-    # optmax: true
-    # target: "cpu"
+  with:
+    type: null
+    optmax: true
+    target: "cpu"
 
   seed: null
   bug_presence: "report" # or "crash"

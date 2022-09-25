@@ -137,12 +137,13 @@ class TFModel(Model, ABC):  # Don't directly instantiate this class
         with open(os.path.join(path, TFModel.schedule_name()), "wb") as f:
             pickle.dump(self.schedule, f)
         # tfnet
-        concrete_net = self.concrete_net(self.input_specs)
-        tf.saved_model.save(
-            self.net,
-            os.path.join(path, TFModel.tfnet_dir_name()),
-            signatures=concrete_net,
-        )
+        with self.device:
+            concrete_net = self.concrete_net(self.input_specs)
+            tf.saved_model.save(
+                self.net,
+                os.path.join(path, TFModel.tfnet_dir_name()),
+                signatures=concrete_net,
+            )
 
     def dump_with_oracle(
         self,
@@ -213,11 +214,12 @@ class TFModel(Model, ABC):  # Don't directly instantiate this class
 class TFModelCPU(TFModel):
     @property
     def device(self) -> tf.device:
-        return tf.device("CPU:0")
+        return tf.device(tf.config.list_logical_devices("CPU")[0].name)
 
 
 class TFModelGPU(TFModel):
     @property
     def device(self) -> tf.device:
-        assert tf.config.list_physical_devices("GPU"), "No GPU available"
-        return tf.device("GPU:0")
+        gpus = tf.config.list_physical_devices("GPU")
+        assert gpus, "No GPU available"
+        return tf.device(gpus[0].name)

@@ -4,6 +4,7 @@ import time
 import traceback
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
+from types import FunctionType
 from typing import Type
 
 import hydra
@@ -18,7 +19,7 @@ from nnsmith.logging import FUZZ_LOG
 from nnsmith.macro import NNSMITH_BUG_PATTERN_TOKEN
 from nnsmith.materialize import Model, Schedule, TestCase
 from nnsmith.narrow_spec import auto_opset
-from nnsmith.util import mkdir, set_seed
+from nnsmith.util import mkdir, parse_timestr, set_seed
 
 
 class StatusCollect:
@@ -38,6 +39,29 @@ class FuzzingLoop:
         cfg: DictConfig,
     ):
         self.cfg = cfg
+
+        # FIXME(@ganler): well-form the fix or report to TF
+        # Dirty fix for TFLite on CUDA-enabled systems.
+        # If CUDA is not needed, disable them all.
+        if cfg["backend"]["type"] == "tflite" and (
+            cfg["cmp"]["with"] is None or cfg["cmp"]["with"]["target"] != "cuda"
+        ):
+            os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+
+        self.crash_safe = bool(cfg["fuzz"]["crash_safe"])
+        self.test_timeout = cfg["fuzz"]["test_timeout"]
+        if self.test_timeout is not None:
+            if isinstance(self.test_timeout, str):
+                self.test_timeout = parse_timestr(self.test_timeout)
+            assert isinstance(
+                self.test_timeout, int
+            ), "`fuzz.test_timeout` must be an integer (or with `s` (default), `m`/`min`, or `h`/`hr`)."
+
+        if not self.crash_safe and self.test_timeout is not None:
+            # user enabled test_timeout but not crash_safe.
+            FUZZ_LOG.warning(
+                "`fuzz.crash_safe` is automatically enabled given `fuzz.test_timeout` is set."
+            )
 
         self.filters = []
         # add filters.
@@ -69,7 +93,7 @@ class FuzzingLoop:
                 fn_or_cls = FILTERS[filter]
                 if isinstance(fn_or_cls, Type):
                     self.filters.append(fn_or_cls())
-                elif callable(fn_or_cls):
+                elif isinstance(fn_or_cls, FunctionType):
                     self.filters.append(fn_or_cls)
                 else:
                     raise InternalError(
@@ -83,7 +107,6 @@ class FuzzingLoop:
             cfg["backend"]["type"],
             target=cfg["backend"]["target"],
             optmax=cfg["backend"]["optmax"],
-            catch_process_crash=False,
         )
 
         model_cfg = self.cfg["model"]
@@ -103,19 +126,10 @@ class FuzzingLoop:
         # Time budget checking.
         self.timeout_s = self.cfg["fuzz"]["time"]
         if isinstance(self.timeout_s, str):
-            if self.timeout_s.endswith("hr"):
-                self.timeout_s = int(self.timeout_s[:-2]) * 3600
-            elif self.timeout_s.endswith("h"):
-                self.timeout_s = int(self.timeout_s[:-1]) * 3600
-            elif self.timeout_s.endswith("min"):
-                self.timeout_s = int(self.timeout_s[:-3]) * 60
-            elif self.timeout_s.endswith("m"):
-                self.timeout_s = int(self.timeout_s[:-1]) * 60
-            elif self.timeout_s.endswith("s"):
-                self.timeout_s = int(self.timeout_s[:-1])
+            self.timeout_s = parse_timestr(self.timeout_s)
         assert isinstance(
             self.timeout_s, int
-        ), "Time budget must be an integer (with `s` (default), `m`/`min`, or `h`/`hr`)."
+        ), "`fuzz.time` must be an integer (with `s` (default), `m`/`min`, or `h`/`hr`)."
 
     def make_testcase(self, seed) -> TestCase:
         mgen_cfg = self.cfg["mgen"]
@@ -148,6 +162,8 @@ class FuzzingLoop:
             testcase=testcase,
             output_dir=self.status.get_next_bug_path(),
             filters=self.filters,
+            crash_safe=self.crash_safe,
+            timeout=self.test_timeout,
         ):
             self.status.n_bugs += 1
             return False

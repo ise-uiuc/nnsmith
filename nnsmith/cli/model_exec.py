@@ -12,7 +12,8 @@ import os
 import pickle
 import random
 from pathlib import Path
-from typing import List
+from types import FunctionType
+from typing import List, Optional
 
 import hydra
 from omegaconf import DictConfig, ListConfig
@@ -30,7 +31,12 @@ def verify_testcase(
     output_dir: os.PathLike,
     filters: List = None,
     supress_succ=True,
+    crash_safe: bool = False,
+    timeout: Optional[int] = None,
 ) -> bool:
+    if filters is None:
+        filters = []
+
     def check_result(bug_report_or, odir, msg=None) -> bool:  # succ?
         msg = "" if msg is None else msg
         if not isinstance(bug_report_or, BugReport):
@@ -42,6 +48,12 @@ def verify_testcase(
 
             for f in filters:
                 if f(bug_report):  # filter: no log & dump. but still a bug.
+                    filter_name = (
+                        f.__name__ if isinstance(f, FunctionType) else type(f).__name__
+                    )
+                    EXEC_LOG.info(
+                        f"Filter [{filter_name}] {bug_report.symptom} at {bug_report.stage}"
+                    )
                     return False
 
             EXEC_LOG.warning("[FAIL] ")
@@ -55,7 +67,9 @@ def verify_testcase(
                 bug_report.dump(odir)
             return False
 
-    bug_or_res = factory.checked_compile_and_exec(testcase)
+    bug_or_res = factory.checked_compile_and_exec(
+        testcase, crash_safe=crash_safe, timeout=timeout
+    )
     if check_result(
         bug_or_res, odir=output_dir, msg=f"Compile + Execution [{factory}]"
     ):
@@ -75,15 +89,17 @@ def verify_testcase(
         return False
 
     # Compare with
-    if cmp_cfg["with"] is not None:
+    if cmp_cfg["with"] is not None and cmp_cfg["with"]["type"] is not None:
         cmp_fac = BackendFactory.init(
             cmp_cfg["with"]["type"],
             target=cmp_cfg["with"]["target"],
             optmax=cmp_cfg["with"]["optmax"],
-            catch_process_crash=False,
         )
         cmp_testcase = cmp_fac.make_testcase(
-            testcase.model, input=testcase.oracle.input
+            testcase.model,
+            input=testcase.oracle.input,
+            crash_safe=crash_safe,
+            timeout=timeout,
         )
         if check_result(
             cmp_testcase,
@@ -180,7 +196,6 @@ def main(cfg: DictConfig):
             cfg["backend"]["type"],
             target=cfg["backend"]["target"],
             optmax=cfg["backend"]["optmax"],
-            catch_process_crash=False,
         )
 
         output_dir = None if output_dirs is None else output_dirs[i]

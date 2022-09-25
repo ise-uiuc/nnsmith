@@ -11,7 +11,7 @@
 - **Meta information**: `meta.json` meta information.
     - `"system"`: like `"tvm-gpu"` and `"ort-cpu"`
     - `"version"`: a version string hooked from `${SystemPackage}.__version__`
-    - `"symptom"`: `"crash"` or `"inconsistency"`
+    - `"symptom"`: `"crash"` or `"inconsistency"` or `"timeout"`
     - `"version_id"` (optional): an identifier of the system's version (e.g., git hash or version strings)
 
 ## Abstract Operators (AO)

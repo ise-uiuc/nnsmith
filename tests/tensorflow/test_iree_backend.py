@@ -36,9 +36,7 @@ def test_synthesized_tf_model(tmp_path):
 
     ModelType = Model.init("tensorflow")
     for target in targets:
-        factory = BackendFactory.init(
-            "iree", target=target, optmax=False, catch_process_crash=False
-        )
+        factory = BackendFactory.init("iree", target=target, optmax=False)
 
         gen = random_model_gen(
             opset=auto_opset(ModelType, factory),

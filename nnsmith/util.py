@@ -65,6 +65,23 @@ def mkdir(dir: os.PathLike, yes=False):
     os.makedirs(dir)
 
 
+def parse_timestr(timestr: str):
+    if timestr.endswith("hr"):
+        return int(timestr[:-2]) * 3600
+    elif timestr.endswith("h"):
+        return int(timestr[:-1]) * 3600
+    elif timestr.endswith("min"):
+        return int(timestr[:-3]) * 60
+    elif timestr.endswith("m"):
+        return int(timestr[:-1]) * 60
+    elif timestr.endswith("s"):
+        return int(timestr[:-1])
+
+    raise ValueError(
+        f"Cannot parse time string: {timestr}. Valid examples: 1hr, 1h, 1min, 1m, 1s"
+    )
+
+
 def is_invalid(output: Dict[str, np.ndarray]):
     for _, o in output.items():
         if np.isnan(o).any() or np.isinf(o).any():

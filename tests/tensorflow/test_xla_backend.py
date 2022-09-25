@@ -38,9 +38,7 @@ def test_synthesized_tf_model(tmp_path):
         targets.append("cuda")
 
     for target in targets:
-        factory = BackendFactory.init(
-            "xla", target=target, optmax=False, catch_process_crash=False
-        )
+        factory = BackendFactory.init("xla", target=target, optmax=False)
 
         ModelType = Model.init("tensorflow", backend_target=target)
 

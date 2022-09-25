@@ -11,7 +11,7 @@ from nnsmith.materialize.tensorflow import TFModel
 
 
 class IREEFactory(BackendFactory):
-    def __init__(self, target="cpu", optmax: bool = False, catch_process_crash=True):
+    def __init__(self, target="cpu", optmax: bool = False):
         """
         Initialize the IREE backend factory.
 
@@ -21,8 +21,6 @@ class IREEFactory(BackendFactory):
             The compilation target including "cpu" (same as "llvm-cpu"), "vmvx", "vulkan-spirv", by default "cpu"
         optmax : bool, optional
             Release mode or not, by default False
-        catch_process_crash : bool, optional
-            Doing compilation without forking (may crash), by default True
         """
         if target == "cpu":
             target = "llvm-cpu"
@@ -34,9 +32,7 @@ class IREEFactory(BackendFactory):
         assert (
             target in supported_backends
         ), f"Unsupported target {target}. Consider one of {supported_backends}"
-        super().__init__(
-            target=target, optmax=optmax, catch_process_crash=catch_process_crash
-        )
+        super().__init__(target=target, optmax=optmax)
 
     @property
     def system_name(self) -> str:
