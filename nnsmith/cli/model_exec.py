@@ -12,6 +12,7 @@ import os
 import pickle
 import random
 from pathlib import Path
+from typing import List
 
 import hydra
 from omegaconf import DictConfig, ListConfig
@@ -27,6 +28,7 @@ def verify_testcase(
     factory: BackendFactory,
     testcase: TestCase,
     output_dir: os.PathLike,
+    filters: List = None,
     supress_succ=True,
 ) -> bool:
     def check_result(bug_report_or, odir, msg=None) -> bool:  # succ?
@@ -37,6 +39,11 @@ def verify_testcase(
             return True
         else:
             bug_report = bug_report_or
+
+            for f in filters:
+                if f(bug_report):  # filter: no log & dump. but still a bug.
+                    return False
+
             EXEC_LOG.warning("[FAIL] ")
             EXEC_LOG.warning(bug_report.log)
             if odir is not None:

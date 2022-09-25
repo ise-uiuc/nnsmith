@@ -29,4 +29,4 @@ jobs:
           python nnsmith/cli/model_exec.py model.type=tensorflow backend.type=xla model.path=nnsmith_output/model/
       - name: Test CLI [fuzz]
         run: |
-          yes | python nnsmith/cli/fuzz.py fuzz.time=10s fuzz.root=fuzz_report model.type=tensorflow backend.type=xla
+          yes | python nnsmith/cli/fuzz.py fuzz.time=10s fuzz.root=fuzz_report model.type=tensorflow backend.type=xla filter.type="[nan,inf,test_fn,test_cls]" filter.patch=./tests/mock/filter_patch.py

@@ -50,6 +50,10 @@ fuzz:
   root: "???"
   seed: null
 
+filter:
+  type: []
+  patch: []
+
 cmp:
   equal_nan: true    # skip regarding it as a bug if with fp exception values.
 
