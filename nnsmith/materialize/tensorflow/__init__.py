@@ -222,4 +222,4 @@ class TFModelGPU(TFModel):
     def device(self) -> tf.device:
         gpus = tf.config.list_physical_devices("GPU")
         assert gpus, "No GPU available"
-        return tf.device(gpus[0].name)
+        return tf.device("/GPU:0")
