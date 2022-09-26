@@ -1783,6 +1783,12 @@ class ReduceMean(ReduceBase):
 
 
 @mark_materialize("core")
+class ReduceProd(ReduceBase):
+    in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+    out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+
+
+@mark_materialize("core")
 class ArgMin(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
     out_dtypes = [(DType.int64,)]
