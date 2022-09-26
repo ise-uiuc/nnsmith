@@ -299,8 +299,7 @@ def forward_fn(op: NHWCConv2d):
 def forward_fn(op: Squeeze):
     if op.extra_attrs["reduce_dim"] is not None:
         return lambda x: tf.squeeze(x, axis=op.extra_attrs["reduce_dim"])
-    else:
-        return lambda x: tf.squeeze(x)
+    return lambda x: tf.squeeze(x)
 
 
 @operator_impl(ReduceSum)
@@ -370,7 +369,7 @@ def forward_fn(op: Concat):
 
 @operator_impl(Cast)
 def forward_fn(op: Cast):
-    return lambda x: tf.cast(x, dtype=op.extra_attrs["to"].torch())
+    return lambda x: tf.cast(x, dtype=op.extra_attrs["to"].tensorflow())
 
 
 @operator_impl(MatMul)
