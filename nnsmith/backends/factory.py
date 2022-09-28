@@ -135,14 +135,17 @@ class BackendFactory(ABC):
 
             def crash_safe_compile_exec(sdict):
                 try:
+                    CORE_LOG.debug(f"[FORK] Compiling.")
                     bug_or_exec = self.checked_compile(testcase)
                     if isinstance(bug_or_exec, BugReport):
                         sdict["symptom"] = bug_or_exec.symptom
                         sdict["log"] = bug_or_exec.log
                         return
 
+                    CORE_LOG.debug(f"[FORK] Executing.")
                     sdict["stage"] = Stage.EXECUTION
                     bug_or_result = self.checked_exec(bug_or_exec, testcase)
+                    CORE_LOG.debug(f"[FORK] Done.")
                     if isinstance(bug_or_result, BugReport):
                         sdict["symptom"] = bug_or_result.symptom
                         sdict["log"] = bug_or_result.log

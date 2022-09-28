@@ -43,10 +43,25 @@ class FuzzingLoop:
         # FIXME(@ganler): well-form the fix or report to TF
         # Dirty fix for TFLite on CUDA-enabled systems.
         # If CUDA is not needed, disable them all.
+        cmpwith = cfg["cmp"]["with"]
         if cfg["backend"]["type"] == "tflite" and (
-            cfg["cmp"]["with"] is None or cfg["cmp"]["with"]["target"] != "cuda"
+            cmpwith is None or cmpwith["target"] != "cuda"
         ):
             os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+
+        if (
+            cfg["fuzz"]["crash_safe"]
+            and cfg["backend"]["type"] == "xla"
+            and cfg["backend"]["target"] == "cuda"
+        ) or (
+            cmpwith is not None
+            and cmpwith["type"] == "xla"
+            and cmpwith["target"] == "cuda"
+        ):
+            raise ValueError(
+                "Please set `fuzz.crash_safe=false` for XLA on CUDA. "
+                "Also see https://github.com/ise-uiuc/nnsmith/blob/main/doc/known-issues.md"
+            )
 
         self.crash_safe = bool(cfg["fuzz"]["crash_safe"])
         self.test_timeout = cfg["fuzz"]["test_timeout"]
