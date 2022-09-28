@@ -85,13 +85,15 @@ Therefore, we need to let the model generator know how many arguments / symbolic
 
 ### Constraining viable ranks of different input tensors
 
-Operators like `Concat` require input tensors to have the same ranks. Therefore, we need to somehow constraint the input ranks for `self.inp_ranks` as by default ranks in `self.inp_ranks` are *independent*.
+Operators like `Concat` require input tensors to have the same shape (and thus ranks).
 
-To do so, we set `self.same_inp_dims = True` in initializer:
+To do so, we overload the `same_inp_dims` class variable to `True`:
 
 ```python
-def __init__(...):
-    super().__init__()
+class Concat(AbsOpBase)
     ...
-    self.same_inp_dims = True  # But this is not True for Pool2D and many binary operators.
+    same_inp_dims = True
+    ...
+    def __init__(...):
+        ...
 ```
