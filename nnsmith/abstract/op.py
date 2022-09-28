@@ -57,16 +57,18 @@ class mark_abstract:
 
 
 class mark_materialize:
-    def __init__(self, dialect: str):
+    def __init__(self, dialect: str, limit_domain=False):
+        self.limit_domain = limit_domain
         self.dialect = dialect
 
     def __call__(self, op_type: Type["AbsOpBase"]) -> Type["AbsOpBase"]:
         op_list = FULL_OPERATOR_SETS.setdefault(self.dialect, [])
 
         if op_type not in op_list:
+            op_type = mark_abstract(self.dialect)(op_type)
+            op_type.limit_domain = self.limit_domain
             op_list.append(op_type)
             op_list.sort(key=lambda x: x.__name__)
-            op_type = mark_abstract(self.dialect)(op_type)
 
         return op_type
 
@@ -265,8 +267,8 @@ class AbsOpBase(ABC):
     # this op can accept one of float32xfloat32, float64xfloat64, and int32xint32 as input dtypes.
     in_dtypes: List[Tuple[DType, ...]] = None  # Overwrite me!
     out_dtypes: List[Tuple[DType, ...]] = None
-    # whether to disable the op during graph generation
-    _skip = False
+
+    limit_domain = False
 
     dialect = None
 
@@ -686,7 +688,7 @@ class Div(BcastBinaryOp):
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
 
-@mark_materialize("core")
+@mark_materialize("core", limit_domain=True)
 class Pow(BcastBinaryOp):
     in_dtypes = [(i, i) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -737,13 +739,13 @@ class Cos(TrigonometricOp):
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
 
-@mark_materialize("core")
+@mark_materialize("core", limit_domain=True)
 class Asin(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
 
-@mark_materialize("core")
+@mark_materialize("core", limit_domain=True)
 class Acos(TrigonometricOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -795,13 +797,13 @@ class Round(ElementWiseUnaryOp):
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
 
-@mark_materialize("core")
+@mark_materialize("core", limit_domain=True)
 class Sqrt(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
 
 
-@mark_materialize("core")
+@mark_materialize("core", limit_domain=True)
 class Log2(ElementWiseUnaryOp):
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]

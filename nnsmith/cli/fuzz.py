@@ -129,7 +129,9 @@ class FuzzingLoop:
             model_cfg["type"], backend_target=cfg["backend"]["target"]
         )
         self.ModelType.add_seed_setter()
-        self.opset = auto_opset(self.ModelType, self.factory)
+        self.opset = auto_opset(
+            self.ModelType, self.factory, vulops=cfg["mgen"]["vulops"]
+        )
 
         seed = cfg["fuzz"]["seed"] or random.getrandbits(32)
         set_seed(seed)

@@ -38,7 +38,7 @@ def main(cfg: DictConfig):
         factory = None
 
     gen = random_model_gen(
-        opset=auto_opset(ModelType, factory),
+        opset=auto_opset(ModelType, factory, vulops=mgen_cfg["vulops"]),
         init_rank=mgen_cfg["init_rank"],
         seed=seed,
         max_nodes=mgen_cfg["max_nodes"],

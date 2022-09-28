@@ -252,12 +252,16 @@ def auto_opconfig(
         return opset
 
 
-def auto_opset(model_cls: Type[Model], factory: Optional[BackendFactory] = None):
+def auto_opset(
+    model_cls: Type[Model],
+    factory: Optional[BackendFactory] = None,
+    vulops: bool = False,
+) -> List[Type[AbsOpBase]]:
     # None means only test model exportation.
     topset_config = auto_opconfig(model_cls, factory)
     opset = []
     for op in model_cls.operators():
-        if op.name() not in topset_config:
+        if op.name() not in topset_config or (vulops == False and op.limit_domain):
             continue
         op.in_dtypes = topset_config[op.name()].in_dtypes
         op.out_dtypes = topset_config[op.name()].out_dtypes

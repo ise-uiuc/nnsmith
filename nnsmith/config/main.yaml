@@ -29,6 +29,7 @@ mgen: # model gen.
   init_rank: 4
   max_nodes: 5
   timeout_ms: 50000
+  vulops: False
   save: "nnsmith_output"
   seed: null
 
