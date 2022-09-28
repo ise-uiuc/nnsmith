@@ -42,7 +42,11 @@ def filter_nan(report: BugReport) -> bool:  # True means filter;
 
     # numpy.assert_allclose style.
     # TODO(ganler): can we use more well-formed checking? say directly checking the results?
-    return "nan location mismatch" in report.log
+    return (
+        "nan location mismatch" in report.log
+        or "-9223372036854775808" in report.log  # tf.cast(nan, int) is UB.
+        or "-2147483648" in report.log
+    )
 
 
 @filter("inf")
