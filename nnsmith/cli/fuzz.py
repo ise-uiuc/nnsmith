@@ -219,8 +219,10 @@ class FuzzingLoop:
                 FUZZ_LOG.warning(f"Failed model seed: {seed}")
 
             if self.save_test:
-                testcase.dump(os.path.join(self.save_test,
-                              f"{time.time() - start_time:.3f}"))
+                testcase_dir = os.path.join(self.save_test,
+                                            f"{time.time() - start_time:.3f}")
+                mkdir(testcase_dir)
+                testcase.dump(testcase_dir)
             self.status.n_testcases += 1
 
 
