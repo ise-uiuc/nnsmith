@@ -95,8 +95,7 @@ class FuzzingLoop:
                 assert os.path.isfile(
                     f
                 ), "filter.patch must be a list of file locations."
-                assert "@filter(" in open(
-                    f).read(), f"No filter found in the {f}."
+                assert "@filter(" in open(f).read(), f"No filter found in the {f}."
                 spec = spec_from_file_location("module.name", f)
                 spec.loader.exec_module(module_from_spec(spec))
                 FUZZ_LOG.info(f"Imported filter patch: {f}")
@@ -151,8 +150,7 @@ class FuzzingLoop:
 
         self.save_test = cfg["fuzz"]["save_test"]
         if isinstance(self.save_test, str):  # path of root dir.
-            FUZZ_LOG.info(
-                f"Saving all intermediate testcases to {self.save_test}")
+            FUZZ_LOG.info(f"Saving all intermediate testcases to {self.save_test}")
             mkdir(self.save_test)
 
     def make_testcase(self, seed) -> TestCase:
@@ -219,8 +217,9 @@ class FuzzingLoop:
                 FUZZ_LOG.warning(f"Failed model seed: {seed}")
 
             if self.save_test:
-                testcase_dir = os.path.join(self.save_test,
-                                            f"{time.time() - start_time:.3f}")
+                testcase_dir = os.path.join(
+                    self.save_test, f"{time.time() - start_time:.3f}"
+                )
                 mkdir(testcase_dir)
                 testcase.dump(testcase_dir)
             self.status.n_testcases += 1
