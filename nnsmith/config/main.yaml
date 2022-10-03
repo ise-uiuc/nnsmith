@@ -50,17 +50,18 @@ fuzz:
   time: 14400
   root: "???"
   seed: null
-  crash_safe: true
-  test_timeout: null # second.
+  crash_safe: false
+  test_timeout: null
+  save_test: null
 
 filter:
   type: []
   patch: []
 
 cmp:
-  equal_nan: true    # skip regarding it as a bug if with fp exception values.
+  equal_nan: true # skip regarding it as a bug if with fp exception values.
 
-  raw_input: null    # path to raw input data (Dict[str, np.ndarray])
+  raw_input: null # path to raw input data (Dict[str, np.ndarray])
 
   oracle: "auto"
   # "auto": use `oracle.pkl` in local path;

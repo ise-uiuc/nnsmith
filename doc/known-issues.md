@@ -1,6 +1,6 @@
 ## Incompatibility of TensorFlow-GPU over fork-based crash safty
 
-Currently we enabled `fuzz.crash_safe=true` by default where we run the compilation & execution in a forked process as a sandbox to catch crash and timeout. However, CUDA runtime is not compatible with fork. In tensorflow, the symptom is crash in forked subprocess:
+`fuzz.crash_safe=true` allows running compilation & execution in a forked process as a sandbox to catch crash and timeout. However, CUDA runtime is not compatible with fork. In tensorflow, the symptom is crash in forked subprocess:
 
 ```txt
 F tensorflow/stream_executor/cuda/cuda_driver.cc:219] Failed setting context: CUDA_ERROR_NOT_INITIALIZED: initialization error

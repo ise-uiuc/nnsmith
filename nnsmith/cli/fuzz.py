@@ -148,6 +148,11 @@ class FuzzingLoop:
             self.timeout_s, int
         ), "`fuzz.time` must be an integer (with `s` (default), `m`/`min`, or `h`/`hr`)."
 
+        self.save_test = cfg["fuzz"]["save_test"]
+        if isinstance(self.save_test, str):  # path of root dir.
+            FUZZ_LOG.info(f"Saving all intermediate testcases to {self.save_test}")
+            mkdir(self.save_test)
+
     def make_testcase(self, seed) -> TestCase:
         mgen_cfg = self.cfg["mgen"]
         gen = random_model_gen(
@@ -210,6 +215,13 @@ class FuzzingLoop:
 
             if not self.validate_and_report(testcase):
                 FUZZ_LOG.warning(f"Failed model seed: {seed}")
+
+            if self.save_test:
+                testcase_dir = os.path.join(
+                    self.save_test, f"{time.time() - start_time:.3f}"
+                )
+                mkdir(testcase_dir)
+                testcase.dump(testcase_dir)
             self.status.n_testcases += 1
 
 
