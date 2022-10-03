@@ -21,10 +21,17 @@ operator_impl = partial(framework_operator_impl, TORCH_REALIZABLE_OPS, ALL_TORCH
 
 @operator_impl(Constant)
 def forward_fn(op: Constant):
-    data = torch.randn(op.abs_tensor.shape).to(op.abs_tensor.dtype.torch())
-    return lambda: torch.nn.parameter.Parameter(
-        data, requires_grad=data.is_floating_point()
-    )
+    class ConstFn(torch.nn.Module):
+        def __init__(self, data) -> None:
+            super().__init__()
+            self.data = torch.nn.parameter.Parameter(
+                data, requires_grad=data.is_floating_point()
+            )
+
+        def forward(self):
+            return self.data
+
+    return ConstFn(torch.randn(op.abs_tensor.shape).to(op.abs_tensor.dtype.torch()))
 
 
 @operator_impl(ReLU)
