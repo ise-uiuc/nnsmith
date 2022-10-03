@@ -151,7 +151,7 @@ class FuzzingLoop:
 
         self.save_test = cfg["fuzz"]["save_test"]
         if isinstance(self.save_test, str):  # path of root dir.
-            FUZZ_LOG.log(
+            FUZZ_LOG.info(
                 f"Saving all intermediate testcases to {self.save_test}")
             mkdir(self.save_test)
 
