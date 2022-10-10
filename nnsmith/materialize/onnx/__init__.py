@@ -116,7 +116,7 @@ def analyze_onnx_io(
         shape = [dim.dim_value for dim in input.type.tensor_type.shape.dim]
         # assert all shapes are positive integers
         assert all(
-            isinstance(dim, int) and dim > 0 for dim in shape
+            isinstance(dim, int) and dim >= 0 for dim in shape
         ), f"Fixed shape needed, but got {shape} for input {name}"
         input_types[name] = AbsTensor(shape=shape, dtype=dtype)
     for output in model.graph.output:
@@ -124,7 +124,7 @@ def analyze_onnx_io(
         dtype = dtype_from_onnx(output.type.tensor_type.elem_type)
         shape = [dim.dim_value for dim in output.type.tensor_type.shape.dim]
         assert all(
-            isinstance(dim, int) and dim > 0 for dim in shape
+            isinstance(dim, int) and dim >= 0 for dim in shape
         ), f"Fixed shape needed, but got {shape} for output {name}"
         output_types[name] = AbsTensor(shape=shape, dtype=dtype)
     return input_types, output_types
