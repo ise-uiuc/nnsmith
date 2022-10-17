@@ -1,10 +1,2 @@
-lz4>=4.0.0
 matplotlib
 matplotlib_venn
-numpy>=1.22.2
-onnx>=1.11.0
-pandas>=1.3.5
-tensorflow==2.2.0
-tf2onnx==1.9.3
-torch==1.11.0+cu113
-tqdm

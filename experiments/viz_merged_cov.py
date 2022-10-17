@@ -1,12 +1,8 @@
-import matplotlib.pyplot as plt
-import matplotlib
-from matplotlib_venn import venn2, _venn2, venn3, _venn3
-import numpy as np
-
 import os
 
-import pandas as pd
-
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib_venn import _venn2, _venn3, venn2, venn3
 
 SMALL_SIZE = 10
 MEDIUM_SIZE = 14
@@ -114,12 +110,11 @@ class Ploter:
             max_cov_unscale = int(cov_max * self.scale)
             self.axs[0].annotate(
                 f"$\\sfrac{{{max_cov_unscale}_\\mathbf{{best}}}}{{{int(cov_lim)}_\\mathbf{{max}}}}$ = \\textbf{{{max_cov_unscale / cov_lim * 100 :.1f}\%}}",
-                xy=(0, cov_max + (top_lim - cov_max) / 2.25),
-                xycoords="data",
-                va="center",
-                ha="left",
+                xy=(0.7, 0.1),
+                xycoords="axes fraction",
+                ha="right",
                 fontsize=ann_size,
-                bbox=dict(boxstyle="round", fc="w"),
+                bbox=dict(boxstyle="round", fc="w", alpha=0.6),
             )
 
         if self.cov_lim is not None:
@@ -217,7 +212,6 @@ def plot_one_round(
     tlimit=None,
     pdf=False,
     pass_tag="",
-    gen_time=None,
     venn=False,
     scale=1,
 ):
@@ -234,10 +228,7 @@ def plot_one_round(
 
     for idx, (k, v) in enumerate(data.items()):
         _, branch_by_time, (lf_, bf_) = cov_summerize(
-            v,
-            tlimit=tlimit,
-            pass_filter=pass_filter,
-            gen_time=gen_time[k] if gen_time is not None else None,
+            v, tlimit=tlimit, pass_filter=pass_filter
         )
         branch_ploter.add(data=branch_by_time, name=fuzz_tags[idx])
 
@@ -389,9 +380,6 @@ if "__main__" == __name__:
     parser.add_argument("--tvm", action="store_true", help="use tvm")
     parser.add_argument("--ort", action="store_true", help="use ort")
     parser.add_argument("--pdf", action="store_true", help="use pdf as well")
-    parser.add_argument(
-        "--no_count_gen", action="store_true", help="do not count generation time"
-    )
     parser.add_argument("--venn", action="store_true", help="plot venn")
     args = parser.parse_args()
 
@@ -427,14 +415,10 @@ if "__main__" == __name__:
         print(f"[WARNING] No pass filter is used (use --tvm or --ort)")
 
     data = {}
-    gen_time = {} if args.no_count_gen else None
+    gen_time = None
     for f in args.folders:
         with open(os.path.join(f, "merged_cov.pkl"), "rb") as fp:
             data[f] = pickle.load(fp)
-            if args.no_count_gen:
-                gen_time[f] = pd.read_csv(
-                    os.path.join(f, "../gentime.csv"), header=None
-                )
 
     if pass_filter is not None:
         plot_one_round(
@@ -447,7 +431,6 @@ if "__main__" == __name__:
             fuzz_tags=args.tags,
             target_tag=target_tag,
             pdf=args.pdf,
-            gen_time=gen_time,
             venn=args.venn,
         )
     plot_one_round(
@@ -459,6 +442,5 @@ if "__main__" == __name__:
         fuzz_tags=args.tags,
         target_tag=target_tag,
         pdf=args.pdf,
-        gen_time=gen_time,
         venn=args.venn,
     )  # no pass
