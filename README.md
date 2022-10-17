@@ -89,8 +89,8 @@ See other commands under [`doc/cli`](doc/cli.md). We use [hydra](https://hydra.c
 ## Developer Notes
 
 - `pip install -r requirements/core.txt` to run generation and fuzzing;
-- `pip install --upgrade -r requirements/sys/[system].txt` to allow generating and running specific frameworks;
-  -  **Why "--upgrade"?** In fact, all the sources under `requirements/sys/` are nightly release (except tvm) as we want to "save the world" by catching new bugs;
+- `pip install --upgrade --pre -r requirements/sys/[system].txt` to allow generating and running specific frameworks;
+  -  **Why "--upgrade --pre"?** In fact, all the sources under `requirements/sys/` are nightly release (except tvm) as we want to "save the world" by catching new bugs;
 
 <details><summary><b>Pre-commits</b> <i>[click to expand]</i></summary>
 <div>
