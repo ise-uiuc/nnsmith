@@ -8,17 +8,20 @@
     <a href="https://github.com/ise-uiuc/nnsmith/blob/main/LICENSE"><img src="https://img.shields.io/pypi/l/nnsmith"></a>
 </p>
 
-## Backend-Model Support
+## Support table
 
 <center>
 
-| Model\Engine | [TVM](https://github.com/apache/tvm) | [ORT](https://github.com/microsoft/onnxruntime) | [TensorRT](https://github.com/NVIDIA/TensorRT) | [TFLite](https://www.tensorflow.org/lite) | [XLA](https://www.tensorflow.org/xla) | [IREE](https://github.com/iree-org/iree) |
-| ------------ | ------------------------------------ | ----------------------------------------------- | ---------------------------------------------- | ----------------------------------------- | ------------------------------------- | ---------------------------------------- |
-| PyTorch-ONNX | ✅                                    | ✅                                               | ✅                                              |                                           |                                       |                                          |
-| TensorFlow   |                                      |                                                 |                                                | ⚠️                                         | ⚠️                                     | ⚠️                                        |
+| Model\Engine | [TVM](https://github.com/apache/tvm) | [ORT](https://github.com/microsoft/onnxruntime) | [TensorRT](https://github.com/NVIDIA/TensorRT) | [TFLite](https://www.tensorflow.org/lite) | [XLA](https://www.tensorflow.org/xla) | [Torch-JIT](https://pytorch.org/docs/stable/jit.html) |
+| ------------ | ------------------------------------ | ----------------------------------------------- | ---------------------------------------------- | ----------------------------------------- | ------------------------------------- | ----------------------------------------------------- |
+| ONNX         | ✅                                    | ✅                                               | ✅                                              |                                           |                                       |                                                       |
+| TensorFlow   | 🔨                                    |                                                 |                                                | ⚠️                                         | ⚠️                                     |                                                       |
+| PyTorch      | 🔨                                    | 🔨                                               |                                                |                                           |                                       | 🔨                                                     |
 
 
-✅: Supported; ⚠️: Beta support; Others are not supported yet -- Contributions are welcome!
+
+
+✅: Supported; ⚠️: Experimental support; 🔨: Coming soon;
 
 </center>
 
@@ -133,6 +136,32 @@ pytest tests/tensorflow -s
 </div>
 </details>
 
+## Notes
+
++ NNSmith is modularized and can be extended as a 3rd-party library, which allows you to patch your own backend and do fuzzing without modifying NNSmith's source code.
++ Meanwhile, feel free to [request](https://github.com/ise-uiuc/nnsmith/issues) a backend support: the project maintainer is happy to support DL systems that care about software reliability and quality to benefit the whole DL software stack.
++ It would be great if you can [let us know](https://github.com/ise-uiuc/nnsmith/issues) if you find new bugs with NNSmith or build a new system inspired by NNSmith.
+
 ## Paper
 
-Our paper is accepted by ASPLOS'23 and the pre-print is now available on [![arXiv](https://img.shields.io/badge/arXiv-2207.13066-b31b1b.svg)](https://arxiv.org/abs/2207.13066).
+<details><summary><b>ASPLOS'23 | NNSmith: Generating Diverse and Valid Test Cases for Deep Learning Compilers.</b> <i>[click to expand citation]</i></summary>
+<div>
+
+```bibtex
+@article{liu2022finding,
+  title={Finding Deep-Learning Compilation Bugs with NNSmith},
+  author={Liu, Jiawei and Lin, Jinkun and Ruffy, Fabian and Tan, Cheng and Li, Jinyang and Panda, Aurojit and Zhang, Lingming},
+  journal={arXiv preprint arXiv:2207.13066},
+  year={2022}
+}
+```
+
+</div>
+</details>
+
+<p align="center">
+    <a href="https://arxiv.org/abs/2207.13066"><img src="https://img.shields.io/badge/arXiv-2207.13066-b31b1b.svg"></a>
+    <a href="http://nnsmith-asplos.rtfd.io/"><img src="https://img.shields.io/badge/artifact-doc-black.svg"></a>
+    <a href="https://github.com/ganler/nnsmith-asplos-artifact"><img src="https://img.shields.io/badge/artifact-git-black.svg"></a>
+    <a href="https://doi.org/10.5281/zenodo.7200841"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.7200841.svg"></a>
+</p>
