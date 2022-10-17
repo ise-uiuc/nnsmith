@@ -16,6 +16,12 @@ class AbsTensor:
         self.shape = list(shape)
         self.dtype = DType(dtype)
 
+    def downcast_rank(self):
+        return AbsTensor(shape=[None] * self.ndims, dtype=self.dtype)
+
+    def __hash__(self) -> int:
+        return hash((tuple(self.shape), self.dtype))
+
     def __repr__(self):
         return f"AbsTensor<{self.dtype.short()}>{str(self.shape)}"
 
