@@ -77,7 +77,7 @@ class TorchModel(Model):
         with open(schedule_path, "rb") as f:
             schedule = pickle.load(f)
         torch_model = SymbolNet(schedule)
-        torch_model.load_state_dict(torch.load(path))
+        torch_model.load_state_dict(torch.load(path), strict=False)
         ret.torch_model = torch_model
         return ret
 

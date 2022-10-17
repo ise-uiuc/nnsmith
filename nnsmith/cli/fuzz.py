@@ -196,6 +196,10 @@ class FuzzingLoop:
         while time.time() - start_time < self.timeout_s:
             seed = random.getrandbits(32)
             FUZZ_LOG.debug(f"Making testcase with seed: {seed}")
+
+            time_stat = {}
+
+            gen_start = time.time()
             try:
                 testcase = self.make_testcase(seed)
             except InternalError as e:
@@ -205,23 +209,26 @@ class FuzzingLoop:
                     f"`make_testcase` failed. It could be a NNSmith bug or Generator bug (e.g., {self.cfg['model']['type']})."
                 )
                 FUZZ_LOG.error(traceback.format_exc())
-                repro = "nnsmith.model_gen"
-                repro += f" mgen.seed={seed}"
-                repro += f" mgen.max_nodes={self.cfg['mgen']['max_nodes']}"
-                repro += f" model.type={self.cfg['model']['type']}"
-                repro += f" backend.target={self.cfg['backend']['target']}"
-                FUZZ_LOG.error(f"repro with: {repro}")
                 continue
+            time_stat["gen"] = time.time() - gen_start
 
+            eval_start = time.time()
             if not self.validate_and_report(testcase):
                 FUZZ_LOG.warning(f"Failed model seed: {seed}")
+            time_stat["eval"] = time.time() - eval_start
 
             if self.save_test:
+                save_start = time.time()
                 testcase_dir = os.path.join(
                     self.save_test, f"{time.time() - start_time:.3f}"
                 )
                 mkdir(testcase_dir)
                 testcase.dump(testcase_dir)
+                time_stat["save"] = time.time() - save_start
+
+            FUZZ_LOG.info(
+                f"Timing: { ''.join(f'{k}: {1000 * v:.1f}ms, ' for k, v in time_stat.items()) }"
+            )
             self.status.n_testcases += 1
 
 
