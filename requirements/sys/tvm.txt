@@ -1,1 +1,2 @@
-apache-tvm # not really nightly build. better build tvm from scratch.
+--pre
+apache-tvm # need to play with tag `--pre`

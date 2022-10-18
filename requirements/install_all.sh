@@ -23,7 +23,7 @@ do
       UPGRADE_PACKAGES=""
       if [[ "$dep_file" == *"sys"* ]]; then
           # Files under sys should be nightly releases
-          UPGRADE_PACKAGES="--upgrade"
+          UPGRADE_PACKAGES="--upgrade --pre"
       fi
       pip install -r "$dep_file" $UPGRADE_PACKAGES
   fi
