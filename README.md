@@ -163,5 +163,5 @@ pytest tests/tensorflow -s
     <a href="https://arxiv.org/abs/2207.13066"><img src="https://img.shields.io/badge/arXiv-2207.13066-b31b1b.svg"></a>
     <a href="http://nnsmith-asplos.rtfd.io/"><img src="https://img.shields.io/badge/artifact-doc-black.svg"></a>
     <a href="https://github.com/ganler/nnsmith-asplos-artifact"><img src="https://img.shields.io/badge/artifact-git-black.svg"></a>
-    <a href="https://doi.org/10.5281/zenodo.7200841"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.7200841.svg"></a>
+    <a href="https://doi.org/10.5281/zenodo.7222132"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.7222132.svg"></a>
 </p>
