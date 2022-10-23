@@ -4,6 +4,7 @@ import iree.compiler.tf
 import iree.runtime
 import numpy as np
 import tensorflow as tf
+from importlib_metadata import version
 from multipledispatch import dispatch
 
 from nnsmith.backends.factory import BackendCallable, BackendFactory
@@ -37,6 +38,10 @@ class IREEFactory(BackendFactory):
     @property
     def system_name(self) -> str:
         return "iree"
+
+    @property
+    def version(self) -> str:
+        return version("iree-compiler")
 
     @dispatch(TFModel)
     def make_backend(self, model: TFModel) -> BackendCallable:

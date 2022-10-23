@@ -38,6 +38,10 @@ class ORTFactory(BackendFactory):
     def system_name(self) -> str:
         return "onnxruntime"
 
+    @property
+    def version(self) -> str:
+        return ort.__version__
+
     @dispatch(ONNXModel)
     def make_backend(
         self,

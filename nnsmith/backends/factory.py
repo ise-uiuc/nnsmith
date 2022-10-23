@@ -30,6 +30,10 @@ class BackendFactory(ABC):
     def system_name(self) -> str:
         pass
 
+    @property
+    def version(self) -> str:
+        return "unknown"
+
     def __str__(self) -> str:
         return f"{self.system_name} ({self.target} opt: {self.optmax})"
 
@@ -76,6 +80,7 @@ class BackendFactory(ABC):
                 symptom=Symptom.EXCEPTION,
                 stage=Stage.COMPILATION,
                 log=traceback.format_exc(),
+                version=self.version,
             )
 
     def checked_exec(
@@ -99,6 +104,7 @@ class BackendFactory(ABC):
                 symptom=Symptom.EXCEPTION,
                 stage=Stage.EXECUTION,
                 log=traceback.format_exc(),
+                version=self.version,
             )
 
     def checked_compile_and_exec(
@@ -169,6 +175,7 @@ class BackendFactory(ABC):
                     symptom=Symptom.TIMEOUT,
                     stage=shared_dict["stage"],
                     log=f"Timeout after {timeout} seconds.",
+                    version=self.version,
                 )
 
             if shared_dict["output"] is not None:
@@ -187,6 +194,7 @@ class BackendFactory(ABC):
                     symptom=Symptom.SEGFAULT,
                     stage=shared_dict["stage"],
                     log=f"Process crashed with exit code: {p.exitcode}",
+                    version=self.version,
                 )
             else:
                 return BugReport(
@@ -195,6 +203,7 @@ class BackendFactory(ABC):
                     symptom=shared_dict["symptom"],
                     stage=shared_dict["stage"],
                     log=shared_dict["log"],
+                    version=self.version,
                 )
 
     def verify_results(
@@ -215,6 +224,7 @@ class BackendFactory(ABC):
                 symptom=Symptom.INCONSISTENCY,
                 stage=Stage.VERIFICATION,
                 log=traceback.format_exc(),
+                version=self.version,
             )
 
     def verify_testcase(
@@ -265,6 +275,7 @@ class BackendFactory(ABC):
                 symptom=Symptom.EXCEPTION,
                 stage=Stage.COMPILATION,
                 log=traceback.format_exc(),
+                version=self.version,
             )
 
         if not input:
@@ -282,6 +293,7 @@ class BackendFactory(ABC):
                 symptom=Symptom.EXCEPTION,
                 stage=Stage.EXECUTION,
                 log=traceback.format_exc(),
+                version=self.version,
             )
 
         return TestCase(

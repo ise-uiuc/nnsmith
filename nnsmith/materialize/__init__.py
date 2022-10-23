@@ -196,6 +196,10 @@ class Model(ABC):
     def operators() -> List[Type[AbsOpBase]]:
         pass
 
+    @property
+    def version(self) -> str:
+        return "unknown"
+
     @staticmethod
     def name_prefix() -> str:
         return "model"

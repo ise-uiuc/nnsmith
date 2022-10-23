@@ -28,25 +28,26 @@ class TVMFactory(BackendFactory):
         # inconsistency is allowed and outputs for UB-input may differ.
         self.opt_level = 4 if optmax else 0
         if target == "cpu":
-            self.target = tvm.target.Target("llvm")
+            self.tvm_target = tvm.target.Target("llvm")
         else:
             tvm_possible_targets = tvm.target.Target.list_kinds()
             assert (
                 target in tvm_possible_targets
             ), f"Unknown target {target}. Possible targets are {tvm_possible_targets}"
-            self.target = tvm.target.Target("cuda")
+            self.tvm_target = tvm.target.Target(target)
 
         self.executor_mode = executor
 
     def get_device(self):
-        if (
-            self.target.export()["kind"] == "cuda"
-            or self.target.export()["kind"] == "nvptx"
-        ):
+        dev_cand = self.tvm_target.export()["keys"]
+        assert len(dev_cand) > 0, f"No viable device found for {self.tvm_target}"
+        if "cuda" in dev_cand:
             return tvm.cuda()
-        if self.target.export()["kind"] == "rocm":
+        if "rocm" in dev_cand:
             return tvm.rocm()
-        return tvm.cpu()
+        if "cpu" in dev_cand:
+            return tvm.cpu()
+        return tvm.device(dev_cand[0])
 
     @property
     def system_name(self) -> str:
@@ -74,7 +75,7 @@ class TVMFactory(BackendFactory):
 
         with tvm.transform.PassContext(opt_level=self.opt_level):
             executor = relay.build_module.create_executor(
-                self.executor_mode, mod, self.get_device(), self.target, params
+                self.executor_mode, mod, self.get_device(), self.tvm_target, params
             ).evaluate()
 
         def closure(inputs):
@@ -83,3 +84,7 @@ class TVMFactory(BackendFactory):
             return dict(zip(model.output_like.keys(), output))
 
         return closure
+
+    @property
+    def version(self) -> str:
+        return tvm.__version__

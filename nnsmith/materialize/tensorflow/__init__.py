@@ -86,6 +86,10 @@ class TFModel(Model, ABC):  # Don't directly instantiate this class
         return cls(schedule)
 
     @property
+    def version(self) -> str:
+        return tf.__version__
+
+    @property
     def native_model(self) -> TFNet:
         return self.net
 

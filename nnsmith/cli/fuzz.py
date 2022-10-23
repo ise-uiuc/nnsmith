@@ -206,7 +206,7 @@ class FuzzingLoop:
                 raise e  # propagate internal errors
             except Exception:
                 FUZZ_LOG.error(
-                    f"`make_testcase` failed. It could be a NNSmith bug or Generator bug (e.g., {self.cfg['model']['type']})."
+                    f"`make_testcase` failed with seed {seed}. It can be NNSmith or Generator ({self.cfg['model']['type']}) bug."
                 )
                 FUZZ_LOG.error(traceback.format_exc())
                 continue

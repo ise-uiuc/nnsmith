@@ -38,6 +38,10 @@ class TFLiteFactory(BackendFactory):
     def system_name(self) -> str:
         return "tflite"
 
+    @property
+    def version(self) -> str:
+        return tf.__version__
+
     @dispatch(TFModel)
     def make_backend(
         self,

@@ -29,6 +29,10 @@ class XLAFactory(BackendFactory):
     def system_name(self) -> str:
         return "xla"
 
+    @property
+    def version(self) -> str:
+        return tf.__version__
+
     @dispatch(TFModel)
     def make_backend(self, model: TFModel) -> BackendCallable:
         with self.device, EagerModeCtx(False):
