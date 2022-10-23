@@ -34,19 +34,20 @@ class TVMFactory(BackendFactory):
             assert (
                 target in tvm_possible_targets
             ), f"Unknown target {target}. Possible targets are {tvm_possible_targets}"
-            self.target = tvm.target.Target("cuda")
+            self.target = tvm.target.Target(target)
 
         self.executor_mode = executor
 
     def get_device(self):
-        if (
-            self.target.export()["kind"] == "cuda"
-            or self.target.export()["kind"] == "nvptx"
-        ):
+        dev_cand = self.target.export()["keys"]
+        assert len(dev_cand) > 0, f"No viable device found for {self.target}"
+        if "cuda" in dev_cand:
             return tvm.cuda()
-        if self.target.export()["kind"] == "rocm":
+        if "rocm" in dev_cand:
             return tvm.rocm()
-        return tvm.cpu()
+        if "cpu" in dev_cand:
+            return tvm.cpu()
+        return tvm.device(dev_cand[0])
 
     @property
     def system_name(self) -> str:
