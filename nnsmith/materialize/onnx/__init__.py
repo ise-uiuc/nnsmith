@@ -157,6 +157,10 @@ class ONNXModel(TorchModel):
         self.full_input_like = None
         self.onnx_model = None
 
+    @property
+    def version(self) -> str:
+        return f"onnx{onnx.__version__}-torch{torch.__version__}"
+
     def _mask_outputs(self) -> Dict[str, AbsTensor]:
         assert (
             self.torch_model is not None

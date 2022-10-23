@@ -18,6 +18,10 @@ class TorchModel(Model):
         self.torch_model: SymbolNet = None
         self.sat_inputs = None
 
+    @property
+    def version(self) -> str:
+        return torch.__version__
+
     @classmethod
     def from_schedule(cls, schedule: Schedule, **kwargs) -> "TorchModel":
         ret = cls()

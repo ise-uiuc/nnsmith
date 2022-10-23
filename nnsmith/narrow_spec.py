@@ -28,6 +28,7 @@ import z3
 from appdirs import user_cache_dir
 from omegaconf import OmegaConf
 
+from nnsmith import __version__
 from nnsmith.abstract.dtype import DType
 from nnsmith.abstract.extension import BACKEND_REQUIRES
 from nnsmith.abstract.op import AbsOpBase, AbsTensor, Constant, Input, concretize_op
@@ -35,13 +36,15 @@ from nnsmith.backends import BackendFactory
 from nnsmith.logging import DTEST_LOG
 from nnsmith.materialize import Instruction, Model, Schedule, TestCase
 
-NNSMITH_CACHE_DIR = user_cache_dir("nnsmith")
+NNSMITH_CACHE_DIR = user_cache_dir(f"nnsmith-{__version__}")
 
 
 def get_cache_name(model_cls: Type[Model], factory: BackendFactory) -> str:
     if factory is None:
         return f"{model_cls.__name__}_exportable"
-    return f"{model_cls.__name__}_{factory.system_name}_{factory.target}"
+    return (
+        f"{model_cls.__name__}_{factory.system_name}_{factory.version}_{factory.target}"
+    )
 
 
 @dataclass
