@@ -39,6 +39,10 @@ class TRTFactory(BackendFactory):
     def system_name(self) -> str:
         return "tensorrt"
 
+    @property
+    def version(self) -> str:
+        return trt.__version__
+
     @dispatch(ONNXModel)
     def make_backend(self, model: ONNXModel):
         import pycuda.autoinit

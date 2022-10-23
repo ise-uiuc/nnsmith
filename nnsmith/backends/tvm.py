@@ -84,3 +84,7 @@ class TVMFactory(BackendFactory):
             return dict(zip(model.output_like.keys(), output))
 
         return closure
+
+    @property
+    def version(self) -> str:
+        return tvm.__version__
