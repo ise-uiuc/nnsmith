@@ -2,3 +2,4 @@
 iree-compiler
 iree-runtime
 iree-tools-tf
+importlib_metadata
