@@ -9,7 +9,13 @@ from typing import Dict, List, Optional, Tuple, Type, Union
 import z3
 
 from nnsmith.abstract.arith import *
-from nnsmith.abstract.dtype import DTYPE_ALL, DTYPE_FLOATS, DTYPE_NON_BOOLS, DType
+from nnsmith.abstract.dtype import (
+    DTYPE_ALL,
+    DTYPE_FLOATS,
+    DTYPE_NON_BOOLS,
+    DType,
+    DTYPE_INTS,
+)
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import ConstraintCheck, SanityCheck
 
@@ -486,10 +492,12 @@ class Comparator(BcastBinaryOp):  # > < =
         ]
 
 
-class Logical(BcastBinaryOp):  # logical and or xor
+class IntegerComparator(Comparator):  # > < = for integer
+    in_dtypes = [(i, i) for i in DTYPE_INTS]
+
+
+class Logical(Comparator):  # logical and or xor
     in_dtypes = [(DType.bool, DType.bool)]
-    out_dtypes = [(DType.bool,)]
-    _bcast_out_dtypes = [DType.bool]
 
 
 @mark_materialize("core")
@@ -527,7 +535,6 @@ class Where(TernaryOpBase):
 
 
 # bcast binary ops from https://github.com/onnx/onnx/blob/master/docs/Broadcasting.md
-# TODO bitwise_and/or/xor?
 Add = mark_materialize("core")(
     type(
         "Add",
@@ -565,7 +572,10 @@ Min = mark_materialize("core")(
     )
 )
 
-Equal = mark_materialize("core")(type("Equal", (Comparator,), {"__module__": __name__}))
+# Set to `IntegerComparator` as "float == float" easily leads to false positive.
+Equal = mark_materialize("core")(
+    type("Equal", (IntegerComparator,), {"__module__": __name__})
+)
 Greater = mark_materialize("core")(
     type(
         "Greater",
