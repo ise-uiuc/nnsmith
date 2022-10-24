@@ -19,9 +19,20 @@ def assert_allclose(
         raise KeyError(f"{actual_name}: {akeys} != {oracle_name}: {dkeys}")
 
     for key in akeys:
+        lhs = actual[key]
+        rhs = desired[key]
+
+        # check if lhs is np.ndarray
+        if not isinstance(lhs, np.ndarray):
+            raise TypeError(f"{actual_name}[{key}] is not np.ndarray but {type(lhs)}")
+
+        # check if rhs is np.ndarray
+        if not isinstance(rhs, np.ndarray):
+            raise TypeError(f"{oracle_name}[{key}] is not np.ndarray but {type(rhs)}")
+
         testing.assert_allclose(
-            actual[key],
-            desired[key],
+            lhs,
+            rhs,
             equal_nan=equal_nan,
             rtol=rtol,
             atol=atol,

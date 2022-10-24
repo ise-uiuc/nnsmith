@@ -226,6 +226,15 @@ class BackendFactory(ABC):
                 log=traceback.format_exc(),
                 version=self.version,
             )
+        except Exception:
+            return BugReport(
+                testcase=testcase,
+                system=self.system_name,
+                symptom=Symptom.EXCEPTION,
+                stage=Stage.VERIFICATION,
+                log=traceback.format_exc(),
+                version=self.version,
+            )
 
     def verify_testcase(
         self, testcase: TestCase, equal_nan=True
