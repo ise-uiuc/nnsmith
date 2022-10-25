@@ -12,9 +12,9 @@ from nnsmith.abstract.arith import *
 from nnsmith.abstract.dtype import (
     DTYPE_ALL,
     DTYPE_FLOATS,
+    DTYPE_INTS,
     DTYPE_NON_BOOLS,
     DType,
-    DTYPE_INTS,
 )
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import ConstraintCheck, SanityCheck
