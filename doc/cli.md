@@ -2,6 +2,8 @@
 
 ```shell
 python3 -m pip install "nnsmith[torch,onnx,tvm,ort]" --upgrade
+# Or try the HEAD branch:
+# pip install "git+https://github.com/ise-uiuc/nnsmith@main#egg=nnsmith[torch,onnx,tvm,ort]" --upgrade
 ```
 
 The core functionality of NNSmith is graph generation.
@@ -15,9 +17,11 @@ We currently have model formats:
 
 and backends:
 - `tvm`
-- `trt`
-- `ort` (ONNXRuntime)
-- `trt`
+- `ort`: ONNXRuntime
+- `trt`: TensorRT
+- `iree`
+
+Meanwhile, the backend of `xla` and `tflite` is installed as part of TensorFlow.
 
 You can also have your own by extending `nnsmith.materialize.Model` and `nnsmith.backends.BackendFactory`.
 
@@ -68,7 +72,8 @@ nnsmith.dtype_test model.type="onnx" backend.type="onnxruntime"
 ## Fuzzing
 
 ```shell
-nnsmith.fuzz fuzz.time=30s fuzz.root=fuzz_report debug.viz=true
+nnsmith.fuzz fuzz.time=30s model.type=onnx backend.type=tvm fuzz.root=fuzz_report debug.viz=true
+# Bug reports are stored in `./fuzz_report`.
 ```
 
 ## Misc
