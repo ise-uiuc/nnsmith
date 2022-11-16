@@ -9,6 +9,7 @@ class DType(Enum):
     float16 = "float16"
     float32 = "float32"
     float64 = "float64"
+    uint8 = "uint8"  # Support quantized models.
     int8 = "int8"
     int16 = "int16"
     int32 = "int32"
@@ -30,6 +31,7 @@ class DType(Enum):
             DType.float16: "f16",
             DType.float32: "f32",
             DType.float64: "f64",
+            DType.uint8: "u8",
             DType.int8: "i8",
             DType.int16: "i16",
             DType.int32: "i32",
@@ -49,6 +51,7 @@ class DType(Enum):
             "f16": DType.float16,
             "f32": DType.float32,
             "f64": DType.float64,
+            "u8": DType.uint8,
             "i8": DType.int8,
             "i32": DType.int32,
             "i64": DType.int64,
@@ -69,6 +72,7 @@ class DType(Enum):
             DType.float16: np.float16,
             DType.float32: np.float32,
             DType.float64: np.float64,
+            DType.uint8: np.uint8,
             DType.int8: np.int8,
             DType.int16: np.int16,
             DType.int32: np.int32,
@@ -86,6 +90,7 @@ class DType(Enum):
             DType.float16: torch.float16,
             DType.float32: torch.float32,
             DType.float64: torch.float64,
+            DType.uint8: torch.uint8,
             DType.int8: torch.int8,
             DType.int16: torch.int16,
             DType.int32: torch.int32,
@@ -103,6 +108,7 @@ class DType(Enum):
             torch.float16: DType.float16,
             torch.float32: DType.float32,
             torch.float64: DType.float64,
+            torch.uint8: DType.uint8,
             torch.int8: DType.int8,
             torch.int16: DType.int16,
             torch.int32: DType.int32,
@@ -119,6 +125,7 @@ class DType(Enum):
             DType.float16: tf.float16,
             DType.float32: tf.float32,
             DType.float64: tf.float64,
+            DType.uint8: tf.uint8,
             DType.int8: tf.int8,
             DType.int16: tf.int16,
             DType.int32: tf.int32,
@@ -136,6 +143,7 @@ class DType(Enum):
             tf.float16: DType.float16,
             tf.float32: DType.float32,
             tf.float64: DType.float64,
+            tf.uint8: DType.uint8,
             tf.int8: DType.int8,
             tf.int16: DType.int16,
             tf.int32: DType.int32,
