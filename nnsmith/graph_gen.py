@@ -58,8 +58,8 @@ def concretize_graph(
         # concretize shapes;
         itensors = [concrete_shapes[df_idx] for df_idx in node["itensor_idx"]]
         otensors = op.checked_type_transfer(itensors)
-        op.input_like = itensors
-        op.output_like = otensors
+        op.bind_input_like(itensors)
+        op.bind_output_like(otensors)
 
         node["op"] = op
         node["label"] = textwrap.fill(f"#{node_id} ~ {op}", width=__TEXTWRAP_WIDTH__)
@@ -518,7 +518,7 @@ class SimpleGenerator:
         # S1 - select Y: Y must be a placeholder; (this also means the graph must start w/ a placeholder)
         ph_candidates = []
         for idx in self.placeholders:
-            oshape = self.id2nxnode(idx)["op"].out_shape
+            oshape = self.id2nxnode(idx)["op"].ttype
             if isinstance(op, Expand) and oshape.ndims < op.expand_last_dim:
                 continue
             ph_candidates.append(oshape)
@@ -731,7 +731,7 @@ class PureSymbolGen(SimpleGenerator):
             self.id2nxnode(self.placeholders[i])["op"] for i in occ_holder_indices
         ]
 
-        occupied_holder_shapes = [holder.out_shape for holder in to_occupy]
+        occupied_holder_shapes = [holder.ttype for holder in to_occupy]
 
         # S2.2: try to reuse some existing outputs;
         # TODO: allow reuse existing alive shapes
@@ -754,7 +754,7 @@ class PureSymbolGen(SimpleGenerator):
             new_inp_placeholders.append(ph)
             constraints.extend(ph.ttype.gt_zero())
 
-        input_shapes = [p.out_shape for p in new_inp_placeholders]
+        input_shapes = [p.ttype for p in new_inp_placeholders]
         constraints.extend(node.checked_requires(input_shapes))
         output_shapes = node.checked_type_transfer(input_shapes)
 
