@@ -1,182 +1,314 @@
-from dataclasses import dataclass
-from logging import PlaceHolder
-from typing import Dict, List, Tuple
+from dataclasses import dataclass, field
+from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
 
-from nnsmith.abstract.op import AbsOpBase, AbsTensor, Constant, Input
-from nnsmith.materialize import Instruction, Schedule
+from nnsmith.abstract.op import AbsOpBase, AbsTensor, Constant, Input, Placeholder
+from nnsmith.logging import CORE_LOG
 
 
 @dataclass
-class InstIR:
-    op: AbsOpBase
+class InstExpr:
+    op: Union[AbsOpBase, Placeholder]
     args: Tuple[str]
 
+    def __str__(self):
+        return f"{self.op}({', '.join(self.args)})"
 
-# Information for a Mutant:
-# A graph of operators:
-#  - each node is an operator;
-#  - all values are concrete;
+    def n_input(self):
+        assert len(self.args) == self.op.n_input()
+        return len(self.args)
+
+    def n_output(self):
+        return self.op.n_output()
+
+
+class InstIR:
+    def __init__(
+        self, iexpr: InstExpr, irctx: Union["GraphIR", List["InstIR"]] = None
+    ) -> None:
+        self.iexpr = iexpr
+        self.users: List[Set[InstIR]] = [set() for _ in range(self.iexpr.n_output())]
+        if irctx is not None:
+            if isinstance(irctx, GraphIR):
+                for arg in set(self.iexpr.args):
+                    inst_id, ret_idx = InstIR.var_inst_idx(arg)
+                    irctx.find_inst_by_id(inst_id).users[ret_idx].add(self)
+            elif isinstance(irctx, List):
+                for arg in set(self.iexpr.args):
+                    inst_id, ret_idx = InstIR.var_inst_idx(arg)
+                    for inst in irctx:
+                        if id(inst) == inst_id:
+                            inst.users[ret_idx].add(self)
+
+    def __str__(self):
+        return f"{', '.join(self.retvals())} = {self.iexpr} \t# inst id: {id(self)}"
+
+    def no_users(self):
+        return all(len(u) == 0 for u in self.users)
+
+    def leaf_var(self) -> Iterable[str]:
+        for idx, users in enumerate(self.users):
+            if len(users) == 0:
+                yield self.retval(idx)
+
+    def n_input(self):
+        return self.iexpr.n_input()
+
+    def n_output(self):
+        return self.iexpr.n_output()
+
+    @staticmethod
+    def var_inst_idx(varname: str) -> Tuple[int, int]:
+        # parse v[inst-id].[index]
+        tokens = varname[1:].split(".")
+        return int(tokens[0]), int(tokens[1])
+
+    def retval(self, index=0) -> str:
+        assert index < self.n_output(), f"Only has {self.n_output()} outputs in {self}"
+        return f"v{id(self)}.{index}"
+
+    def retvals(self) -> Iterable[str]:
+        for i in range(self.n_output()):
+            yield self.retval(i)
+
+    def is_user_of(self, inst: "InstIR", ret_idx: Optional[int] = None) -> bool:
+        usee_names = list(inst.retvals())
+        if ret_idx is not None:
+            if ret_idx >= len(usee_names) or ret_idx < 0:
+                raise ValueError(
+                    f"Invalid ret_idx: {ret_idx}. Valid domain is [0, {len(usee_names)})"
+                )
+            return usee_names[ret_idx] in self.iexpr.args
+        else:
+            return any(u in self.iexpr.args for u in usee_names)
+
 
 # TODO(@ganler): migrate NNSmith graph generation to GraphIR.
-# - [x] Schedule -> GraphIR
-# - [ ] NetworkX -> GraphIR
-# ------------------------------------------------------
-#                  Graph IR Structure
-# ------------------------------------------------------
-#       values: Dict[name, AbsTensor]
-#       defs:   Dict[name, cps(AbsOp, List[name])]       # FIXME: consider multiple outputs;
-#       users:  Dict[name, List[name]]
-# ------------------------------------------------------
+# - [x] Materialization: Schedule -> GraphIR
+# - [ ] DNN generation:  NetworkX -> GraphIR
+# -----------------------------------------------------------------
+#                       Graph IR Structure
+# -----------------------------------------------------------------
+#       vars:    Dict[ var_name, AbsTensor      ]
+#       insts:   List[cps(AbsOp, List[var_name])]
+# -----------------------------------------------------------------
+#                         Well-formedness
+# -----------------------------------------------------------------
+#  1. Return name: v${id(op)}.${index(ret)}. e.g., op[0].0, ...
+#  3. Return name is unique.
+# -----------------------------------------------------------------
+
+
 @dataclass
 class GraphIR:
-    values: Dict[str, AbsTensor]
-    defs: Dict[str, InstIR]
-    users: Dict[str, List[str]]
+    vars: Dict[str, AbsTensor] = field(default_factory=dict)  # VarName  -> AbsTensor
+    insts: List[InstIR] = field(
+        default_factory=list
+    )  # Index -> InstIR := <ID, InstExpr, RetNames..>
 
     def __str__(self) -> str:
         ret = ""
-        for name, inst in self.defs.items():
-            ret += f"{name}\t = {inst.op} :: {inst.args}\n"
+        for inst in self.insts:
+            ret += f"{inst}\n"
 
         return ret
 
-    def __len__(self):
-        return len(self.values)
+    def pretty(self) -> str:
+        ret = str(self)
+        for idx, inst in enumerate(self.insts):
+            ret = ret.replace(f"{id(inst)}", f"{idx}")
 
-    def n_compute_ops(self) -> int:
+        return ret
+
+    def n_inst(self) -> int:
+        return len(self.insts)
+
+    def n_compute_inst(self) -> int:
         return sum(
             1
-            for inst in self.defs.values()
-            if not isinstance(inst.op, (Input, Constant, PlaceHolder))
+            for inst in self.insts
+            if not isinstance(inst.iexpr.op, (Input, Constant, Placeholder))
         )
 
-    def leafs(self) -> List[str]:
-        return [name for name in self.values if 0 == len(self.users[name])]
+    def n_var(self) -> int:
+        return len(self.vars)
 
-    def expand_users(self, name: str) -> List[str]:
-        ret = []
+    def leaf_inst(self) -> List[str]:
+        return [inst for inst in self.insts if inst.no_users()]
 
-        def dfs(name: str):
-            if name in ret:
-                return
-            ret.append(name)
-            for arg in self.users[name]:
-                dfs(arg)
+    def leaf_var(self) -> List[str]:
+        # Non-leaf instructions can produce leaf variables.
+        lvs = []
+        for inst in self.insts:
+            for lv in inst.leaf_var():
+                if lv not in lvs:
+                    lvs.append(lv)
+        return lvs
 
-        dfs(name)
+    def add_inst(self, iexpr: InstExpr) -> InstIR:
+        new_inst = InstIR(iexpr)
+        # make new values
+        for ridx, abstensor in enumerate(iexpr.op.output_like):
+            vname = new_inst.retval(ridx)
+            assert vname not in self.vars, "Variable name is not unique: " + vname
+            self.vars[vname] = abstensor
 
-        return ret[1:]  # The first does not count.
+        min_user_idx = 0
+        # update users
+        for arg in set(iexpr.args):
+            assert arg in self.vars, "Variable not defined: " + arg
+            inst_id, ret_idx = InstIR.var_inst_idx(arg)
+            for idx, may_prod in enumerate(self.insts):
+                if inst_id == id(may_prod):
+                    may_prod.users[ret_idx].add(new_inst)
+                    min_user_idx = max(min_user_idx, idx + 1)
+                    break
 
-    def to_schedule(self) -> Schedule:
-        instructions: List[Instruction] = []
+        # insert it to somewhere that follows good topological order
+        # i.e., right after the last arg.
+        self.insts.insert(min_user_idx, new_inst)
+        return new_inst
 
-        self.check()
+    def find_inst_by_id(self, obj_id: int) -> Optional[InstIR]:
+        for inst in self.insts:
+            if id(inst) == obj_id:
+                return inst
+        return None
 
-        name2key = {name: i for i, name in enumerate(self.values)}
+    def replace_alluse(self, oldvar: str, newvar: str, type_check=True) -> None:
+        # Change one variable to another new variable.
+        assert oldvar in self.vars, "oldvar not defined: " + oldvar
+        assert newvar in self.vars, "newvar not defined: " + newvar
+        # check type
+        if (
+            type_check
+            and self.vars[oldvar] is not None
+            and self.vars[newvar] is not None
+        ):
+            assert (
+                self.vars[oldvar] == self.vars[newvar]
+            ), f"Type mismatch: {self.vars[oldvar]} != {self.vars[newvar]}"
+        # 1. replace all user site of oldvar to newvar.
+        old_inst_id, old_ret_idx = InstIR.var_inst_idx(oldvar)
+        old_inst = self.find_inst_by_id(old_inst_id)
+        for ouser in old_inst.users[old_ret_idx]:
+            # change all use of oldvar to newvar
+            ouser.iexpr.args = [newvar if a == oldvar else a for a in ouser.iexpr.args]
+        # 2. change users of oldvar -> newvar.
+        new_inst_id, new_ret_idx = InstIR.var_inst_idx(newvar)
+        new_inst = self.find_inst_by_id(new_inst_id)
+        new_inst.users[new_ret_idx] = old_inst.users[old_ret_idx]
+        old_inst.users[old_ret_idx] = set()  # reset
 
-        for name, inst in self.defs.items():
-            this_key = name2key[name]
-            inst.op.input_like = [self.values[arg] for arg in inst.args]
-            inst.op.output_like = [self.values[name]]
-            instructions.append(
-                Instruction(
-                    op=inst.op,
-                    inputs=[name2key[arg] for arg in inst.args],
-                    outputs=[this_key],  # FIXME(@ganler): multiple outputs
-                )
-            )
-
-        return Schedule(
-            instructions,
-            input_keys=[
-                name2key[n]
-                for n, inst in self.defs.items()
-                if isinstance(inst.op, Input)
-            ],
-            leaf_keys=[name2key[n] for n in self.leafs()],
-            key2type={key: self.values[n] for n, key in name2key.items()},
-        )
-
-    @staticmethod
-    def from_schedule(schedule: Schedule) -> "GraphIR":
-        defs = {}
-        values = {}
-        users = {}
-
-        for inst in schedule.instructions:
-            assert len(inst.outputs) == 1  # FIXME: multiple outputs
-            name = str(inst.outputs[0])
-            defs[name] = InstIR(op=inst.op, args=tuple(str(arg) for arg in inst.inputs))
-            values[name] = schedule.key2type[inst.outputs[0]]
-            if name not in users:
-                users[name] = []
-            for arg in inst.inputs:
-                users.setdefault(str(arg), []).append(name)
-
-        graph = GraphIR(values=values, defs=defs, users=users)
-        graph.normalize()
-        return graph
-
-    def check(self):
+    def replace_arg(self, inst: InstIR, arg_idx: int, newvar: str, type_check=True):
+        # Change one variable to another new variable.
+        assert newvar in self.vars, "newvar not defined: " + newvar
         assert (
-            set(self.values.keys()) == set(self.defs.keys()) == set(self.users.keys())
-        ), "Key inconsistency in `values`, `defs`, and `users`."
-        assert self.is_legal(), "Graph is not legal."
+            0 <= arg_idx < len(inst.iexpr.args)
+        ), f"Invalid argument index {arg_idx} for {inst}"
+        oldvar = inst.iexpr.args[arg_idx]
 
-    def is_legal(self) -> bool:
-        """Check if the graph is legal.
+        # check type
+        if (
+            type_check
+            and self.vars[oldvar] is not None
+            and self.vars[newvar] is not None
+        ):
+            assert (
+                self.vars[oldvar] == self.vars[newvar]
+            ), f"Type mismatch: {self.vars[oldvar]} != {self.vars[newvar]}"
+        # 1. replace current user site of oldvar to newvar.
+        inst.iexpr.args[arg_idx] = newvar
+        # 2. dec ref for oldvar
+        if oldvar not in inst.iexpr.args:
+            old_inst_id, old_ret_idx = InstIR.var_inst_idx(oldvar)
+            old_inst = self.find_inst_by_id(old_inst_id)
+            old_inst.users[old_ret_idx].remove(inst)
+        # 3. inc ref for newvar
+        new_inst_id, new_ret_idx = InstIR.var_inst_idx(newvar)
+        new_inst = self.find_inst_by_id(new_inst_id)
+        new_inst.users[new_ret_idx].add(inst)
 
-        Returns:
-            bool: True if the graph is legal.
-        """
-        name2idx = {name: i for i, name in enumerate(self.defs)}
-        for name, users in self.users.items():
-            for user in users:
-                if name2idx[name] >= name2idx[user]:
-                    return False
-        return True
+    def remove_unused(self, inst: InstIR) -> None:
+        # Remove an instruction which is deemed unused.
+        assert inst in self.insts, f"Instruction not in graph: {inst}"
+        assert inst.no_users(), f"{inst} has users {inst.users}."
+        # remove users
+        for other in self.insts:
+            if other != inst:
+                for users in other.users:
+                    if inst in users:
+                        users.remove(inst)
+        # remove values
+        for val in inst.retvals():
+            del self.vars[val]
+        # remove inst
+        self.insts.remove(inst)
 
-    def normalize(self) -> Dict[str, str]:  # Return name remap.
-        """Normalize the GraphIR by sorting and renaming them with topological order where inputs are first.
+    def assert_wellform(self):
+        # TODO: Check connectivity.
+        defined = set()
+        for inst in self.insts:
+            for arg in inst.iexpr.args:
+                assert arg in self.vars, f"Variable not defined: {arg}"
+                assert arg in defined, f"Variable not defined yet: {arg}"
+                # check usee.
+                usee_id, ret_idx = InstIR.var_inst_idx(arg)
+                usee = self.find_inst_by_id(usee_id)
+                assert (
+                    inst in usee.users[ret_idx]
+                ), f"Use-Def chain broken: {usee} should be used by {inst}"
 
-        Returns:
-            Dict[str, str]: The mapping from old names to new names.
-        """
-        visited = set()
-        topo_names = []
+            for rv in inst.retvals():
+                assert rv in self.vars, f"Return var not in self.vars: {rv}"
+                assert rv not in defined, f"Variable defined twice: {rv}"
 
-        # inputs go first.
-        for n, inst in self.defs.items():
-            if isinstance(inst.op, Input):
-                topo_names.append(n)
-                visited.add(n)
+            # check user.
+            for ret_idx, users in enumerate(inst.users):
+                val = inst.retval(ret_idx)
+                for user in users:
+                    assert (
+                        val in user.iexpr.args
+                    ), f"Use-Def chain broken: {inst} should be used by {user}"
 
-        def dfs(name: str):
-            if name in visited:
-                return
-            visited.add(name)
-            for arg in self.defs[name].args:
-                dfs(arg)
-            topo_names.append(name)
+            defined.update(inst.retvals())
 
-        for name in self.defs:
-            dfs(name)
+    def _topological_sort(self):
+        defined = set()
 
-        varremap = {}
-        for i, name in enumerate(topo_names):
-            varremap[name] = f"v{i}"
+        def swap(i, j):
+            self.insts[i], self.insts[j] = self.insts[j], self.insts[i]
 
-        self.values = {varremap[name]: self.values[name] for name in topo_names}
-        self.defs = {
-            varremap[name]: InstIR(
-                op=self.defs[name].op,
-                args=tuple(varremap[arg] for arg in self.defs[name].args),
-            )
-            for name in topo_names
-        }
-        self.users = {
-            varremap[name]: [varremap[arg] for arg in self.users[name]]
-            for name in topo_names
-        }
+        ptr = 0
+        while ptr < len(self.insts):
+            frontier = []
+            for idx in range(ptr, len(self.insts)):
+                inst = self.insts[idx]
+                if all(arg in defined for arg in inst.iexpr.args):
+                    frontier.append(idx)
+            if len(frontier) == 0:
+                CORE_LOG.error(f"Bad IR:\n{self.pretty()}")
+                raise RuntimeError("Cyclic dependency detected.")
+            for idx in frontier:
+                swap(ptr, idx)
+                defined.update(self.insts[ptr].retvals())
+                ptr += 1
 
-        return varremap
+    def _udchain_repair(self):
+        for inst in self.insts:
+            # Add used;
+            for arg in inst.iexpr.args:
+                usee_id, ret_idx = InstIR.var_inst_idx(arg)
+                usee = self.find_inst_by_id(usee_id)
+                usee.users[ret_idx].add(inst)
+            # Remove unused;
+            for ret_idx, users in enumerate(inst.users):
+                val = inst.retval(ret_idx)
+                for user in list(users):
+                    if val not in user.iexpr.args:
+                        users.remove(user)
+
+    def wellform_repair(self):
+        # 1. Repair use-def chain;
+        self._udchain_repair()
+        # 2. Repair topological order;
+        self._topological_sort()

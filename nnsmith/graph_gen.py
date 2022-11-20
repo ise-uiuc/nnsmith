@@ -404,9 +404,9 @@ class SimpleGenerator:
                 nid = self.get_new_node_id()
                 shape_idx = len(self.tensor_dataflow)
                 self.tensor_dataflow.append(
-                    TensorCtx(op_id=nid, type=input_node.out_shape, output_idx=0)
+                    TensorCtx(op_id=nid, type=input_node.ttype, output_idx=0)
                 )
-                self.dim2shape_idx.setdefault(input_node.out_shape.ndims, []).append(
+                self.dim2shape_idx.setdefault(input_node.ttype.ndims, []).append(
                     shape_idx
                 )
                 self.abstract_graph.add_node(
@@ -647,17 +647,17 @@ class SimpleGenerator:
 
 class PureSymbolGen(SimpleGenerator):
     def insert_init_ph_node(self, ph: Placeholder) -> Placeholder:
-        self.forward_insert_node(ph, [], oshapes=[ph.out_shape])
+        self.forward_insert_node(ph, [], oshapes=[ph.ttype])
 
-        for c in ph.out_shape.gt_zero():
+        for c in ph.ttype.gt_zero():
             self.solver.add(c)
 
         if self.limnf:
             if NNSMITH_LIMNF_V == "0":
-                self.n_floats = nnsmith_add(self.n_floats, ph.out_shape.nelement())
+                self.n_floats = nnsmith_add(self.n_floats, ph.ttype.nelement())
             elif NNSMITH_LIMNF_V == "1":
                 self.n_floats_cons.append(
-                    nnsmith_le(ph.out_shape.nelement(), self.limit_float // 16)
+                    nnsmith_le(ph.ttype.nelement(), self.limit_float // 16)
                 )
         return ph
 
@@ -752,7 +752,7 @@ class PureSymbolGen(SimpleGenerator):
                 rank if rank != -1 else self.random_rank(), dtype=dtype
             )
             new_inp_placeholders.append(ph)
-            constraints.extend(ph.out_shape.gt_zero())
+            constraints.extend(ph.ttype.gt_zero())
 
         input_shapes = [p.out_shape for p in new_inp_placeholders]
         constraints.extend(node.checked_requires(input_shapes))
