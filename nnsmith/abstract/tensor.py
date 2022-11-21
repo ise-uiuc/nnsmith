@@ -25,8 +25,21 @@ class AbsTensor:
     def __repr__(self):
         return f"AbsTensor<{self.dtype.short()}>{str(self.shape)}"
 
-    def __eq__(self, other):
+    def weak_compare(self, other: "AbsTensor") -> bool:
+        if self.dtype != other.dtype or self.ndims != other.ndims:
+            return False
+        for l, r in zip(self.shape, other.shape):
+            if isinstance(l, z3.ExprRef) or isinstance(r, z3.ExprRef):
+                continue
+            if l != r:
+                return False
+        return True
+
+    def strong_compare(self, other: "AbsTensor") -> bool:
         return self.shape == other.shape and self.dtype == other.dtype
+
+    def __eq__(self, other: "AbsTensor") -> bool:
+        return self.strong_compare(other)
 
     def gt_zero(self):
         ret = []

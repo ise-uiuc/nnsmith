@@ -87,6 +87,7 @@ def dtype_from_onnx(onnx_dtype: onnx.TensorProto.DataType) -> DType:
     return {
         onnx.TensorProto.DataType.FLOAT: DType.float32,
         onnx.TensorProto.DataType.DOUBLE: DType.float64,
+        onnx.TensorProto.DataType.UINT8: DType.uint8,
         onnx.TensorProto.DataType.INT8: DType.int8,
         onnx.TensorProto.DataType.INT16: DType.int16,
         onnx.TensorProto.DataType.INT32: DType.int32,

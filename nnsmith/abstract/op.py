@@ -136,7 +136,7 @@ def check_require_fn(func):
 
 
 def _prepend_to(x, max_dim):
-    return [1 for i in range(max_dim - len(x))] + x
+    return [1 for _ in range(max_dim - len(x))] + x
 
 
 def z3_bcast(
@@ -267,8 +267,6 @@ class AbsOpBase(ABC):
     num_var_param = None
     # Require the input dimension sizes to be equivalent.
     same_inp_dims = False
-    # whether this op is broadcastable or not
-    bcastable = False
     # input dtypes: enumerates all possible input dtype combinations. Size of the list is the number of combinations.
     # Each element is a tuple of allowed input dtypes. NOTE: len(list) can >= the # of inputs, for handling ops with arbitrary arity.
     # For example, [(DType.float32, DType.float32), (DType.float64, DType.float64), (DType.int32, DType.int32)] means that
@@ -293,12 +291,38 @@ class AbsOpBase(ABC):
         self.out_ranks = []
         # NOTE: the input of operator constructors are all Union[int, z3.ExprRef].
         self.extra_attrs = {}
+        self._input_like = [None] * self.n_input()
+        self._output_like = [None] * self.n_output()
+
+    @classmethod
+    def n_input(cls):
+        assert cls.in_dtypes is not None
+        return len(cls.in_dtypes[0]) if len(cls.in_dtypes) > 0 else 0
+
+    @classmethod
+    def n_output(cls):
+        assert cls.out_dtypes is not None
+        return len(cls.out_dtypes[0]) if len(cls.out_dtypes) > 0 else 0
 
     @classmethod
     def get_num_var_param(cls):
         if cls.num_var_param is None:
             return len(signature(cls.__init__).parameters) - 1
         return random.choice(cls.num_var_param)
+
+    def bind_input_like(self, input_like: List[AbsTensor]):
+        self._input_like = input_like
+
+    def bind_output_like(self, output_like: List[AbsTensor]):
+        self._output_like = output_like
+
+    @property
+    def input_like(self):
+        return self._input_like
+
+    @property
+    def output_like(self):
+        return self._output_like
 
     @abstractmethod  # Overload me!
     # Exception means rejection.
@@ -439,14 +463,12 @@ def bcast_rand_ndims(num_svars, target_ndims):
 
 
 class BcastBinaryOp(BinaryOpBase):
-    bcastable = True
     # by default, output dtype is the same as the first input dtype
     _bcast_out_dtypes = None
 
     def __init__(self):
         super().__init__()
         self.inp_ranks = [int_all(), int_all()]
-        self.bcastable = True
 
     def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         tgt_shape = broadcast_shapes(*(ish.shape for ish in input_shapes))
@@ -502,7 +524,6 @@ class Logical(Comparator):  # logical and or xor
 
 @mark_materialize("core")
 class Where(TernaryOpBase):
-    bcastable = True
     in_dtypes = [(DType.bool, i, i) for i in DTYPE_NON_BOOLS]
     out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
 
@@ -510,7 +531,6 @@ class Where(TernaryOpBase):
         super().__init__()
         self.inp_ranks = [int_all(), int_all(), int_all()]
         self.same_inp_dtypes = True
-        self.bcastable = True
 
     def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         # assert len(input_shapes[0].shape) == len(input_shapes[1].shape)
@@ -535,21 +555,21 @@ class Where(TernaryOpBase):
 
 
 # bcast binary ops from https://github.com/onnx/onnx/blob/master/docs/Broadcasting.md
-Add = mark_materialize("core")(
+Add: Type[BcastBinaryOp1] = mark_materialize("core")(
     type(
         "Add",
         (BcastBinaryOp1,),
         {"__module__": __name__},
     )
 )
-Sub = mark_materialize("core")(
+Sub: Type[BcastBinaryOp1] = mark_materialize("core")(
     type(
         "Sub",
         (BcastBinaryOp1,),
         {"__module__": __name__},
     )
 )
-Mul = mark_materialize("core")(
+Mul: Type[BcastBinaryOp1] = mark_materialize("core")(
     type(
         "Mul",
         (BcastBinaryOp1,),
@@ -557,14 +577,14 @@ Mul = mark_materialize("core")(
     )
 )
 # NOTE(JK): didn't find multi-input version of Max and Min in torch, so assume binary ops
-Max = mark_materialize("core")(
+Max: Type[BcastBinaryOp1] = mark_materialize("core")(
     type(
         "Max",
         (BcastBinaryOp1,),
         {"__module__": __name__},
     )
 )
-Min = mark_materialize("core")(
+Min: Type[BcastBinaryOp1] = mark_materialize("core")(
     type(
         "Min",
         (BcastBinaryOp1,),
@@ -573,32 +593,34 @@ Min = mark_materialize("core")(
 )
 
 # Set to `IntegerComparator` as "float == float" easily leads to false positive.
-Equal = mark_materialize("core")(
+Equal: Type[IntegerComparator] = mark_materialize("core")(
     type("Equal", (IntegerComparator,), {"__module__": __name__})
 )
-Greater = mark_materialize("core")(
+Greater: Type[Comparator] = mark_materialize("core")(
     type(
         "Greater",
         (Comparator,),
         {"__module__": __name__},
     )
 )
-Less = mark_materialize("core")(type("Less", (Comparator,), {"__module__": __name__}))
-And = mark_materialize("core")(
+Less: Type[Comparator] = mark_materialize("core")(
+    type("Less", (Comparator,), {"__module__": __name__})
+)
+And: Type[Logical] = mark_materialize("core")(
     type(
         "And",
         (Logical,),
         {"__module__": __name__},
     )
 )
-Or = mark_materialize("core")(
+Or: Type[Logical] = mark_materialize("core")(
     type(
         "Or",
         (Logical,),
         {"__module__": __name__},
     )
 )
-Xor = mark_materialize("core")(
+Xor: Type[Logical] = mark_materialize("core")(
     type(
         "Xor",
         (Logical,),
@@ -666,22 +688,32 @@ class Constant(AbsOpBase):
 
 
 class Placeholder:
-    def __init__(self, out_shape: AbsTensor):
-        self.out_shape = out_shape
+    def __init__(self, ttype: AbsTensor):
+        self.ttype = ttype
         self.inp_ranks = []
-        self.out_ranks = [(out_shape.ndims,)]
+        self.out_ranks = [(ttype.ndims,)]
+        self.input_like = []
+        self.output_like = [ttype]
+
+    @staticmethod
+    def n_input():
+        return 0
+
+    @staticmethod
+    def n_output():
+        return 1
 
     def __repr__(self):
-        return f"Placeholder({self.out_shape})"
+        return f"Placeholder({self.ttype})"
 
     def to_const(self):
-        const_node = Constant(self.out_shape.ndims)
-        const_node.abs_tensor = self.out_shape
+        const_node = Constant(self.ttype.ndims)
+        const_node.abs_tensor = self.ttype
         return const_node
 
     def to_input(self):
-        input_node = Input(self.out_shape.ndims)
-        input_node.abs_tensor = self.out_shape
+        input_node = Input(self.ttype.ndims)
+        input_node.abs_tensor = self.ttype
         return input_node
 
     def __str__(self):

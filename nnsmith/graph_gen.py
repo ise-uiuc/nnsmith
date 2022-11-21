@@ -58,8 +58,8 @@ def concretize_graph(
         # concretize shapes;
         itensors = [concrete_shapes[df_idx] for df_idx in node["itensor_idx"]]
         otensors = op.checked_type_transfer(itensors)
-        op.input_like = itensors
-        op.output_like = otensors
+        op.bind_input_like(itensors)
+        op.bind_output_like(otensors)
 
         node["op"] = op
         node["label"] = textwrap.fill(f"#{node_id} ~ {op}", width=__TEXTWRAP_WIDTH__)
@@ -404,9 +404,9 @@ class SimpleGenerator:
                 nid = self.get_new_node_id()
                 shape_idx = len(self.tensor_dataflow)
                 self.tensor_dataflow.append(
-                    TensorCtx(op_id=nid, type=input_node.out_shape, output_idx=0)
+                    TensorCtx(op_id=nid, type=input_node.ttype, output_idx=0)
                 )
-                self.dim2shape_idx.setdefault(input_node.out_shape.ndims, []).append(
+                self.dim2shape_idx.setdefault(input_node.ttype.ndims, []).append(
                     shape_idx
                 )
                 self.abstract_graph.add_node(
@@ -518,7 +518,7 @@ class SimpleGenerator:
         # S1 - select Y: Y must be a placeholder; (this also means the graph must start w/ a placeholder)
         ph_candidates = []
         for idx in self.placeholders:
-            oshape = self.id2nxnode(idx)["op"].out_shape
+            oshape = self.id2nxnode(idx)["op"].ttype
             if isinstance(op, Expand) and oshape.ndims < op.expand_last_dim:
                 continue
             ph_candidates.append(oshape)
@@ -647,17 +647,17 @@ class SimpleGenerator:
 
 class PureSymbolGen(SimpleGenerator):
     def insert_init_ph_node(self, ph: Placeholder) -> Placeholder:
-        self.forward_insert_node(ph, [], oshapes=[ph.out_shape])
+        self.forward_insert_node(ph, [], oshapes=[ph.ttype])
 
-        for c in ph.out_shape.gt_zero():
+        for c in ph.ttype.gt_zero():
             self.solver.add(c)
 
         if self.limnf:
             if NNSMITH_LIMNF_V == "0":
-                self.n_floats = nnsmith_add(self.n_floats, ph.out_shape.nelement())
+                self.n_floats = nnsmith_add(self.n_floats, ph.ttype.nelement())
             elif NNSMITH_LIMNF_V == "1":
                 self.n_floats_cons.append(
-                    nnsmith_le(ph.out_shape.nelement(), self.limit_float // 16)
+                    nnsmith_le(ph.ttype.nelement(), self.limit_float // 16)
                 )
         return ph
 
@@ -731,7 +731,7 @@ class PureSymbolGen(SimpleGenerator):
             self.id2nxnode(self.placeholders[i])["op"] for i in occ_holder_indices
         ]
 
-        occupied_holder_shapes = [holder.out_shape for holder in to_occupy]
+        occupied_holder_shapes = [holder.ttype for holder in to_occupy]
 
         # S2.2: try to reuse some existing outputs;
         # TODO: allow reuse existing alive shapes
@@ -752,9 +752,9 @@ class PureSymbolGen(SimpleGenerator):
                 rank if rank != -1 else self.random_rank(), dtype=dtype
             )
             new_inp_placeholders.append(ph)
-            constraints.extend(ph.out_shape.gt_zero())
+            constraints.extend(ph.ttype.gt_zero())
 
-        input_shapes = [p.out_shape for p in new_inp_placeholders]
+        input_shapes = [p.ttype for p in new_inp_placeholders]
         constraints.extend(node.checked_requires(input_shapes))
         output_shapes = node.checked_type_transfer(input_shapes)
 

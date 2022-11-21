@@ -1,5 +1,4 @@
 import multiprocessing as mp
-import os
 import sys
 import traceback
 from abc import ABC, abstractmethod
@@ -86,7 +85,7 @@ class BackendFactory(ABC):
     def checked_exec(
         self, executable: BackendCallable, testcase: TestCase
     ) -> Union[Dict[str, np.ndarray], BugReport]:
-        input = testcase.oracle.input
+        input = None if testcase.oracle is None else testcase.oracle.input
         if input is None:
             input = self.make_random_input(testcase.model.input_like)
             testcase = TestCase(
@@ -247,7 +246,7 @@ class BackendFactory(ABC):
         if isinstance(output, BugReport):
             return output
 
-        if testcase.oracle.output is not None:
+        if testcase.oracle is not None and testcase.oracle.output is not None:
             return self.verify_results(output, testcase, equal_nan=equal_nan)
 
         return None

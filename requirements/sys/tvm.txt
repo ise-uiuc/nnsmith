@@ -1,2 +1,3 @@
---pre
-apache-tvm # need to play with tag `--pre`
+# TODO(@ganler): switch back to pre-release after the merge
+# and release of https://github.com/apache/tvm/pull/13448
+apache-tvm==0.9.0
