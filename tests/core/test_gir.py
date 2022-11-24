@@ -12,7 +12,7 @@ class FakeSwap(AbsOpBase):
 
     def __init__(self):
         super().__init__()
-        self.inp_ranks = [int_all(), int_all()]
+        self.inp_ranks = [rank_all(), rank_all()]
 
     def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         return [input_shapes[-1], input_shapes[0]]

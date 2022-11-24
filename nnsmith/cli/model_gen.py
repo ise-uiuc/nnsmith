@@ -6,9 +6,9 @@ import hydra
 from omegaconf import DictConfig
 
 from nnsmith.backends.factory import BackendFactory
-from nnsmith.graph_gen import concretize_graph, random_model_gen, viz
+from nnsmith.graph_gen import random_model_gen, viz
 from nnsmith.logging import MGEN_LOG
-from nnsmith.materialize import Model, Schedule, TestCase
+from nnsmith.materialize import Model, TestCase
 from nnsmith.narrow_spec import auto_opset
 from nnsmith.util import mkdir
 
@@ -39,31 +39,25 @@ def main(cfg: DictConfig):
 
     gen = random_model_gen(
         opset=auto_opset(ModelType, factory, vulops=mgen_cfg["vulops"]),
-        init_rank=mgen_cfg["init_rank"],
         seed=seed,
         max_nodes=mgen_cfg["max_nodes"],
         timeout_ms=mgen_cfg["timeout_ms"],
     )
     MGEN_LOG.info(
-        f"{len(gen.get_solutions())} symbols and {len(gen.solver.assertions())} constraints."
+        f"{len(gen.get_sat_model())} symbols and {len(gen.solver.assertions())} constraints."
     )
 
     if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
-        MGEN_LOG.debug("solution:" + ", ".join(map(str, gen.get_solutions())))
+        MGEN_LOG.debug("solution:" + ", ".join(map(str, gen.get_sat_model())))
 
-    fixed_graph, concrete_abstensors = concretize_graph(
-        gen.abstract_graph, gen.tensor_dataflow, gen.get_solutions()
-    )
+    gen.ir.concretize(gen.get_sat_model())
 
     mkdir(mgen_cfg["save"])
     if cfg["debug"]["viz"]:
-        G = fixed_graph
         fmt = cfg["debug"]["viz_fmt"].replace(".", "")
-        viz(G, os.path.join(mgen_cfg["save"], f"graph.{fmt}"))
+        viz(gen.ir, os.path.join(mgen_cfg["save"], f"graph.{fmt}"))
 
-    schedule = Schedule.init(fixed_graph, concrete_abstensors)
-
-    model = ModelType.from_schedule(schedule)
+    model = ModelType.from_gir(gen.ir)
     model.refine_weights()  # either random generated or gradient-based.
     oracle = model.make_oracle()
 

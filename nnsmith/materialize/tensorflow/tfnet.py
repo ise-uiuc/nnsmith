@@ -5,8 +5,8 @@ import tensorflow as tf
 
 from nnsmith.abstract.op import AbsOpBase, Input
 from nnsmith.error import SanityCheck
+from nnsmith.gir import GraphIR
 from nnsmith.logging import TF_LOG
-from nnsmith.materialize import Schedule
 from nnsmith.materialize.tensorflow.forward import forward_fn
 
 
@@ -18,27 +18,20 @@ class Instr:
 
 
 class TFNet(tf.Module):
-    """
-    Concrete TensorFlow Network
-    It only has minimal methods to be a TF network.
-    It only has minimal information "schedule" to do computation.
-    """
+    """A TensorFlow network whose computation is defined by a GraphIR."""
 
-    def __init__(
-        self,
-        schedule: Schedule,
-    ) -> None:
-        """Build a TensorFlow model from schedule
+    def __init__(self, ir: GraphIR) -> None:  # TODO(@ganler): impl
+        """Build a TensorFlow model from GraphIR
 
         Args:
-            schedule (Schedule): minimal information for constructing a concrete graph.
+            ir (GraphIR): minimal information for constructing a concrete graph.
         """
         super().__init__()
-        self.schedule: Schedule = schedule
+        self.ir: GraphIR = ir
         self.mlist: List[Callable] = []
         self.instructions: List[Instr] = []
 
-        for op, inp_keys, out_keys in self.schedule.instructions:
+        for op, inp_keys, out_keys in self.ir.instructions:
             if not isinstance(op, Input):
                 op = cast(AbsOpBase, op)
                 fwd_fn = forward_fn(op)
@@ -61,11 +54,11 @@ class TFNet(tf.Module):
         TF_LOG.debug(f"{mode} with JIT config: {tf.config.optimizer.get_jit()}")
 
         key2tensor: Dict[int, tf.Tensor] = {}
-        if len(args) == len(self.schedule.input_keys):
-            for i, key in enumerate(self.schedule.input_keys):
+        if len(args) == len(self.ir.input_var()):
+            for i, key in enumerate(self.ir.input_var()):
                 key2tensor[key] = args[i]
-        elif len(kwargs) == len(self.schedule.input_keys):
-            for i, key in enumerate(self.schedule.input_keys):
+        elif len(kwargs) == len(self.ir.input_var()):
+            for i, key in enumerate(self.ir.input_var()):
                 key2tensor[key] = kwargs[f"i{i}"]
         else:
             raise ValueError("Either user args only or kwargs only")
@@ -86,7 +79,5 @@ class TFNet(tf.Module):
                 key2tensor[out_key] = out_tensors[i_out]
 
         # end for instructions
-        out_dict = {
-            f"o{i}": key2tensor[key] for i, key in enumerate(self.schedule.leaf_keys)
-        }
+        out_dict = {f"o{i}": key2tensor[key] for i, key in enumerate(self.ir.leaf_keys)}
         return out_dict

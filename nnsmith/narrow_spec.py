@@ -34,7 +34,7 @@ from nnsmith.abstract.extension import BACKEND_REQUIRES
 from nnsmith.abstract.op import AbsOpBase, AbsTensor, Constant, Input, concretize_op
 from nnsmith.backends import BackendFactory
 from nnsmith.logging import DTEST_LOG
-from nnsmith.materialize import Instruction, Model, Schedule, TestCase
+from nnsmith.materialize import Instruction, Model, TestCase
 
 NNSMITH_CACHE_DIR = user_cache_dir(f"nnsmith-{__version__}")
 
@@ -53,6 +53,7 @@ class OpConfig:
     out_dtypes: List[List[DType]]
 
 
+# TODO(@ganler): impl
 def _make_single_op_schedules(
     op: AbsOpBase, ishapes, available_idtypes
 ):  # List<Tup<DTypeComb,DTypeComb,Sched>>

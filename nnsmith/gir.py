@@ -1,7 +1,16 @@
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
 
-from nnsmith.abstract.op import AbsOpBase, AbsTensor, Constant, Input, Placeholder
+from z3 import ModelRef
+
+from nnsmith.abstract.op import (
+    AbsOpBase,
+    AbsTensor,
+    Constant,
+    Input,
+    Placeholder,
+    concretize_op,
+)
 from nnsmith.logging import CORE_LOG
 
 
@@ -82,9 +91,6 @@ class InstIR:
             return any(u in self.iexpr.args for u in usee_names)
 
 
-# TODO(@ganler): migrate NNSmith graph generation to GraphIR.
-# - [x] Materialization: Schedule -> GraphIR
-# - [ ] DNN generation:  NetworkX -> GraphIR
 # -----------------------------------------------------------------
 #                       Graph IR Structure
 # -----------------------------------------------------------------
@@ -144,8 +150,20 @@ class GraphIR:
                     lvs.append(lv)
         return lvs
 
+    def input_var(self) -> List[str]:
+        return [inst.retval() for inst in self.insts if inst.iexpr.op == Input]
+
     def add_inst(self, iexpr: InstExpr) -> InstIR:
         new_inst = InstIR(iexpr)
+
+        # Check if op is properly binded with input and outputs.
+        assert all(
+            [t is not None for t in iexpr.op.input_like]
+        ), f"Input not binded: {new_inst}"
+        assert all(
+            [t is not None for t in iexpr.op.output_like]
+        ), f"Output not binded: {new_inst}"
+
         # make new values
         for ridx, abstensor in enumerate(iexpr.op.output_like):
             vname = new_inst.retval(ridx)
@@ -184,8 +202,8 @@ class GraphIR:
             and self.vars[oldvar] is not None
             and self.vars[newvar] is not None
         ):
-            assert (
-                self.vars[oldvar] == self.vars[newvar]
+            assert self.vars[oldvar].weak_compare(
+                self.vars[newvar]
             ), f"Type mismatch: {self.vars[oldvar]} != {self.vars[newvar]}"
         # 1. replace all user site of oldvar to newvar.
         old_inst_id, old_ret_idx = InstIR.var_inst_idx(oldvar)
@@ -312,3 +330,26 @@ class GraphIR:
         self._udchain_repair()
         # 2. Repair topological order;
         self._topological_sort()
+
+    def concretize(self, model: ModelRef) -> None:
+        """Concretize self with a z3 model."""
+        for inst in self.insts:
+            # Concretize operators
+            op = concretize_op(inst.iexpr.op, model)
+
+            # Concretize output tensors;
+            itensors = [self.vars[vname] for vname in inst.iexpr.args]
+            otensors = op.checked_type_transfer(itensors)
+            op.bind_input_like(itensors)
+            op.bind_output_like(otensors)
+
+            # Write back op to insts.
+            inst.iexpr.op = op
+
+            # Write back tensors to vars.
+            for vname, tensor in zip(inst.retvals(), otensors):
+                self.vars[vname] = tensor
+
+    def to_dot(self) -> str:
+        """Convert to graphviz dot format."""
+        raise NotImplementedError

@@ -10,8 +10,8 @@ from torch import nn
 from nnsmith.abstract.op import Input
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import ConstraintCheck, ConstraintError, SanityCheck
+from nnsmith.gir import GraphIR
 from nnsmith.logging import TORCH_LOG
-from nnsmith.materialize import Schedule
 from nnsmith.materialize.torch.forward import forward_fn
 from nnsmith.materialize.torch.numeric import loss_fn, numeric_valid
 from nnsmith.materialize.torch.proxy_grad import proxy_fn
@@ -39,7 +39,7 @@ def check_type(op, tensors, is_input=True, msg=""):
 
 
 # Probablistically, sampling at positive domain is beneficial.
-def random_tensor(shape, dtype, margin=4, base=5, use_cuda=False):
+def random_tensor(shape, dtype: torch.dtype, margin=4, base=5, use_cuda=False):
     # center: -margin ~ 0 ~ +margin
     dev = torch.device("cuda" if use_cuda else "cpu")
     if base == "center":
@@ -58,7 +58,7 @@ def random_tensor(shape, dtype, margin=4, base=5, use_cuda=False):
 class SymbolNet(nn.Module):
     def __init__(
         self,
-        schedule: Schedule,
+        ir: GraphIR,
         record_intermediate=False,
         use_gradient=False,
         megabyte_lim=__MB_LIM__,
@@ -78,36 +78,31 @@ class SymbolNet(nn.Module):
         # whether or not to register intermediate tensors as output tensors. Useful (at least) for checking nan
         self.record_intermediate = record_intermediate
 
-        self.n_floats, self.flops = 0, 0
+        self.ir = ir
 
-        self.schedule = schedule
-
-        for op, inputs, outputs in self.schedule.instructions:
-            if not isinstance(op, Input):
-                torch_fn = forward_fn(op)
-                SanityCheck.true(torch_fn is not None, f"Bad implementation for {op}")
+        for inst in self.ir.insts:
+            if not isinstance(inst.iexpr.op, Input):
+                torch_fn = forward_fn(inst.iexpr.op)
+                SanityCheck.true(torch_fn is not None, f"Bad impl for {inst.iexpr.op}")
                 if isinstance(torch_fn, nn.Module):
                     self.mlist.append(torch_fn)
-                self.instructions.append((torch_fn, inputs, outputs, None))
+                self.instructions.append(
+                    (torch_fn, inst.iexpr.args, inst.retvals(), inst.iexpr.op)
+                )
 
-                if loss_fn.dispatch(type(op)):
+                if loss_fn.dispatch(type(inst.iexpr.op)):
                     self.n_vulnerable_op += 1
 
-                self.instructions.append(
-                    (torch_fn, inputs, outputs, op)
-                )  # TODO Colin op is redundant?
-
         # the order follows `input_keys`
+
         self.input_map = {
-            f"i{i}": self.schedule.key2type[k]
-            for i, k in enumerate(self.schedule.input_keys)
+            f"i{i}": self.ir.vars[k] for i, k in enumerate(self.ir.input_var())
         }
         self.output_map = {
-            f"o{i}": self.schedule.key2type[k]
-            for i, k in enumerate(self.schedule.leaf_keys)
+            f"o{i}": self.ir.vars[k] for i, k in enumerate(self.ir.leaf_var())
         }
-        self.iname2key = {f"i{i}": k for i, k in enumerate(self.schedule.input_keys)}
-        self.oname2key = {f"o{i}": k for i, k in enumerate(self.schedule.leaf_keys)}
+        self.iname2key = {f"i{i}": k for i, k in enumerate(self.ir.input_var())}
+        self.oname2key = {f"o{i}": k for i, k in enumerate(self.ir.leaf_var())}
 
         self.first_run = True
 
@@ -227,13 +222,17 @@ class SymbolNet(nn.Module):
         return inputs
 
     def grad_input_gen(
-        self, init_tensors, use_cuda=False, max_time=None, **kwargs
+        self,
+        init_tensors: Dict[str, torch.Tensor],
+        use_cuda=False,
+        max_time=None,
+        **kwargs,
     ) -> Optional[Dict[str, torch.Tensor]]:
         # TODO: trim the param. max_iter is not used; remove getenv
         if max_time is None:
             max_time = float(os.getenv("NNSMITH_GRAD_TIME", 0.5))
 
-        inputs = {}
+        inputs: Dict[str, torch.Tensor] = {}
         for key, tensor in init_tensors.items():
             if tensor.data.dtype.is_floating_point:
                 inputs[key] = torch.nn.parameter.Parameter(tensor.data.clone())
@@ -315,7 +314,7 @@ class SymbolNet(nn.Module):
         tensor_map = {}
 
         if len(args) == len(self.input_map):
-            for i, key in enumerate(self.schedule.input_keys):
+            for i, key in enumerate(self.ir.input_var()):
                 tensor_map[key] = args[i]
         elif len(kwargs) == len(self.input_map):
             for readable in self.input_map:

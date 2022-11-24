@@ -5,7 +5,8 @@ from typing import Dict, List, Type
 import torch
 
 from nnsmith.abstract.op import AbsOpBase, AbsTensor
-from nnsmith.materialize import Model, Oracle, Schedule
+from nnsmith.gir import GraphIR
+from nnsmith.materialize import Model, Oracle
 from nnsmith.materialize.torch.forward import ALL_TORCH_OPS
 from nnsmith.materialize.torch.input_gen import PracticalHybridSearch
 from nnsmith.materialize.torch.symbolnet import SymbolNet
@@ -23,14 +24,14 @@ class TorchModel(Model):
         return torch.__version__
 
     @classmethod
-    def from_schedule(cls, schedule: Schedule, **kwargs) -> "TorchModel":
+    def from_gir(cls: Type["TorchModel"], ir: GraphIR, **kwargs) -> "TorchModel":
         ret = cls()
-        ret.torch_model = SymbolNet(schedule, **kwargs)
+        ret.torch_model = SymbolNet(ir, **kwargs)
         return ret
 
     @staticmethod
-    def schedule_name() -> str:
-        return "schedule.pkl"
+    def gir_name() -> str:
+        return "gir.pkl"
 
     def refine_weights(self) -> None:
         self.torch_model.enable_proxy_grad()
@@ -64,23 +65,23 @@ class TorchModel(Model):
 
     def dump(self, path: PathLike):
         torch.save(self.torch_model.state_dict(), path)
-        schedule_path = path.replace(
+        gir_path = path.replace(
             TorchModel.name_prefix() + TorchModel.name_suffix(),
-            TorchModel.schedule_name(),
+            TorchModel.gir_name(),
         )
-        with open(schedule_path, "wb") as f:
-            pickle.dump(self.torch_model.schedule, f)
+        with open(gir_path, "wb") as f:
+            pickle.dump(self.torch_model.ir, f)
 
     @classmethod
     def load(cls, path: PathLike) -> "TorchModel":
         ret = cls()
-        schedule_path = path.replace(
+        gir_path = path.replace(
             cls.name_prefix() + cls.name_suffix(),
-            cls.schedule_name(),
+            cls.gir_name(),
         )
-        with open(schedule_path, "rb") as f:
-            schedule = pickle.load(f)
-        torch_model = SymbolNet(schedule)
+        with open(gir_path, "rb") as f:
+            ir = pickle.load(f)
+        torch_model = SymbolNet(ir)
         torch_model.load_state_dict(torch.load(path), strict=False)
         ret.torch_model = torch_model
         return ret

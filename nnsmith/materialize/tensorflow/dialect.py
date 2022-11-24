@@ -9,8 +9,8 @@ from nnsmith.abstract.op import (
     BcastBinaryOp,
     ElementWiseUnaryOp,
     UnaryOpBase,
-    int_from,
     mark_materialize,
+    rank_from,
 )
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import ConstraintCheck
@@ -26,10 +26,10 @@ class Dense(UnaryOpBase):
         self.ifeat = ifeat
         self.ofeat = ofeat
         self.inp_ranks = [
-            int_from(2)
+            rank_from(2)
         ]  # NOTE: tensorflow Dense layer requires an input with batch as its first axis
         # at least one dim. cannot be zranks_all()
-        self.out_ranks = [int_from(2)]
+        self.out_ranks = [rank_from(2)]
 
     def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         assert len(input_shapes) == 1, "Linear only takes one input, but got {}".format(

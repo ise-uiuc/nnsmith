@@ -1,36 +1,19 @@
-import copy
 import logging
-import os
 import random
-import textwrap
 import time
 import traceback
-import uuid
 from abc import abstractmethod
-from collections import namedtuple
-from typing import Dict, List, Set, Tuple, Type
+from typing import List, Optional, Set, Tuple, Type
 
-import networkx as nx
 import z3
 
 from nnsmith.abstract.arith import *
 from nnsmith.abstract.dtype import *
-from nnsmith.abstract.op import (
-    __MAX_RANK__,
-    AbsOpBase,
-    AbsTensor,
-    Expand,
-    Placeholder,
-    concretize_op,
-    random_group,
-)
+from nnsmith.abstract.op import AbsOpBase, AbsTensor, Expand, Placeholder, rank_all
 from nnsmith.error import ConstraintError, SanityCheck
+from nnsmith.gir import GraphIR, InstExpr, InstIR
 from nnsmith.logging import MGEN_LOG, SMT_LOG
 from nnsmith.util import HAS_PYGRAPHVIZ, set_seed, viz_dot
-
-NNSMITH_LIMNF_V = os.getenv("NNSMITH_LIMNF_V", "0")
-assert NNSMITH_LIMNF_V in ["0", "1"]
-NNSMITH_BV_SIZE = os.getenv("NNSMITH_BV_SIZE", "8")
 
 
 class RequiredDimNotFound(Exception):
@@ -41,53 +24,15 @@ __MB_LIM__ = 6 * 1024
 __TEXTWRAP_WIDTH__ = 30
 
 
-TensorCtx = namedtuple("TensorCtx", ["op_id", "type", "output_idx"])
-# Every tensor is represented by a (unique) integer key.
-
-
-def concretize_graph(
-    graph: nx.MultiDiGraph, dataflow: List[TensorCtx], model: z3.ModelRef
-) -> Tuple[nx.MultiDiGraph, Dict[int, AbsTensor]]:
-    concrete_shapes: Dict[int, AbsTensor] = {}
-
-    # freeze node with static attributes in label;
-    for node_id in nx.topological_sort(graph):
-        node = graph.nodes[node_id]
-        op = concretize_op(node["op"], model)
-
-        # concretize shapes;
-        itensors = [concrete_shapes[df_idx] for df_idx in node["itensor_idx"]]
-        otensors = op.checked_type_transfer(itensors)
-        op.bind_input_like(itensors)
-        op.bind_output_like(otensors)
-
-        node["op"] = op
-        node["label"] = textwrap.fill(f"#{node_id} ~ {op}", width=__TEXTWRAP_WIDTH__)
-
-        for i, df_idx in enumerate(node["otensor_idx"]):
-            concrete_shapes[df_idx] = otensors[i]
-
-    # freeze edge with static attributes in label;
-    for src, dst, idx in graph.edges(keys=True):
-        edge = graph.edges[src, dst, idx]
-        out_operand_idx, in_operand_idx = edge["operand_idx"]
-        svar = concrete_shapes[edge["shape_idx"]]
-        edge["label"] = textwrap.fill(
-            f"{out_operand_idx}→{in_operand_idx} {svar.dtype.short()}!{svar.shape}",
-            width=__TEXTWRAP_WIDTH__,
-        )
-
-    return graph, concrete_shapes
+def concretize_graph(ir: GraphIR, model: z3.ModelRef) -> GraphIR:
+    return ir.concretize(model)
 
 
 class SimpleGenerator:
     def __init__(
         self,
         opset,
-        init_rank=4,
-        megabyte_lim=__MB_LIM__,
         seed=None,
-        limnf=True,
         forward_prob=None,
         init_fp=False,
     ):
@@ -113,103 +58,71 @@ class SimpleGenerator:
         self.op_candidates = opset
         self.solver = z3.Solver()
 
-        # 4 bytes per float (assume we use float64)
-        self.limit_float = 1024**2 * megabyte_lim // 8
+        self.ir = GraphIR()
 
-        # Node -> op: AbsOpBase
-        # Edge -> shape_idx:-> self.alive_shapes
-        self.abstract_graph = nx.MultiDiGraph()
-
-        # Flat view of consumable tensors which makes random selection easier.
-        # List of namedtuple("TensorCtx", ["op_id", "type", "output_idx"])
-        #                                   int    AbsTensor  int
-        self.tensor_dataflow: List[TensorCtx] = []
-
-        # dim size -> list[shape idx -> output_tensor_pool]
-        self.dim2shape_idx: Dict[int, List[int]] = {}
-
-        self.use_bitvec = False  # Only consider integer domain for now.
-        self.init_rank = init_rank
-        self.n_floats = 0
         self.monotonic_placeholder_id = 0
-        self.monotonic_nx_node_idx = 0
-        # self.reusable_placeholder_nx_indices = []
-        self.last_solution = None
-        self.limnf = limnf
-        self.n_floats_cons = []
+        self.last_solution: Optional[z3.ModelRef] = None
 
-        # <op idx>
-        self.placeholders: List[int] = []
+        # Names of current placeholders
+        self.placeholders: List[str] = []
         # for all (including newly created tmp) placeholders
 
         self.insert_init_ph_node(
-            self.create_placeholder(init_rank, dtype=DType.float32 if init_fp else None)
+            self.create_placeholder(
+                self.random_rank(), dtype=DType.float32 if init_fp else None
+            )
         )
         self.init_ph_alive = True
         self.forward_prob = 0.5 if forward_prob is None else forward_prob
 
     def random_rank(self):
-        return random.choices(range(__MAX_RANK__ + 1), weights=[1, 1, 1, 1, 2, 1])[0]
+        return random.choice(rank_all())
 
     def random_dtype(self):
         # more floats than ints.
         wts = [1] * len(DTYPE_ALL)
         for i in DTYPE_FLOATS:
-            wts[DTYPE_ALL.index(i)] = 8
+            wts[DTYPE_ALL.index(i)] = 4
         for i in DTYPE_INTS:
-            wts[DTYPE_ALL.index(i)] = 2
+            wts[DTYPE_ALL.index(i)] = 1
         return random.choices(DTYPE_ALL, weights=wts)[0]
 
-    def create_placeholder(self, rank, dtype=None):
+    def create_placeholder(self, rank, dtype=None) -> Placeholder:
         syms = self.new_syms(
             ["v%s_%s" % (self.monotonic_placeholder_id, k) for k in range(rank)]
         )
-        shapevar = AbsTensor(
-            shape=syms, dtype=dtype if dtype is not None else self.random_dtype()
+        ph = Placeholder(
+            AbsTensor(
+                shape=syms, dtype=dtype if dtype is not None else self.random_dtype()
+            )
         )
         self.monotonic_placeholder_id += 1
-        ph = Placeholder(shapevar)
         return ph
 
-    # default to no input constraints
-    def gen_ph_cons(self, ph: Placeholder) -> List[z3.ExprRef]:
-        return []
-
-    def post_process(self):
-        """Called after the graph is finalized. May be used to add parameter guidance."""
-        pass
-
-    def new_sym(self, name, bv_size=None):
+    def new_sym(self, name):
         return z3.Int(name)
 
     def new_syms(self, names):
-        if self.use_bitvec:
-            bv_sizes = list(
-                map(len, random_group(int(os.getenv("NNSMITH_BITS", 30)), len(names)))
-            )
-            assert len(bv_sizes) == len(names)
-            return [self.new_sym(name, bvsize) for name, bvsize in zip(names, bv_sizes)]
-        else:
-            return [self.new_sym(name) for name in names]
+        return [self.new_sym(name) for name in names]
+
+    def insert_init_ph_node(self, ph: Placeholder) -> InstIR:
+        inst = self.forward_insert_node(ph, [])
+
+        for c in ph.ttype.gt_zero():
+            self.solver.add(c)
+
+        return inst
 
     @abstractmethod
-    def insert_init_ph_node(
-        self, init_rank, shape=None, dtype=DType.float32
-    ) -> AbsTensor:
+    def try_forward_insert_at(self, node: AbsOpBase, input_vars: List[str]) -> bool:
         raise NotImplementedError
 
     @abstractmethod
-    def try_forward_insert_at(self, node: AbsOpBase, itensor_idx: List[int]) -> bool:
+    def try_occupy_placeholder(self, node: AbsOpBase, phvars: List[str]) -> bool:
         raise NotImplementedError
 
     @abstractmethod
-    def try_occupy_placeholder(
-        self, node: AbsOpBase, placeholder_indices: List[int]
-    ) -> bool:
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_solutions(self) -> List:
+    def get_sat_model(self) -> List:
         raise NotImplementedError
 
     def extra_exit_check(self) -> bool:
@@ -221,12 +134,7 @@ class SimpleGenerator:
 
     def num_op(self) -> int:
         # exclude placeholders.
-        return len(self.abstract_graph.nodes) - len(self.placeholders)
-
-    def recompute_n_floats(self):
-        self.n_floats = 0
-        for _, val, _ in self.tensor_dataflow:
-            self.n_floats = nnsmith_add(self.n_floats, val.nelement())
+        return self.ir.n_compute_inst()
 
     def abstract_gen(self, max_node_size=10, max_gen_millisec=2000):
         z3.set_param("timeout", max_gen_millisec // 3)
@@ -242,52 +150,25 @@ class SimpleGenerator:
                 break
             node_t = self.pick_next_op_type()
             self.try_insert_node_type(node_t)
-        if abs(self.num_op() - max_node_size) >= 3:
-            MGEN_LOG.warning(
-                f"[WARNING]: graph size: {len(self.abstract_graph.nodes)} < expected size: {max_node_size}"
-            )
-
-        self.recompute_n_floats()
-        if (
-            self.limnf
-        ):  # add into solver since graph is finalized to avoid repeated solving
-            if NNSMITH_LIMNF_V == "0":
-                self.solver.add(nnsmith_le(self.n_floats, self.limit_float))
-            elif NNSMITH_LIMNF_V == "1":
-                self.solver.add(*self.n_floats_cons)
-            assert self.check_sat() == z3.sat
-
-        self.post_process()  # can be used to add more constraints
 
         # init graph placeholders
-        shuffled_placeholder = self.placeholders
-        self.abstract_graph.nodes[shuffled_placeholder[0]][
-            "op"
-        ] = self.abstract_graph.nodes[shuffled_placeholder[0]]["op"].to_input()
-        for holder_idx in shuffled_placeholder[1:]:
-            if random.randint(0, 1):
-                self.abstract_graph.nodes[holder_idx]["op"] = self.abstract_graph.nodes[
-                    holder_idx
-                ]["op"].to_const()
-            else:
-                self.abstract_graph.nodes[holder_idx]["op"] = self.abstract_graph.nodes[
-                    holder_idx
-                ]["op"].to_input()
+        SanityCheck.gt(len(self.placeholders), 0)
 
-    def check_arith_ref(self, var):
-        SanityCheck.true(
-            isinstance(var, (z3.BitVecRef, z3.BoolRef, bool)),
-            f"{type(var)} not supported.",
-        )
-        if not isinstance(var, bool):
-            for child in var.children():
-                self.check_arith_ref(child)
+        def determine_ph_type(ph: str, to_input: bool):
+            SanityCheck.true(ph in self.placeholders)
+            ph_inst_id, _ = InstIR.var_inst_idx(ph)
+            ph_inst = self.ir.find_inst_by_id(ph_inst_id)
+            if to_input:
+                ph_inst.iexpr.op = ph_inst.iexpr.op.to_input()
+            else:
+                ph_inst.iexpr.op = ph_inst.iexpr.op.to_const()
+
+        determine_ph_type(self.placeholders[0], True)  # At lease make one input.
+        for ph in self.placeholders[1:]:
+            determine_ph_type(ph, random.randint(0, 1))
 
     def check_sat(self, *assumptions):
         start = time.time()
-        if self.use_bitvec:
-            for assump in assumptions:
-                self.check_arith_ref(assump)
 
         if SMT_LOG.getEffectiveLevel() <= logging.DEBUG:
             if self.solver.assertions():
@@ -313,178 +194,34 @@ class SimpleGenerator:
         return cres
 
     def pick_next_op_type(self):
-        return random.choices(self.op_candidates, k=1)[0]
+        return random.choice(self.op_candidates)
 
-    def forward_insert_node(
-        self,
-        node: AbsOpBase,
-        itensor_idx: List[int],
-        oshapes: List[AbsTensor] = None,
-        force_otensor_idx=None,
-    ) -> int:
-        if oshapes is None:
-            input_shapes = [self.tensor_dataflow[idx].type for idx in itensor_idx]
-            oshapes = node.checked_type_transfer(input_shapes)
+    def forward_insert_node(self, node: AbsOpBase, input_vars: List[str]) -> InstIR:
+        new_inst = self.ir.add_inst(InstExpr(op=node, args=input_vars))
 
-        succ_nid = self.get_new_node_id()
         if isinstance(node, Placeholder):
-            self.placeholders.append(succ_nid)
+            # Add placeholder's return varname.
+            self.placeholders.append(new_inst.retval())
 
-        otensor_idx = []
-        if force_otensor_idx is None:
-            for i, abs_tensor in enumerate(oshapes):
-                SanityCheck.true(
-                    len(abs_tensor.shape) in node.out_ranks[i],
-                    "{}'s dimension size is not {} in {}".format(
-                        abs_tensor.shape, node.out_ranks[i], node.__class__.__name__
-                    ),
-                )
-                node.out_ranks[i] = (len(abs_tensor.shape),)
-                shape_idx = len(self.tensor_dataflow)
-                otensor_idx.append(shape_idx)
-                self.tensor_dataflow.append(
-                    TensorCtx(op_id=succ_nid, type=abs_tensor, output_idx=i)
-                )
-                self.dim2shape_idx.setdefault(len(abs_tensor.shape), []).append(
-                    shape_idx
-                )
-        else:
-            # When taking the position of placeholders, we do not need to add new alive shapes.
-            otensor_idx = force_otensor_idx
-
-        # NOTE: because of backward insertion, we may not be able to limit the symbol size as there will be some
-        # trivially equivalent symbols which harms the readability. (e.g., relations like `a = b` is not known).
-        # NOTE: `otensor_idx` and `itensor_idx` are indices of alive_shapes
-        self.abstract_graph.add_node(
-            succ_nid,
-            op=node,
-            nin=len(itensor_idx),
-            nout=len(oshapes),
-            otensor_idx=otensor_idx,
-            itensor_idx=itensor_idx,
-            label=textwrap.fill(
-                f"#{succ_nid} ~ {node}",
-                width=__TEXTWRAP_WIDTH__,
-            ),
-        )
-
-        for in_operand_idx, idx in enumerate(itensor_idx):
-            pred_nid, svar, out_operand_idx = self.tensor_dataflow[idx]
-            self.abstract_graph.add_edge(
-                pred_nid,
-                succ_nid,
-                key=str(uuid.uuid1()),
-                shape_idx=idx,
-                operand_idx=(out_operand_idx, in_operand_idx),
-                label=f"{out_operand_idx}→{in_operand_idx} {svar.dtype.short()}!{svar.shape}",
-            )
-
-        return succ_nid
-
-    def get_new_node_id(self):
-        # if self.reusable_placeholder_nx_indices:
-        #     return self.reusable_placeholder_nx_indices.pop()
-        ret = self.monotonic_nx_node_idx
-        self.monotonic_nx_node_idx += 1
-        return ret
-
-    def id2nxnode(self, id):
-        return self.abstract_graph.nodes[id]
+        return new_inst
 
     def backward_insert_node(
-        self, node, input_nodes: List[Union[int, Placeholder]], occupied_idx
-    ):
-        # self.placeholder idx -> nx graph node idx
-        occ_holder_idx_nx = [self.placeholders[i] for i in occupied_idx]
+        self, node, input_vars: List[str], ph_to_replace: List[str]
+    ) -> InstIR:
+        new_inst = self.forward_insert_node(node, input_vars=input_vars)
 
-        itensor_idx = []
-        for input_node in input_nodes:
-            # Insert Placeholder in `input_nodes`
-            if isinstance(input_node, Placeholder):
-                nid = self.get_new_node_id()
-                shape_idx = len(self.tensor_dataflow)
-                self.tensor_dataflow.append(
-                    TensorCtx(op_id=nid, type=input_node.ttype, output_idx=0)
-                )
-                self.dim2shape_idx.setdefault(input_node.ttype.ndims, []).append(
-                    shape_idx
-                )
-                self.abstract_graph.add_node(
-                    nid,
-                    op=input_node,
-                    nin=0,
-                    nout=1,
-                    itensor_idx=[],
-                    otensor_idx=[shape_idx],
-                    label=textwrap.fill(
-                        f"#{nid} ~ {input_node}",
-                        width=__TEXTWRAP_WIDTH__,
-                    ),
-                )
-                itensor_idx.append(shape_idx)
-                self.placeholders.append(nid)
-            else:
-                itensor_idx.append(input_node)
+        # replace all uses of ph_to_replace
+        # and delete the unused placeholders.
+        for ph, rv in zip(ph_to_replace, new_inst.retvals()):
+            self.ir.replace_alluse(ph, rv)
+            ph_inst_id, _ = InstIR.var_inst_idx(ph)
+            ph_inst = self.ir.find_inst_by_id(ph_inst_id)
+            self.ir.remove_unused(ph_inst)
+            self.placeholders.remove(ph)
 
-        # Insert node
-        to_occ_alive_shape_idx = [
-            self.id2nxnode(nx_nid)["otensor_idx"][0] for nx_nid in occ_holder_idx_nx
-        ]
-        op_nx_idx = self.forward_insert_node(
-            node,
-            itensor_idx=itensor_idx,
-            oshapes=[
-                self.tensor_dataflow[as_idx][1] for as_idx in to_occ_alive_shape_idx
-            ],
-            force_otensor_idx=to_occ_alive_shape_idx,
-        )
+        return new_inst
 
-        # Insert edges and remove placeholders
-        for i, nx_idx in enumerate(occ_holder_idx_nx):
-            for (src, dst, key) in list(self.abstract_graph.edges(nx_idx, keys=True)):
-                # multi-graph
-                edge_info = copy.deepcopy(
-                    self.abstract_graph.get_edge_data(src, dst, key=key)
-                )
-                old_edge_idx = edge_info["shape_idx"]
-                # recall alive shape:
-                # 1. op nx idx
-                # 2. shape var
-                # 3. out operand idx
-
-                _, svar, _ = self.tensor_dataflow[old_edge_idx]
-                out_operand_idx = i
-                in_operand_idx = edge_info["operand_idx"][1]
-
-                # add cur node -> dst
-                self.abstract_graph.add_edge(
-                    op_nx_idx,
-                    dst,
-                    key=str(uuid.uuid1()),
-                    shape_idx=edge_info["shape_idx"],  # reuse old alive shape
-                    operand_idx=(out_operand_idx, in_operand_idx),
-                    label=f"{out_operand_idx}→{in_operand_idx} {svar.dtype.short()}!{svar.shape}",
-                )
-                self.tensor_dataflow[old_edge_idx] = TensorCtx(
-                    op_nx_idx, svar, out_operand_idx
-                )
-
-                self.abstract_graph.remove_edge(src, dst, key=key)
-
-            # if the PH to occupy has no consumers, we simply reassign its alive shape.
-            # NOTE: we assume the first node is a placeholder.
-            if self.init_ph_alive:  # update alive_shape[0]
-                self.tensor_dataflow[0] = TensorCtx(
-                    op_nx_idx, self.tensor_dataflow[0][1], 0
-                )
-                self.init_ph_alive = False
-
-            # remove placeholders
-            self.abstract_graph.remove_node(nx_idx)
-            # self.reusable_placeholder_nx_indices.append(nx_idx)
-            self.placeholders.remove(nx_idx)
-
-    def try_forward_insert(self, op: AbsOpBase):
+    def try_forward_insert(self, op: AbsOpBase) -> bool:
         n_inp = len(op.inp_ranks)
         dim_spec_list = []
 
@@ -501,14 +238,12 @@ class SimpleGenerator:
         else:  # inputs have different dimension sizes.
             dim_spec_list = op.inp_ranks
 
-        itensor_idx = self.pick_tensor_idx(
-            type(op),
+        varnames = self.pick_var_group(
             dim_spec_list,
             op.in_dtypes,
-            candidate_shapes=[s[1] for s in self.tensor_dataflow],
         )
 
-        if self.try_forward_insert_at(op, itensor_idx):
+        if self.try_forward_insert_at(op, varnames):
             return True
 
         return False
@@ -516,26 +251,28 @@ class SimpleGenerator:
     def try_backward_insert(self, op: AbsOpBase):
         # we know that: Y = op(X)
         # S1 - select Y: Y must be a placeholder; (this also means the graph must start w/ a placeholder)
-        ph_candidates = []
-        for idx in self.placeholders:
-            oshape = self.id2nxnode(idx)["op"].ttype
-            if isinstance(op, Expand) and oshape.ndims < op.expand_last_dim:
-                continue
-            ph_candidates.append(oshape)
-
-        placeholder_indices = self.pick_tensor_idx(
-            type(op), op.out_ranks, op.out_dtypes, candidate_shapes=ph_candidates
+        phvars = self.pick_var_group(
+            op.out_ranks,
+            op.out_dtypes,
+            var_candidates=[
+                name
+                for name in self.placeholders
+                if not isinstance(op, Expand)
+                or self.ir.vars[name].ndims < op.expand_last_dim
+            ],
         )
 
-        if self.try_occupy_placeholder(op, placeholder_indices):
+        if self.try_occupy_placeholder(op, phvars):
             return True
 
         return False
 
-    def try_insert_node_type(self, node_t, max_tensor_pick_time=3) -> bool:
+    def try_insert_node_type(
+        self, node_t: Type[AbsOpBase], max_tensor_pick_time=3
+    ) -> bool:
         if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
             MGEN_LOG.debug(
-                f"@[Node #{len(self.abstract_graph.nodes)}] <-- "
+                f"@[Node #{self.ir.n_inst()}] <-- "
                 f"trying to insert node type {node_t.__name__}"
             )
 
@@ -543,7 +280,7 @@ class SimpleGenerator:
             for _ in range(max_tensor_pick_time):
                 # should recreate a new instance since some attributes (like axis) should be initialized for each pick
                 op_param_n = node_t.get_num_var_param()
-                op_id = len(self.abstract_graph.nodes)
+                op_id = self.ir.n_inst()
                 op_params = [
                     self.new_sym("op%s_%s" % (op_id, k)) for k in range(op_param_n)
                 ]
@@ -567,12 +304,12 @@ class SimpleGenerator:
 
         return False
 
-    def filter_shapes(self, ndims, dtype, candidate_shapes: List[AbsTensor]):
-        cans = range(len(candidate_shapes))
+    def var_filter(self, ndims, dtype, candidates: List[str]):
+        cans = candidates
 
         cans = list(
             filter(  # filter with ndim
-                lambda sid: candidate_shapes[sid].ndims in ndims, cans
+                lambda vname: self.ir.vars[vname].ndims in ndims, cans
             )
         )
         if len(cans) == 0:
@@ -583,7 +320,7 @@ class SimpleGenerator:
         if dtype is not None:
             cans = list(
                 filter(  # filter with dtype
-                    lambda sid: candidate_shapes[sid].dtype == dtype, cans
+                    lambda vname: self.ir.vars[vname].dtype == dtype, cans
                 )
             )
             if len(cans) == 0:
@@ -593,145 +330,98 @@ class SimpleGenerator:
 
         return cans
 
-    def pick_shape(self, node_t, candidates):
-        return random.choice(candidates)
-
-    def pick_tensor_idx(
+    def pick_var_group(
         self,
-        node_t,
         ndim_list: List[Set[int]],
         dtype_combs_spec: List[Tuple[DType, ...]],
-        candidate_shapes: List[AbsTensor],
-    ) -> List[int]:
-        """Randomly pick indices to shape variables from the output pool.
-
-        Args:
-            ndim_list (List[Set]): duable dims for each input.
+        var_candidates: Optional[List[str]] = None,
+    ) -> List[str]:
+        """Randomly pick a group of variables that satisfy one of the `dtype_combs_spec` and `ndim_list`.
 
         Returns:
-            List[int]: indices to applicable shape variables.
+            List[str]: Satisfiable group of variable names.
         """
+
+        if var_candidates is None:
+            var_candidates = list(self.ir.vars.keys())
 
         abs_tensor_candidates = []
         if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
             MGEN_LOG.debug(f"Input data types candidates: {dtype_combs_spec}")
 
-        all_can_dtypes = []
+        viable_dtypes = []
         for i, ndims in enumerate(ndim_list):
-            all_can_dtypes.extend(
+            viable_dtypes.extend(
                 [
-                    candidate_shapes[i].dtype
-                    for i in self.filter_shapes(
-                        ndims=ndims, dtype=None, candidate_shapes=candidate_shapes
+                    self.ir.vars[vname].dtype
+                    for vname in self.var_filter(
+                        ndims=ndims, dtype=None, candidates=var_candidates
                     )
                 ]
             )
         # only use dtypes currently available after ndim filtering
         dtype_combs = [
-            comb for comb in dtype_combs_spec if all(i in all_can_dtypes for i in comb)
+            comb for comb in dtype_combs_spec if all(dt in viable_dtypes for dt in comb)
         ]
         if len(dtype_combs) == 0:
             raise RequiredDimNotFound(
                 "Op %s: Cannot find a shape variable with dim_spec %s and dtype combinations %s."
-                % (node_t, ndim_list, dtype_combs_spec)
+                % (ndim_list, dtype_combs_spec)
             )
         dtype_comb = random.choice(dtype_combs)
         for i, ndims in enumerate(ndim_list):
-            candidates = self.filter_shapes(
-                ndims=ndims, dtype=dtype_comb[i], candidate_shapes=candidate_shapes
+            candidates = self.var_filter(
+                ndims=ndims, dtype=dtype_comb[i], candidates=var_candidates
             )
-            abs_tensor_candidates.append(self.pick_shape(node_t, candidates))
+            abs_tensor_candidates.append(random.choice(candidates))
 
         return abs_tensor_candidates
 
 
 class PureSymbolGen(SimpleGenerator):
-    def insert_init_ph_node(self, ph: Placeholder) -> Placeholder:
-        self.forward_insert_node(ph, [], oshapes=[ph.ttype])
-
-        for c in ph.ttype.gt_zero():
-            self.solver.add(c)
-
-        if self.limnf:
-            if NNSMITH_LIMNF_V == "0":
-                self.n_floats = nnsmith_add(self.n_floats, ph.ttype.nelement())
-            elif NNSMITH_LIMNF_V == "1":
-                self.n_floats_cons.append(
-                    nnsmith_le(ph.ttype.nelement(), self.limit_float // 16)
-                )
-        return ph
-
-    # subclasses may override this
-    def extra_constraints(self, node: AbsOpBase, input_shapes: List[AbsTensor]):
-        return []
-
-    def try_forward_insert_at(self, node: AbsOpBase, itensor_idx: List[int]) -> bool:
-        input_shapes = [self.tensor_dataflow[idx][1] for idx in itensor_idx]
-        constraints = node.checked_requires(input_shapes)
+    def try_forward_insert_at(self, node: AbsOpBase, input_vars: List[str]) -> bool:
+        itensors = [self.ir.vars[vname] for vname in input_vars]
+        constraints = node.checked_requires(itensors)
 
         if SMT_LOG.getEffectiveLevel() <= logging.DEBUG:
             SMT_LOG.debug(f"---> Trying to solve: {node} ~ {constraints}")
 
         # make a copy
-        output_shapes = node.checked_type_transfer(input_shapes)
-        if self.limnf:
-            if NNSMITH_LIMNF_V == "0":
-                tmp_n_floats = nnsmith_add(self.n_floats, node.n_floats(input_shapes))
-            elif NNSMITH_LIMNF_V == "1":
-                tmp_n_floats_cons = self.n_floats_cons + [
-                    nnsmith_le(node.n_floats(input_shapes), self.limit_float // 16)
-                ]
+        otensors = node.checked_type_transfer(itensors)
 
-        for shape in output_shapes:
-            for c in shape.gt_zero():
+        for aten in otensors:
+            for c in aten.gt_zero():
                 constraints.append(c)
 
-        # constraints.extend(self.extra_constraints(node, input_shapes))
-        if self.limnf:
-            if NNSMITH_LIMNF_V == "0":
-                check_res = self.check_sat(
-                    *constraints, nnsmith_le(tmp_n_floats, self.limit_float)
-                )
-            elif NNSMITH_LIMNF_V == "1":
-                check_res = self.check_sat(*constraints, *tmp_n_floats_cons)
-        else:
-            check_res = self.check_sat(*constraints)
+        check_res = self.check_sat(*constraints)
 
         if check_res != z3.sat:
             return False
 
         for c in constraints:
             self.solver.add(c)
-        if self.limnf:
-            if NNSMITH_LIMNF_V == "0":
-                self.n_floats = tmp_n_floats
-            elif NNSMITH_LIMNF_V == "1":
-                self.n_floats_cons = tmp_n_floats_cons
 
         if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
             MGEN_LOG.debug(f">> Forward insert: {node}")
-            MGEN_LOG.debug(f"\tinputs:  {input_shapes}")
-            MGEN_LOG.debug(f"\toutputs: {output_shapes}")
+            MGEN_LOG.debug(f"\tinputs:  {itensors}")
+            MGEN_LOG.debug(f"\toutputs: {otensors}")
 
-        self.forward_insert_node(node, itensor_idx, output_shapes)
+        node.bind_input_like(itensors)
+        node.bind_output_like(otensors)
+
+        self.forward_insert_node(node, input_vars)
         return True
 
-    def try_occupy_placeholder(
-        self, node: AbsOpBase, occ_holder_indices: List[int]
-    ) -> bool:
+    def try_occupy_placeholder(self, node: AbsOpBase, phvars: List[str]) -> bool:
         if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
             MGEN_LOG.debug(
-                f"---> Trying to occupy placeholder: {occ_holder_indices} for node {node}"
+                f"---> Trying to occupy placeholder: {phvars} for node {node}"
             )
         # S2 - create X: X can be
         #                   - a new placeholder (fallback)
         #                   - an existing alive shape
 
-        to_occupy = [
-            self.id2nxnode(self.placeholders[i])["op"] for i in occ_holder_indices
-        ]
-
-        occupied_holder_shapes = [holder.ttype for holder in to_occupy]
+        otensors = [self.ir.vars[name] for name in phvars]
 
         # S2.2: try to reuse some existing outputs;
         # TODO: allow reuse existing alive shapes
@@ -744,27 +434,24 @@ class PureSymbolGen(SimpleGenerator):
         #     n_reuse -= 1
 
         # S2.2: reusing outputs failed. as a fallback, promote all free vars to placeholders.
-        new_inp_placeholders = []
+        phs_as_op_inputs: List[Placeholder] = []
         constraints = []
-        for rank, dtype in node.deduct_inp_ranks_and_dtype(occupied_holder_shapes):
+        for rank, dtype in node.deduct_inp_ranks_and_dtype(otensors):
             # oversample rank 4 tensors as they may be more important
             ph = self.create_placeholder(
                 rank if rank != -1 else self.random_rank(), dtype=dtype
             )
-            new_inp_placeholders.append(ph)
+            phs_as_op_inputs.append(ph)
             constraints.extend(ph.ttype.gt_zero())
 
-        input_shapes = [p.ttype for p in new_inp_placeholders]
-        constraints.extend(node.checked_requires(input_shapes))
-        output_shapes = node.checked_type_transfer(input_shapes)
+        itensors = [p.ttype for p in phs_as_op_inputs]
+        constraints.extend(node.checked_requires(itensors))
+        inferred_otensors = node.checked_type_transfer(itensors)
 
-        for i, shape in enumerate(output_shapes):
-            constraints.extend(shape.eq(occupied_holder_shapes[i]))
+        for i, shape in enumerate(inferred_otensors):
+            constraints.extend(shape.eq(otensors[i]))
             constraints.extend(shape.gt_zero())
 
-        # constraints.extend(self.extra_constraints(node, input_shapes))
-
-        # TODO: consider nfloats.
         check_res = self.check_sat(*constraints)
 
         if check_res != z3.sat:
@@ -772,24 +459,32 @@ class PureSymbolGen(SimpleGenerator):
 
         if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
             MGEN_LOG.debug(f">> Backward insert: {node}")
-            MGEN_LOG.debug(f"\tinputs:  {new_inp_placeholders}")
-            MGEN_LOG.debug(f"\toutputs: {to_occupy}")
+            MGEN_LOG.debug(f"\tinputs:  {phs_as_op_inputs}")
 
         for c in constraints:
             self.solver.add(c)
 
-        self.backward_insert_node(node, new_inp_placeholders, occ_holder_indices)
+        # succ.
+        input_vars = []
+
+        for ph in phs_as_op_inputs:
+            inst = self.forward_insert_node(ph, [])
+            input_vars.append(inst.retval())
+
+        node.bind_input_like(itensors)
+        node.bind_output_like(inferred_otensors)
+
+        self.backward_insert_node(node, input_vars, phvars)
 
         return True
 
-    def get_solutions(self) -> List:
+    def get_sat_model(self) -> z3.ModelRef:
         SanityCheck.not_none(self.last_solution, "Run check_sat first!")
         return self.last_solution
 
 
 def random_model_gen(
     opset: Set[Type[AbsOpBase]],
-    init_rank=4,
     max_nodes=5,
     seed=None,
     timeout_ms=20000,
@@ -797,7 +492,6 @@ def random_model_gen(
 ):
     gen = PureSymbolGen(
         opset=opset,
-        init_rank=init_rank,
         seed=seed,
         **kwargs,
     )
@@ -806,6 +500,6 @@ def random_model_gen(
     return gen
 
 
-def viz(G, filename: str = None):
+def viz(ir: GraphIR, filename: str = None):
     if HAS_PYGRAPHVIZ:
-        viz_dot(nx.nx_agraph.to_agraph(G).to_string(), filename)
+        viz_dot(ir.to_dot(), filename)

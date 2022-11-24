@@ -4,7 +4,7 @@ from typing import List, Tuple, Union
 
 from nnsmith.abstract.arith import *
 from nnsmith.abstract.dtype import DTYPE_ALL, DTYPE_NON_BOOLS, DType
-from nnsmith.abstract.op import ReduceBase, UnaryOpBase, int_from, mark_materialize
+from nnsmith.abstract.op import ReduceBase, UnaryOpBase, mark_materialize, rank_from
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import ConstraintCheck
 
@@ -18,8 +18,8 @@ class Linear(UnaryOpBase):
         super().__init__()
         self.ifeat = ifeat
         self.ofeat = ofeat
-        self.inp_ranks = [int_from(1)]
-        self.out_ranks = [int_from(1)]
+        self.inp_ranks = [rank_from(1)]
+        self.out_ranks = [rank_from(1)]
 
     def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         assert len(input_shapes) == 1, "Linear only takes one input, but got {}".format(
@@ -52,7 +52,7 @@ class Flatten(UnaryOpBase):
 
     def __init__(self):
         super().__init__()
-        self.inp_ranks = [int_from(1)]
+        self.inp_ranks = [rank_from(1)]
         self.out_ranks = [(1,)]
 
     def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:

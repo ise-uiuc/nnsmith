@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from nnsmith.graph_gen import concretize_graph, random_model_gen
-from nnsmith.materialize import Schedule, TestCase
+from nnsmith.graph_gen import random_model_gen
+from nnsmith.materialize import TestCase
 from nnsmith.materialize.tensorflow import TFModelCPU, tf_dict_from_np
 from nnsmith.narrow_spec import auto_opset
 
@@ -15,18 +15,13 @@ def test_onnx_load_dump(tmp_path):
 
     gen = random_model_gen(
         opset=auto_opset(TFModelCPU),
-        init_rank=4,
         seed=54341,
         max_nodes=5,
     )
 
-    fixed_graph, concrete_abstensors = concretize_graph(
-        gen.abstract_graph, gen.tensor_dataflow, gen.get_solutions()
-    )
+    gen.ir.concretize(gen.get_sat_model())
 
-    schedule = Schedule.init(fixed_graph, concrete_abstensors)
-
-    model = TFModelCPU.from_schedule(schedule)
+    model = TFModelCPU.from_gir(gen.ir)
 
     model.refine_weights()  # either random generated or gradient-based.
     oracle = model.make_oracle()

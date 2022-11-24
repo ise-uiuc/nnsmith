@@ -75,6 +75,9 @@ class AbsTensor:
             return 1
         return reduce(lambda x, y: nnsmith_mul(x, y), self.shape, 1)
 
+    def nbytes(self) -> int:
+        return self.nelement() * self.dtype.sizeof()
+
     def deepcopy(self):
         return AbsTensor(shape=list(self.shape), dtype=self.dtype)
 
@@ -85,3 +88,6 @@ class AbsTensor:
     @property
     def ndims(self):
         return len(self.shape)
+
+    def is_concrete(self) -> bool:
+        return all(isinstance(s, int) for s in self.shape)

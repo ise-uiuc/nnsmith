@@ -2,8 +2,8 @@ import pytest
 
 from nnsmith.abstract.dtype import DType
 from nnsmith.backends import BackendFactory
-from nnsmith.graph_gen import concretize_graph, random_model_gen
-from nnsmith.materialize import Model, Schedule, TestCase
+from nnsmith.graph_gen import random_model_gen
+from nnsmith.materialize import Model, TestCase
 from nnsmith.materialize.tensorflow import TFModelCPU
 from nnsmith.narrow_spec import auto_opconfig, auto_opset
 
@@ -38,18 +38,12 @@ def test_synthesized_tf_model(tmp_path):
 
     gen = random_model_gen(
         opset=auto_opset(TFModelCPU, factory),
-        init_rank=4,
         seed=23132,
         max_nodes=4,
     )  # One op should not be easily wrong... I guess.
 
-    fixed_graph, concrete_abstensors = concretize_graph(
-        gen.abstract_graph, gen.tensor_dataflow, gen.get_solutions()
-    )
-
-    schedule = Schedule.init(fixed_graph, concrete_abstensors)
-
-    model = ModelType.from_schedule(schedule)
+    gen.ir.concretize(gen.get_sat_model())
+    model = ModelType.from_gir(gen.ir)
 
     # model.refine_weights()  # either random generated or gradient-based.
     oracle = model.make_oracle()

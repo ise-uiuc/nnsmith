@@ -6,7 +6,7 @@ from collections import namedtuple
 from dataclasses import dataclass
 from enum import Enum
 from os import PathLike
-from typing import Any, Dict, List, Tuple, Type
+from typing import Any, Dict, List, Tuple, Type, TypeVar
 
 import networkx as nx
 import numpy as np
@@ -15,6 +15,7 @@ from multipledispatch import dispatch
 from nnsmith.abstract.op import AbsOpBase, Constant, Input
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import SanityCheck
+from nnsmith.gir import GraphIR
 from nnsmith.util import HAS_PYGRAPHVIZ, viz_dot
 
 
@@ -59,49 +60,6 @@ Instruction: Tuple[AbsOpBase, List[int], List[int]] = namedtuple(
 )
 
 
-@dataclass
-class Schedule:
-    """Minimal information for constructing a graph."""
-
-    instructions: List[Instruction]
-    input_keys: List[int]
-    leaf_keys: List[int]
-    key2type: Dict[int, AbsTensor]
-
-    @staticmethod
-    def init(graph: nx.MultiDiGraph, key2type: Dict[int, AbsTensor]) -> "Schedule":
-        # The input graph should be a concretized graph.
-        instructions: List[Instruction] = []
-        input_keys = []
-        user_keys = set()
-
-        # freeze node with static attributes in label;
-        for node_id in nx.topological_sort(graph):
-            node = graph.nodes[node_id]
-            op = node["op"]
-
-            if isinstance(op, Input):
-                input_keys.append(node["otensor_idx"][0])
-
-            for used_idx in node["itensor_idx"]:
-                user_keys.add(used_idx)
-
-            # TODO(@ganler): Better name than "otensor_idx"
-            # TODO(@ganler): Add refcnt or last ref mechanism to save memory
-            instructions.append(
-                Instruction(
-                    op=op,
-                    inputs=node["itensor_idx"],
-                    outputs=node["otensor_idx"],
-                )
-            )
-
-        # simplify the statements above
-        leaf_keys = [key for key in key2type if key not in user_keys]
-
-        return Schedule(instructions, input_keys, leaf_keys, key2type)
-
-
 class Oracle:
     def __init__(
         self,
@@ -140,6 +98,9 @@ class Oracle:
             return Oracle(to_load["input"], to_load["output"], to_load["provider"])
 
 
+MT = TypeVar("MT", bound="Model")
+
+
 class Model(ABC):
     @property
     @abstractmethod
@@ -153,12 +114,12 @@ class Model(ABC):
 
     @classmethod
     @abstractmethod
-    def from_schedule(cls, schedule: Schedule, **kwargs) -> "Model":
+    def from_gir(cls: Type[MT], ir: GraphIR, **kwargs) -> MT:
         pass
 
     @classmethod
     @abstractmethod
-    def load(cls, path: PathLike) -> "Model":
+    def load(cls: Type[MT], path: PathLike) -> MT:
         pass
 
     @abstractmethod
@@ -212,9 +173,9 @@ class Model(ABC):
     def add_seed_setter() -> None:
         pass
 
-    def attach_viz(self, graph: nx.MultiDiGraph) -> None:
+    def attach_viz(self, ir: GraphIR) -> None:
         if HAS_PYGRAPHVIZ:
-            self.dotstring = nx.nx_agraph.to_agraph(graph).to_string()
+            self.dotstring = ir.to_dot()
 
     def dump_viz(self, path: PathLike) -> None:
         viz_dot(self.dotstring, path)

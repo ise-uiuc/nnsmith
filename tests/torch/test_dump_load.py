@@ -2,12 +2,21 @@ import numpy as np
 import pytest
 import torch
 
-from nnsmith.graph_gen import concretize_graph, random_model_gen
-from nnsmith.materialize import Schedule, TestCase
+from nnsmith.graph_gen import random_model_gen
+from nnsmith.materialize import Oracle, TestCase
 from nnsmith.materialize.onnx import ONNXModel
 from nnsmith.narrow_spec import auto_opset
 
 TestCase.__test__ = False  # supress PyTest warning
+
+
+def compare_two_oracle(src: Oracle, loaded: Oracle):
+    assert len(loaded.input) == len(src.input)
+    assert len(loaded.output) == len(src.output)
+    for k, v in loaded.input.items():
+        assert np.allclose(v, src.input[k], equal_nan=True)
+    for k, v in loaded.output.items():
+        assert np.allclose(v, src.output[k], equal_nan=True)
 
 
 def test_onnx_load_dump(tmp_path):
@@ -16,18 +25,12 @@ def test_onnx_load_dump(tmp_path):
 
     gen = random_model_gen(
         opset=auto_opset(ONNXModel),
-        init_rank=4,
         seed=54341,
         max_nodes=5,
     )
 
-    fixed_graph, concrete_abstensors = concretize_graph(
-        gen.abstract_graph, gen.tensor_dataflow, gen.get_solutions()
-    )
-
-    schedule = Schedule.init(fixed_graph, concrete_abstensors)
-
-    model = ONNXModel.from_schedule(schedule)
+    gen.ir.concretize(gen.get_sat_model())
+    model = ONNXModel.from_gir(gen.ir)
 
     assert model.with_torch
 
@@ -38,14 +41,6 @@ def test_onnx_load_dump(tmp_path):
     testcase.dump(root_folder=d)
 
     loaded_testcase = TestCase.load(model_type=type(model), root_folder=d)
-
-    def compare_two_oracle(src, loaded):
-        assert len(loaded.input) == len(src.input)
-        assert len(loaded.output) == len(src.output)
-        for k, v in loaded.input.items():
-            assert np.allclose(v, src.input[k], equal_nan=True)
-        for k, v in loaded.output.items():
-            assert np.allclose(v, src.output[k], equal_nan=True)
 
     # check oracle
     compare_two_oracle(oracle, loaded_testcase.oracle)
@@ -62,18 +57,12 @@ def test_bug_report_load_dump(tmp_path):
 
     gen = random_model_gen(
         opset=auto_opset(ONNXModel),
-        init_rank=4,
         seed=5341,
         max_nodes=5,
     )
 
-    fixed_graph, concrete_abstensors = concretize_graph(
-        gen.abstract_graph, gen.tensor_dataflow, gen.get_solutions()
-    )
-
-    schedule = Schedule.init(fixed_graph, concrete_abstensors)
-
-    model = ONNXModel.from_schedule(schedule)
+    gen.ir.concretize(gen.get_sat_model())
+    model = ONNXModel.from_gir(gen.ir)
 
     assert model.with_torch
 
@@ -84,14 +73,6 @@ def test_bug_report_load_dump(tmp_path):
     testcase.dump(root_folder=d)
 
     loaded_testcase = TestCase.load(model_type=type(model), root_folder=d)
-
-    def compare_two_oracle(src, loaded):
-        assert len(loaded.input) == len(src.input)
-        assert len(loaded.output) == len(src.output)
-        for k, v in loaded.input.items():
-            assert np.allclose(v, src.input[k], equal_nan=True)
-        for k, v in loaded.output.items():
-            assert np.allclose(v, src.output[k], equal_nan=True)
 
     # check oracle
     compare_two_oracle(oracle, loaded_testcase.oracle)

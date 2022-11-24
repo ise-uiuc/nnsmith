@@ -3,7 +3,7 @@ import random
 import warnings
 from io import BytesIO
 from os import PathLike
-from typing import Dict, Tuple, Union
+from typing import Dict, Optional, Tuple, Type, Union
 
 import onnx
 import onnx.checker
@@ -15,12 +15,12 @@ from onnx.tools import update_model_dims
 
 from nnsmith.abstract.dtype import DType
 from nnsmith.abstract.op import AbsTensor
+from nnsmith.gir import GraphIR
 from nnsmith.macro import onnx2external_data_dir
-from nnsmith.materialize import Schedule
 from nnsmith.materialize.torch import SymbolNet, TorchModel
 
 
-def create_deadcode_onnx(onnx_model, name_mask) -> onnx.ModelProto:
+def create_deadcode_onnx(onnx_model: onnx.ModelProto, name_mask) -> onnx.ModelProto:
     graph_def = onnx.helper.make_graph(
         nodes=onnx_model.graph.node,  # nodes
         name=onnx_model.graph.name,  # name
@@ -152,10 +152,10 @@ class ONNXModel(TorchModel):
             with_torch (bool, optional): Whether to load/dump torch related files. Defaults to True.
         """
         super().__init__()
-        self.with_torch = with_torch
-        self.masked_output_like = None
-        self.full_output_like = None
-        self.full_input_like = None
+        self.with_torch: bool = with_torch
+        self.masked_output_like: Optional[Dict[str, AbsTensor]] = None
+        self.full_output_like: Optional[Dict[str, AbsTensor]] = None
+        self.full_input_like: Optional[Dict[str, AbsTensor]] = None
         self.onnx_model = None
 
     @property
@@ -189,9 +189,9 @@ class ONNXModel(TorchModel):
         return dce_prob
 
     @classmethod
-    def from_schedule(cls, schedule: Schedule, **kwargs) -> "ONNXModel":
-        ret = cls()  # ONNXModel
-        ret.torch_model = SymbolNet(schedule, **kwargs)
+    def from_gir(cls: Type["ONNXModel"], gir: GraphIR, **kwargs) -> "ONNXModel":
+        ret = cls()
+        ret.torch_model = SymbolNet(gir, **kwargs)
 
         ret.full_input_like = ret.torch_model.input_like
         ret.full_output_like = ret.torch_model.output_like
