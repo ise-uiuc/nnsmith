@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 from z3 import ModelRef
 
@@ -54,10 +54,12 @@ class InstIR:
     def no_users(self):
         return all(len(u) == 0 for u in self.users)
 
-    def leaf_var(self) -> Iterable[str]:
+    def leaf_var(self) -> List[str]:
+        ret = []
         for idx, users in enumerate(self.users):
             if len(users) == 0:
-                yield self.retval(idx)
+                ret.append(self.retval(idx))
+        return ret
 
     def n_input(self):
         return self.iexpr.n_input()
@@ -75,9 +77,8 @@ class InstIR:
         assert index < self.n_output(), f"Only has {self.n_output()} outputs in {self}"
         return f"v{id(self)}.{index}"
 
-    def retvals(self) -> Iterable[str]:
-        for i in range(self.n_output()):
-            yield self.retval(i)
+    def retvals(self) -> List[str]:
+        return [self.retval(i) for i in range(self.n_output())]
 
     def is_user_of(self, inst: "InstIR", ret_idx: Optional[int] = None) -> bool:
         usee_names = list(inst.retvals())
@@ -151,7 +152,9 @@ class GraphIR:
         return lvs
 
     def input_var(self) -> List[str]:
-        return [inst.retval() for inst in self.insts if inst.iexpr.op == Input]
+        return [
+            inst.retval() for inst in self.insts if isinstance(inst.iexpr.op, Input)
+        ]
 
     def add_inst(self, iexpr: InstExpr) -> InstIR:
         new_inst = InstIR(iexpr)

@@ -95,14 +95,8 @@ class SymbolNet(nn.Module):
 
         # the order follows `input_keys`
 
-        self.input_map = {
-            f"i{i}": self.ir.vars[k] for i, k in enumerate(self.ir.input_var())
-        }
-        self.output_map = {
-            f"o{i}": self.ir.vars[k] for i, k in enumerate(self.ir.leaf_var())
-        }
-        self.iname2key = {f"i{i}": k for i, k in enumerate(self.ir.input_var())}
-        self.oname2key = {f"o{i}": k for i, k in enumerate(self.ir.leaf_var())}
+        self.input_map = {iname: self.ir.vars[iname] for iname in self.ir.input_var()}
+        self.output_map = {oname: self.ir.vars[oname] for oname in self.ir.leaf_var()}
 
         self.first_run = True
 
@@ -311,14 +305,14 @@ class SymbolNet(nn.Module):
     def forward(self, *args, **kwargs):
         self.differentiable = True
 
-        tensor_map = {}
+        tensor_map: Dict[str, torch.Tensor] = {}
 
         if len(args) == len(self.input_map):
             for i, key in enumerate(self.ir.input_var()):
                 tensor_map[key] = args[i]
         elif len(kwargs) == len(self.input_map):
-            for readable in self.input_map:
-                tensor_map[self.iname2key[readable]] = kwargs[readable]
+            for ir_key in self.input_map:
+                tensor_map[ir_key] = kwargs[ir_key]
         else:
             raise ValueError("Either user args only or kwargs only")
 
@@ -427,4 +421,4 @@ class SymbolNet(nn.Module):
                     return output_tensors
 
         self.first_run = False
-        return tuple(tensor_map[key] for key in self.oname2key.values())
+        return tuple(tensor_map[key] for key in self.output_map)

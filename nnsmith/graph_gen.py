@@ -365,8 +365,7 @@ class SimpleGenerator:
         ]
         if len(dtype_combs) == 0:
             raise RequiredDimNotFound(
-                "Op %s: Cannot find a shape variable with dim_spec %s and dtype combinations %s."
-                % (ndim_list, dtype_combs_spec)
+                f"No viable candidates: rank within {ndim_list} and dtype within {dtype_combs_spec}."
             )
         dtype_comb = random.choice(dtype_combs)
         for i, ndims in enumerate(ndim_list):
