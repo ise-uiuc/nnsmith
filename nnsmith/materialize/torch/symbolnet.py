@@ -289,7 +289,6 @@ class SymbolNet(nn.Module):
 
     @torch.jit.ignore
     def debug_numeric(self, tensor_map):
-        # TODO(@ganler): optimize warning at export.
         with warnings.catch_warnings():  # just shutup.
             warnings.simplefilter("ignore")
             ConstraintCheck.true(

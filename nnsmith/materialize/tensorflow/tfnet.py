@@ -20,7 +20,7 @@ class Instr:
 class TFNet(tf.Module):
     """A TensorFlow network whose computation is defined by a GraphIR."""
 
-    def __init__(self, ir: GraphIR) -> None:  # TODO(@ganler): impl
+    def __init__(self, ir: GraphIR) -> None:
         """Build a TensorFlow model from GraphIR
 
         Args:

@@ -209,3 +209,31 @@ def test_gir_repair():
     ir.assert_wellform()
     assert ir.insts[0] == ph
     assert ir.insts[1] == swap
+
+
+def test_gir_dot():
+    ir = GraphIR()
+
+    ph1 = ir.add_inst(
+        InstExpr(Placeholder(ttype=AbsTensor(shape=[2, 3, 3], dtype=DType.float32)), [])
+    )
+    ir.add_inst(InstExpr(FakeSwap(), [ph1.retval(), ph1.retval()]))
+
+    assert (
+        ir.pretty()
+        == """v0.0 = Placeholder() \t# inst id: 0
+v1.0, v1.1 = test.FakeSwap(v0.0, v0.0) \t# inst id: 1
+"""
+    )
+
+    assert (
+        ir.to_dot()
+        == r"""digraph D {
+  node [shape=Mrecord];
+  0 [label="{Placeholder|{<o0> v0.0}}",fillcolor=lightgray,style=filled,];
+  1 [label="{{<i0> v0.0|<i1> v0.0}|test.FakeSwap|{<o0> v1.0|<o1> v1.1}}",];
+  0:o0 -> 1:i0;
+  0:o0 -> 1:i1;
+}
+"""
+    )

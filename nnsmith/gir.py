@@ -401,4 +401,54 @@ class GraphIR:
 
     def to_dot(self) -> str:
         """Convert to graphviz dot format."""
-        raise NotImplementedError
+        # digraph D {
+        #     node [shape=Mrecord];
+        #     Input [label="{Input|<f0> out}"];
+        #     Add   [label="{{<f0> lhs| <f1> rhs}|Add|{<f2> out}}"];
+        #     Input:f0 -> Add:f0;
+        #     Input:f0 -> Add:f1;
+        # }
+        text = "digraph D {\n"
+        text += "  node [shape=Mrecord];\n"
+
+        def render_node(inst: InstIR):
+            label = "{"
+            extra = ""
+            if not isinstance(inst.iexpr.op, (Input, Constant, Placeholder)):
+                # Inputs
+                label += "{"
+                label += "|".join(
+                    [f"<i{idx}> {arg}" for idx, arg in enumerate(inst.iexpr.args)]
+                )
+                label += "}|"
+            elif isinstance(inst.iexpr.op, Input):
+                extra += "fillcolor=cadetblue1,style=filled,"
+            elif isinstance(inst.iexpr.op, Constant):
+                extra += "fillcolor=lightpink,style=filled,"
+            elif isinstance(inst.iexpr.op, Placeholder):
+                extra += "fillcolor=lightgray,style=filled,"
+
+            # Op
+            label += f"{inst.iexpr.op}|".replace("{", r"\{").replace("}", r"\}")
+            # Outputs
+            label += "{"
+            label += "|".join(
+                [f"<o{idx}> {rv}" for idx, rv in enumerate(inst.retvals())]
+            )
+
+            label += r"}}"
+
+            return f'  {inst.identifier} [label="{label}",{extra}];\n'
+
+        # render nodes
+        for inst in self.insts:
+            text += render_node(inst)
+
+        # render edges
+        for inst in self.insts:
+            for idx, arg in enumerate(inst.iexpr.args):
+                usee_id, ret_idx = InstIR.var_inst_idx(arg)
+                text += f"  {usee_id}:o{ret_idx} -> {inst.identifier}:i{idx};\n"
+
+        text += "}\n"
+        return text
