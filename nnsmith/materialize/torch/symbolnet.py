@@ -7,12 +7,11 @@ from typing import Dict, Optional
 import torch
 from torch import nn
 
-from nnsmith.abstract.op import Input
-from nnsmith.abstract.tensor import AbsTensor
+from nnsmith.abstract.op import AbsOpBase, Input
 from nnsmith.error import ConstraintCheck, ConstraintError, SanityCheck
 from nnsmith.gir import GraphIR
 from nnsmith.logging import TORCH_LOG
-from nnsmith.materialize.torch.forward import forward_fn
+from nnsmith.materialize.torch.forward import forward_fn, type_from_torch_tensor
 from nnsmith.materialize.torch.numeric import loss_fn, numeric_valid
 from nnsmith.materialize.torch.proxy_grad import proxy_fn
 
@@ -22,7 +21,7 @@ __INPUT_FOUND_INF_MSG__ = "[Inf] in model inputs!"
 __ENABLE_RT_CHECK__ = os.getenv("NNSMITH_RT_CHECK", "0") == "1"
 
 
-def check_type(op, tensors, is_input=True, msg=""):
+def check_type(op: AbsOpBase, tensors, is_input=True, msg=""):
     if __ENABLE_RT_CHECK__ and op is not None:
         like = op.input_like if is_input else op.output_like
         ioro = "input" if is_input else "output"
@@ -32,10 +31,10 @@ def check_type(op, tensors, is_input=True, msg=""):
         ), f"{op}'s {ioro} has {len(like)} abs. input, but got {len(tensors)} real inputs."
 
         for i, ten in enumerate(tensors):
-            ttype = AbsTensor.from_torch(ten)
+            ttype = type_from_torch_tensor(ten)
             assert (
                 like[i] == ttype
-            ), f"{msg} {ioro} abstract type != concrete {AbsTensor.from_torch(ten)} for {op} {op.input_like} -> {op.output_like}"
+            ), f"{msg} {ioro} abstract type != concrete {type_from_torch_tensor(ten)} for {op} {op.input_like} -> {op.output_like}"
 
 
 # Probablistically, sampling at positive domain is beneficial.
@@ -352,7 +351,6 @@ class SymbolNet(nn.Module):
                 # TODO(@ganler): optimize: unref tensors that are not going to be used anymore.
 
             # LOG.
-            # TODO(@ganler): add node_id information by aligning instruction idx and node idx.
             if TORCH_LOG.isEnabledFor(logging.DEBUG):
                 TORCH_LOG.debug(f">> statment {stmt_idx}")
                 for inp_i, i in enumerate(input_tensors):
@@ -378,7 +376,7 @@ class SymbolNet(nn.Module):
                 if loss_fn.dispatch(type(op)) is not None:
                     loss = loss_fn(op)(*input_tensors)
                     if not isinstance(loss, tuple):
-                        loss = ("", loss)  # loss sufficx, loss
+                        loss = ("", loss)  # loss suffix, loss
                     vul_op_loss = loss
                 else:
                     vul_op_loss = None

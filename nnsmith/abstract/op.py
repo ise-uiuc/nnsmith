@@ -655,6 +655,14 @@ class Input(AbsOpBase):
     ) -> List[Tuple[int, DType]]:
         pass
 
+    @property
+    def input_like(self):
+        return []
+
+    @property
+    def output_like(self):
+        return [self.abs_tensor]
+
 
 class Constant(AbsOpBase):
     in_dtypes = [()]
@@ -685,6 +693,14 @@ class Constant(AbsOpBase):
         self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
         pass
+
+    @property
+    def input_like(self):
+        return []
+
+    @property
+    def output_like(self):
+        return [self.abs_tensor]
 
 
 class Placeholder:

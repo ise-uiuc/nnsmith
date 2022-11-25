@@ -31,10 +31,18 @@ from omegaconf import OmegaConf
 from nnsmith import __version__
 from nnsmith.abstract.dtype import DType
 from nnsmith.abstract.extension import BACKEND_REQUIRES
-from nnsmith.abstract.op import AbsOpBase, AbsTensor, Constant, Input, concretize_op
+from nnsmith.abstract.op import (
+    AbsOpBase,
+    AbsTensor,
+    Constant,
+    Input,
+    Placeholder,
+    concretize_op,
+)
 from nnsmith.backends import BackendFactory
+from nnsmith.gir import GraphIR, InstExpr
 from nnsmith.logging import DTEST_LOG
-from nnsmith.materialize import Instruction, Model, TestCase
+from nnsmith.materialize import Model, TestCase
 
 NNSMITH_CACHE_DIR = user_cache_dir(f"nnsmith-{__version__}")
 
@@ -53,57 +61,30 @@ class OpConfig:
     out_dtypes: List[List[DType]]
 
 
-# TODO(@ganler): impl
-def _make_single_op_schedules(
+def _make_single_op_irs(
     op: AbsOpBase, ishapes, available_idtypes
-):  # List<Tup<DTypeComb,DTypeComb,Sched>>
-    """Given a concretized op, return a schedule for it."""
-    schedule_list = []
-    input_keys = list(range(len(ishapes)))
+):  # List<Tup<DTypeComb,DTypeComb,GraphIR>>
+    """Given a concretized compute op, return an GraphIR for it."""
+    ir_list = []
     for idtype_group in available_idtypes:
-        key2type = {}
-        instr = []
+        ir = GraphIR()
         inputs = []
 
-        for idx, (ishape, idtype) in enumerate(zip(ishapes, idtype_group)):
-            inp = Input(dim=len(ishape))
-            inp.abs_tensor = AbsTensor(shape=ishape, dtype=idtype)
-            instr.append(
-                Instruction(
-                    op=inp,
-                    inputs=[],
-                    outputs=[idx],
-                )
-            )
-            key2type[input_keys[idx]] = inp.abs_tensor
-            inputs.append(inp.abs_tensor)
+        for ishape, idtype in zip(ishapes, idtype_group):
+            input_op = Placeholder(AbsTensor(ishape, idtype)).to_input()
+            inst = ir.add_inst(InstExpr(op=input_op, args=[]))
+            inputs.append(inst.retval())
 
         this_op = deepcopy(op)
-        outputs = this_op.checked_type_transfer(inputs)
-        this_op.bind_input_like(inputs)
-        this_op.bind_output_like(outputs)
+        itensors = [ir.vars[vname] for vname in inputs]
+        otensors = this_op.checked_type_transfer(itensors)
+        this_op.bind_input_like(itensors)
+        this_op.bind_output_like(otensors)
 
-        leaf_keys = list(range(len(inputs), len(inputs) + len(outputs)))
+        ir.add_inst(InstExpr(op=this_op, args=inputs))
 
-        instr.append(
-            Instruction(
-                op=this_op,
-                inputs=input_keys,
-                outputs=leaf_keys,
-            )
-        )
-
-        for key, aten in zip(leaf_keys, outputs):
-            key2type[key] = aten
-
-        schedule_list.append(
-            (
-                idtype_group,
-                tuple([out.dtype for out in outputs]),
-                Schedule(instr, input_keys, leaf_keys, key2type),
-            )
-        )
-    return schedule_list
+        ir_list.append((idtype_group, tuple([out.dtype for out in otensors]), ir))
+    return ir_list
 
 
 def infer_topset_from_scratch(
@@ -160,22 +141,22 @@ def infer_topset_from_scratch(
                 shape.append(m.eval(s).as_long())
             concre_input_shapes.append(shape)
 
-        schedule_sets = _make_single_op_schedules(
+        single_op_irs = _make_single_op_irs(
             concrete_op, concre_input_shapes, available_idtypes
         )
 
         if factory:
-            schedule_sets = [
+            single_op_irs = [
                 sset
-                for sset in schedule_sets
+                for sset in single_op_irs
                 if set(factory.skip_dtypes()).isdisjoint(sset[0] + sset[1])
             ]
 
         op_itypes = set()
         op_otypes = set()
 
-        for itypes, otypes, sched in schedule_sets:
-            model = model_cls.from_schedule(sched)
+        for itypes, otypes, sched in single_op_irs:
+            model = model_cls.from_gir(sched)
 
             if factory:
                 # Test compilation + simple inference;

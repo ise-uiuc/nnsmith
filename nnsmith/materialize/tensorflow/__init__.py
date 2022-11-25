@@ -93,26 +93,17 @@ class TFModel(Model, ABC):  # Don't directly instantiate this class
 
     @property
     def input_like(self) -> Dict[str, AbsTensor]:
-        return {
-            f"i{i_inp}": self.gir.key2type[key]
-            for i_inp, key in enumerate(self.gir.input_keys)
-        }
+        return {ik: self.ir.vars[ik] for ik in self.ir.input_var()}
 
     @property
     def output_like(self) -> Dict[str, AbsTensor]:
-        return {
-            f"o{i_out}": self.gir.key2type[key]
-            for i_out, key in enumerate(self.gir.leaf_keys)
-        }
+        return {ok: self.ir.vars[ok] for ok in self.ir.leaf_var()}
 
     @property
     def input_specs(self) -> Dict[str, tf.TensorSpec]:
         ret: Dict[str, tf.TensorSpec] = {}
-        for i_inp, key in enumerate(self.gir.input_keys):
-            abs_tensor = self.gir.key2type[key]
-            ret[f"i{i_inp}"] = tf.TensorSpec(
-                abs_tensor.shape, abs_tensor.dtype.tensorflow(), f"i{i_inp}"
-            )
+        for k, aten in self.input_like.items():
+            ret[k] = tf.TensorSpec(aten.shape, aten.dtype.tensorflow(), k)
         return ret
 
     @staticmethod
@@ -122,7 +113,7 @@ class TFModel(Model, ABC):  # Don't directly instantiate this class
     def make_oracle(
         self, inputs: Dict[str, tf.Tensor | tf.TensorSpec] = None
     ) -> Oracle:
-        if inputs is None or isinstance(inputs["i0"], tf.TensorSpec):
+        if inputs is None or isinstance(list(inputs.values())[0], tf.TensorSpec):
             input_dict = self.random_inputs()
         else:
             input_dict = inputs
@@ -137,7 +128,7 @@ class TFModel(Model, ABC):  # Don't directly instantiate this class
         os.makedirs(path, exist_ok=True)
         # gir.pkl
         with open(os.path.join(path, TFModel.gir_name()), "wb") as f:
-            pickle.dump(self.gir, f)
+            pickle.dump(self.ir, f)
         # tfnet
         with self.device:
             concrete_net = self.concrete_net(self.input_specs)

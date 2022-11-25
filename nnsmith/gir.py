@@ -30,12 +30,42 @@ class InstExpr:
         return self.op.n_output()
 
 
+def _make_new_id_from_used(used_ids: Set[int]) -> int:
+    for i in range(2**16):
+        if i not in used_ids:
+            return i
+
+    raise RuntimeError("Cannot find a new id within [0, 2**16)")
+
+
+def id_maker(fallback, irctx: Union["GraphIR", List["InstIR"]] = None):
+    if isinstance(irctx, GraphIR):
+        return _make_new_id_from_used({inst.identifier for inst in irctx.insts})
+    elif isinstance(irctx, list):
+        return _make_new_id_from_used({inst.identifier for inst in irctx})
+    else:
+        return fallback
+
+
+def id_checker(id):
+    assert id >= 0, "Identifier must be non-negative"
+
+
 class InstIR:
     def __init__(
-        self, iexpr: InstExpr, irctx: Union["GraphIR", List["InstIR"]] = None
+        self,
+        iexpr: InstExpr,
+        identifier: Optional[int] = None,
+        irctx: Union["GraphIR", List["InstIR"]] = None,
     ) -> None:
         self.iexpr = iexpr
         self.users: List[Set[InstIR]] = [set() for _ in range(self.iexpr.n_output())]
+        if identifier is None:
+            self.identifier = id_maker(fallback=id(self), irctx=irctx)
+        else:
+            id_checker(identifier)
+            self.identifier = identifier
+
         if irctx is not None:
             if isinstance(irctx, GraphIR):
                 for arg in set(self.iexpr.args):
@@ -45,11 +75,11 @@ class InstIR:
                 for arg in set(self.iexpr.args):
                     inst_id, ret_idx = InstIR.var_inst_idx(arg)
                     for inst in irctx:
-                        if id(inst) == inst_id:
+                        if inst.identifier == inst_id:
                             inst.users[ret_idx].add(self)
 
     def __str__(self):
-        return f"{', '.join(self.retvals())} = {self.iexpr} \t# inst id: {id(self)}"
+        return f"{', '.join(self.retvals())} = {self.iexpr} \t{self.identifier}"
 
     def no_users(self):
         return all(len(u) == 0 for u in self.users)
@@ -73,9 +103,13 @@ class InstIR:
         tokens = varname[1:].split(".")
         return int(tokens[0]), int(tokens[1])
 
+    @staticmethod
+    def retval_string(inst_id: int, ret_idx: int) -> str:
+        return f"v{inst_id}.{ret_idx}"
+
     def retval(self, index=0) -> str:
         assert index < self.n_output(), f"Only has {self.n_output()} outputs in {self}"
-        return f"v{id(self)}.{index}"
+        return self.retval_string(self.identifier, index)
 
     def retvals(self) -> List[str]:
         return [self.retval(i) for i in range(self.n_output())]
@@ -100,7 +134,7 @@ class InstIR:
 # -----------------------------------------------------------------
 #                         Well-formedness
 # -----------------------------------------------------------------
-#  1. Return name: v${id(op)}.${index(ret)}. e.g., op[0].0, ...
+#  1. Return name: ${inst.id}.${index(ret)}. e.g., op[0].0, ...
 #  3. Return name is unique.
 # -----------------------------------------------------------------
 
@@ -120,9 +154,21 @@ class GraphIR:
         return ret
 
     def pretty(self) -> str:
-        ret = str(self)
-        for idx, inst in enumerate(self.insts):
-            ret = ret.replace(f"{id(inst)}", f"{idx}")
+        inst_remap = {inst.identifier: f"{idx}" for idx, inst in enumerate(self.insts)}
+
+        ret = ""
+        for inst in self.insts:
+            pretty_args = []
+            for arg in inst.iexpr.args:
+                inst_id, ret_idx = InstIR.var_inst_idx(arg)
+                pretty_args.append(InstIR.retval_string(inst_remap[inst_id], ret_idx))
+            pretty_retvals = [
+                InstIR.retval_string(inst_remap[inst.identifier], ret_idx)
+                for ret_idx in range(inst.n_output())
+            ]
+
+            ret += f"{', '.join(pretty_retvals)} = {inst.iexpr.op}({', '.join(pretty_args)})"
+            ret += f" \t# inst id: {inst_remap[inst.identifier]}\n"  # Comment
 
         return ret
 
@@ -157,18 +203,17 @@ class GraphIR:
         ]
 
     def add_inst(self, iexpr: InstExpr) -> InstIR:
-        new_inst = InstIR(iexpr)
+        new_inst = InstIR(iexpr, irctx=self)
 
-        # Check if op is properly binded with input and outputs.
-        assert all(
-            [t is not None for t in iexpr.op.input_like]
-        ), f"Input not binded: {new_inst}"
-        assert all(
-            [t is not None for t in iexpr.op.output_like]
-        ), f"Output not binded: {new_inst}"
+        # Infer the output type if iexpr.op is not binded.
+        otensors = iexpr.op.output_like
+        if any([t is None for t in otensors]):
+            otensors = iexpr.op.checked_type_transfer(
+                [self.vars[arg] for arg in iexpr.args]
+            )
 
         # make new values
-        for ridx, abstensor in enumerate(iexpr.op.output_like):
+        for ridx, abstensor in enumerate(otensors):
             vname = new_inst.retval(ridx)
             assert vname not in self.vars, "Variable name is not unique: " + vname
             self.vars[vname] = abstensor
@@ -179,7 +224,7 @@ class GraphIR:
             assert arg in self.vars, "Variable not defined: " + arg
             inst_id, ret_idx = InstIR.var_inst_idx(arg)
             for idx, may_prod in enumerate(self.insts):
-                if inst_id == id(may_prod):
+                if inst_id == may_prod.identifier:
                     may_prod.users[ret_idx].add(new_inst)
                     min_user_idx = max(min_user_idx, idx + 1)
                     break
@@ -191,7 +236,7 @@ class GraphIR:
 
     def find_inst_by_id(self, obj_id: int) -> Optional[InstIR]:
         for inst in self.insts:
-            if id(inst) == obj_id:
+            if inst.identifier == obj_id:
                 return inst
         return None
 
@@ -211,6 +256,7 @@ class GraphIR:
         # 1. replace all user site of oldvar to newvar.
         old_inst_id, old_ret_idx = InstIR.var_inst_idx(oldvar)
         old_inst = self.find_inst_by_id(old_inst_id)
+        assert old_inst is not None, "oldvar not defined: " + oldvar
         for ouser in old_inst.users[old_ret_idx]:
             # change all use of oldvar to newvar
             ouser.iexpr.args = [newvar if a == oldvar else a for a in ouser.iexpr.args]

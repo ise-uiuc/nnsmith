@@ -55,11 +55,6 @@ def framework_operator_impl(
     return dispatch(op_type, *args, **kwargs)
 
 
-Instruction: Tuple[AbsOpBase, List[int], List[int]] = namedtuple(
-    "Instruction", ["op", "inputs", "outputs"]
-)
-
-
 class Oracle:
     def __init__(
         self,

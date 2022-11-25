@@ -13,6 +13,7 @@ class FakeSwap(AbsOpBase):
     def __init__(self):
         super().__init__()
         self.inp_ranks = [rank_all(), rank_all()]
+        self.out_ranks = [rank_all(), rank_all()]
 
     def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         return [input_shapes[-1], input_shapes[0]]
@@ -45,13 +46,13 @@ def test_inst_expr():
 def test_inst_ir():
     ph = Placeholder(ttype=AbsTensor(shape=[2, 3, 3], dtype=DType.float32))
     iexpr = InstExpr(ph, [])
-    iir0 = InstIR(iexpr)
+    iir0 = InstIR(iexpr, irctx=[])
     assert iir0.iexpr == iexpr
     assert iir0.n_input() == 0
     assert iir0.n_output() == 1
-    assert iir0.retval() == f"v{id(iir0)}.0"
-    assert list(iir0.retvals()) == [f"v{id(iir0)}.0"]
-    assert list(iir0.leaf_var()) == [f"v{id(iir0)}.0"]
+    assert iir0.retval() == "v0.0"
+    assert list(iir0.retvals()) == ["v0.0"]
+    assert list(iir0.leaf_var()) == ["v0.0"]
 
     op = FakeSwap()
     iexpr = InstExpr(op, [iir0.retval(), iir0.retval()])
@@ -59,13 +60,13 @@ def test_inst_ir():
     assert iir1.iexpr == iexpr
     assert iir1.n_input() == 2
     assert iir1.n_output() == 2
-    assert iir1.retval() == f"v{id(iir1)}.0"
-    assert iir1.retval(0) == f"v{id(iir1)}.0"
-    assert iir1.retval(1) == f"v{id(iir1)}.1"
-    assert list(iir1.retvals()) == [f"v{id(iir1)}.0", f"v{id(iir1)}.1"]
+    assert iir1.retval() == "v1.0"
+    assert iir1.retval(0) == "v1.0"
+    assert iir1.retval(1) == "v1.1"
+    assert iir1.retvals() == ["v1.0", "v1.1"]
 
     inst_id, index = InstIR.var_inst_idx(iir1.retval(1))
-    assert inst_id == id(iir1)
+    assert inst_id == 1  # The id of 2nd inst should be 1 (given `irctx`).
     assert index == 1
 
     # Check udchain
@@ -92,7 +93,7 @@ def test_gir_mutate():
     assert ir.n_var() == 3
     assert ir.n_compute_inst() == 1
     assert len(ir.leaf_inst()) == 1
-    assert ir.leaf_var() == [f"v{id(swap1)}.0", f"v{id(swap1)}.1"]
+    assert ir.leaf_var() == [f"v{swap1.identifier}.0", f"v{swap1.identifier}.1"]
 
     assert (
         ir.pretty()
@@ -114,7 +115,7 @@ v1.0, v1.1 = test.FakeSwap(v0.0, v0.0) \t# inst id: 1
     assert ir.n_var() == 4
     assert ir.n_compute_inst() == 1
     assert len(ir.leaf_inst()) == 1
-    assert ir.leaf_var() == [f"v{id(swap1)}.0", f"v{id(swap1)}.1"]
+    assert ir.leaf_var() == [f"v{swap1.identifier}.0", f"v{swap1.identifier}.1"]
     ir.assert_wellform()
 
     assert (
@@ -131,7 +132,11 @@ v2.0, v2.1 = test.FakeSwap(v0.0, v1.0) \t# inst id: 2
     assert ir.n_var() == 6
     assert ir.n_compute_inst() == 2
     assert len(ir.leaf_inst()) == 1
-    assert ir.leaf_var() == [f"v{id(swap1)}.1", f"v{id(swap2)}.0", f"v{id(swap2)}.1"]
+    assert ir.leaf_var() == [
+        f"v{swap1.identifier}.1",
+        f"v{swap2.identifier}.0",
+        f"v{swap2.identifier}.1",
+    ]
     ir.assert_wellform()
 
     assert (
@@ -152,7 +157,7 @@ v3.0, v3.1 = test.FakeSwap(v2.0, v2.0) \t# inst id: 3
     assert ir.n_var() == 5
     assert ir.n_compute_inst() == 2
     assert len(ir.leaf_inst()) == 1
-    assert ir.leaf_var() == [f"v{id(swap2)}.0", f"v{id(swap2)}.1"]
+    assert ir.leaf_var() == [f"v{swap2.identifier}.0", f"v{swap2.identifier}.1"]
     ir.assert_wellform()
 
     assert (

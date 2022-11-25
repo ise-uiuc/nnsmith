@@ -81,10 +81,6 @@ class AbsTensor:
     def deepcopy(self):
         return AbsTensor(shape=list(self.shape), dtype=self.dtype)
 
-    @staticmethod
-    def from_torch(torch_tensor):
-        return AbsTensor(list(torch_tensor.shape), DType.from_torch(torch_tensor.dtype))
-
     @property
     def ndims(self):
         return len(self.shape)
