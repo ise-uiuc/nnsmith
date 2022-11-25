@@ -2,17 +2,14 @@ import json
 import os
 import pickle
 from abc import ABC, abstractmethod
-from collections import namedtuple
-from dataclasses import dataclass
 from enum import Enum
 from os import PathLike
-from typing import Any, Dict, List, Tuple, Type, TypeVar
+from typing import Any, Dict, List, Type, TypeVar
 
-import networkx as nx
 import numpy as np
 from multipledispatch import dispatch
 
-from nnsmith.abstract.op import AbsOpBase, Constant, Input
+from nnsmith.abstract.op import AbsOpBase, Constant
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import SanityCheck
 from nnsmith.gir import GraphIR
