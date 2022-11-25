@@ -14,8 +14,7 @@ class TFLiteRunner:
         self.tfnet_callable = tfnet_callable
 
     def __call__(self, input: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
-        return self.tfnet_callable(**input)
-        # It can automatically convert input args to np.ndarray, and it outputs np.ndarray.
+        return {k: np.array(v) for k, v in self.tfnet_callable(**input).items()}
 
 
 class TFLiteFactory(BackendFactory):

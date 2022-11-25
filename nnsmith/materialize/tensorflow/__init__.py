@@ -46,7 +46,7 @@ def randn_from_specs(specs: Dict[str, tf.TensorSpec]) -> Dict[str, tf.Tensor]:
 
 
 def np_dict_from_tf(x: Dict[str, tf.Tensor]) -> Dict[str, np.ndarray]:
-    return {key: value.numpy() for key, value in x.items()}
+    return {key: np.array(value.numpy()) for key, value in x.items()}
 
 
 def tf_dict_from_np(x: Dict[str, np.ndarray]) -> Dict[str, tf.Tensor]:
