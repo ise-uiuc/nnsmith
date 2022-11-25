@@ -5,47 +5,40 @@ import tensorflow as tf
 
 from nnsmith.abstract.op import AbsOpBase, Input
 from nnsmith.error import SanityCheck
+from nnsmith.gir import GraphIR
 from nnsmith.logging import TF_LOG
-from nnsmith.materialize import Schedule
 from nnsmith.materialize.tensorflow.forward import forward_fn
 
 
 @dataclass
 class Instr:
     fwd_fn: Callable
-    inp_keys: List[int]
-    out_keys: List[int]
+    inp_keys: List[str]
+    out_keys: List[str]
 
 
 class TFNet(tf.Module):
-    """
-    Concrete TensorFlow Network
-    It only has minimal methods to be a TF network.
-    It only has minimal information "schedule" to do computation.
-    """
+    """A TensorFlow network whose computation is defined by a GraphIR."""
 
-    def __init__(
-        self,
-        schedule: Schedule,
-    ) -> None:
-        """Build a TensorFlow model from schedule
+    def __init__(self, ir: GraphIR) -> None:
+        """Build a TensorFlow model from GraphIR
 
         Args:
-            schedule (Schedule): minimal information for constructing a concrete graph.
+            ir (GraphIR): minimal information for constructing a concrete graph.
         """
         super().__init__()
-        self.schedule: Schedule = schedule
+        self.ir: GraphIR = ir
         self.mlist: List[Callable] = []
         self.instructions: List[Instr] = []
 
-        for op, inp_keys, out_keys in self.schedule.instructions:
-            if not isinstance(op, Input):
-                op = cast(AbsOpBase, op)
+        for inst in self.ir.insts:
+            if not isinstance(inst.iexpr.op, Input):
+                op = cast(AbsOpBase, inst.iexpr.op)
                 fwd_fn = forward_fn(op)
-                SanityCheck.true(fwd_fn is not None, f"Bad implementation for {op}")
-                if not isinstance(op, tf.Module):
+                SanityCheck.true(fwd_fn is not None, f"Bad impl for {inst.iexpr.op}")
+                if isinstance(fwd_fn, tf.Module):
                     self.mlist.append(fwd_fn)  # Add tf.Module to track its parameters
-                self.instructions.append(Instr(fwd_fn, inp_keys, out_keys))
+                self.instructions.append(Instr(fwd_fn, inst.iexpr.args, inst.retvals()))
 
     @tf.function
     def __call__(self, *args, **kwargs) -> Dict[str, tf.Tensor]:
@@ -60,13 +53,13 @@ class TFNet(tf.Module):
         mode = "Running Eagerly" if tf.executing_eagerly() else "Tracing"
         TF_LOG.debug(f"{mode} with JIT config: {tf.config.optimizer.get_jit()}")
 
-        key2tensor: Dict[int, tf.Tensor] = {}
-        if len(args) == len(self.schedule.input_keys):
-            for i, key in enumerate(self.schedule.input_keys):
+        key2tensor: Dict[str, tf.Tensor] = {}
+        if len(args) == len(self.ir.input_var()):
+            for i, key in enumerate(self.ir.input_var()):
                 key2tensor[key] = args[i]
-        elif len(kwargs) == len(self.schedule.input_keys):
-            for i, key in enumerate(self.schedule.input_keys):
-                key2tensor[key] = kwargs[f"i{i}"]
+        elif len(kwargs) == len(self.ir.input_var()):
+            for i, key in enumerate(self.ir.input_var()):
+                key2tensor[key] = kwargs[key]
         else:
             raise ValueError("Either user args only or kwargs only")
 
@@ -85,8 +78,4 @@ class TFNet(tf.Module):
             for i_out, out_key in enumerate(instr.out_keys):
                 key2tensor[out_key] = out_tensors[i_out]
 
-        # end for instructions
-        out_dict = {
-            f"o{i}": key2tensor[key] for i, key in enumerate(self.schedule.leaf_keys)
-        }
-        return out_dict
+        return {k: key2tensor[k] for k in self.ir.leaf_var()}

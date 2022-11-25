@@ -28,7 +28,8 @@ def configure_tf_gpu_mem(max_megabytes=None):
 configure_tf_gpu_mem()
 
 from nnsmith.abstract.op import AbsOpBase, AbsTensor
-from nnsmith.materialize import Model, Oracle, Schedule
+from nnsmith.gir import GraphIR
+from nnsmith.materialize import Model, Oracle
 from nnsmith.materialize.tensorflow.forward import ALL_TF_OPS
 from nnsmith.materialize.tensorflow.tfnet import TFNet
 from nnsmith.util import register_seed_setter
@@ -45,7 +46,7 @@ def randn_from_specs(specs: Dict[str, tf.TensorSpec]) -> Dict[str, tf.Tensor]:
 
 
 def np_dict_from_tf(x: Dict[str, tf.Tensor]) -> Dict[str, np.ndarray]:
-    return {key: value.numpy() for key, value in x.items()}
+    return {key: np.array(value.numpy()) for key, value in x.items()}
 
 
 def tf_dict_from_np(x: Dict[str, np.ndarray]) -> Dict[str, tf.Tensor]:
@@ -73,17 +74,14 @@ class TFModel(Model, ABC):  # Don't directly instantiate this class
     Other values like I/O values should be managed by the user.
     """
 
-    def __init__(self, schedule: Schedule) -> None:
-        """Must provide a schedule to avoid NoneType errors"""
+    def __init__(self, ir: GraphIR) -> None:
         super().__init__()
-        self.schedule = schedule
-        self.net: TFNet = TFNet(
-            schedule=schedule,
-        )
+        self.ir = ir
+        self.net = TFNet(ir=ir)
 
     @classmethod
-    def from_schedule(cls, schedule: Schedule, **kwargs) -> "TFModel":
-        return cls(schedule)
+    def from_gir(cls: Type["TFModel"], ir: GraphIR, **kwargs) -> "TFModel":
+        return cls(ir)
 
     @property
     def version(self) -> str:
@@ -95,26 +93,17 @@ class TFModel(Model, ABC):  # Don't directly instantiate this class
 
     @property
     def input_like(self) -> Dict[str, AbsTensor]:
-        return {
-            f"i{i_inp}": self.schedule.key2type[key]
-            for i_inp, key in enumerate(self.schedule.input_keys)
-        }
+        return {ik: self.ir.vars[ik] for ik in self.ir.input_var()}
 
     @property
     def output_like(self) -> Dict[str, AbsTensor]:
-        return {
-            f"o{i_out}": self.schedule.key2type[key]
-            for i_out, key in enumerate(self.schedule.leaf_keys)
-        }
+        return {ok: self.ir.vars[ok] for ok in self.ir.leaf_var()}
 
     @property
     def input_specs(self) -> Dict[str, tf.TensorSpec]:
         ret: Dict[str, tf.TensorSpec] = {}
-        for i_inp, key in enumerate(self.schedule.input_keys):
-            abs_tensor = self.schedule.key2type[key]
-            ret[f"i{i_inp}"] = tf.TensorSpec(
-                abs_tensor.shape, abs_tensor.dtype.tensorflow(), f"i{i_inp}"
-            )
+        for k, aten in self.input_like.items():
+            ret[k] = tf.TensorSpec(aten.shape, aten.dtype.tensorflow(), k)
         return ret
 
     @staticmethod
@@ -124,7 +113,7 @@ class TFModel(Model, ABC):  # Don't directly instantiate this class
     def make_oracle(
         self, inputs: Dict[str, tf.Tensor | tf.TensorSpec] = None
     ) -> Oracle:
-        if inputs is None or isinstance(inputs["i0"], tf.TensorSpec):
+        if inputs is None or isinstance(list(inputs.values())[0], tf.TensorSpec):
             input_dict = self.random_inputs()
         else:
             input_dict = inputs
@@ -137,9 +126,9 @@ class TFModel(Model, ABC):  # Don't directly instantiate this class
 
     def dump(self, path: PathLike = "saved_tfmodel") -> None:
         os.makedirs(path, exist_ok=True)
-        # schedule.pkl
-        with open(os.path.join(path, TFModel.schedule_name()), "wb") as f:
-            pickle.dump(self.schedule, f)
+        # gir.pkl
+        with open(os.path.join(path, TFModel.gir_name()), "wb") as f:
+            pickle.dump(self.ir, f)
         # tfnet
         with self.device:
             concrete_net = self.concrete_net(self.input_specs)
@@ -160,15 +149,15 @@ class TFModel(Model, ABC):  # Don't directly instantiate this class
 
     @classmethod
     def load(cls, path: PathLike) -> "TFModel":
-        with open(os.path.join(path, cls.schedule_name()), "rb") as f:
-            schedule: Schedule = pickle.load(f)
-        model = cls(schedule)
+        with open(os.path.join(path, cls.gir_name()), "rb") as f:
+            gir: GraphIR = pickle.load(f)
+        model = cls(gir)
         model.net = tf.saved_model.load(os.path.join(path, TFModel.tfnet_dir_name()))
         return model
 
     @staticmethod
-    def schedule_name():
-        return "schedule.pkl"
+    def gir_name() -> str:
+        return "gir.pkl"
 
     @staticmethod
     def in_out_pkl_name():

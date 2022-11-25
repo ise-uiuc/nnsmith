@@ -14,10 +14,10 @@ from nnsmith.backends.factory import BackendFactory
 from nnsmith.cli.model_exec import verify_testcase
 from nnsmith.error import InternalError
 from nnsmith.filter import FILTERS
-from nnsmith.graph_gen import concretize_graph, random_model_gen
+from nnsmith.graph_gen import random_model_gen
 from nnsmith.logging import FUZZ_LOG
 from nnsmith.macro import NNSMITH_BUG_PATTERN_TOKEN
-from nnsmith.materialize import Model, Schedule, TestCase
+from nnsmith.materialize import Model, TestCase
 from nnsmith.narrow_spec import auto_opset
 from nnsmith.util import mkdir, parse_timestr, set_seed
 
@@ -157,21 +157,15 @@ class FuzzingLoop:
         mgen_cfg = self.cfg["mgen"]
         gen = random_model_gen(
             opset=self.opset,
-            init_rank=mgen_cfg["init_rank"],
             seed=seed,
             max_nodes=mgen_cfg["max_nodes"],
             timeout_ms=mgen_cfg["timeout_ms"],
         )
 
-        fixed_graph, concrete_abstensors = concretize_graph(
-            gen.abstract_graph, gen.tensor_dataflow, gen.get_solutions()
-        )
-
-        schedule = Schedule.init(fixed_graph, concrete_abstensors)
-
-        model = self.ModelType.from_schedule(schedule)
+        gen.ir.concretize(gen.get_sat_model())
+        model = self.ModelType.from_gir(gen.ir)
         if self.cfg["debug"]["viz"]:
-            model.attach_viz(fixed_graph)
+            model.attach_viz(gen.ir)
 
         model.refine_weights()  # either random generated or gradient-based.
         oracle = model.make_oracle()

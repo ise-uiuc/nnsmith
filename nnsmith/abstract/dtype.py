@@ -3,7 +3,6 @@ from enum import Enum, unique
 import numpy as np
 
 
-# TODO(@ganler): add float16 support.
 @unique
 class DType(Enum):
     float16 = "float16"
@@ -152,6 +151,21 @@ class DType(Enum):
             tf.complex128: DType.complex128,
             tf.bool: DType.bool,
         }[dtype]
+
+    def sizeof(self) -> int:
+        return {
+            DType.float16: 2,
+            DType.float32: 4,
+            DType.float64: 8,
+            DType.uint8: 1,
+            DType.int8: 1,
+            DType.int16: 2,
+            DType.int32: 4,
+            DType.int64: 8,
+            DType.complex64: 8,
+            DType.complex128: 16,
+            DType.bool: 1,  # Follow C/C++ convention.
+        }[self]
 
 
 DTYPE_ALL = [

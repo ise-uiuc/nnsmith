@@ -79,19 +79,19 @@ class mark_materialize:
         return op_type
 
 
-def int_from(start):
+def rank_from(start):
     return tuple(range(start, __MAX_RANK__ + 1))
 
 
-def int_range(start, end):
+def rank_range(start, end):
     return tuple(range(start, end + 1))
 
 
-def int_until(end):
+def rank_until(end):
     return tuple(range(__MIN_RANK__, end + 1))
 
 
-def int_all():
+def rank_all():
     return tuple(range(__MIN_RANK__, __MAX_RANK__ + 1))
 
 
@@ -417,7 +417,7 @@ class UnaryOpBase(AbsOpBase):
 
     def __init__(self):
         super().__init__()
-        self.out_ranks = [int_all()]
+        self.out_ranks = [rank_all()]
 
 
 class BinaryOpBase(AbsOpBase):
@@ -426,7 +426,7 @@ class BinaryOpBase(AbsOpBase):
 
     def __init__(self):
         super().__init__()
-        self.out_ranks = [int_all()]
+        self.out_ranks = [rank_all()]
 
 
 class TernaryOpBase(AbsOpBase):
@@ -435,14 +435,14 @@ class TernaryOpBase(AbsOpBase):
 
     def __init__(self):
         super().__init__()
-        self.out_ranks = [int_all()]
+        self.out_ranks = [rank_all()]
 
 
 class ElementWiseUnaryOp(UnaryOpBase):
     def __init__(self):
         super().__init__()
-        self.inp_ranks = [int_all()]
-        self.out_ranks = [int_all()]
+        self.inp_ranks = [rank_all()]
+        self.out_ranks = [rank_all()]
 
     def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         SanityCheck.eq(len(input_shapes), 1)
@@ -468,7 +468,7 @@ class BcastBinaryOp(BinaryOpBase):
 
     def __init__(self):
         super().__init__()
-        self.inp_ranks = [int_all(), int_all()]
+        self.inp_ranks = [rank_all(), rank_all()]
 
     def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         tgt_shape = broadcast_shapes(*(ish.shape for ish in input_shapes))
@@ -529,7 +529,7 @@ class Where(TernaryOpBase):
 
     def __init__(self):
         super().__init__()
-        self.inp_ranks = [int_all(), int_all(), int_all()]
+        self.inp_ranks = [rank_all(), rank_all(), rank_all()]
         self.same_inp_dtypes = True
 
     def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
@@ -655,6 +655,14 @@ class Input(AbsOpBase):
     ) -> List[Tuple[int, DType]]:
         pass
 
+    @property
+    def input_like(self):
+        return []
+
+    @property
+    def output_like(self):
+        return [self.abs_tensor]
+
 
 class Constant(AbsOpBase):
     in_dtypes = [()]
@@ -685,6 +693,14 @@ class Constant(AbsOpBase):
         self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
         pass
+
+    @property
+    def input_like(self):
+        return []
+
+    @property
+    def output_like(self):
+        return [self.abs_tensor]
 
 
 class Placeholder:
@@ -862,8 +878,8 @@ class Softmax(ElementWiseUnaryOp):
     def __init__(self, dim: Union[int, z3.ExprRef]):
         super().__init__()
         self.dim = dim
-        self.inp_ranks = [int_from(1)]
-        self.out_ranks = [int_from(1)]
+        self.inp_ranks = [rank_from(1)]
+        self.out_ranks = [rank_from(1)]
 
     def requires(self, input_shapes: List[AbsTensor]) -> List[Union[z3.BoolRef, bool]]:
         return [nnsmith_lt(self.dim, input_shapes[0].ndims), nnsmith_ge(self.dim, 0)]
@@ -989,8 +1005,8 @@ class Slice(UnaryOpBase):
 
     def __init__(self, start, end, step):
         super().__init__()
-        self.inp_ranks = [int_from(1)]
-        self.out_ranks = [int_from(1)]
+        self.inp_ranks = [rank_from(1)]
+        self.out_ranks = [rank_from(1)]
         self.start = start
         self.end = end
         self.step = step
@@ -1103,8 +1119,8 @@ class Pad(UnaryOpBase):
         super().__init__()
         self.padding_list = padding_list
         self.extra_attrs["type"] = pad_t
-        self.inp_ranks = [int_from(len(padding_list) // 2)]
-        self.out_ranks = [int_from(len(padding_list) // 2)]
+        self.inp_ranks = [rank_from(len(padding_list) // 2)]
+        self.out_ranks = [rank_from(len(padding_list) // 2)]
         assert (
             len(self.padding_list) % 2 == 0
         ), f"padding_list must be even, got {self.padding_list}"
@@ -1152,8 +1168,8 @@ class ReplicatePad(Pad):
 
     def __init__(self, *padding_list):
         super().__init__(padding_list, "replicate")
-        self.inp_ranks = [int_range(len(padding_list) // 2 + 1, 4)]
-        self.out_ranks = [int_range(len(padding_list) // 2 + 1, 4)]
+        self.inp_ranks = [rank_range(len(padding_list) // 2 + 1, 4)]
+        self.out_ranks = [rank_range(len(padding_list) // 2 + 1, 4)]
 
 
 @mark_materialize("core")
@@ -1162,8 +1178,8 @@ class ReflectPad(Pad):
 
     def __init__(self, *padding_list):
         super().__init__(padding_list, "reflect")
-        self.inp_ranks = [int_range(len(padding_list) // 2 + 1, 4)]
-        self.out_ranks = [int_range(len(padding_list) // 2 + 1, 4)]
+        self.inp_ranks = [rank_range(len(padding_list) // 2 + 1, 4)]
+        self.out_ranks = [rank_range(len(padding_list) // 2 + 1, 4)]
 
     def requires(self, input_shapes: List[AbsTensor]) -> List[Union[z3.BoolRef, bool]]:
         cons = super().requires(input_shapes)
@@ -1187,7 +1203,7 @@ class Expand(UnaryOpBase, ABC):
     def __init__(self, expand_last_dim: int, expand_n: Union[int, z3.ExprRef]):
         """See https://pytorch.org/docs/stable/generated/torch.Tensor.expand.html"""
         super().__init__()
-        self.inp_ranks = [int_all()]
+        self.inp_ranks = [rank_all()]
         SanityCheck.ge(expand_last_dim, 1)
         self.expand_last_dim = expand_last_dim
         self.expand_n = expand_n
@@ -1544,13 +1560,13 @@ def random_group(n, k):
 
 @mark_materialize("core")
 class Reshape(UnaryOpBase):
-    num_var_param = int_range(1, 4)
+    num_var_param = rank_range(1, 4)
     in_dtypes = [(i,) for i in DTYPE_ALL]
     out_dtypes = [(i,) for i in DTYPE_ALL]
 
     def __init__(self, *target_shape):
         super().__init__()
-        self.inp_ranks = [int_range(1, 4)]
+        self.inp_ranks = [rank_range(1, 4)]
         self.out_ranks = [(len(target_shape),)]
         self.target_shape: List[Union[int, z3.ExprRef]] = list(target_shape)
 
@@ -1649,8 +1665,8 @@ class Transpose(UnaryOpBase):
     def __init__(self):
         """See https://pytorch.org/docs/stable/generated/torch.transpose.html"""
         super().__init__()
-        self.inp_ranks = [int_from(2)]
-        self.out_ranks = [int_from(2)]
+        self.inp_ranks = [rank_from(2)]
+        self.out_ranks = [rank_from(2)]
 
     def _init_swap_dims(self, input_shape: List[Union[int, z3.ExprRef]]):
         ConstraintCheck.ge(len(input_shape), 2)
@@ -1688,7 +1704,7 @@ class Transpose(UnaryOpBase):
 
 
 class InterpBase(UnaryOpBase):
-    num_var_param = int_range(1, 3)
+    num_var_param = rank_range(1, 3)
 
     in_dtypes = [(i,) for i in DTYPE_FLOATS]
     out_dtypes = [(i,) for i in DTYPE_FLOATS]
@@ -1744,8 +1760,8 @@ class ReduceBase(UnaryOpBase, ABC):
 
     def __init__(self):
         super().__init__()
-        self.inp_ranks = [int_from(1)]  # TVM bug ~ crash on scalar.min()
-        self.out_ranks = [int_range(0, __MAX_RANK__ - 1)]
+        self.inp_ranks = [rank_from(1)]  # TVM bug ~ crash on scalar.min()
+        self.out_ranks = [rank_range(0, __MAX_RANK__ - 1)]
 
     def __str__(self) -> str:
         return (
@@ -1909,8 +1925,8 @@ class Concat(AbsOpBase):
         super().__init__()
         SanityCheck.le(arity, Concat.MAX_ARITY)
         self.arity = arity
-        self.inp_ranks = [(int_from(1))] * arity
-        self.out_ranks = [(int_from(1))]
+        self.inp_ranks = [(rank_from(1))] * arity
+        self.out_ranks = [(rank_from(1))]
 
     def _init_concat_axis(self, input_shapes: List[AbsTensor]) -> int:
         if "axis" not in self.extra_attrs:
@@ -1993,8 +2009,8 @@ class Cast(ElementWiseUnaryOp, ABC):
 
     def __init__(self, dtype):
         super().__init__()
-        self.inp_ranks = [int_all()]
-        self.out_ranks = [int_all()]
+        self.inp_ranks = [rank_all()]
+        self.out_ranks = [rank_all()]
         self.extra_attrs = {"to": dtype}
 
     def __str__(self) -> str:
@@ -2061,8 +2077,8 @@ class MatMul(BinaryOpBase):
     def __init__(self):
         super().__init__()
         # Consider at most 3D tensors (batched mm)
-        self.inp_ranks = [int_range(1, 3), int_range(1, 3)]
-        self.out_ranks = [int_until(3)]
+        self.inp_ranks = [rank_range(1, 3), rank_range(1, 3)]
+        self.out_ranks = [rank_until(3)]
 
     def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         # https://pytorch.org/docs/stable/generated/torch.matmul.html#torch.matmul

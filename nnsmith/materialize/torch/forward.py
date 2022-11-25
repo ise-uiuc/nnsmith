@@ -269,9 +269,13 @@ def forward_fn(op: Pad):
         )
 
 
+def type_from_torch_tensor(tensor: torch.Tensor):
+    return AbsTensor(list(tensor.shape), DType.from_torch(tensor.dtype))
+
+
 @operator_impl(Expand)
 def forward_fn(op: Expand):
-    return lambda x: x.expand(*op.type_transfer([AbsTensor.from_torch(x)])[0].shape)
+    return lambda x: x.expand(*op.type_transfer([type_from_torch_tensor(x)])[0].shape)
 
 
 @operator_impl(BatchNorm2d)
