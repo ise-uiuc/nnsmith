@@ -37,7 +37,7 @@ class DType(Enum):
             DType.int64: "i64",
             DType.complex64: "c64",
             DType.complex128: "c128",
-            DType.bool: "bool",
+            DType.bool: "b",
         }[self]
 
     @staticmethod
@@ -56,9 +56,12 @@ class DType(Enum):
             "i64": DType.int64,
             "c64": DType.complex64,
             "c128": DType.complex128,
+            "float16": DType.float16,
             "float32": DType.float32,
             "float64": DType.float64,
+            "uint8": DType.uint8,
             "int8": DType.int8,
+            "int16": DType.int16,
             "int32": DType.int32,
             "int64": DType.int64,
             "complex64": DType.complex64,
@@ -168,13 +171,17 @@ class DType(Enum):
         }[self]
 
 
-DTYPE_ALL = [
+# "DTYPE_GEN*" means data types used for symbolic generation.
+# "DTYPE_GEN_ALL" is surely a subset of all types but it is
+# used to conservatively to avoid unsupported data types while
+# applying nnsmith to various frameworks.
+DTYPE_GEN_ALL = [
     DType.float32,
     DType.float64,
     DType.int32,
     DType.int64,
     DType.bool,
 ]
-DTYPE_NON_BOOLS = [dtype for dtype in DTYPE_ALL if dtype != DType.bool]
-DTYPE_FLOATS = [DType.float32, DType.float64]
-DTYPE_INTS = [DType.int32, DType.int64]
+DTYPE_GEN_NON_BOOL = [dtype for dtype in DTYPE_GEN_ALL if dtype != DType.bool]
+DTYPE_GEN_FLOATS = [DType.float32, DType.float64]
+DTYPE_GEN_INTS = [DType.int32, DType.int64]

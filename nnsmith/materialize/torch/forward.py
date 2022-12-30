@@ -3,7 +3,7 @@ from typing import Type
 
 import torch
 
-from nnsmith.abstract.dtype import DTYPE_INTS
+from nnsmith.abstract.dtype import DTYPE_GEN_INTS
 from nnsmith.abstract.op import *
 from nnsmith.materialize import framework_operator_impl
 from nnsmith.materialize.torch.dialect import Flatten, Linear, TorchReduceSum
@@ -120,7 +120,7 @@ def forward_fn(op: Div):
     return lambda up, down: torch.div(
         up,
         down,
-        rounding_mode="floor" if DType.from_torch(up.dtype) in DTYPE_INTS else None,
+        rounding_mode="floor" if DType.from_torch(up.dtype) in DTYPE_GEN_INTS else None,
     )
 
 
@@ -183,7 +183,7 @@ def forward_fn(op: Ceil):
 
 @operator_impl(Clip)
 def forward_fn(op: Clip):
-    if op.input_like[0].dtype in DTYPE_FLOATS:
+    if op.input_like[0].dtype in DTYPE_GEN_FLOATS:
         return lambda x: torch.clip(x, -1.5, 1.5)
     else:
         return lambda x: torch.clip(x, -1, 1)

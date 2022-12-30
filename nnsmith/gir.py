@@ -51,6 +51,9 @@ def id_checker(id):
     assert id >= 0, "Identifier must be non-negative"
 
 
+VARNAME_SPLITTER = "_"
+
+
 class InstIR:
     def __init__(
         self,
@@ -79,7 +82,9 @@ class InstIR:
                             inst.users[ret_idx].add(self)
 
     def __str__(self):
-        return f"{', '.join(self.retvals())} = {self.iexpr} \t{self.identifier}"
+        return (
+            f"{', '.join(self.retvals())} = {self.iexpr} \t# inst id: {self.identifier}"
+        )
 
     def no_users(self):
         return all(len(u) == 0 for u in self.users)
@@ -99,13 +104,13 @@ class InstIR:
 
     @staticmethod
     def var_inst_idx(varname: str) -> Tuple[int, int]:
-        # parse v[inst-id].[index]
-        tokens = varname[1:].split(".")
+        # parse v[inst-id]_[index]
+        tokens = varname[1:].split(VARNAME_SPLITTER)
         return int(tokens[0]), int(tokens[1])
 
     @staticmethod
     def retval_string(inst_id: int, ret_idx: int) -> str:
-        return f"v{inst_id}.{ret_idx}"
+        return f"v{inst_id}{VARNAME_SPLITTER}{ret_idx}"
 
     def retval(self, index=0) -> str:
         assert index < self.n_output(), f"Only has {self.n_output()} outputs in {self}"
@@ -134,7 +139,7 @@ class InstIR:
 # -----------------------------------------------------------------
 #                         Well-formedness
 # -----------------------------------------------------------------
-#  1. Return name: ${inst.id}.${index(ret)}. e.g., op[0].0, ...
+#  1. Return name: ${inst.id}_${index(ret)}. e.g., op[0]_0, ...
 #  3. Return name is unique.
 # -----------------------------------------------------------------
 
@@ -448,7 +453,7 @@ class GraphIR:
         for inst in self.insts:
             for idx, arg in enumerate(inst.iexpr.args):
                 usee_id, ret_idx = InstIR.var_inst_idx(arg)
-                text += f"  {usee_id}:o{ret_idx} -> {inst.identifier}:i{idx};\n"
+                text += f'  {usee_id}:o{ret_idx} -> {inst.identifier}:i{idx} [label="{self.vars[arg].pretty()}"];\n'
 
         text += "}\n"
         return text

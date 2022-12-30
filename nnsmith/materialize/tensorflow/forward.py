@@ -174,7 +174,7 @@ def forward_fn(op: Ceil):
 
 @operator_impl(Clip)
 def forward_fn(op: Clip):
-    if op.input_like[0].dtype in DTYPE_FLOATS:
+    if op.input_like[0].dtype in DTYPE_GEN_FLOATS:
         return lambda x: tf.clip_by_value(x, -1.5, 1.5)
     else:
         return lambda x: tf.clip_by_value(x, -1, 1)

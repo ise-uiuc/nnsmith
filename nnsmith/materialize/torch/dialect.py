@@ -3,7 +3,7 @@ from random import randint
 from typing import List, Tuple, Union
 
 from nnsmith.abstract.arith import *
-from nnsmith.abstract.dtype import DTYPE_ALL, DTYPE_NON_BOOLS, DType
+from nnsmith.abstract.dtype import DTYPE_GEN_ALL, DTYPE_GEN_NON_BOOL, DType
 from nnsmith.abstract.op import ReduceBase, UnaryOpBase, mark_materialize, rank_from
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import ConstraintCheck
@@ -47,8 +47,8 @@ class Linear(UnaryOpBase):
 
 @mark_materialize("torch")
 class Flatten(UnaryOpBase):
-    in_dtypes = [(i,) for i in DTYPE_ALL]
-    out_dtypes = [(i,) for i in DTYPE_ALL]
+    in_dtypes = [(i,) for i in DTYPE_GEN_ALL]
+    out_dtypes = [(i,) for i in DTYPE_GEN_ALL]
 
     def __init__(self):
         super().__init__()
@@ -75,8 +75,8 @@ class Flatten(UnaryOpBase):
 
 @mark_materialize("torch")
 class TorchReduceSum(ReduceBase):
-    in_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
-    out_dtypes = [(i,) for i in DTYPE_NON_BOOLS]
+    in_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL]
+    out_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL]
 
     def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         output = super().type_transfer(input_shapes)

@@ -14,7 +14,7 @@ from nnsmith.backends.factory import BackendFactory
 from nnsmith.cli.model_exec import verify_testcase
 from nnsmith.error import InternalError
 from nnsmith.filter import FILTERS
-from nnsmith.graph_gen import random_model_gen
+from nnsmith.graph_gen import model_gen
 from nnsmith.logging import FUZZ_LOG
 from nnsmith.macro import NNSMITH_BUG_PATTERN_TOKEN
 from nnsmith.materialize import Model, TestCase
@@ -28,6 +28,7 @@ class StatusCollect:
         mkdir(self.root)
         self.n_testcases = 0
         self.n_bugs = 0
+        self.n_fail_make_test = 0
 
     def get_next_bug_path(self):
         return self.root / f"bug-{NNSMITH_BUG_PATTERN_TOKEN}-{self.n_bugs}"
@@ -155,17 +156,19 @@ class FuzzingLoop:
 
     def make_testcase(self, seed) -> TestCase:
         mgen_cfg = self.cfg["mgen"]
-        gen = random_model_gen(
+        gen = model_gen(
             opset=self.opset,
+            method=mgen_cfg["method"],
             seed=seed,
+            max_elem_per_tensor=mgen_cfg["max_elem_per_tensor"],
             max_nodes=mgen_cfg["max_nodes"],
             timeout_ms=mgen_cfg["timeout_ms"],
         )
 
-        gen.ir.concretize(gen.get_sat_model())
-        model = self.ModelType.from_gir(gen.ir)
+        ir = gen.make_concrete()
+        model = self.ModelType.from_gir(ir)
         if self.cfg["debug"]["viz"]:
-            model.attach_viz(gen.ir)
+            model.attach_viz(ir)
 
         model.refine_weights()  # either random generated or gradient-based.
         oracle = model.make_oracle()
@@ -203,6 +206,7 @@ class FuzzingLoop:
                     f"`make_testcase` failed with seed {seed}. It can be NNSmith or Generator ({self.cfg['model']['type']}) bug."
                 )
                 FUZZ_LOG.error(traceback.format_exc())
+                self.status.n_fail_make_test += 1
                 continue
             time_stat["gen"] = time.time() - gen_start
 
@@ -224,6 +228,9 @@ class FuzzingLoop:
                 f"Timing: { ''.join(f'{k}: {1000 * v:.1f}ms, ' for k, v in time_stat.items()) }"
             )
             self.status.n_testcases += 1
+        FUZZ_LOG.info(f"Total {self.status.n_testcases} testcases generated.")
+        FUZZ_LOG.info(f"Total {self.status.n_bugs} bugs found.")
+        FUZZ_LOG.info(f"Total {self.status.n_fail_make_test} failed to make testcases.")
 
 
 @hydra.main(version_base=None, config_path="../config", config_name="main")

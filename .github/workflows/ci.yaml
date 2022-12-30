@@ -25,12 +25,19 @@ jobs:
       - name: Test TensorFlow
         run: |
           pytest tests/tensorflow
-      - name: Test CLI [model_gen + model_exec]
+      - name: Test CLI [Symbolic model_gen + model_exec]
         run: |
-          yes | python nnsmith/cli/model_gen.py debug.viz=true model.type=torch
-          yes | python nnsmith/cli/model_gen.py model.type=onnx
+          yes | python nnsmith/cli/model_gen.py debug.viz=true model.type=torch mgen.method=symbolic
+          yes | python nnsmith/cli/model_gen.py model.type=onnx mgen.method=symbolic
           python nnsmith/cli/model_exec.py model.type=onnx backend.type=onnxruntime model.path=nnsmith_output/model.onnx
-          yes | python nnsmith/cli/model_gen.py model.type=tensorflow
+          yes | python nnsmith/cli/model_gen.py model.type=tensorflow mgen.method=symbolic
+          python nnsmith/cli/model_exec.py model.type=tensorflow backend.type=xla model.path=nnsmith_output/model/
+      - name: Test CLI [Concolic model_gen + model_exec]
+        run: |
+          yes | python nnsmith/cli/model_gen.py debug.viz=true model.type=torch mgen.method=concolic
+          yes | python nnsmith/cli/model_gen.py model.type=onnx mgen.method=concolic
+          python nnsmith/cli/model_exec.py model.type=onnx backend.type=onnxruntime model.path=nnsmith_output/model.onnx
+          yes | python nnsmith/cli/model_gen.py model.type=tensorflow mgen.method=concolic
           python nnsmith/cli/model_exec.py model.type=tensorflow backend.type=xla model.path=nnsmith_output/model/
       - name: Test CLI [fuzz]
         run: |

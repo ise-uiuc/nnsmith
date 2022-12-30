@@ -7,8 +7,8 @@ from nnsmith.gir import *
 
 @mark_abstract("test")
 class FakeSwap(AbsOpBase):
-    in_dtypes = [(i, i) for i in DTYPE_ALL]
-    out_dtypes = [(i, i) for i in DTYPE_ALL]
+    in_dtypes = [(i, i) for i in DTYPE_GEN_ALL]
+    out_dtypes = [(i, i) for i in DTYPE_GEN_ALL]
 
     def __init__(self):
         super().__init__()
@@ -50,9 +50,9 @@ def test_inst_ir():
     assert iir0.iexpr == iexpr
     assert iir0.n_input() == 0
     assert iir0.n_output() == 1
-    assert iir0.retval() == "v0.0"
-    assert list(iir0.retvals()) == ["v0.0"]
-    assert list(iir0.leaf_var()) == ["v0.0"]
+    assert iir0.retval() == "v0_0"
+    assert list(iir0.retvals()) == ["v0_0"]
+    assert list(iir0.leaf_var()) == ["v0_0"]
 
     op = FakeSwap()
     iexpr = InstExpr(op, [iir0.retval(), iir0.retval()])
@@ -60,10 +60,10 @@ def test_inst_ir():
     assert iir1.iexpr == iexpr
     assert iir1.n_input() == 2
     assert iir1.n_output() == 2
-    assert iir1.retval() == "v1.0"
-    assert iir1.retval(0) == "v1.0"
-    assert iir1.retval(1) == "v1.1"
-    assert iir1.retvals() == ["v1.0", "v1.1"]
+    assert iir1.retval() == "v1_0"
+    assert iir1.retval(0) == "v1_0"
+    assert iir1.retval(1) == "v1_1"
+    assert iir1.retvals() == ["v1_0", "v1_1"]
 
     inst_id, index = InstIR.var_inst_idx(iir1.retval(1))
     assert inst_id == 1  # The id of 2nd inst should be 1 (given `irctx`).
@@ -93,12 +93,12 @@ def test_gir_mutate():
     assert ir.n_var() == 3
     assert ir.n_compute_inst() == 1
     assert len(ir.leaf_inst()) == 1
-    assert ir.leaf_var() == [f"v{swap1.identifier}.0", f"v{swap1.identifier}.1"]
+    assert ir.leaf_var() == [f"v{swap1.identifier}_0", f"v{swap1.identifier}_1"]
 
     assert (
         ir.pretty()
-        == """v0.0 = Placeholder() \t# inst id: 0
-v1.0, v1.1 = test.FakeSwap(v0.0, v0.0) \t# inst id: 1
+        == """v0_0 = Placeholder() \t# inst id: 0
+v1_0, v1_1 = test.FakeSwap(v0_0, v0_0) \t# inst id: 1
 """
     )
 
@@ -115,14 +115,14 @@ v1.0, v1.1 = test.FakeSwap(v0.0, v0.0) \t# inst id: 1
     assert ir.n_var() == 4
     assert ir.n_compute_inst() == 1
     assert len(ir.leaf_inst()) == 1
-    assert ir.leaf_var() == [f"v{swap1.identifier}.0", f"v{swap1.identifier}.1"]
+    assert ir.leaf_var() == [f"v{swap1.identifier}_0", f"v{swap1.identifier}_1"]
     ir.assert_wellform()
 
     assert (
         ir.pretty()
-        == """v0.0 = Placeholder() \t# inst id: 0
-v1.0 = Placeholder() \t# inst id: 1
-v2.0, v2.1 = test.FakeSwap(v0.0, v1.0) \t# inst id: 2
+        == """v0_0 = Placeholder() \t# inst id: 0
+v1_0 = Placeholder() \t# inst id: 1
+v2_0, v2_1 = test.FakeSwap(v0_0, v1_0) \t# inst id: 2
 """
     )
 
@@ -133,18 +133,18 @@ v2.0, v2.1 = test.FakeSwap(v0.0, v1.0) \t# inst id: 2
     assert ir.n_compute_inst() == 2
     assert len(ir.leaf_inst()) == 1
     assert ir.leaf_var() == [
-        f"v{swap1.identifier}.1",
-        f"v{swap2.identifier}.0",
-        f"v{swap2.identifier}.1",
+        f"v{swap1.identifier}_1",
+        f"v{swap2.identifier}_0",
+        f"v{swap2.identifier}_1",
     ]
     ir.assert_wellform()
 
     assert (
         ir.pretty()
-        == """v0.0 = Placeholder() \t# inst id: 0
-v1.0 = Placeholder() \t# inst id: 1
-v2.0, v2.1 = test.FakeSwap(v0.0, v1.0) \t# inst id: 2
-v3.0, v3.1 = test.FakeSwap(v2.0, v2.0) \t# inst id: 3
+        == """v0_0 = Placeholder() \t# inst id: 0
+v1_0 = Placeholder() \t# inst id: 1
+v2_0, v2_1 = test.FakeSwap(v0_0, v1_0) \t# inst id: 2
+v3_0, v3_1 = test.FakeSwap(v2_0, v2_0) \t# inst id: 3
 """
     )
 
@@ -157,15 +157,15 @@ v3.0, v3.1 = test.FakeSwap(v2.0, v2.0) \t# inst id: 3
     assert ir.n_var() == 5
     assert ir.n_compute_inst() == 2
     assert len(ir.leaf_inst()) == 1
-    assert ir.leaf_var() == [f"v{swap2.identifier}.0", f"v{swap2.identifier}.1"]
+    assert ir.leaf_var() == [f"v{swap2.identifier}_0", f"v{swap2.identifier}_1"]
     ir.assert_wellform()
 
     assert (
         ir.pretty()
-        == """v0.0 = Placeholder() \t# inst id: 0
-v1.0 = Placeholder() \t# inst id: 1
-v2.0 = core.Add(v0.0, v1.0) \t# inst id: 2
-v3.0, v3.1 = test.FakeSwap(v2.0, v2.0) \t# inst id: 3
+        == """v0_0 = Placeholder() \t# inst id: 0
+v1_0 = Placeholder() \t# inst id: 1
+v2_0 = core.Add(v0_0, v1_0) \t# inst id: 2
+v3_0, v3_1 = test.FakeSwap(v2_0, v2_0) \t# inst id: 3
 """
     )
 
@@ -221,8 +221,8 @@ def test_gir_dot():
 
     assert (
         ir.pretty()
-        == """v0.0 = Placeholder() \t# inst id: 0
-v1.0, v1.1 = test.FakeSwap(v0.0, v0.0) \t# inst id: 1
+        == """v0_0 = Placeholder() \t# inst id: 0
+v1_0, v1_1 = test.FakeSwap(v0_0, v0_0) \t# inst id: 1
 """
     )
 
@@ -230,10 +230,10 @@ v1.0, v1.1 = test.FakeSwap(v0.0, v0.0) \t# inst id: 1
         ir.to_dot()
         == r"""digraph D {
   node [shape=Mrecord];
-  0 [label="{Placeholder|{<o0> v0.0}}",fillcolor=lightgray,style=filled,];
-  1 [label="{{<i0> v0.0|<i1> v0.0}|test.FakeSwap|{<o0> v1.0|<o1> v1.1}}",];
-  0:o0 -> 1:i0;
-  0:o0 -> 1:i1;
+  0 [label="{Placeholder|{<o0> v0_0}}",fillcolor=lightgray,style=filled,];
+  1 [label="{{<i0> v0_0|<i1> v0_0}|test.FakeSwap|{<o0> v1_0|<o1> v1_1}}",];
+  0:o0 -> 1:i0 [label="f32[2, 3, 3]"];
+  0:o0 -> 1:i1 [label="f32[2, 3, 3]"];
 }
 """
     )

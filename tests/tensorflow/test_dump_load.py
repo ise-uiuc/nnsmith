@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from nnsmith.graph_gen import random_model_gen
+from nnsmith.graph_gen import model_gen
 from nnsmith.materialize import TestCase
 from nnsmith.materialize.tensorflow import TFModelCPU, tf_dict_from_np
 from nnsmith.narrow_spec import auto_opset
@@ -13,15 +13,15 @@ def test_onnx_load_dump(tmp_path):
     d = tmp_path / "test_onnx_load_dump"
     d.mkdir()
 
-    gen = random_model_gen(
+    gen = model_gen(
         opset=auto_opset(TFModelCPU),
         seed=54341,
         max_nodes=5,
     )
 
-    gen.ir.concretize(gen.get_sat_model())
+    ir = gen.make_concrete()
 
-    model = TFModelCPU.from_gir(gen.ir)
+    model = TFModelCPU.from_gir(ir)
 
     model.refine_weights()  # either random generated or gradient-based.
     oracle = model.make_oracle()
