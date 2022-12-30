@@ -22,8 +22,11 @@ class AbsTensor:
     def __hash__(self) -> int:
         return hash((tuple(self.shape), self.dtype))
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"AbsTensor<{self.dtype.short()}>{str(self.shape)}"
+
+    def pretty(self) -> str:
+        return f"{self.dtype.short()}{self.shape}"
 
     def weak_compare(self, other: "AbsTensor") -> bool:
         if self.dtype != other.dtype or self.ndims != other.ndims:
@@ -40,6 +43,24 @@ class AbsTensor:
 
     def __eq__(self, other: "AbsTensor") -> bool:
         return self.strong_compare(other)
+
+    def ge_zero(self):
+        ret = []
+        for s in self.shape:
+            if isinstance(s, z3.ExprRef):
+                ret.append(nnsmith_ge(s, 0))
+            else:
+                ConstraintCheck.ge(s, 0)
+        return ret
+
+    def sym_gt_conc_ge_zero(self):
+        ret = []
+        for s in self.shape:
+            if isinstance(s, z3.ExprRef):
+                ret.append(nnsmith_gt(s, 0))
+            else:
+                ConstraintCheck.ge(s, 0)
+        return ret
 
     def gt_zero(self):
         ret = []
@@ -87,3 +108,6 @@ class AbsTensor:
 
     def is_concrete(self) -> bool:
         return all(isinstance(s, int) for s in self.shape)
+
+    def htype(self):  # High-level type
+        return (self.dtype, self.ndims)

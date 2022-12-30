@@ -8,7 +8,7 @@ if not GPUtil.getAvailable():
 
 from nnsmith.abstract.dtype import DType
 from nnsmith.backends import BackendFactory
-from nnsmith.graph_gen import random_model_gen
+from nnsmith.graph_gen import model_gen
 from nnsmith.materialize import Model, TestCase
 from nnsmith.narrow_spec import auto_opconfig, auto_opset
 
@@ -41,14 +41,13 @@ def test_synthesized_onnx_model(tmp_path):
     ONNXModel = Model.init("onnx")
     factory = BackendFactory.init("tensorrt", target="cuda", optmax=True)
 
-    gen = random_model_gen(
+    gen = model_gen(
         opset=auto_opset(ONNXModel, factory),
         seed=23132,
         max_nodes=1,
     )  # One op should not be easily wrong... I guess.
 
-    gen.ir.concretize(gen.get_sat_model())
-    model = ONNXModel.from_gir(gen.ir)
+    model = ONNXModel.from_gir(gen.make_concrete())
 
     assert model.with_torch
 

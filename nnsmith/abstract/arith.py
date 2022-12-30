@@ -2,7 +2,7 @@ from typing import Union
 
 import z3
 
-from nnsmith.error import SanityCheck
+from nnsmith.error import ConstraintCheck, SanityCheck
 
 ARITH_MAX_WIDTH: int = 64
 
@@ -163,6 +163,7 @@ def nnsmith_div(
     if isinstance(left, z3.BitVecRef) or isinstance(right, z3.BitVecRef):
         return z3.UDiv(left, right)
     if isinstance(left, int) and isinstance(right, int):
+        ConstraintCheck.true(right != 0, "Div by zero")
         return left // right
     return left / right
 
@@ -173,6 +174,8 @@ def nnsmith_mod(
     left, right = align_bvs(left, right)
     if isinstance(left, z3.BitVecRef) or isinstance(right, z3.BitVecRef):
         return z3.URem(left, right)
+    if isinstance(right, int):
+        ConstraintCheck.true(right != 0, "Mod by zero")
     return left % right
 
 

@@ -3,7 +3,7 @@ import tensorflow as tf
 
 from nnsmith.abstract.dtype import DType
 from nnsmith.backends import BackendFactory
-from nnsmith.graph_gen import random_model_gen
+from nnsmith.graph_gen import model_gen
 from nnsmith.materialize import Model, TestCase
 from nnsmith.narrow_spec import auto_opconfig, auto_opset
 
@@ -42,14 +42,13 @@ def test_synthesized_tf_model(tmp_path):
 
         ModelType = Model.init("tensorflow", backend_target=target)
 
-        gen = random_model_gen(
+        gen = model_gen(
             opset=auto_opset(ModelType, factory),
             seed=23132,
             max_nodes=4,
         )  # One op should not be easily wrong... I guess.
 
-        gen.ir.concretize(gen.get_sat_model())
-        model = ModelType.from_gir(gen.ir)
+        model = ModelType.from_gir(gen.make_concrete())
 
         oracle = model.make_oracle()
 

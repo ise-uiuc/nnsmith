@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import torch
 
-from nnsmith.graph_gen import random_model_gen
+from nnsmith.graph_gen import model_gen
 from nnsmith.materialize import Oracle, TestCase
 from nnsmith.materialize.onnx import ONNXModel
 from nnsmith.narrow_spec import auto_opset
@@ -23,14 +23,13 @@ def test_onnx_load_dump(tmp_path):
     d = tmp_path / "test_onnx_load_dump"
     d.mkdir()
 
-    gen = random_model_gen(
+    gen = model_gen(
         opset=auto_opset(ONNXModel),
         seed=54341,
         max_nodes=5,
     )
 
-    gen.ir.concretize(gen.get_sat_model())
-    model = ONNXModel.from_gir(gen.ir)
+    model = ONNXModel.from_gir(gen.make_concrete())
 
     assert model.with_torch
 
@@ -55,14 +54,13 @@ def test_bug_report_load_dump(tmp_path):
     d = tmp_path / "test_onnx_load_dump"
     d.mkdir()
 
-    gen = random_model_gen(
+    gen = model_gen(
         opset=auto_opset(ONNXModel),
         seed=5341,
         max_nodes=5,
     )
 
-    gen.ir.concretize(gen.get_sat_model())
-    model = ONNXModel.from_gir(gen.ir)
+    model = ONNXModel.from_gir(gen.make_concrete())
 
     assert model.with_torch
 
