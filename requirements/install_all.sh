@@ -23,12 +23,11 @@ find . -name '*.txt' | while read -r dep_file; do
             echo "Skipping tensorrt"
             continue
         fi
-
-        UPGRADE_PACKAGES=""
         if [[ "$dep_file" == *"sys"* ]]; then
             # Files under sys should be nightly releases
-            UPGRADE_PACKAGES="--upgrade --pre"
+            pip install -r "$dep_file" --upgrade --pre
+        else
+            pip install -r "$dep_file"
         fi
-        pip install -r "$dep_file $UPGRADE_PACKAGES"
     fi
 done
