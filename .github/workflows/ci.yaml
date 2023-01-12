@@ -27,18 +27,18 @@ jobs:
           pip install -r requirements/sys/onnxruntime.txt --pre --upgrade
           pytest tests/torch
           yes | python nnsmith/cli/model_gen.py debug.viz=true model.type=torch mgen.method=symbolic
+          yes | python nnsmith/cli/model_gen.py debug.viz=true model.type=torch mgen.method=symbolic-cinit
           yes | python nnsmith/cli/model_gen.py debug.viz=true model.type=torch mgen.method=concolic
       - name: Test ONNX + ONNXRuntime
         run: |
           yes | python nnsmith/cli/model_gen.py model.type=onnx mgen.method=symbolic
-          python nnsmith/cli/model_exec.py model.type=onnx backend.type=onnxruntime model.path=nnsmith_output/model.onnx
-          yes | python nnsmith/cli/model_gen.py model.type=onnx mgen.method=concolic
+          yes | python nnsmith/cli/model_gen.py model.type=onnx backend.type=onnxruntime mgen.method=concolic
           python nnsmith/cli/model_exec.py model.type=onnx backend.type=onnxruntime model.path=nnsmith_output/model.onnx
       - name: Test TensorFlow
         run: |
           pip install -r requirements/sys/tensorflow.txt --pre --upgrade
           pip install -r requirements/sys/iree.txt --pre --upgrade
-          pytest tests/tensorflow
+          pytest tests/tensorflow --log-cli-level=DEBUG
           yes | python nnsmith/cli/model_gen.py model.type=tensorflow mgen.method=symbolic
           python nnsmith/cli/model_exec.py model.type=tensorflow backend.type=xla model.path=nnsmith_output/model/
           yes | python nnsmith/cli/model_gen.py model.type=tensorflow mgen.method=concolic
