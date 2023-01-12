@@ -31,5 +31,3 @@ find . -name '*.txt' | while read -r dep_file; do
         fi
     fi
 done
-
-pip install "protobuf<4,>=3.20.2" # workaround onnx requirement issue.

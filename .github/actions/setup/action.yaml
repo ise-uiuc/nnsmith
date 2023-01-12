@@ -37,7 +37,8 @@ runs:
     - name: install dependencies
       run: |
         if [ ${{ inputs.mode == 'all' }} ]; then
-          bash requirements/install_all.sh
+          pip install -r requirements/core.txt
+          pip install -r requirements/dev.txt
         fi
         echo "PYTHONPATH=$PYTHONPATH:${GITHUB_WORKSPACE}" >> $GITHUB_ENV
       shell: bash

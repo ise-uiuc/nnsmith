@@ -19,26 +19,26 @@ jobs:
       - name: Test core
         run: |
           pytest tests/core
-      - name: Test torch
+      - name: Test PyTorch
         run: |
+          pip install -r requirements/sys/torch.txt --pre --upgrade
           pytest tests/torch
-      - name: Test TensorFlow
-        run: |
-          pytest tests/tensorflow
-      - name: Test CLI [Symbolic model_gen + model_exec]
-        run: |
           yes | python nnsmith/cli/model_gen.py debug.viz=true model.type=torch mgen.method=symbolic
+          yes | python nnsmith/cli/model_gen.py debug.viz=true model.type=torch mgen.method=concolic
+      - name: Test ONNX + ONNXRuntime
+        run: |
+          pip install -r requirements/sys/onnx.txt --pre --upgrade
+          pip install -r requirements/sys/onnxruntime.txt --pre --upgrade
           yes | python nnsmith/cli/model_gen.py model.type=onnx mgen.method=symbolic
           python nnsmith/cli/model_exec.py model.type=onnx backend.type=onnxruntime model.path=nnsmith_output/model.onnx
-          yes | python nnsmith/cli/model_gen.py model.type=tensorflow mgen.method=symbolic
-          python nnsmith/cli/model_exec.py model.type=tensorflow backend.type=xla model.path=nnsmith_output/model/
-      - name: Test CLI [Concolic model_gen + model_exec]
-        run: |
-          yes | python nnsmith/cli/model_gen.py debug.viz=true model.type=torch mgen.method=concolic
           yes | python nnsmith/cli/model_gen.py model.type=onnx mgen.method=concolic
           python nnsmith/cli/model_exec.py model.type=onnx backend.type=onnxruntime model.path=nnsmith_output/model.onnx
+      - name: Test TensorFlow
+        run: |
+          pip install -r requirements/sys/tensorflow.txt --pre --upgrade
+          pytest tests/tensorflow
+          yes | python nnsmith/cli/model_gen.py model.type=tensorflow mgen.method=symbolic
+          python nnsmith/cli/model_exec.py model.type=tensorflow backend.type=xla model.path=nnsmith_output/model/
           yes | python nnsmith/cli/model_gen.py model.type=tensorflow mgen.method=concolic
           python nnsmith/cli/model_exec.py model.type=tensorflow backend.type=xla model.path=nnsmith_output/model/
-      - name: Test CLI [fuzz]
-        run: |
           yes | python nnsmith/cli/fuzz.py fuzz.time=10s fuzz.root=fuzz_report model.type=tensorflow backend.type=xla filter.type="[nan,inf,test_fn,test_cls]" filter.patch=./tests/mock/filter_patch.py
