@@ -22,13 +22,14 @@ jobs:
       - name: Test PyTorch
         run: |
           pip install -r requirements/sys/torch.txt --pre --upgrade
+          pip install -r requirements/sys/onnx.txt --pre --upgrade
+          pip install -r requirements/sys/tvm.txt --pre --upgrade
+          pip install -r requirements/sys/onnxruntime.txt --pre --upgrade
           pytest tests/torch
           yes | python nnsmith/cli/model_gen.py debug.viz=true model.type=torch mgen.method=symbolic
           yes | python nnsmith/cli/model_gen.py debug.viz=true model.type=torch mgen.method=concolic
       - name: Test ONNX + ONNXRuntime
         run: |
-          pip install -r requirements/sys/onnx.txt --pre --upgrade
-          pip install -r requirements/sys/onnxruntime.txt --pre --upgrade
           yes | python nnsmith/cli/model_gen.py model.type=onnx mgen.method=symbolic
           python nnsmith/cli/model_exec.py model.type=onnx backend.type=onnxruntime model.path=nnsmith_output/model.onnx
           yes | python nnsmith/cli/model_gen.py model.type=onnx mgen.method=concolic
@@ -36,6 +37,7 @@ jobs:
       - name: Test TensorFlow
         run: |
           pip install -r requirements/sys/tensorflow.txt --pre --upgrade
+          pip install -r requirements/sys/iree.txt --pre --upgrade
           pytest tests/tensorflow
           yes | python nnsmith/cli/model_gen.py model.type=tensorflow mgen.method=symbolic
           python nnsmith/cli/model_exec.py model.type=tensorflow backend.type=xla model.path=nnsmith_output/model/
