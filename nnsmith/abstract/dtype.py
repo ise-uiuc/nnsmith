@@ -175,6 +175,7 @@ class DType(Enum):
 # "DTYPE_GEN_ALL" is surely a subset of all types but it is
 # used to conservatively to avoid unsupported data types while
 # applying nnsmith to various frameworks.
+DTYPE_ALL = [dt for dt in DType]
 DTYPE_GEN_ALL = [
     DType.float32,
     DType.float64,

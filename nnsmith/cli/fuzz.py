@@ -163,6 +163,8 @@ class FuzzingLoop:
             max_elem_per_tensor=mgen_cfg["max_elem_per_tensor"],
             max_nodes=mgen_cfg["max_nodes"],
             timeout_ms=mgen_cfg["timeout_ms"],
+            rank_choices=mgen_cfg["rank_choices"],
+            dtype_choices=mgen_cfg["dtype_choices"],
         )
 
         ir = gen.make_concrete()

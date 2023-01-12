@@ -33,6 +33,8 @@ mgen: # model gen.
   save: "nnsmith_output"
   seed: null
   max_elem_per_tensor: 65536 # 2^16
+  rank_choices: null # 0 ~ __MAX_RANK__
+  dtype_choices: null # 0 ~ __MAX_DTYPE__
 
 # backend config
 backend:

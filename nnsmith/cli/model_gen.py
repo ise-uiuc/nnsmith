@@ -49,6 +49,8 @@ def main(cfg: DictConfig):
         max_elem_per_tensor=mgen_cfg["max_elem_per_tensor"],
         max_nodes=mgen_cfg["max_nodes"],
         timeout_ms=mgen_cfg["timeout_ms"],
+        rank_choices=mgen_cfg["rank_choices"],
+        dtype_choices=mgen_cfg["dtype_choices"],
     )
     tgen = time.time() - tgen_begin
 
@@ -63,9 +65,6 @@ def main(cfg: DictConfig):
     # MATERIALIZATION
     tmat_begin = time.time()
     ir = gen.make_concrete()
-
-    if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
-        ir.debug()
 
     MGEN_LOG.info(
         f"Generated DNN has {ir.n_var()} variables and {ir.n_compute_inst()} operators."
