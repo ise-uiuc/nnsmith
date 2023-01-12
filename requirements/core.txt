@@ -1,5 +1,5 @@
 z3-solver>=4.11.0
 hydra-core>=1.2.0
-hydra_colorlog
+hydra-colorlog>=1.2.0
 multipledispatch
 appdirs
