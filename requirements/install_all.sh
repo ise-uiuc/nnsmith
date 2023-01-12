@@ -29,6 +29,6 @@ find . -name '*.txt' | while read -r dep_file; do
             # Files under sys should be nightly releases
             UPGRADE_PACKAGES="--upgrade --pre"
         fi
-        pip install -r "$dep_file" "$UPGRADE_PACKAGES"
+        pip install -r "$dep_file $UPGRADE_PACKAGES"
     fi
 done
