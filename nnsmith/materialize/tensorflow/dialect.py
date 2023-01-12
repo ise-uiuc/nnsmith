@@ -8,6 +8,7 @@ from nnsmith.abstract.op import (
     Z3_CONS_FLOPS,
     BcastBinaryOp,
     ElementWiseUnaryOp,
+    MatMul,
     UnaryOpBase,
     mark_materialize,
     rank_from,
@@ -269,3 +270,11 @@ class NHWCConv2dSamePad(NHWCConv2d):
             dilation_w,
             "same",
         )
+
+
+@mark_materialize("tensorflow")
+class TFMatMul(MatMul):
+    def __init__(self):
+        super().__init__()
+        self.inp_ranks = [(2, 3), (2, 3)]
+        self.out_ranks = [(2, 3)]

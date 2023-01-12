@@ -2111,15 +2111,8 @@ class MatMul(BinaryOpBase):
 
         while not check_sat():
             inc_candidates = []
-            if ranks[1] < 2:
-                inc_candidates.append(1)
-            else:
-                inc_candidates.append(0)
-
-            if ranks[3] < 2:
-                inc_candidates.append(3)
-            else:
-                inc_candidates.append(2)
+            inc_candidates.append(1 if ranks[1] < 2 else 0)
+            inc_candidates.append(3 if ranks[3] < 2 else 2)
             choice = random.choice(inc_candidates)
             ranks[choice] += 1
 
