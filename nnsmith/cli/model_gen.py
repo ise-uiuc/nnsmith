@@ -6,12 +6,13 @@ import time
 import hydra
 from omegaconf import DictConfig
 
+from nnsmith.abstract.extension import activate_ext
 from nnsmith.backends.factory import BackendFactory
 from nnsmith.graph_gen import SymbolicGen, model_gen, viz
 from nnsmith.logging import MGEN_LOG
 from nnsmith.materialize import Model, TestCase
 from nnsmith.narrow_spec import auto_opset
-from nnsmith.util import mkdir, op_filter
+from nnsmith.util import hijack_patch_requires, mkdir, op_filter
 
 
 @hydra.main(version_base=None, config_path="../config", config_name="main")
@@ -40,10 +41,13 @@ def main(cfg: DictConfig):
 
     # GENERATION
     opset = auto_opset(ModelType, factory, vulops=mgen_cfg["vulops"])
+    opset = op_filter(opset, mgen_cfg["include"], mgen_cfg["exclude"])
+    hijack_patch_requires(mgen_cfg["patch_requires"])
+    activate_ext(opset=opset, factory=factory)
 
     tgen_begin = time.time()
     gen = model_gen(
-        opset=op_filter(opset, mgen_cfg["include"], mgen_cfg["exclude"]),
+        opset=opset,
         method=mgen_cfg["method"],
         seed=seed,
         max_elem_per_tensor=mgen_cfg["max_elem_per_tensor"],

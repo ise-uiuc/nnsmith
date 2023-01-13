@@ -91,6 +91,28 @@ yes | python nnsmith/cli/model_gen.py model.type=torch mgen.method=symbolic-cini
                                                        debug.viz=true
 ```
 
+## Add extra constraints
+
+```shell
+# Create patch file as `patch.py`
+echo 'from nnsmith.abstract.arith import nnsmith_lt
+from nnsmith.abstract.extension import patch_requires
+
+
+@patch_requires("global", "core.NCHWConv2d")
+def limit_conv2d(self, _):
+    # let the kernels to be > 3
+    return [nnsmith_lt(3, self.kernel_h_size), nnsmith_lt(3, self.kernel_w_size)]
+' > patch.py
+# Apply the patch with `mgen.patch_requires="[./tests/mock/requires_patch.py]"`
+yes | python nnsmith/cli/model_gen.py model.type=torch mgen.method=symbolic-cinit \
+                                                       mgen.rank_choices="[4]"    \
+                                                       mgen.dtype_choices="[f32]" \
+                                                       mgen.include="[core.NCHWConv2d, core.ReLU]" \
+                                                       mgen.patch_requires="[./tests/mock/requires_patch.py]" \
+                                                       debug.viz=true
+```
+
 ## Misc
 
 TensorFlow logging can be very noisy. Use `TF_CPP_MIN_LOG_LEVEL=3` as environmental variable to depress that.

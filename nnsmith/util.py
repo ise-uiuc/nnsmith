@@ -1,9 +1,14 @@
 import os
 import random
 import shutil
+from importlib.util import module_from_spec, spec_from_file_location
+from os import PathLike
 from typing import Callable, Dict, List
 
 import numpy as np
+
+from nnsmith.abstract.extension import activate_ext
+from nnsmith.logging import MGEN_LOG
 
 try:
     import pygraphviz as pgv
@@ -143,3 +148,17 @@ def op_filter(topset, include=None, exclude=None):
         return [op for op in topset if op.name() not in exclude]
 
     return topset
+
+
+def hijack_patch_requires(patch_paths: List[PathLike]):
+    for f in patch_paths:
+        assert os.path.isfile(
+            f
+        ), "mgen.requires_patch must be a list of file locations."
+        text = open(f).read()
+        assert (
+            "@patch_requires(" in text
+        ), f"No patch found in the {f} after checking `@patch_requires(`"
+        spec = spec_from_file_location("nnsmith.ext.patch_requires", f)
+        spec.loader.exec_module(module_from_spec(spec))
+        MGEN_LOG.info(f"Import patch_requires from {f}")

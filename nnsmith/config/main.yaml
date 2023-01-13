@@ -14,6 +14,7 @@ mgen: # model gen.
   dtype_choices: null # 0 ~ __MAX_DTYPE__
   include: null # ops to include; example mgen.include="[core.NCHWConv2d, core.ReLU]"
   exclude: null # ops to exclude;
+  patch_requires: [] # files that with @patch_requires
 
 # backend config
 backend:
