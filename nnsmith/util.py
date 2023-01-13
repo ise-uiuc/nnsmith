@@ -129,3 +129,17 @@ def viz_dot(dotobj, filename: str = None):
 
         dotobj.layout("dot")
         dotobj.draw(filename)
+
+
+def op_filter(topset, include=None, exclude=None):
+    if include is not None and exclude is not None:
+        # use either include or exclude
+        raise ValueError("Cannot use both include and exclude")
+
+    if include:
+        return [op for op in topset if op.name() in include]
+
+    if exclude:
+        return [op for op in topset if op.name() not in exclude]
+
+    return topset

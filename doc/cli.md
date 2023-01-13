@@ -76,6 +76,21 @@ nnsmith.fuzz fuzz.time=30s model.type=onnx backend.type=tvm fuzz.root=fuzz_repor
 # Bug reports are stored in `./fuzz_report`.
 ```
 
+## Limit operator types, ranks and data types
+
+To limit:
+- rank only to be 4 (needed by Conv2d);
+- data type only to be float32;
+- only include Conv2d and ReLU.
+
+```shell
+yes | python nnsmith/cli/model_gen.py model.type=torch mgen.method=symbolic-cinit \
+                                                       mgen.rank_choices="[4]"    \
+                                                       mgen.dtype_choices="[f32]" \
+                                                       mgen.include="[core.NCHWConv2d, core.ReLU]" \
+                                                       debug.viz=true
+```
+
 ## Misc
 
 TensorFlow logging can be very noisy. Use `TF_CPP_MIN_LOG_LEVEL=3` as environmental variable to depress that.

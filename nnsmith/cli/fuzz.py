@@ -19,7 +19,7 @@ from nnsmith.logging import FUZZ_LOG
 from nnsmith.macro import NNSMITH_BUG_PATTERN_TOKEN
 from nnsmith.materialize import Model, TestCase
 from nnsmith.narrow_spec import auto_opset
-from nnsmith.util import mkdir, parse_timestr, set_seed
+from nnsmith.util import mkdir, op_filter, parse_timestr, set_seed
 
 
 class StatusCollect:
@@ -130,8 +130,10 @@ class FuzzingLoop:
             model_cfg["type"], backend_target=cfg["backend"]["target"]
         )
         self.ModelType.add_seed_setter()
-        self.opset = auto_opset(
-            self.ModelType, self.factory, vulops=cfg["mgen"]["vulops"]
+        self.opset = op_filter(
+            auto_opset(self.ModelType, self.factory, vulops=cfg["mgen"]["vulops"]),
+            cfg["mgen"]["include"],
+            cfg["mgen"]["exclude"],
         )
 
         seed = cfg["fuzz"]["seed"] or random.getrandbits(32)

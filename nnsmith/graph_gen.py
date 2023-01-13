@@ -59,7 +59,12 @@ class BaseGen:
         self.max_elem_per_tensor = max_elem_per_tensor
         self.rank_choices = rank_choices if rank_choices else rank_all()
         self.dtype_choices = (
-            [DType.from_str(s) for s in dtype_choices] if dtype_choices else DTYPE_ALL
+            [
+                dt if isinstance(dt, DType) else DType.from_str(dt)
+                for dt in dtype_choices
+            ]
+            if dtype_choices
+            else DTYPE_ALL
         )
         assert len(self.dtype_choices) > 0, "dtype_choices must not be empty"
         assert len(self.rank_choices) > 0, "rank_choices must not be empty"

@@ -11,7 +11,7 @@ from nnsmith.graph_gen import SymbolicGen, model_gen, viz
 from nnsmith.logging import MGEN_LOG
 from nnsmith.materialize import Model, TestCase
 from nnsmith.narrow_spec import auto_opset
-from nnsmith.util import mkdir
+from nnsmith.util import mkdir, op_filter
 
 
 @hydra.main(version_base=None, config_path="../config", config_name="main")
@@ -43,7 +43,7 @@ def main(cfg: DictConfig):
 
     tgen_begin = time.time()
     gen = model_gen(
-        opset=opset,
+        opset=op_filter(opset, mgen_cfg["include"], mgen_cfg["exclude"]),
         method=mgen_cfg["method"],
         seed=seed,
         max_elem_per_tensor=mgen_cfg["max_elem_per_tensor"],
