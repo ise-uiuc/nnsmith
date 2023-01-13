@@ -1,9 +1,14 @@
 import os
 import random
 import shutil
-from typing import Callable, Dict, List
+from importlib.util import module_from_spec, spec_from_file_location
+from os import PathLike
+from typing import Callable, Dict, List, Union
 
 import numpy as np
+from omegaconf import ListConfig
+
+from nnsmith.logging import MGEN_LOG
 
 try:
     import pygraphviz as pgv
@@ -129,3 +134,34 @@ def viz_dot(dotobj, filename: str = None):
 
         dotobj.layout("dot")
         dotobj.draw(filename)
+
+
+def op_filter(topset, include=None, exclude=None):
+    if include is not None and exclude is not None:
+        # use either include or exclude
+        raise ValueError("Cannot use both include and exclude")
+
+    if include:
+        return [op for op in topset if op.name() in include]
+
+    if exclude:
+        return [op for op in topset if op.name() not in exclude]
+
+    return topset
+
+
+def hijack_patch_requires(patch_paths: Union[PathLike, List[PathLike]]):
+    patch_paths = (
+        patch_paths if isinstance(patch_paths, (ListConfig, list)) else [patch_paths]
+    )
+    for f in patch_paths:
+        assert os.path.isfile(
+            f
+        ), "mgen.requires_patch must be a list of file locations."
+        text = open(f).read()
+        assert (
+            "@patch_requires(" in text
+        ), f"No patch found in the {f} after checking `@patch_requires(`"
+        spec = spec_from_file_location("nnsmith.ext.patch_requires", f)
+        spec.loader.exec_module(module_from_spec(spec))
+        MGEN_LOG.info(f"Import patch_requires from {f}")

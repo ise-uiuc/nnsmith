@@ -39,6 +39,8 @@ class BaseGen:
         forward_prob=None,
         concr_ph_dim_rng=(1, 64),
         max_elem_per_tensor=2**16,
+        rank_choices=None,
+        dtype_choices=None,
     ):
         assert len(opset) > 0, "opset must not be empty"
         if seed is not None:
@@ -55,9 +57,20 @@ class BaseGen:
         self.forward_prob = 0.5 if forward_prob is None else forward_prob
         self.concr_ph_dim_rng = concr_ph_dim_rng
         self.max_elem_per_tensor = max_elem_per_tensor
+        self.rank_choices = rank_choices if rank_choices else rank_all()
+        self.dtype_choices = (
+            [
+                dt if isinstance(dt, DType) else DType.from_str(dt)
+                for dt in dtype_choices
+            ]
+            if dtype_choices
+            else DTYPE_ALL
+        )
+        assert len(self.dtype_choices) > 0, "dtype_choices must not be empty"
+        assert len(self.rank_choices) > 0, "rank_choices must not be empty"
 
     def random_rank(self):
-        return random.choice(rank_all())
+        return random.choice(self.rank_choices)
 
     def tensor_type_constraints(
         self, atensor: AbsTensor
@@ -74,7 +87,8 @@ class BaseGen:
         )
         ph = Placeholder(
             AbsTensor(
-                shape=syms, dtype=dtype if dtype is not None else self.random_dtype()
+                shape=syms,
+                dtype=dtype if dtype is not None else self.random_dtype_gen(),
             )
         )
         self.monotonic_placeholder_id += 1
@@ -97,19 +111,27 @@ class BaseGen:
         ph = Placeholder(
             AbsTensor(
                 shape=shape,
-                dtype=dtype if dtype is not None else self.random_dtype(),
+                dtype=dtype if dtype is not None else self.random_dtype_gen(),
             )
         )
         return ph
 
-    def random_dtype(self):
+    def random_dtype_gen(self):
         # more floats than ints.
-        wts = [1] * len(DTYPE_GEN_ALL)
-        for i in DTYPE_GEN_FLOATS:
-            wts[DTYPE_GEN_ALL.index(i)] = 4
-        for i in DTYPE_GEN_INTS:
-            wts[DTYPE_GEN_ALL.index(i)] = 1
-        return random.choices(DTYPE_GEN_ALL, weights=wts)[0]
+        # ~ in DTYPE_GEN_ALL and in self.dtype_choices
+        dtypes = [dt for dt in DTYPE_GEN_ALL if dt in self.dtype_choices]
+        assert (
+            len(dtypes) > 0
+        ), "Empty INTERSECT(DTYPE_GEN_ALL, dtype_choices). Please relax dtype_choices."
+
+        wts = [1] * len(dtypes)
+        for dt in DTYPE_GEN_FLOATS:
+            if dt in dtypes:
+                wts[DTYPE_GEN_ALL.index(dt)] = 4
+        for dt in DTYPE_GEN_INTS:
+            if dt in dtypes:
+                wts[DTYPE_GEN_ALL.index(dt)] = 1
+        return random.choices(dtypes, weights=wts)[0]
 
     def new_sym(self, name):
         return z3.Int(name)
@@ -560,6 +582,7 @@ class SymbolicGen(BaseGen):
         return True
 
     def make_concrete(self) -> GraphIR:
+        SanityCheck.gt(len(self.ir.insts), 0, "Empty graph!")
         SanityCheck.not_none(self.last_solution, "Run check_sat first!")
         self.ir.concretize(self.last_solution)
         return self.ir

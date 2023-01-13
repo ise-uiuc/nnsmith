@@ -1,26 +1,3 @@
-topset: null # All instances will be a subset of `topset`;
-# >> Example:
-# topset:
-#   core.MaxPool2d:
-#     in_dtypes: [["f32"], ["f64"]]
-#     out_dtypes: [["f32"], ["f64"]]
-#   core.Where:
-#     in_dtypes: [["bool", "f32", "f32"]]
-#     out_dtypes: [["f32"]]
-
-exclude: null
-# >> Example:
-# exclude:
-#   - core.MaxPool2d:
-#     in_dtypes: [["f32"], ["f64"]]
-#     out_dtypes: [["f32"], ["f64"]]
-#   - core.Where:
-#     in_dtypes: [["bool", "f32", "f32"]]
-#     out_dtypes: [["f32"]]
-
-topset_from_file: null # Path that contains a YAML file that contains a topset domain as above
-
-# model gen config
 model:
   type: null
   path: "???" # can be multiple files tho.
@@ -33,6 +10,11 @@ mgen: # model gen.
   save: "nnsmith_output"
   seed: null
   max_elem_per_tensor: 65536 # 2^16
+  rank_choices: null # 0 ~ __MAX_RANK__
+  dtype_choices: null # 0 ~ __MAX_DTYPE__
+  include: null # ops to include; example mgen.include="[core.NCHWConv2d, core.ReLU]"
+  exclude: null # ops to exclude;
+  patch_requires: [] # files that with @patch_requires
 
 # backend config
 backend:

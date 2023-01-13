@@ -6,12 +6,13 @@ import time
 import hydra
 from omegaconf import DictConfig
 
+from nnsmith.abstract.extension import activate_ext
 from nnsmith.backends.factory import BackendFactory
 from nnsmith.graph_gen import SymbolicGen, model_gen, viz
 from nnsmith.logging import MGEN_LOG
 from nnsmith.materialize import Model, TestCase
 from nnsmith.narrow_spec import auto_opset
-from nnsmith.util import mkdir
+from nnsmith.util import hijack_patch_requires, mkdir, op_filter
 
 
 @hydra.main(version_base=None, config_path="../config", config_name="main")
@@ -40,6 +41,9 @@ def main(cfg: DictConfig):
 
     # GENERATION
     opset = auto_opset(ModelType, factory, vulops=mgen_cfg["vulops"])
+    opset = op_filter(opset, mgen_cfg["include"], mgen_cfg["exclude"])
+    hijack_patch_requires(mgen_cfg["patch_requires"])
+    activate_ext(opset=opset, factory=factory)
 
     tgen_begin = time.time()
     gen = model_gen(
@@ -49,6 +53,8 @@ def main(cfg: DictConfig):
         max_elem_per_tensor=mgen_cfg["max_elem_per_tensor"],
         max_nodes=mgen_cfg["max_nodes"],
         timeout_ms=mgen_cfg["timeout_ms"],
+        rank_choices=mgen_cfg["rank_choices"],
+        dtype_choices=mgen_cfg["dtype_choices"],
     )
     tgen = time.time() - tgen_begin
 
@@ -63,9 +69,6 @@ def main(cfg: DictConfig):
     # MATERIALIZATION
     tmat_begin = time.time()
     ir = gen.make_concrete()
-
-    if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
-        ir.debug()
 
     MGEN_LOG.info(
         f"Generated DNN has {ir.n_var()} variables and {ir.n_compute_inst()} operators."

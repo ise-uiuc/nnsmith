@@ -10,6 +10,7 @@ from typing import Type
 import hydra
 from omegaconf import DictConfig
 
+from nnsmith.abstract.extension import activate_ext
 from nnsmith.backends.factory import BackendFactory
 from nnsmith.cli.model_exec import verify_testcase
 from nnsmith.error import InternalError
@@ -19,7 +20,13 @@ from nnsmith.logging import FUZZ_LOG
 from nnsmith.macro import NNSMITH_BUG_PATTERN_TOKEN
 from nnsmith.materialize import Model, TestCase
 from nnsmith.narrow_spec import auto_opset
-from nnsmith.util import mkdir, parse_timestr, set_seed
+from nnsmith.util import (
+    hijack_patch_requires,
+    mkdir,
+    op_filter,
+    parse_timestr,
+    set_seed,
+)
 
 
 class StatusCollect:
@@ -130,9 +137,14 @@ class FuzzingLoop:
             model_cfg["type"], backend_target=cfg["backend"]["target"]
         )
         self.ModelType.add_seed_setter()
-        self.opset = auto_opset(
-            self.ModelType, self.factory, vulops=cfg["mgen"]["vulops"]
+        self.opset = op_filter(
+            auto_opset(self.ModelType, self.factory, vulops=cfg["mgen"]["vulops"]),
+            cfg["mgen"]["include"],
+            cfg["mgen"]["exclude"],
         )
+
+        hijack_patch_requires(cfg["mgen"]["patch_requires"])
+        activate_ext(opset=self.opset, factory=self.factory)
 
         seed = cfg["fuzz"]["seed"] or random.getrandbits(32)
         set_seed(seed)
@@ -163,6 +175,8 @@ class FuzzingLoop:
             max_elem_per_tensor=mgen_cfg["max_elem_per_tensor"],
             max_nodes=mgen_cfg["max_nodes"],
             timeout_ms=mgen_cfg["timeout_ms"],
+            rank_choices=mgen_cfg["rank_choices"],
+            dtype_choices=mgen_cfg["dtype_choices"],
         )
 
         ir = gen.make_concrete()
