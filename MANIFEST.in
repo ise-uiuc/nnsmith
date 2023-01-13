@@ -1,0 +1,2 @@
+# include yaml files under nnsmith/config/**/*.yaml
+include nnsmith/config/**/*.yaml
