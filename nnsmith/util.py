@@ -6,8 +6,8 @@ from os import PathLike
 from typing import Callable, Dict, List, Union
 
 import numpy as np
+from omegaconf import ListConfig
 
-from nnsmith.abstract.extension import activate_ext
 from nnsmith.logging import MGEN_LOG
 
 try:
@@ -151,7 +151,9 @@ def op_filter(topset, include=None, exclude=None):
 
 
 def hijack_patch_requires(patch_paths: Union[PathLike, List[PathLike]]):
-    patch_paths = patch_paths if isinstance(patch_paths, list) else [patch_paths]
+    patch_paths = (
+        patch_paths if isinstance(patch_paths, (ListConfig, list)) else [patch_paths]
+    )
     for f in patch_paths:
         assert os.path.isfile(
             f
