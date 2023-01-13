@@ -3,7 +3,6 @@ from typing import List, Type
 
 import tensorflow as tf  # type: ignore
 from keras import layers
-from tensorflow import keras
 
 from nnsmith.abstract.op import *
 from nnsmith.materialize import framework_operator_impl
@@ -29,32 +28,17 @@ def forward_fn(op: Constant):
 
 @operator_impl(ReLU)
 def forward_fn(op: ReLU):
-    return layers.ReLU(
-        dtype=op.input_like[0].dtype.tensorflow(),
-        autocast=False,
-    )
+    return tf.nn.relu
 
 
 @operator_impl(GELU)
 def forward_fn(op: GELU):
-    return keras.activations.gelu
+    return tf.nn.gelu
 
 
 @operator_impl(LeakyReLU)
 def forward_fn(op: LeakyReLU):
-    return layers.LeakyReLU(
-        alpha=op.negative_slope,
-        dtype=op.input_like[0].dtype.tensorflow(),
-        autocast=False,
-    )
-
-
-@operator_impl(PReLU)
-def forward_fn(op: PReLU):
-    return layers.PReLU(
-        dtype=op.input_like[0].dtype.tensorflow(),
-        autocast=False,
-    )
+    return tf.nn.leaky_relu
 
 
 @operator_impl(Sigmoid)
@@ -202,10 +186,9 @@ def forward_fn(op: Neg):
 
 @operator_impl(Softmax)
 def forward_fn(op: Softmax):
-    return layers.Softmax(
+    return lambda x: tf.nn.softmax(
+        logits=tf.ensure_shape(x, op.input_like[0].shape),
         axis=op.dim,
-        dtype=op.input_like[0].dtype.tensorflow(),
-        autocast=False,
     )
 
 
@@ -372,6 +355,6 @@ def forward_fn(op: Cast):
     return lambda x: tf.cast(x, dtype=op.extra_attrs["to"].tensorflow())
 
 
-@operator_impl(MatMul)
-def forward_fn(op: MatMul):
-    return tf.linalg.matmul
+@operator_impl(TFMatMul)
+def forward_fn(op: TFMatMul):
+    return tf.matmul
