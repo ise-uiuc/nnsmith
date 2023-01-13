@@ -16,6 +16,7 @@ from nnsmith.abstract.dtype import (
     DTYPE_GEN_NON_BOOL,
     DType,
 )
+from nnsmith.abstract.extension import ACTIVATED_PATCH
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import ConstraintCheck, SanityCheck
 
@@ -347,7 +348,10 @@ class AbsOpBase(ABC):
 
     @check_require_fn  # Public API.
     def checked_requires(self, input_shapes):
-        return self.requires(input_shapes)
+        extra = []
+        for f in ACTIVATED_PATCH.get(self.name(), []):
+            extra.extend(f(self, input_shapes))
+        return self.requires(input_shapes) + extra
 
     def n_floats(self, input_shapes: List[AbsTensor]) -> z3.ExprRef:
         return reduce(nnsmith_add, [i.nelement() for i in self.output_like])

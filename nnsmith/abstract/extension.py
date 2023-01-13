@@ -1,43 +1,29 @@
-import functools
-import types
-from typing import List
+from typing import List, Optional, Type
 
-from nnsmith.abstract.op import AbsOpBase
-from nnsmith.abstract.tensor import AbsTensor
-
-BACKEND_REQUIRES = {}
-
-
-def copy_requires(f):
-    g = types.FunctionType(
-        f.__code__, f.__globals__, name=f.__name__, closure=f.__closure__
-    )
-    return functools.update_wrapper(g, f)
-
-
-class rewrite_requires:
-    def __init__(self, tag: str, opname: str):
-        self.tag = tag
-        self.opname = opname
-
-    def __call__(self, f):
-        BACKEND_REQUIRES.setdefault(self.tag, {}).setdefault(self.opname, f)
-        return f
+REQUIRES_PATCH = {}
+ACTIVATED_PATCH = {}
 
 
 class patch_requires:
     def __init__(self, tag: str, opname: str):
         self.tag = tag
         self.opname = opname
-        self.prev_fn = None
 
     def __call__(self, f):
-        def patch_with_prev(op: AbsOpBase, itensors: List[AbsTensor]):
-            if self.prev_fn is None:
-                self.prev_fn = copy_requires(op.requires)
-            return f(op, itensors) + self.prev_fn(op, itensors)
+        REQUIRES_PATCH.setdefault(self.tag, {}).setdefault(self.opname, []).append(f)
+        return f
 
-        BACKEND_REQUIRES.setdefault(self.tag, {}).setdefault(
-            self.opname, patch_with_prev
-        )
-        return patch_with_prev
+
+def activate_ext(
+    opset: List[Type["AbsOpBase"]], factory: Optional["BackendFactory"] = None
+):
+    for op in opset:
+        if "global" in REQUIRES_PATCH:
+            ACTIVATED_PATCH.setdefault(op.name(), []).extend(
+                REQUIRES_PATCH["global"].get(op.name(), [])
+            )
+
+        if factory is not None and factory.system_name in REQUIRES_PATCH:
+            ACTIVATED_PATCH.setdefault(op.name(), []).extend(
+                REQUIRES_PATCH[factory.system_name].get(op.name(), [])
+            )

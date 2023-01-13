@@ -30,7 +30,6 @@ from omegaconf import OmegaConf
 
 from nnsmith import __version__
 from nnsmith.abstract.dtype import DType
-from nnsmith.abstract.extension import BACKEND_REQUIRES
 from nnsmith.abstract.op import (
     AbsOpBase,
     AbsTensor,
@@ -250,15 +249,9 @@ def auto_opset(
     for op in model_cls.operators():
         if op.name() not in topset_config or (vulops == False and op.limit_domain):
             continue
+
         op.in_dtypes = topset_config[op.name()].in_dtypes
         op.out_dtypes = topset_config[op.name()].out_dtypes
-
-        # check patch
-        if factory is not None and factory.system_name in BACKEND_REQUIRES:
-            rules = BACKEND_REQUIRES[factory.system_name]
-            if op.name() in rules:
-                op.requires = rules[op.name()]
-
         opset.append(op)
 
     return opset
