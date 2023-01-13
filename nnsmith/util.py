@@ -3,7 +3,7 @@ import random
 import shutil
 from importlib.util import module_from_spec, spec_from_file_location
 from os import PathLike
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Union
 
 import numpy as np
 
@@ -150,7 +150,8 @@ def op_filter(topset, include=None, exclude=None):
     return topset
 
 
-def hijack_patch_requires(patch_paths: List[PathLike]):
+def hijack_patch_requires(patch_paths: Union[PathLike, List[PathLike]]):
+    patch_paths = patch_paths if isinstance(patch_paths, list) else [patch_paths]
     for f in patch_paths:
         assert os.path.isfile(
             f

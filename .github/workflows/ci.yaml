@@ -29,6 +29,7 @@ jobs:
           yes | python nnsmith/cli/model_gen.py debug.viz=true model.type=torch mgen.method=symbolic
           yes | python nnsmith/cli/model_gen.py debug.viz=true model.type=torch mgen.method=symbolic-cinit
           yes | python nnsmith/cli/model_gen.py debug.viz=true model.type=torch mgen.method=concolic
+          yes | python nnsmith/cli/model_gen.py model.type=torch mgen.method=symbolic-cinit mgen.rank_choices="[4]" mgen.dtype_choices="[f32]" mgen.include="[core.NCHWConv2d, core.ReLU]" mgen.patch_requires=./tests/mock/requires_patch.py
       - name: Test ONNX + ONNXRuntime
         run: |
           yes | python nnsmith/cli/model_gen.py model.type=onnx mgen.method=symbolic
