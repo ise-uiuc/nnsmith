@@ -84,11 +84,11 @@ To limit:
 - only include Conv2d and ReLU.
 
 ```shell
-yes | python nnsmith/cli/model_gen.py model.type=torch mgen.method=symbolic-cinit \
-                                                       mgen.rank_choices="[4]"    \
-                                                       mgen.dtype_choices="[f32]" \
-                                                       mgen.include="[core.NCHWConv2d, core.ReLU]" \
-                                                       debug.viz=true
+yes | nnsmith.model_gen model.type=torch mgen.method=symbolic-cinit \
+                                         mgen.rank_choices="[4]"    \
+                                         mgen.dtype_choices="[f32]" \
+                                         mgen.include="[core.NCHWConv2d, core.ReLU]" \
+                                         debug.viz=true
 ```
 
 ## Add extra constraints
@@ -105,12 +105,12 @@ def limit_conv2d(self, _):
     return [nnsmith_lt(3, self.kernel_h_size), nnsmith_lt(3, self.kernel_w_size)]
 ' > patch.py
 # Apply the patch with `mgen.patch_requires=./tests/mock/requires_patch.py` (can also be a list of paths)
-yes | python nnsmith/cli/model_gen.py model.type=torch mgen.method=symbolic-cinit \
-                                                       mgen.rank_choices="[4]"    \
-                                                       mgen.dtype_choices="[f32]" \
-                                                       mgen.include="[core.NCHWConv2d, core.ReLU]" \
-                                                       mgen.patch_requires=./tests/mock/requires_patch.py \
-                                                       debug.viz=true
+yes | nnsmith.model_gen model.type=torch mgen.method=symbolic-cinit \
+                                         mgen.rank_choices="[4]"    \
+                                         mgen.dtype_choices="[f32]" \
+                                         mgen.include="[core.NCHWConv2d, core.ReLU]" \
+                                         mgen.patch_requires=./patch.py \
+                                         debug.viz=true
 ```
 
 ## Misc
