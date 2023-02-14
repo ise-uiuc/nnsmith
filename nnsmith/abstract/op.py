@@ -23,24 +23,7 @@ from nnsmith.error import ConstraintCheck, SanityCheck
 # There are following types of constraints at this point:
 # 1. Shape variables must be greater than 0;
 # 2. Shape variables must avoid devision by 0;
-# 3. Intra-input shape constraints; e.g., add(x, y) where x.shape() must be equal to y.shape();
-# 4. Extra constraints introduced by individual operators;
-
-FLOPS_LIM = os.getenv("NNSMITH_FLOPS_LIM", "auto")
-if FLOPS_LIM == "auto":  # use predefined value
-    FLOPS_LIM = 2**30
-elif FLOPS_LIM == "off":
-    FLOPS_LIM = None
-else:
-    FLOPS_LIM = float(FLOPS_LIM)
-
-# control wheter to model FLOPS in z3 too. If not, we will check it after model is concretized.
-Z3_CONS_FLOPS = os.getenv("NNSMITH_Z3_CONS_FLOPS", "on")
-assert Z3_CONS_FLOPS in [
-    "on",
-    "off",
-], "NNSMITH_Z3_CONS_FLOPS must be either 'on' or 'off'"
-Z3_CONS_FLOPS = Z3_CONS_FLOPS == "on"
+# 3. Extra constraints introduced by individual operators;
 
 
 __MIN_RANK__ = 0
@@ -151,6 +134,10 @@ def z3_bcast(
     )
 
 
+def int_bcast(x: int, *args: int):
+    return x if (x != 1 or len(args) == 0) else int_bcast(*args)
+
+
 def broadcast_shapes(
     *shapes: List[Union[z3.ExprRef, int]]
 ) -> List[Union[z3.ExprRef, int]]:
@@ -159,15 +146,15 @@ def broadcast_shapes(
     if len(shapes) == 1:
         return shapes[0]
     max_dim = max(map(lambda x: len(x), shapes))
-    max_shape = [None] * (max_dim)
+    out_shape = [None] * max_dim
     for j in range(max_dim):
         i = -j - 1
         args_dim_sz = [_prepend_to(x, max_dim)[i] for x in shapes]
         if any(isinstance(s, z3.ExprRef) for s in args_dim_sz):
-            max_shape[i] = z3.simplify(z3_bcast(*args_dim_sz))
+            out_shape[i] = z3.simplify(z3_bcast(*args_dim_sz))
         else:
-            max_shape[i] = max(*args_dim_sz)
-    return max_shape
+            out_shape[i] = int_bcast(*args_dim_sz)
+    return out_shape
 
 
 def broadcast_cons(*shapes: List[Union[z3.ExprRef, int]]) -> List[z3.BoolRef]:
@@ -724,7 +711,6 @@ class LeakyReLU(ElementWiseUnaryOp):
     def __init__(self):
         """See https://pytorch.org/docs/stable/generated/torch.nn.LeakyReLU.html"""
         super().__init__()
-        self.negative_slope = 0.01
 
 
 @mark_materialize("core")
@@ -781,7 +767,19 @@ class Atan(TrigonometricOp):
 
 @mark_materialize("core")
 class Abs(ElementWiseUnaryOp):
-    in_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL]
+    in_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL if i != DType.uint8]
+    in_dtypes = [
+        (i,)
+        for i in DTYPE_GEN_NON_BOOL
+        if i not in {DType.complex64, DType.complex128, DType.uint8}
+    ]
+
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+        if input_shapes[0].dtype == DType.complex64:
+            return [AbsTensor(input_shapes[0].shape, DType.float32)]
+        elif input_shapes[0].dtype == DType.complex128:
+            return [AbsTensor(input_shapes[0].shape, DType.float64)]
+        return super().type_transfer(input_shapes)
 
 
 @mark_materialize("core")
@@ -927,9 +925,6 @@ class Pool2d(UnaryOpBase):
             [nnsmith_gt(v, 0) for v in input_shapes[0].shape]
         )  # dim cannot be 0 for maxpool
 
-        # limit FLOPS
-        if Z3_CONS_FLOPS:
-            cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
         for c in cons:
             ret.append(c)
         return ret
@@ -1002,11 +997,6 @@ class Slice(UnaryOpBase):
             self.extra_attrs["region"] = random.choice(["left", "mid", "right"])
             if random.uniform(0, 1) < 0.1:
                 # torch exporter does not support start=INT_MIN
-                # if random.uniform(0, 1) < 0.5:
-                #     # because pytorch only supports forward slicing,
-                #     # start cannot be INT_MAX, otherwise it slices empty tensor
-                #     self.start = self.INT_MIN
-                # else:
                 self.end = self.INT_MAX
         return self.extra_attrs["axis"]
 
@@ -1141,6 +1131,8 @@ class ReplicatePad(Pad):
 @mark_materialize("core")
 class ReflectPad(Pad):
     num_var_param = _pad_num_var_param(2, max=6)
+    in_dtypes = [(i,) for i in DTYPE_GEN_FLOATS if i != DType.float16]
+    out_dtypes = [(i,) for i in DTYPE_GEN_FLOATS if i != DType.float16]
 
     def __init__(self, *padding_list):
         super().__init__(padding_list, "reflect")
@@ -1441,9 +1433,6 @@ class NCHWConv2d(UnaryOpBase):
         )
         # not too extream to avoid torch exporter issue
         cons.append(nnsmith_le(self.padding, 255))
-        # limit FLOPS
-        if Z3_CONS_FLOPS:
-            cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
         return cons
 
     def flops(self, input_shapes):
@@ -1550,7 +1539,6 @@ class Reshape(UnaryOpBase):
         auto_dim = -1
         accum = 1
         for i, v in enumerate(self.target_shape):
-            # TODO: What to do about bitvectors here?
             if v == -1:
                 SanityCheck.eq(auto_dim, -1)
                 auto_dim = i
@@ -1629,7 +1617,6 @@ class Transpose(UnaryOpBase):
     in_dtypes = [(i,) for i in DTYPE_GEN_ALL]
 
     def __init__(self):
-        """See https://pytorch.org/docs/stable/generated/torch.transpose.html"""
         super().__init__()
         self.inp_ranks = [rank_from(2)]
         self.out_ranks = [rank_from(2)]
@@ -1664,9 +1651,6 @@ class Transpose(UnaryOpBase):
         self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
         return [(out_abs_tensor[0].ndims, out_abs_tensor[0].dtype)]
-
-
-# Sum, Min, Max, Mean, ArgMin, ArgMax, Squeeze, Size
 
 
 class InterpBase(UnaryOpBase):
@@ -1817,7 +1801,9 @@ class ReduceProd(ReduceBase):
 
 @mark_materialize("core")
 class ArgMin(ReduceBase):
-    in_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL]
+    in_dtypes = [
+        (i,) for i in DTYPE_GEN_NON_BOOL if i not in {DType.complex64, DType.complex128}
+    ]
     out_dtypes = [(DType.int64,)]
     _reduce_out_dtype = DType.int64
 
@@ -1831,7 +1817,9 @@ class ArgMin(ReduceBase):
 
 @mark_materialize("core")
 class ArgMax(ReduceBase):
-    in_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL]
+    in_dtypes = [
+        (i,) for i in DTYPE_GEN_NON_BOOL if i not in {DType.complex64, DType.complex128}
+    ]
     out_dtypes = [(DType.int64,)]
     _reduce_out_dtype = DType.int64
 
@@ -2041,8 +2029,14 @@ class CastBool(Cast):
 
 @mark_materialize("core")
 class MatMul(BinaryOpBase):
-    in_dtypes = [(i, i) for i in DTYPE_GEN_NON_BOOL]
-    out_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL]
+    in_dtypes = [
+        (i, i)
+        for i in DTYPE_GEN_NON_BOOL
+        if i not in [DType.complex64, DType.complex128]
+    ]
+    out_dtypes = [
+        (i,) for i in DTYPE_GEN_NON_BOOL if i not in [DType.complex64, DType.complex128]
+    ]
 
     def __init__(self):
         super().__init__()

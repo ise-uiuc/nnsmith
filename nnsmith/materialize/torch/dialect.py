@@ -3,7 +3,14 @@ from random import randint
 from typing import List, Tuple, Union
 
 from nnsmith.abstract.arith import *
-from nnsmith.abstract.dtype import DTYPE_GEN_ALL, DTYPE_GEN_NON_BOOL, DType
+from nnsmith.abstract.dtype import (
+    DTYPE_GEN_ALL,
+    DTYPE_GEN_INTS,
+    DTYPE_GEN_NON_BOOL,
+    DTYPE_GEN_FLOATS,
+    DTYPE_GEN_COMPLEX,
+    DType,
+)
 from nnsmith.abstract.op import ReduceBase, UnaryOpBase, mark_materialize, rank_from
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import ConstraintCheck
@@ -76,11 +83,10 @@ class Flatten(UnaryOpBase):
 @mark_materialize("torch")
 class TorchReduceSum(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL]
-    out_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL]
+    out_dtypes = [(i,) for i in DTYPE_GEN_FLOATS + DTYPE_GEN_COMPLEX + [DType.int64]]
 
     def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         output = super().type_transfer(input_shapes)
-        # This is a PyTorch trick...
-        if input_shapes[0].dtype == DType.int32:
+        if input_shapes[0].dtype in DTYPE_GEN_INTS:  # This is a PyTorch trick...
             output[0].dtype = DType.int64
         return output
