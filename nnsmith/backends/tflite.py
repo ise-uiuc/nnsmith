@@ -1,10 +1,11 @@
 from os import PathLike
-from typing import Dict
+from typing import List, Dict
 
 import numpy as np
 import tensorflow as tf  # type: ignore
 from multipledispatch import dispatch
 
+from nnsmith.abstract.dtype import DType
 from nnsmith.backends.factory import BackendCallable, BackendFactory
 from nnsmith.materialize.tensorflow import TFModel, TFNetCallable
 
@@ -154,3 +155,9 @@ class TFLiteFactory(BackendFactory):
 
     def load_backend(self, path: PathLike) -> BackendCallable:
         return self.make_backend_from_content(self.load_content(path))
+
+    @classmethod
+    def skip_dtypes(cls) -> List[DType]:
+        # PyTorch-ONNX current does not support fully complex (e.g., scalar).
+        # uint8 crash over Equal (revert after their fix).
+        return [DType.uint8]
