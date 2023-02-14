@@ -15,7 +15,7 @@
 | Model\Engine | [TVM](https://github.com/apache/tvm) | [ORT](https://github.com/microsoft/onnxruntime) | [TensorRT](https://github.com/NVIDIA/TensorRT) | [TFLite](https://www.tensorflow.org/lite) | [XLA](https://www.tensorflow.org/xla) | [Torch-JIT](https://pytorch.org/docs/stable/jit.html) |
 | ------------ | ------------------------------------ | ----------------------------------------------- | ---------------------------------------------- | ----------------------------------------- | ------------------------------------- | ----------------------------------------------------- |
 | ONNX         | ✅                                    | ✅                                               | ✅                                              |                                           |                                       |                                                       |
-| TensorFlow   | 🔨                                    |                                                 |                                                | ⚠️                                         | ⚠️                                     |                                                       |
+| TensorFlow   | 🔨                                    |                                                 |                                                | ✅                                         | ✅                                     |                                                       |
 | PyTorch      | 🔨                                    | 🔨                                               |                                                |                                           |                                       | 🔨                                                     |
 
 
@@ -27,24 +27,24 @@
 
 ## Setup
 
-**Install latest stable release:**
+**Install latest code (GitHub HEAD):**
+
+```shell
+pip install "git+https://github.com/ise-uiuc/nnsmith@main#egg=nnsmith[torch,onnx]" --upgrade
+# [optional] add more front- and back-ends such as [tf] and [tvm,ort,xla,...] in "[...]"
+```
+
+<details><summary><b>Install latest stable release: </b> <i>[expand]</i></summary>
+<div>
 
 ```shell
 pip install "nnsmith[torch,onnx]" --upgrade
 ```
 
-<details><summary><b>Install GitHub HEAD: </b> <i>[click to expand]</i></summary>
-<div>
-
-```shell
-pip install "git+https://github.com/ise-uiuc/nnsmith@main#egg=nnsmith[torch,onnx]" --upgrade
-# or pip install "git+ssh://git@github.com/ise-uiuc/nnsmith@main#egg=nnsmith[torch,onnx]" --upgrade
-```
-
 </div>
 </details>
 
-<details><summary><b>Install latest pre-release: </b> <i>[click to expand]</i></summary>
+<details><summary><b>Install latest pre-release: </b> <i>[expand]</i></summary>
 <div>
 
 ```shell
@@ -60,7 +60,7 @@ pip install "nnsmith[torch,onnx]"                     \
 
 ## Quick Start
 
-<details><summary><b>Setting up graphviz for debugging</b> <i>[click to expand]</i></summary>
+<details><summary><b>Setting up graphviz for debugging</b> <i>[expand]</i></summary>
 <div>
 
 Graphviz provides `dot` for visualizing graphs in nice pictures. But it needs to be installed via the following methods:
@@ -92,7 +92,7 @@ See other commands under [`doc/cli`](doc/cli.md). We use [hydra](https://hydra.c
 - `pip install --upgrade --pre -r requirements/sys/[system].txt` to allow generating and running specific frameworks;
   -  **Why "--upgrade --pre"?** In fact, all the sources under `requirements/sys/` are nightly release (except tvm) as we want to "save the world" by catching new bugs;
 
-<details><summary><b>Pre-commits</b> <i>[click to expand]</i></summary>
+<details><summary><b>Pre-commits</b> <i>[expand]</i></summary>
 <div>
 
 You can use `pre-commit` to simpify development:
@@ -104,7 +104,7 @@ You can use `pre-commit` to simpify development:
 </div>
 </details>
 
-<details><summary><b>Local development</b> <i>[click to expand]</i></summary>
+<details><summary><b>Local development</b> <i>[expand]</i></summary>
 <div>
 
 - Develop locally by setting `export PYTHONPATH=$PYTHONPATH:$(pwd)` (`pwd` should be this git folder.)
@@ -113,7 +113,7 @@ You can use `pre-commit` to simpify development:
 </div>
 </details>
 
-<details><summary><b>Simplify the code</b> <i>[click to expand]</i></summary>
+<details><summary><b>Simplify the code</b> <i>[expand]</i></summary>
 <div>
 
 *Simplicity is prerequisite for reliability.* --Edsger W. Dijkstra
@@ -123,7 +123,7 @@ We want **code simplicity**: keeping minimal dependencies and focusing on a smal
 </div>
 </details>
 
-<details><summary><b>Test before commit</b> <i>[click to expand]</i></summary>
+<details><summary><b>Test before commit</b> <i>[expand]</i></summary>
 <div>
 
 ```shell
@@ -144,15 +144,16 @@ pytest tests/tensorflow -s
 
 ## Paper
 
-<details><summary><b>ASPLOS'23 | NNSmith: Generating Diverse and Valid Test Cases for Deep Learning Compilers.</b> <i>[click to expand citation]</i></summary>
+<details><summary><b>NNSmith: Generating Diverse and Valid Test Cases for Deep Learning Compilers.</b> <i>[expand citation]</i></summary>
 <div>
 
 ```bibtex
-@article{liu2022finding,
-  title={Finding Deep-Learning Compilation Bugs with NNSmith},
+@inproceedings{liu2023nnsmith,
+  title={Nnsmith: Generating diverse and valid test cases for deep learning compilers},
   author={Liu, Jiawei and Lin, Jinkun and Ruffy, Fabian and Tan, Cheng and Li, Jinyang and Panda, Aurojit and Zhang, Lingming},
-  journal={arXiv preprint arXiv:2207.13066},
-  year={2022}
+  booktitle={Proceedings of the 28th ACM International Conference on Architectural Support for Programming Languages and Operating Systems, Volume 2},
+  pages={530--543},
+  year={2023}
 }
 ```
 
@@ -160,6 +161,7 @@ pytest tests/tensorflow -s
 </details>
 
 <p align="center">
+    <a href="https://dl.acm.org/doi/10.1145/3575693.3575707"><img src="https://img.shields.io/badge/Paper-ASPLOS'23-a55fed.svg"></a>
     <a href="https://arxiv.org/abs/2207.13066"><img src="https://img.shields.io/badge/arXiv-2207.13066-b31b1b.svg"></a>
     <a href="http://nnsmith-asplos.rtfd.io/"><img src="https://img.shields.io/badge/artifact-doc-black.svg"></a>
     <a href="https://github.com/ganler/nnsmith-asplos-artifact"><img src="https://img.shields.io/badge/artifact-git-black.svg"></a>
