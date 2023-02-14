@@ -116,7 +116,7 @@ def infer_topset_from_scratch(
         for i, ranks in enumerate(op.inp_ranks):
             if op.same_inp_dims and inputs:
                 rank = inputs[0].ndims
-            else:
+            else:  # FIXME(@ganler): consider rank check over scalar & non-scalar.
                 rank = min(ranks)
             shape = AbsTensor(
                 shape=[z3.Int("s%s" % (k)) for k in range(rank)],
@@ -144,6 +144,13 @@ def infer_topset_from_scratch(
         single_op_irs = _make_single_op_irs(
             concrete_op, concre_input_shapes, available_idtypes
         )
+
+        # filter out unsupported dtypes by model.
+        single_op_irs = [
+            sset
+            for sset in single_op_irs
+            if set(model_cls.skip_dtypes()).isdisjoint(sset[0] + sset[1])
+        ]
 
         if factory:
             single_op_irs = [
@@ -175,6 +182,7 @@ def infer_topset_from_scratch(
             else:  # Test model dumping
                 with tempfile.TemporaryDirectory() as tmpdirname:
                     try:
+                        model.make_oracle()  # try-run.
                         model_path = os.path.join(
                             tmpdirname, model.name_prefix() + model.name_suffix()
                         )

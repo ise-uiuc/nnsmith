@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Type, TypeVar
 import numpy as np
 from multipledispatch import dispatch
 
+from nnsmith.abstract.dtype import DType
 from nnsmith.abstract.op import AbsOpBase, Constant
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import SanityCheck
@@ -171,6 +172,10 @@ class Model(ABC):
 
     def dump_viz(self, path: PathLike) -> None:
         viz_dot(self.dotstring, path)
+
+    @staticmethod
+    def skip_dtypes() -> List[DType]:
+        return []
 
     @staticmethod
     def init(name, backend_target=None) -> Type["Model"]:

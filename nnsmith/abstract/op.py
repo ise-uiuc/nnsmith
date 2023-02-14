@@ -14,6 +14,7 @@ from nnsmith.abstract.dtype import (
     DTYPE_GEN_FLOATS,
     DTYPE_GEN_INTS,
     DTYPE_GEN_NON_BOOL,
+    DTYPE_GEN_COMPLEX,
     DType,
 )
 from nnsmith.abstract.extension import ACTIVATED_PATCH
@@ -1801,9 +1802,7 @@ class ReduceProd(ReduceBase):
 
 @mark_materialize("core")
 class ArgMin(ReduceBase):
-    in_dtypes = [
-        (i,) for i in DTYPE_GEN_NON_BOOL if i not in {DType.complex64, DType.complex128}
-    ]
+    in_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL if i not in DTYPE_GEN_COMPLEX]
     out_dtypes = [(DType.int64,)]
     _reduce_out_dtype = DType.int64
 
@@ -1817,9 +1816,7 @@ class ArgMin(ReduceBase):
 
 @mark_materialize("core")
 class ArgMax(ReduceBase):
-    in_dtypes = [
-        (i,) for i in DTYPE_GEN_NON_BOOL if i not in {DType.complex64, DType.complex128}
-    ]
+    in_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL if i not in DTYPE_GEN_COMPLEX]
     out_dtypes = [(DType.int64,)]
     _reduce_out_dtype = DType.int64
 
@@ -2029,14 +2026,8 @@ class CastBool(Cast):
 
 @mark_materialize("core")
 class MatMul(BinaryOpBase):
-    in_dtypes = [
-        (i, i)
-        for i in DTYPE_GEN_NON_BOOL
-        if i not in [DType.complex64, DType.complex128]
-    ]
-    out_dtypes = [
-        (i,) for i in DTYPE_GEN_NON_BOOL if i not in [DType.complex64, DType.complex128]
-    ]
+    in_dtypes = [(i, i) for i in DTYPE_GEN_NON_BOOL if i not in DTYPE_GEN_COMPLEX]
+    out_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL if i not in DTYPE_GEN_COMPLEX]
 
     def __init__(self):
         super().__init__()
