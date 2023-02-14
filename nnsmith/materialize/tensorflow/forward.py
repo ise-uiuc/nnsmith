@@ -195,24 +195,20 @@ def forward_fn(op: Softmax):
 @operator_impl(Slice)
 def forward_fn(op: Slice):
     reg = op.extra_attrs["region"]
+    shape = op.input_like[0].shape
+    dim_s = shape[op.extra_attrs["axis"]]
+    start, end = op.start, op.end
+    if reg in ["left", "mid"]:
+        start -= dim_s
+    # actual end would be 0, which is not really 'left'
+    if reg == "left" and end < dim_s and end != Slice.INT_MAX:
+        end -= dim_s
+    idx = tuple(
+        slice(None, None) if i != op.extra_attrs["axis"] else slice(start, end, op.step)
+        for i in range(op.extra_attrs["ndims"])
+    )
 
-    def _slice(x):
-        dim_s = x.shape[op.extra_attrs["axis"]]
-        start, end = op.start, op.end
-        if reg in ["left", "mid"]:
-            start -= dim_s
-        # actual end would be 0, which is not really 'left'
-        if reg == "left" and end < dim_s and end != Slice.INT_MAX:
-            end -= dim_s
-        s = tuple(
-            slice(None, None)
-            if i != op.extra_attrs["axis"]
-            else slice(start, end, op.step)
-            for i in range(op.extra_attrs["ndims"])
-        )
-        return x[s]
-
-    return _slice
+    return lambda x: x[idx]
 
 
 @operator_impl(BatchNorm2d)
@@ -235,8 +231,9 @@ def forward_fn(op: Reshape):
 @operator_impl(Transpose)
 def forward_fn(op: Transpose):
     def _transpose(x: tf.Tensor):
-        dim0, dim1 = op._init_swap_dims(list(x.shape))
-        perm = list(range(len(x.shape)))
+        aten = op.input_like[0]
+        dim0, dim1 = op._init_swap_dims(aten.shape)
+        perm = list(range(aten.ndims))
         perm[dim0], perm[dim1] = perm[dim1], perm[dim0]
         return tf.transpose(x, perm=perm)
 

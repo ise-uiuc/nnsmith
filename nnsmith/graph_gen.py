@@ -58,14 +58,21 @@ class BaseGen:
         self.concr_ph_dim_rng = concr_ph_dim_rng
         self.max_elem_per_tensor = max_elem_per_tensor
         self.rank_choices = rank_choices if rank_choices else rank_all()
+        # analyze the dtypes used by the opset
+        dtype_top = set()
+        for op in opset:
+            dtype_top.update({dt for dtc in op.in_dtypes + op.out_dtypes for dt in dtc})
+
         self.dtype_choices = (
             [
                 dt if isinstance(dt, DType) else DType.from_str(dt)
                 for dt in dtype_choices
             ]
             if dtype_choices
-            else DTYPE_ALL
+            else DTYPE_GEN_ALL
         )
+
+        self.dtype_choices = list(dtype_top.intersection(self.dtype_choices))
         assert len(self.dtype_choices) > 0, "dtype_choices must not be empty"
         assert len(self.rank_choices) > 0, "rank_choices must not be empty"
 
@@ -105,8 +112,7 @@ class BaseGen:
             shape.append(v)
             product *= v
 
-        # shuffle
-        random.shuffle(shape)
+        random.shuffle(shape)  # shuffle
 
         ph = Placeholder(
             AbsTensor(
@@ -127,10 +133,10 @@ class BaseGen:
         wts = [1] * len(dtypes)
         for dt in DTYPE_GEN_FLOATS:
             if dt in dtypes:
-                wts[DTYPE_GEN_ALL.index(dt)] = 4
+                wts[dtypes.index(dt)] = 4
         for dt in DTYPE_GEN_INTS:
             if dt in dtypes:
-                wts[DTYPE_GEN_ALL.index(dt)] = 1
+                wts[dtypes.index(dt)] = 1
         return random.choices(dtypes, weights=wts)[0]
 
     def new_sym(self, name):

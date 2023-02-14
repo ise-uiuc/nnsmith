@@ -22,7 +22,7 @@ operator_impl = partial(framework_operator_impl, TORCH_REALIZABLE_OPS, ALL_TORCH
 @operator_impl(Constant)
 def forward_fn(op: Constant):
     class ConstFn(torch.nn.Module):
-        def __init__(self, data) -> None:
+        def __init__(self, data: torch.Tensor) -> None:
             super().__init__()
             self.data = torch.nn.parameter.Parameter(
                 data, requires_grad=data.is_floating_point()
@@ -36,17 +36,17 @@ def forward_fn(op: Constant):
 
 @operator_impl(ReLU)
 def forward_fn(op: ReLU):
-    return torch.nn.ReLU()
+    return torch.relu
 
 
 @operator_impl(GELU)
 def forward_fn(op: GELU):
-    return torch.nn.GELU()
+    return torch.nn.functional.gelu
 
 
 @operator_impl(LeakyReLU)
 def forward_fn(op: LeakyReLU):
-    return torch.nn.LeakyReLU(op.negative_slope)
+    return torch.nn.LeakyReLU(0.01)
 
 
 @operator_impl(PReLU)
@@ -56,7 +56,7 @@ def forward_fn(op: PReLU):
 
 @operator_impl(Sigmoid)
 def forward_fn(op: Sigmoid):
-    return torch.nn.Sigmoid()
+    return torch.nn.functional.sigmoid
 
 
 @operator_impl(Sin)
@@ -117,11 +117,9 @@ def forward_fn(op: Mul):
 
 @operator_impl(Div)
 def forward_fn(op: Div):
-    return lambda up, down: torch.div(
-        up,
-        down,
-        rounding_mode="floor" if DType.from_torch(up.dtype) in DTYPE_GEN_INTS else None,
-    )
+    if op.input_like[0].dtype in DTYPE_GEN_INTS:
+        return lambda up, down: torch.div(up, down, rounding_mode="floor")
+    return torch.div
 
 
 @operator_impl(Max)
@@ -235,24 +233,20 @@ def forward_fn(op: AvgPool2d):
 @operator_impl(Slice)
 def forward_fn(op: Slice):
     reg = op.extra_attrs["region"]
+    shape = op.input_like[0].shape
+    dim_s = shape[op.extra_attrs["axis"]]
+    start, end = op.start, op.end
+    if reg in ["left", "mid"]:
+        start -= dim_s
+    # actual end would be 0, which is not really 'left'
+    if reg == "left" and end < dim_s and end != Slice.INT_MAX:
+        end -= dim_s
+    idx = tuple(
+        slice(None, None) if i != op.extra_attrs["axis"] else slice(start, end, op.step)
+        for i in range(op.extra_attrs["ndims"])
+    )
 
-    def _func(x):
-        dim_s = x.shape[op.extra_attrs["axis"]]
-        start, end = op.start, op.end
-        if reg in ["left", "mid"]:
-            start -= dim_s
-        # actual end would be 0, which is not really 'left'
-        if reg == "left" and end < dim_s and end != Slice.INT_MAX:
-            end -= dim_s
-        s = tuple(
-            slice(None, None)
-            if i != op.extra_attrs["axis"]
-            else slice(start, end, op.step)
-            for i in range(op.extra_attrs["ndims"])
-        )
-        return x[s]
-
-    return _func
+    return lambda x: x[idx]
 
 
 @operator_impl(Pad)
@@ -269,13 +263,9 @@ def forward_fn(op: Pad):
         )
 
 
-def type_from_torch_tensor(tensor: torch.Tensor):
-    return AbsTensor(list(tensor.shape), DType.from_torch(tensor.dtype))
-
-
 @operator_impl(Expand)
 def forward_fn(op: Expand):
-    return lambda x: x.expand(*op.type_transfer([type_from_torch_tensor(x)])[0].shape)
+    return lambda x: x.expand(*op.output_like[0].shape)
 
 
 @operator_impl(BatchNorm2d)
@@ -314,16 +304,13 @@ def forward_fn(op: Reshape):
 
 @operator_impl(Flatten)
 def forward_fn(op: Flatten):
-    return lambda x: x.flatten()
+    return torch.Tensor.flatten
 
 
 @operator_impl(Transpose)
 def forward_fn(op: Transpose):
-    def f(x: torch.Tensor):
-        dim0, dim1 = op._init_swap_dims(list(x.shape))
-        return x.transpose(dim0, dim1)
-
-    return f
+    dim0, dim1 = op._init_swap_dims(op.input_like[0].shape)
+    return lambda x: x.transpose(dim0, dim1)
 
 
 # NearestInterp
@@ -359,15 +346,14 @@ def forward_fn(op: TrilinearInterp):
 def forward_fn(op: Squeeze):
     if op.extra_attrs["reduce_dim"] is not None:
         return lambda x: x.squeeze(op.extra_attrs["reduce_dim"])
-    else:
-        return lambda x: x.squeeze()
+    return torch.Tensor.squeeze
 
 
 @operator_impl(TorchReduceSum)
 def forward_fn(op: TorchReduceSum):
     if op.extra_attrs["reduce_dim"] is not None:
         return lambda x: x.sum(op.extra_attrs["reduce_dim"])
-    return lambda x: x.sum()
+    return torch.Tensor.sum
 
 
 # ReduceMin
@@ -375,7 +361,7 @@ def forward_fn(op: TorchReduceSum):
 def forward_fn(op: ReduceMin):
     if op.extra_attrs["reduce_dim"] is not None:
         return lambda x: x.min(op.extra_attrs["reduce_dim"]).values
-    return lambda x: x.min()
+    return torch.Tensor.min
 
 
 # ReduceMax
@@ -383,7 +369,7 @@ def forward_fn(op: ReduceMin):
 def forward_fn(op: ReduceMax):
     if op.extra_attrs["reduce_dim"] is not None:
         return lambda x: x.max(op.extra_attrs["reduce_dim"]).values
-    return lambda x: x.max()
+    return torch.Tensor.max
 
 
 # ReduceMean
@@ -391,7 +377,7 @@ def forward_fn(op: ReduceMax):
 def forward_fn(op: ReduceMean):
     if op.extra_attrs["reduce_dim"] is not None:
         return lambda x: x.mean(op.extra_attrs["reduce_dim"])
-    return lambda x: x.mean()
+    return torch.Tensor.mean
 
 
 # ArgMin
@@ -399,7 +385,7 @@ def forward_fn(op: ReduceMean):
 def forward_fn(op: ArgMin):
     if op.extra_attrs["reduce_dim"] is not None:
         return lambda x: x.argmin(op.extra_attrs["reduce_dim"])
-    return lambda x: x.argmin()
+    return torch.Tensor.argmin
 
 
 # ArgMax
@@ -407,7 +393,7 @@ def forward_fn(op: ArgMin):
 def forward_fn(op: ArgMax):
     if op.extra_attrs["reduce_dim"] is not None:
         return lambda x: x.argmax(op.extra_attrs["reduce_dim"])
-    return lambda x: x.argmax()
+    return torch.Tensor.argmax
 
 
 # Tril

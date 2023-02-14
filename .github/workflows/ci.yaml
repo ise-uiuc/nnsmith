@@ -38,7 +38,6 @@ jobs:
       - name: Test TensorFlow
         run: |
           pip install -r requirements/sys/tensorflow.txt --pre --upgrade
-          pip install -r requirements/sys/iree.txt --pre --upgrade
           pytest tests/tensorflow --log-cli-level=DEBUG
           yes | python nnsmith/cli/model_gen.py model.type=tensorflow mgen.method=symbolic
           python nnsmith/cli/model_exec.py model.type=tensorflow backend.type=xla model.path=nnsmith_output/model/

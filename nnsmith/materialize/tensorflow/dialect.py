@@ -4,8 +4,6 @@ from typing import List, Tuple, Union
 from nnsmith.abstract.arith import *
 from nnsmith.abstract.dtype import DType
 from nnsmith.abstract.op import (
-    FLOPS_LIM,
-    Z3_CONS_FLOPS,
     BcastBinaryOp,
     ElementWiseUnaryOp,
     MatMul,
@@ -180,9 +178,6 @@ class NHWCConv2d(UnaryOpBase):
                 ),
             )
         )
-        # limit FLOPS
-        if Z3_CONS_FLOPS:
-            cons.append(nnsmith_le(self.flops(input_shapes), FLOPS_LIM))
         return cons
 
     def flops(self, input_shapes):

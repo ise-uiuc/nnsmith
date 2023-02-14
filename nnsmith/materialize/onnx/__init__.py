@@ -3,7 +3,7 @@ import random
 import warnings
 from io import BytesIO
 from os import PathLike
-from typing import Dict, Optional, Tuple, Type, Union
+from typing import Dict, List, Optional, Tuple, Type, Union
 
 import onnx
 import onnx.checker
@@ -13,7 +13,7 @@ import torch.onnx
 from onnx.external_data_helper import load_external_data_for_model
 from onnx.tools import update_model_dims
 
-from nnsmith.abstract.dtype import DType
+from nnsmith.abstract.dtype import DTYPE_GEN_COMPLEX, DType
 from nnsmith.abstract.op import AbsTensor
 from nnsmith.gir import GraphIR
 from nnsmith.macro import onnx2external_data_dir
@@ -274,3 +274,7 @@ class ONNXModel(TorchModel):
     @staticmethod
     def name_suffix() -> str:
         return ".onnx"
+
+    @classmethod
+    def skip_dtypes(cls) -> List[DType]:
+        return DTYPE_GEN_COMPLEX
