@@ -56,7 +56,7 @@ def forward_fn(op: PReLU):
 
 @operator_impl(Sigmoid)
 def forward_fn(op: Sigmoid):
-    return torch.nn.functional.sigmoid
+    return torch.sigmoid
 
 
 @operator_impl(Sin)
