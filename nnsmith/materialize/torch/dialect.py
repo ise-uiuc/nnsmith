@@ -5,10 +5,10 @@ from typing import List, Tuple, Union
 from nnsmith.abstract.arith import *
 from nnsmith.abstract.dtype import (
     DTYPE_GEN_ALL,
+    DTYPE_GEN_COMPLEX,
+    DTYPE_GEN_FLOATS,
     DTYPE_GEN_INTS,
     DTYPE_GEN_NON_BOOL,
-    DTYPE_GEN_FLOATS,
-    DTYPE_GEN_COMPLEX,
     DType,
 )
 from nnsmith.abstract.op import ReduceBase, UnaryOpBase, mark_materialize, rank_from

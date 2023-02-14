@@ -1,5 +1,5 @@
 from os import PathLike
-from typing import List, Dict
+from typing import Dict, List
 
 import numpy as np
 import tensorflow as tf  # type: ignore

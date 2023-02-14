@@ -13,7 +13,7 @@ import torch.onnx
 from onnx.external_data_helper import load_external_data_for_model
 from onnx.tools import update_model_dims
 
-from nnsmith.abstract.dtype import DType, DTYPE_GEN_COMPLEX
+from nnsmith.abstract.dtype import DTYPE_GEN_COMPLEX, DType
 from nnsmith.abstract.op import AbsTensor
 from nnsmith.gir import GraphIR
 from nnsmith.macro import onnx2external_data_dir
