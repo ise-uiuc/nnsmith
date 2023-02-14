@@ -19,7 +19,8 @@ and backends:
 - `tvm`
 - `ort`: ONNXRuntime
 - `trt`: TensorRT
-- `iree`
+- `xla`: XLA
+- `tflite`: TFLite
 
 Meanwhile, the backend of `xla` and `tflite` is installed as part of TensorFlow.
 

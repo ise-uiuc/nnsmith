@@ -310,7 +310,7 @@ class BackendFactory(ABC):
     def init(name, target="cpu", optmax=True, **kwargs):
         if name is None:
             raise ValueError(
-                "Backend type cannot be None. Specify via `backend.type=[onnxruntime | tvm | tensorrt | tflite | xla | iree]`"
+                "Backend type cannot be None. Specify via `backend.type=[onnxruntime | tvm | tensorrt | tflite | xla ]`"
             )
 
         if target == "gpu":
@@ -354,14 +354,6 @@ class BackendFactory(ABC):
             from nnsmith.backends.xla import XLAFactory
 
             return XLAFactory(
-                target=target,
-                optmax=optmax,
-                **kwargs,
-            )
-        elif name == "iree":
-            from nnsmith.backends.iree import IREEFactory
-
-            return IREEFactory(
                 target=target,
                 optmax=optmax,
                 **kwargs,

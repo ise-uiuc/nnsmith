@@ -1,5 +1,0 @@
--f https://github.com/iree-org/iree/releases
-iree-compiler
-iree-runtime
-iree-tools-tf
-importlib_metadata
