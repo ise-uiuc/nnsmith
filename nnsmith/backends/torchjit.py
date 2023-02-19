@@ -12,7 +12,7 @@ from nnsmith.materialize.torch import TorchModel
 
 # Check https://pytorch.org/tutorials/recipes/recipes/tuning_guide.html
 # for more PyTorch-internal options.
-TORCH_JIT_OPT_MOBILE = os.getenv("TORCH_JIT_OPT_MOBILE", "0") == "1"
+NNSMITH_PTJIT_OPT_MOBILE = os.getenv("NNSMITH_PTJIT_OPT_MOBILE", "0") == "1"
 
 
 class TorchJITFactory(BackendFactory):
@@ -45,7 +45,7 @@ class TorchJITFactory(BackendFactory):
                 exported = torch.jit.trace(torch_net, trace_inp)
                 exported = torch.jit.freeze(exported)  # Fronzen graph.
                 exported = torch.jit.optimize_for_inference(exported)
-                if self.target == "cpu" and TORCH_JIT_OPT_MOBILE:
+                if self.target == "cpu" and NNSMITH_PTJIT_OPT_MOBILE:
                     exported = optimize_for_mobile(exported)
 
         def closure(inputs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
