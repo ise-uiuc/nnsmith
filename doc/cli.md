@@ -16,11 +16,12 @@ We currently have model formats:
 - `tf` (experimental)
 
 and backends:
-- `tvm`
+- `tvm`: TVM
 - `ort`: ONNXRuntime
 - `trt`: TensorRT
 - `xla`: XLA
 - `tflite`: TFLite
+- `torchjit`: PyTorch JIT
 
 Meanwhile, the backend of `xla` and `tflite` is installed as part of TensorFlow.
 

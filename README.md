@@ -12,11 +12,11 @@
 
 <center>
 
-| Model\Engine | [TVM](https://github.com/apache/tvm) | [ORT](https://github.com/microsoft/onnxruntime) | [TensorRT](https://github.com/NVIDIA/TensorRT) | [TFLite](https://www.tensorflow.org/lite) | [XLA](https://www.tensorflow.org/xla) | [Torch-JIT](https://pytorch.org/docs/stable/jit.html) |
+| Front-/back-end | [`tvm`](https://github.com/apache/tvm) | [`onnxruntime`](https://github.com/microsoft/onnxruntime) | [`tensorrt`](https://github.com/NVIDIA/TensorRT) | [`tflite`](https://www.tensorflow.org/lite) | [`xla`](https://www.tensorflow.org/xla) | [`torchjit`](https://pytorch.org/docs/stable/jit.html) |
 | ------------ | ------------------------------------ | ----------------------------------------------- | ---------------------------------------------- | ----------------------------------------- | ------------------------------------- | ----------------------------------------------------- |
 | ONNX         | ✅                                    | ✅                                               | ✅                                              |                                           |                                       |                                                       |
 | TensorFlow   | 🔨                                    |                                                 |                                                | ✅                                         | ✅                                     |                                                       |
-| PyTorch      | 🔨                                    | 🔨                                               |                                                |                                           |                                       | 🔨                                                     |
+| PyTorch      | 🔨                                    | 🔨                                               |                                                |                                           |                                       | ✅                                                     |
 
 
 
