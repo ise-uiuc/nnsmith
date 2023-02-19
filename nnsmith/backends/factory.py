@@ -358,5 +358,9 @@ class BackendFactory(ABC):
                 optmax=optmax,
                 **kwargs,
             )
+        elif name == "torchjit":
+            from nnsmith.backends.torchjit import TorchJITFactory
+            
+            return TorchJITFactory(target=target, optmax=optmax, **kwargs)
         else:
             raise ValueError(f"unknown backend: {name}")
