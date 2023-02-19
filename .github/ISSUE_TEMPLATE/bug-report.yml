@@ -32,7 +32,7 @@ body:
       label: "Reproduction"
       description: Please enter an explicit description of your issue
       value: |
-        Paste the commands or python script for reproducing the issue.
+        # Paste the commands or python script for reproducing the issue.
       render: bash
     validations:
       required: true
@@ -61,9 +61,9 @@ body:
       description: (Optional) What is the front-end framework for the generated model?
       multiple: true
       options:
-        - PyTorch
-        - TensorFlow
-        - ONNX
+        - torch
+        - tensorflow
+        - onnx
         - Customized
     validations:
       required: false
@@ -82,11 +82,12 @@ body:
       description: (Optional) What is the back-end engine for compiling the model?
       multiple: true
       options:
-        - TVM
-        - ONNXRuntime
-        - TensorRT
-        - XLA
-        - TFLite
+        - tvm
+        - onnxruntime
+        - tensorrt
+        - xla
+        - tflite
+        - torchjit
         - Customized
     validations:
       required: false
@@ -102,7 +103,7 @@ body:
     id: other
     attributes:
       label: "Other context"
-      description: (Optional) Anything else we should notice?
+      description: (Optional) Anything else the maintainer should notice?
       placeholder: For example, customized edits if applicable.
     validations:
       required: false
