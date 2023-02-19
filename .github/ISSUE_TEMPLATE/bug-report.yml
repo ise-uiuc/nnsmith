@@ -1,0 +1,108 @@
+name: "🐛 Bug Report"
+description: Create a new ticket for a bug.
+title: "🐛 [BUG] - <title>"
+labels: [
+  "bug"
+]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: "Description"
+      description: Please enter an explicit description of your issue
+      placeholder: Short and explicit description of your incident...
+    validations:
+      required: true
+  - type: dropdown
+    id: installation
+    attributes:
+      label: "Installation"
+      description: How did you install NNSmith?
+      multiple: true
+      options:
+        - pip install "nnsmith[torch,onnx]" --upgrade
+        - pip install "git+https://github.com/ise-uiuc/nnsmith@main#egg=nnsmith[torch,onnx]" --upgrade
+        - Source file without edits
+        - Source file with customized edits
+    validations:
+      required: true
+  - type: textarea
+    id: reprod
+    attributes:
+      label: "Reproduction"
+      description: Please enter an explicit description of your issue
+      value: |
+        Paste the commands or python script for reproducing the issue.
+      render: bash
+    validations:
+      required: true
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: "Screenshots"
+      description: (Optional) Add screenshots to help explain your problem.
+      value: |
+        ![DESCRIPTION](LINK.png)
+      render: bash
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: "Logs"
+      description: (Optional) Copy and paste any relevant log output. This will be automatically formatted into code, so no need for backticks.
+      render: bash
+    validations:
+      required: false
+  - type: dropdown
+    id: frontend
+    attributes:
+      label: "Front-end framework"
+      description: (Optional) What is the front-end framework for the generated model?
+      multiple: true
+      options:
+        - PyTorch
+        - TensorFlow
+        - ONNX
+        - Customized
+    validations:
+      required: false
+  - type: input
+    id: frontendver
+    attributes:
+      label: "Version of the front-end framework"
+      description: (Optional) What is the version of the front-end framework?
+      placeholder: For example, torch-2.0.0.dev20230213+cu118
+    validations:
+      required: false
+  - type: dropdown
+    id: backend
+    attributes:
+      label: "Back-end engine"
+      description: (Optional) What is the back-end engine for compiling the model?
+      multiple: true
+      options:
+        - TVM
+        - ONNXRuntime
+        - TensorRT
+        - XLA
+        - TFLite
+        - Customized
+    validations:
+      required: false
+  - type: input
+    id: backendver
+    attributes:
+      label: "Version of the front-end engine"
+      description: (Optional) What is the version of the front-end engine?
+      placeholder: For example, nvidia-tensorrt-8.4.1.5
+    validations:
+      required: false
+  - type: textarea
+    id: other
+    attributes:
+      label: "Other context"
+      description: (Optional) Anything else we should notice?
+      placeholder: For example, customized edits if applicable.
+    validations:
+      required: false
