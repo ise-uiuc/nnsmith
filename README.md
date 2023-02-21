@@ -1,6 +1,6 @@
-<p align="center">
-    <img src="https://github.com/ganler/nnsmith-logo/raw/master/nnsmith-logo.svg", align="right", height="240">
-</p>
+<div align="center">
+    <img src="https://github.com/ganler/nnsmith-logo/raw/master/nnsmith-logo.svg" align="right" height="240"/>
+</div>
 
 # NNSmith
 
