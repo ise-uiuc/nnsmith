@@ -37,6 +37,8 @@ class PGReLUFunc(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input):
         ctx.save_for_backward(input)
+        if x.dtype == torch.float16:
+            return torch.relu(x.float()).half()
         return torch.relu(input)
 
     @staticmethod
