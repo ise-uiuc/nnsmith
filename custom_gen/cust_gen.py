@@ -5,6 +5,9 @@ import time
 import traceback
 import json
 
+import torch.onnx
+from torch import nn
+
 import hydra
 from omegaconf import DictConfig
 
@@ -18,7 +21,32 @@ from nnsmith.util import hijack_patch_requires, mkdir, op_filter
 from models import ModelCust
 from models.torch import TorchModelExportable
 
+import onnx
+import onnx.checker
+import onnx.helper
+import torch
+import torch.onnx
+from onnx.external_data_helper import load_external_data_for_model
+from onnx.tools import update_model_dims
 
+from nnsmith.abstract.op import AbsOpBase, AbsTensor
+from nnsmith.gir import GraphIR
+from nnsmith.materialize import Model, Oracle
+from nnsmith.materialize.torch.forward import ALL_TORCH_OPS
+from nnsmith.materialize.torch.input_gen import PracticalHybridSearch
+from nnsmith.materialize.torch.symbolnet import SymbolNet
+from nnsmith.util import register_seed_setter
+
+def e2o(model):
+    print(model)
+    model = model.torch_model
+    print(model.parameters())
+    print(len(list(model.parameters())))
+    shape_of_first_layer = list(model.parameters())[0].shape #shape_of_first_layer
+    N,C = shape_of_first_layer[:2]
+    dummy_input = torch.Tensor(N,C)
+    dummy_input = dummy_input[...,:, None,None] #adding the None for height and weight
+    torch.onnx.export(model, dummy_input, "savehere.onnx")
 @hydra.main(version_base=None, config_path="../nnsmith/config", config_name="main")
 def main(cfg: DictConfig):
     # Generate a random ONNX model
@@ -102,8 +130,12 @@ def main(cfg: DictConfig):
     tsave_begin = time.time()
     testcase = TestCase(model, oracle)
     testcase.dump(root_folder=mgen_cfg["save"])
-    if isinstance(model, TorchModelExportable):
-        model.export_onnx()
+    print("check if this is true")
+    print(type(model))
+    print(isinstance(model, Model))
+    #if isinstance(model, TorchModelExportable): #check if specialically torch
+    if(isinstance(model, Model)):
+        e2o(model)
     tsave = time.time() - tsave_begin
 
     MGEN_LOG.info(
