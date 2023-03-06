@@ -38,15 +38,23 @@ from nnsmith.materialize.torch.symbolnet import SymbolNet
 from nnsmith.util import register_seed_setter
 
 def e2o(model):
-    print(model)
-    model = model.torch_model
-    print(model.parameters())
-    print(len(list(model.parameters())))
-    shape_of_first_layer = list(model.parameters())[0].shape #shape_of_first_layer
-    N,C = shape_of_first_layer[:2]
-    dummy_input = torch.Tensor(N,C)
-    dummy_input = dummy_input[...,:, None,None] #adding the None for height and weight
-    torch.onnx.export(model, dummy_input, "savehere.onnx")
+    dummy_inputs = [
+            torch.ones(size=svar.shape).uniform_(1, 2).to(dtype=svar.dtype.torch())
+            for _, svar in model.input_like.items()
+        ]
+    input_names = list(model.input_like.keys())
+    with torch.no_grad():
+        #model.eval()
+        torch.onnx.export(
+            model.torch_model,
+            tuple(dummy_inputs),
+            "savehere.onnx"
+            #,input_names=input_names,
+            #output_names=list(model.output_like.keys()),
+            #verbose=False,
+            #do_constant_folding=False,
+        )
+
 @hydra.main(version_base=None, config_path="../nnsmith/config", config_name="main")
 def main(cfg: DictConfig):
     # Generate a random ONNX model
