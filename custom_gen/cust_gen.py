@@ -20,6 +20,7 @@ from nnsmith.narrow_spec import auto_opset
 from nnsmith.util import hijack_patch_requires, mkdir, op_filter
 from models import ModelCust
 from models.torch import TorchModelExportable
+import traceback
 
 import onnx
 import onnx.checker
@@ -37,23 +38,32 @@ from nnsmith.materialize.torch.input_gen import PracticalHybridSearch
 from nnsmith.materialize.torch.symbolnet import SymbolNet
 from nnsmith.util import register_seed_setter
 
-def e2o(model):
+def e2o(model, counter):
     dummy_inputs = [
             torch.ones(size=svar.shape).uniform_(1, 2).to(dtype=svar.dtype.torch())
             for _, svar in model.input_like.items()
         ]
     input_names = list(model.input_like.keys())
+    path = "testout"
+    if not os.path.exists(path):
+        os.makedirs(path)
+    outFile = "/output" + str(counter)
     with torch.no_grad():
-        #model.eval()
-        torch.onnx.export(
-            model.torch_model,
-            tuple(dummy_inputs),
-            "savehere.onnx"
-            #,input_names=input_names,
-            #output_names=list(model.output_like.keys()),
-            #verbose=False,
-            #do_constant_folding=False,
-        )
+        try:
+            torch.onnx.export(
+                model.torch_model,
+                tuple(dummy_inputs),
+                path + outFile + ".onnx",
+                #,input_names=input_names,
+                #output_names=list(model.output_like.keys()),
+                verbose=True,
+                do_constant_folding=True,
+            )
+        except Exception as e:
+            with open(path + outFile + ".txt", "w") as f:
+                f.write("output  " + str(counter) + " error message:\n" + str(e) + "\n" + traceback.format_exc())
+                
+                
 
 @hydra.main(version_base=None, config_path="../nnsmith/config", config_name="main")
 def main(cfg: DictConfig):
@@ -61,94 +71,92 @@ def main(cfg: DictConfig):
     # TODO(@ganler): clean terminal outputs.
     mgen_cfg = cfg["mgen"]
 
-    seed = random.getrandbits(32) if mgen_cfg["seed"] is None else mgen_cfg["seed"]
+    for i in range(10):
+        seed = random.getrandbits(32) if mgen_cfg["seed"] is None else mgen_cfg["seed"]
 
-    MGEN_LOG.info(f"Using seed {seed}")
+        MGEN_LOG.info(f"Using seed {seed}")
 
-    # TODO(@ganler): skip operators outside of model gen with `cfg[exclude]`
-    results = []
-    root_path = mgen_cfg['save']
+        # TODO(@ganler): skip operators outside of model gen with `cfg[exclude]`
+        results = []
+        root_path = mgen_cfg['save']
 
-    # n_nodes = 5
-    # seed = random.getrandbits(32) if mgen_cfg["seed"] is None else mgen_cfg["seed"]
-    # # mgen_cfg['max_nodes'] = n_nodes
-    # mgen_cfg["save"] = root_path + f"/{n_nodes}_{seed}_pt"
-    # result = {"name": mgen_cfg['save'], "error": 0, "error_des": {}, "mad": 0, "ml1": 0, "ml2": 0}
+        # n_nodes = 5
+        # seed = random.getrandbits(32) if mgen_cfg["seed"] is None else mgen_cfg["seed"]
+        # # mgen_cfg['max_nodes'] = n_nodes
+        # mgen_cfg["save"] = root_path + f"/{n_nodes}_{seed}_pt"
+        # result = {"name": mgen_cfg['save'], "error": 0, "error_des": {}, "mad": 0, "ml1": 0, "ml2": 0}
 
-    model_cfg = cfg["model"]
-    ModelType = ModelCust.init(model_cfg["type"], backend_target=cfg["backend"]["target"])
-    ModelType.add_seed_setter()
+        model_cfg = cfg["model"]
+        ModelType = ModelCust.init(model_cfg["type"], backend_target=cfg["backend"]["target"])
+        ModelType.add_seed_setter()
 
-    if cfg["backend"]["type"] is not None:
-        factory = BackendFactory.init(
-            cfg["backend"]["type"],
-            target=cfg["backend"]["target"],
-            optmax=cfg["backend"]["optmax"],
+        if cfg["backend"]["type"] is not None:
+            factory = BackendFactory.init(
+                cfg["backend"]["type"],
+                target=cfg["backend"]["target"],
+                optmax=cfg["backend"]["optmax"],
+            )
+        else:
+            factory = None
+
+        # GENERATION
+        opset = auto_opset(ModelType, factory, vulops=mgen_cfg["vulops"])
+        opset = op_filter(opset, mgen_cfg["include"], mgen_cfg["exclude"])
+        hijack_patch_requires(mgen_cfg["patch_requires"])
+        activate_ext(opset=opset, factory=factory)
+
+        tgen_begin = time.time()
+        gen = model_gen(
+            opset=opset,
+            method=mgen_cfg["method"],
+            seed=seed,
+            max_elem_per_tensor=mgen_cfg["max_elem_per_tensor"],
+            max_nodes=mgen_cfg["max_nodes"],
+            timeout_ms=mgen_cfg["timeout_ms"],
+            rank_choices=mgen_cfg["rank_choices"],
+            dtype_choices=mgen_cfg["dtype_choices"],
         )
-    else:
-        factory = None
+        tgen = time.time() - tgen_begin
 
-    # GENERATION
-    opset = auto_opset(ModelType, factory, vulops=mgen_cfg["vulops"])
-    opset = op_filter(opset, mgen_cfg["include"], mgen_cfg["exclude"])
-    hijack_patch_requires(mgen_cfg["patch_requires"])
-    activate_ext(opset=opset, factory=factory)
+        if isinstance(gen, SymbolicGen):
+            MGEN_LOG.info(
+                f"{len(gen.last_solution)} symbols and {len(gen.solver.assertions())} constraints."
+            )
 
-    tgen_begin = time.time()
-    gen = model_gen(
-        opset=opset,
-        method=mgen_cfg["method"],
-        seed=seed,
-        max_elem_per_tensor=mgen_cfg["max_elem_per_tensor"],
-        max_nodes=mgen_cfg["max_nodes"],
-        timeout_ms=mgen_cfg["timeout_ms"],
-        rank_choices=mgen_cfg["rank_choices"],
-        dtype_choices=mgen_cfg["dtype_choices"],
-    )
-    tgen = time.time() - tgen_begin
+            if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
+                MGEN_LOG.debug("solution:" + ", ".join(map(str, gen.last_solution)))
 
-    if isinstance(gen, SymbolicGen):
+        # MATERIALIZATION
+        tmat_begin = time.time()
+        ir = gen.make_concrete()
+
         MGEN_LOG.info(
-            f"{len(gen.last_solution)} symbols and {len(gen.solver.assertions())} constraints."
+            f"Generated DNN has {ir.n_var()} variables and {ir.n_compute_inst()} operators."
         )
 
-        if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
-            MGEN_LOG.debug("solution:" + ", ".join(map(str, gen.last_solution)))
 
-    # MATERIALIZATION
-    tmat_begin = time.time()
-    ir = gen.make_concrete()
+        mkdir(mgen_cfg["save"])
+        if cfg["debug"]["viz"]:
+            fmt = cfg["debug"]["viz_fmt"].replace(".", "")
+            viz(ir, os.path.join(mgen_cfg["save"], f"graph.{fmt}"))
 
-    MGEN_LOG.info(
-        f"Generated DNN has {ir.n_var()} variables and {ir.n_compute_inst()} operators."
-    )
+        model = ModelType.from_gir(ir)
+        
+        model.refine_weights()  # either random generated or gradient-based.
+        oracle = model.make_oracle()
+        tmat = time.time() - tmat_begin
 
+        tsave_begin = time.time()
+        testcase = TestCase(model, oracle)
+        testcase.dump(root_folder=mgen_cfg["save"])
+        #if isinstance(model, TorchModelExportable): #check if specialically torch
+        if(isinstance(model, Model)):
+            e2o(model, i)
+        tsave = time.time() - tsave_begin
 
-    mkdir(mgen_cfg["save"])
-    if cfg["debug"]["viz"]:
-        fmt = cfg["debug"]["viz_fmt"].replace(".", "")
-        viz(ir, os.path.join(mgen_cfg["save"], f"graph.{fmt}"))
-
-    model = ModelType.from_gir(ir)
-    
-    model.refine_weights()  # either random generated or gradient-based.
-    oracle = model.make_oracle()
-    tmat = time.time() - tmat_begin
-
-    tsave_begin = time.time()
-    testcase = TestCase(model, oracle)
-    testcase.dump(root_folder=mgen_cfg["save"])
-    print("check if this is true")
-    print(type(model))
-    print(isinstance(model, Model))
-    #if isinstance(model, TorchModelExportable): #check if specialically torch
-    if(isinstance(model, Model)):
-        e2o(model)
-    tsave = time.time() - tsave_begin
-
-    MGEN_LOG.info(
-        f"Time:  @Generation: {tgen:.2f}s  @Materialization: {tmat:.2f}s  @Save: {tsave:.2f}s"
-    )
+        MGEN_LOG.info(
+            f"Time:  @Generation: {tgen:.2f}s  @Materialization: {tmat:.2f}s  @Save: {tsave:.2f}s"
+        )
     # results.append(result)
 
     # with open('./results.json', "a") as f:
