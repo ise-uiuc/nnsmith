@@ -62,11 +62,9 @@ class SymbolNet(nn.Module):
         ir: GraphIR,
         record_intermediate=False,
         use_gradient=False,
-        megabyte_lim=__MB_LIM__,
         print_grad=0,
     ):
         super(SymbolNet, self).__init__()
-        self.megabyte_lim = megabyte_lim
         self.print_grad = print_grad
         # <TorchFunc, <keys -> inputs>, <keys -> outputs>, original op>
         self.instructions = []
@@ -78,6 +76,7 @@ class SymbolNet(nn.Module):
         self.mlist = nn.ModuleList()
         # whether or not to register intermediate tensors as output tensors. Useful (at least) for checking nan
         self.record_intermediate = record_intermediate
+        self._device = None
 
         self.ir = ir
 
@@ -106,6 +105,14 @@ class SymbolNet(nn.Module):
             self.enable_training()
         self.check_intermediate_numeric = False
         self.invalid_found_last = None
+
+    def to(self, device):
+        self._device = device
+        return super().to(device)
+
+    @property
+    def device(self):
+        return self._device
 
     @property
     def input_like(self):

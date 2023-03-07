@@ -210,7 +210,7 @@ class TFModelCPU(TFModel):
         return tf.device(tf.config.list_logical_devices("CPU")[0].name)
 
 
-class TFModelGPU(TFModel):
+class TFModelCUDA(TFModel):
     @property
     def device(self) -> tf.device:
         gpus = tf.config.list_logical_devices("GPU")

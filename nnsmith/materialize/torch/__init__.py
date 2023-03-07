@@ -1,4 +1,5 @@
 import pickle
+from abc import ABC, abstractmethod
 from os import PathLike
 from typing import Dict, List, Type
 
@@ -13,11 +14,16 @@ from nnsmith.materialize.torch.symbolnet import SymbolNet
 from nnsmith.util import register_seed_setter
 
 
-class TorchModel(Model):
+class TorchModel(Model, ABC):
     def __init__(self) -> None:
         super().__init__()
         self.torch_model: SymbolNet = None
         self.sat_inputs = None
+
+    @classmethod
+    @abstractmethod
+    def device(cls) -> torch.device:
+        pass
 
     @property
     def version(self) -> str:
@@ -26,7 +32,7 @@ class TorchModel(Model):
     @classmethod
     def from_gir(cls: Type["TorchModel"], ir: GraphIR, **kwargs) -> "TorchModel":
         ret = cls()
-        ret.torch_model = SymbolNet(ir, **kwargs)
+        ret.torch_model = SymbolNet(ir, **kwargs).to(cls.device())
         return ret
 
     @staticmethod
@@ -35,7 +41,8 @@ class TorchModel(Model):
 
     def refine_weights(self) -> None:
         self.torch_model.enable_proxy_grad()
-        searcher = PracticalHybridSearch(self.torch_model)
+        use_cuda = self.device().type == "cuda"
+        searcher = PracticalHybridSearch(self.torch_model, use_cuda=use_cuda)
         # TODO(@ganler): Can we directly get both inputs and outputs?
         _, inputs = searcher.search(
             max_time_ms=20,
@@ -53,6 +60,7 @@ class TorchModel(Model):
                 inputs = self.torch_model.get_random_inps()
             else:
                 inputs = self.sat_inputs
+            inputs = {k: v.to(self.device()) for k, v in inputs.items()}
             outputs = self.torch_model.forward(**inputs)
 
         # numpyify
@@ -81,7 +89,7 @@ class TorchModel(Model):
         )
         with open(gir_path, "rb") as f:
             ir = pickle.load(f)
-        torch_model = SymbolNet(ir)
+        torch_model = SymbolNet(ir).to(cls.device())
         torch_model.load_state_dict(torch.load(path), strict=False)
         ret.torch_model = torch_model
         return ret
@@ -109,3 +117,15 @@ class TorchModel(Model):
     @staticmethod
     def add_seed_setter() -> None:
         register_seed_setter("torch", torch.manual_seed, overwrite=True)
+
+
+class TorchModelCPU(TorchModel):
+    @classmethod
+    def device(cls) -> torch.device:
+        return torch.device("cpu")
+
+
+class TorchModelCUDA(TorchModel):
+    @classmethod
+    def device(cls) -> torch.device:
+        return torch.device("cuda")
