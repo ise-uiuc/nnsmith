@@ -20,6 +20,7 @@ from nnsmith.narrow_spec import auto_opset
 from nnsmith.util import hijack_patch_requires, mkdir, op_filter
 from models import ModelCust
 from models.torch import TorchModelExportable
+from models.tensorflow import TFModelExportable
 import traceback
 
 import onnx
@@ -38,53 +39,22 @@ from nnsmith.materialize.torch.input_gen import PracticalHybridSearch
 from nnsmith.materialize.torch.symbolnet import SymbolNet
 from nnsmith.util import register_seed_setter
 
-def e2o(model, counter):
-    dummy_inputs = [
-            torch.ones(size=svar.shape).uniform_(1, 2).to(dtype=svar.dtype.torch())
-            for _, svar in model.input_like.items()
-        ]
-    input_names = list(model.input_like.keys())
-    path = "testout"
-    if not os.path.exists(path):
-        os.makedirs(path)
-    outFile = "/output" + str(counter)
-    with torch.no_grad():
-        try:
-            torch.onnx.export(
-                model.torch_model,
-                tuple(dummy_inputs),
-                path + outFile + ".onnx",
-                #,input_names=input_names,
-                #output_names=list(model.output_like.keys()),
-                verbose=True,
-                do_constant_folding=True,
-            )
-        except Exception as e:
-            with open(path + outFile + ".txt", "w") as f:
-                f.write("output  " + str(counter) + " error message:\n" + str(e) + "\n" + traceback.format_exc())
-                
-                
 
-@hydra.main(version_base=None, config_path="../nnsmith/config", config_name="main")
+@hydra.main(version_base=None, config_path="./nnsmith/config", config_name="main")
 def main(cfg: DictConfig):
     # Generate a random ONNX model
     # TODO(@ganler): clean terminal outputs.
     mgen_cfg = cfg["mgen"]
+    root_path = mgen_cfg['save']
+    results = []
 
     for i in range(10):
         seed = random.getrandbits(32) if mgen_cfg["seed"] is None else mgen_cfg["seed"]
-
         MGEN_LOG.info(f"Using seed {seed}")
-
-        # TODO(@ganler): skip operators outside of model gen with `cfg[exclude]`
-        results = []
-        root_path = mgen_cfg['save']
-
-        # n_nodes = 5
-        # seed = random.getrandbits(32) if mgen_cfg["seed"] is None else mgen_cfg["seed"]
-        # # mgen_cfg['max_nodes'] = n_nodes
-        # mgen_cfg["save"] = root_path + f"/{n_nodes}_{seed}_pt"
-        # result = {"name": mgen_cfg['save'], "error": 0, "error_des": {}, "mad": 0, "ml1": 0, "ml2": 0}
+        seed = random.getrandbits(32) if mgen_cfg["seed"] is None else mgen_cfg["seed"]
+        n_nodes = mgen_cfg['max_nodes'] 
+        mgen_cfg["save"] = root_path + f"/{n_nodes}_{seed}_pt"
+        result = {"name": mgen_cfg['save'], "error": 0, "error_des": {}, "mad": 0, "ml1": 0, "ml2": 0}
 
         model_cfg = cfg["model"]
         ModelType = ModelCust.init(model_cfg["type"], backend_target=cfg["backend"]["target"])
@@ -148,20 +118,19 @@ def main(cfg: DictConfig):
 
         tsave_begin = time.time()
         testcase = TestCase(model, oracle)
-        testcase.dump(root_folder=mgen_cfg["save"])
-        #if isinstance(model, TorchModelExportable): #check if specialically torch
-        if(isinstance(model, Model)):
-            e2o(model, i)
+        # testcase.dump(root_folder=mgen_cfg["save"])
+        if(isinstance(model, TorchModelExportable, TFModelExportable)):
+            # e2o(model, i)
+            result = model.export_onnx(result)
         tsave = time.time() - tsave_begin
 
         MGEN_LOG.info(
             f"Time:  @Generation: {tgen:.2f}s  @Materialization: {tmat:.2f}s  @Save: {tsave:.2f}s"
         )
-    # results.append(result)
+        results.append(result)
 
-    # with open('./results.json', "a") as f:
-    #     for i in results:
-    #         f.write(json.dumps(i))
+    with open('./results.json', "w") as f:
+        f.write(json.dumps(results))
 
 
 if __name__ == "__main__":

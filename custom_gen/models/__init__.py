@@ -31,6 +31,10 @@ class ModelCust(Model):
             from models.torch import TorchModelExportable
 
             return TorchModelExportable
+        elif name == "tensorflow-onnx":
+            from models.tensorflow import TFModelExportable
+
+            return TFModelExportable
         elif name == "torch":
             from nnsmith.materialize.torch import TorchModel
 
