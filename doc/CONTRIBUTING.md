@@ -37,7 +37,7 @@ Oftentimes not, rare cases yes (that's why it is suggested to submit an issue fo
 **S-sized contributions** are oftentimes easy-to-accept, including bug/typo fixes, CI improvements, test-case improvements, etc.
 as long as it is beneficial and satisfies the properties in the "General coding guidance" section.
 
-**M-sized contributions** such as extending new frontends/backends/fuzzing strategies/etc. are welcome as well
+**M-sized contributions** such as extending new front-ends/backends/fuzzing strategies/etc. are welcome as well
 -- as long as it shows an edge in improvements.
 However, for maintainability, it could be moved to the temporary "contrib" folder if it is non-trivial/unclear for being well-maintained.
 For example, let's say we supported backend "X" in the "contrib" folder and started to submitting bug reports to the "X" community.
@@ -56,7 +56,7 @@ as long as we agree on that the benefits (over the efforts) are unquestionable.
 
 ### `pre-commit`
 
-[`pre-commit`](https://pre-commit.com/) is a convenient tool to check and format your code while commiting codes.
+[`pre-commit`](https://pre-commit.com/) is a convenient tool to check and format your code while committing codes.
 
 To set-up pre-commit:
 
@@ -65,11 +65,11 @@ pip install -r requirements/dev.txt
 pre-commit install
 ```
 
-Now it will run checking and auto-formating while you commit:
+Now it will run checking and auto-formatting while you commit:
 
 ```shell
 git commit ...
-# if [NOTHING HAPPENDS], you are good to go;
+# if [NOTHING HAPPENS], you are good to go;
 # if [IT FAILS], the auto-formatting is automatically applied;
 #                you just need to check, `git add` these changes and re-commit.
 ```
@@ -84,10 +84,13 @@ If appliable (e.g., adding a new backend), add a few tests to validate your impl
 To run the Python tests:
 
 ```shell
-# env of torch & tf will conflict so split their unit tests.
+# env of torch & tf (and others) will conflict so split their unit tests.
 pytest tests/core -s
 pytest tests/torch -s
 pytest tests/tensorflow -s
+pytest tests/onnxruntime -s
+pytest tests/tvm -s
+pytest tests/tensorrt -s
 ```
 
 ### Simple code
@@ -96,8 +99,8 @@ pytest tests/tensorflow -s
 
 Maintaining code is hard, esp. when
 (i) initial code owners are not available; and
-(ii) the code is too complicated to be understand/modify.
-As a result, contributors are recommand to write simple code:
+(ii) the code is too complicated to be understood/modified.
+As a result, contributors are recommended to write simple code:
 (i) easy-to-understand;
 (ii) well-organized and easy-to-extend;
 (iii) well-documented if the concept is tricky;

@@ -33,9 +33,16 @@ jobs:
           yes | python nnsmith/cli/model_gen.py model.type=torch mgen.method=symbolic-cinit mgen.rank_choices="[4]" mgen.dtype_choices="[f32]" mgen.include="[core.NCHWConv2d, core.ReLU]" mgen.patch_requires=./tests/mock/requires_patch.py backend.type=torchjit
       - name: Test ONNX + ONNXRuntime
         run: |
+          pytest tests/onnxruntime
           yes | python nnsmith/cli/model_gen.py model.type=onnx mgen.method=symbolic
           yes | python nnsmith/cli/model_gen.py model.type=onnx backend.type=onnxruntime mgen.method=concolic
           python nnsmith/cli/model_exec.py model.type=onnx backend.type=onnxruntime model.path=nnsmith_output/model.onnx
+      - name: Test ONNX + TVM
+        run: |
+          pytest tests/tvm
+      - name: Test ONNX + TRT
+        run: |
+          pytest tests/tensorrt
       - name: Test TensorFlow
         run: |
           pip install -r requirements/sys/tensorflow.txt --pre --upgrade

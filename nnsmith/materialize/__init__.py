@@ -185,23 +185,25 @@ class Model(ABC):
             )
 
         if name == "torch":
-            from nnsmith.materialize.torch import TorchModel
+            from nnsmith.materialize.torch import TorchModelCPU, TorchModelCUDA
 
-            # PyTorch CPU - GPU implementation are quite the same.
-            return TorchModel
+            if backend_target == "gpu" or backend_target == "cuda":
+                return TorchModelCUDA
+            return TorchModelCPU
         elif name == "onnx":
             # device agnoistic
-            from nnsmith.materialize.onnx import ONNXModel
+            from nnsmith.materialize.onnx import ONNXModelCPU, ONNXModelCUDA
 
-            return ONNXModel
+            if backend_target == "gpu" or backend_target == "cuda":
+                return ONNXModelCUDA
+            return ONNXModelCPU
         elif name == "tensorflow":
-            from nnsmith.materialize.tensorflow import TFModelCPU, TFModelGPU
+            from nnsmith.materialize.tensorflow import TFModelCPU, TFModelCUDA
 
             if backend_target == "gpu" or backend_target == "cuda":
                 # XLA must align device location of eager mode execution.
-                return TFModelGPU
-            else:
-                return TFModelCPU
+                return TFModelCUDA
+            return TFModelCPU
 
         raise ValueError(
             f"Unsupported: ModelType={name} for BackendTarget={backend_target}"

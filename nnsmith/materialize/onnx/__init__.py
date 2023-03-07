@@ -3,7 +3,7 @@ import random
 import warnings
 from io import BytesIO
 from os import PathLike
-from typing import Dict, List, Optional, Tuple, Type, Union
+from typing import Dict, Generic, List, Optional, Tuple, Type, TypeVar, Union
 
 import onnx
 import onnx.checker
@@ -17,7 +17,12 @@ from nnsmith.abstract.dtype import DTYPE_GEN_COMPLEX, DType
 from nnsmith.abstract.op import AbsTensor
 from nnsmith.gir import GraphIR
 from nnsmith.macro import onnx2external_data_dir
-from nnsmith.materialize.torch import SymbolNet, TorchModel
+from nnsmith.materialize.torch import (
+    SymbolNet,
+    TorchModel,
+    TorchModelCPU,
+    TorchModelCUDA,
+)
 
 
 def create_deadcode_onnx(onnx_model: onnx.ModelProto, name_mask) -> onnx.ModelProto:
@@ -52,7 +57,10 @@ def torch2onnx(
     # Dummy inputs
     if dummy_inputs is None:
         dummy_inputs = [
-            torch.ones(size=svar.shape).uniform_(1, 2).to(dtype=svar.dtype.torch())
+            torch.ones(size=svar.shape)
+            .to(model.device)
+            .uniform_(1, 2)
+            .to(dtype=svar.dtype.torch())
             for _, svar in model.input_like.items()
         ]
 
@@ -67,6 +75,7 @@ def torch2onnx(
                 "default" if verbose else "ignore", category=UserWarning, append=True
             )
             model.eval()
+            # TODO: How to remove the annoying "Diagnostic Run ..." message?
             torch.onnx.export(
                 model,
                 tuple(dummy_inputs),
@@ -145,6 +154,12 @@ def get_onnx_proto(model: Union[onnx.ModelProto, str]) -> onnx.ModelProto:
 
 
 class ONNXModel(TorchModel):
+    PTType: Type[TorchModel] = None
+
+    @classmethod
+    def device(cls) -> torch.device:
+        return cls.PTType.device()
+
     def __init__(self, with_torch=True):
         """Initialize a ONNXModel.
 
@@ -191,8 +206,7 @@ class ONNXModel(TorchModel):
     @classmethod
     def from_gir(cls: Type["ONNXModel"], gir: GraphIR, **kwargs) -> "ONNXModel":
         ret = cls()
-        ret.torch_model = SymbolNet(gir, **kwargs)
-
+        ret.torch_model = cls.PTType.from_gir(gir, **kwargs).torch_model
         ret.full_input_like = ret.torch_model.input_like
         ret.full_output_like = ret.torch_model.output_like
         ret.masked_output_like = ret.full_output_like
@@ -203,7 +217,7 @@ class ONNXModel(TorchModel):
         return ret
 
     def refine_weights(self) -> None:
-        TorchModel.refine_weights(self)
+        self.PTType.refine_weights(self)
         # weights are set. let's save the model.
         self.onnx_model = self.get_onnx_from_torch()
         if set(self.masked_output_like.keys()) != set(self.full_output_like):
@@ -221,8 +235,8 @@ class ONNXModel(TorchModel):
 
     def dump(self, path: PathLike) -> None:
         if self.with_torch:
-            TorchModel.dump(
-                self, path.replace(self.name_suffix(), TorchModel.name_suffix())
+            self.PTType.dump(
+                self, path.replace(self.name_suffix(), self.PTType.name_suffix())
             )
             if self.onnx_model is None:
                 self.onnx_model = self.get_onnx_from_torch()
@@ -235,7 +249,7 @@ class ONNXModel(TorchModel):
         ret = cls()
         ret.onnx_model = onnx.load(path)
 
-        torch_path = path.replace(cls.name_suffix(), TorchModel.name_suffix())
+        torch_path = path.replace(cls.name_suffix(), cls.PTType.name_suffix())
 
         ret.with_torch = False
         full_input_like, full_output_like = analyze_onnx_io(ret.onnx_model)
@@ -246,7 +260,7 @@ class ONNXModel(TorchModel):
         # FIXME: missing key(s) in state_dict: "mlist.0.data", "mlist.1.data".
         if os.path.exists(torch_path):
             ret.with_torch = True
-            ret.torch_model = TorchModel.load(torch_path)
+            ret.torch_model = cls.PTType.load(torch_path)
             ret.full_input_like = ret.torch_model.input_like
             ret.full_output_like = ret.torch_model.output_like
 
@@ -278,3 +292,11 @@ class ONNXModel(TorchModel):
     @classmethod
     def skip_dtypes(cls) -> List[DType]:
         return DTYPE_GEN_COMPLEX
+
+
+class ONNXModelCPU(ONNXModel):
+    PTType = TorchModelCPU
+
+
+class ONNXModelCUDA(ONNXModel):
+    PTType = TorchModelCUDA
