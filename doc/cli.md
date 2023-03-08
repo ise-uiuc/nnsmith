@@ -1,9 +1,9 @@
 ## Installation
 
 ```shell
-python3 -m pip install "nnsmith[torch,onnx,tvm,ort]" --upgrade
+python3 -m pip install "nnsmith[torch,onnx,tvm,onnxruntime]" --upgrade
 # Or try the HEAD branch:
-# pip install "git+https://github.com/ise-uiuc/nnsmith@main#egg=nnsmith[torch,onnx,tvm,ort]" --upgrade
+# pip install "git+https://github.com/ise-uiuc/nnsmith@main#egg=nnsmith[torch,onnx,tvm,onnxruntime]" --upgrade
 ```
 
 The core functionality of NNSmith is graph generation.
@@ -13,11 +13,11 @@ Therefore, the systems and model types you want to fuzz are installed as depende
 We currently have model formats:
 - `torch`
 - `onnx`
-- `tf` (experimental)
+- `tensorflow` (experimental)
 
 and backends:
 - `tvm`: TVM
-- `ort`: ONNXRuntime
+- `onnxruntime`: ONNXRuntime
 - `trt`: TensorRT
 - `xla`: XLA
 - `tflite`: TFLite

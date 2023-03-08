@@ -76,7 +76,7 @@ git commit ...
 
 ### Testing
 
-If appliable (e.g., adding a new backend), add a few tests to validate your implementation. Examples can be found:
+If applicable (e.g., adding a new backend), add a few tests to validate your implementation. Examples can be found:
 
 1. [Python unit-tests](https://github.com/ise-uiuc/nnsmith/tree/main/tests);
 2. [End-to-end testing](https://github.com/ise-uiuc/nnsmith/blob/main/.github/workflows/ci.yaml);
