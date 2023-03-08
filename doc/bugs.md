@@ -1,6 +1,6 @@
 ## Bugs found with NNSmith
 
-> **Annotation**: ✔️ means fixed; 🚨 means this bug has been marked with a `high-priority` label (PyTorch)
+> **Annotation**: ✅ means fixed; 🚨 means this bug has been marked with a `high-priority` label (PyTorch)
 
 ### Table of Contents
 
@@ -15,33 +15,33 @@
 
 ### PyTorch
 
-01. ✔️ 🚨 [SIGIOT when running model with conv2d and avgpool2d after `optimize_for_inference` · Issue #86535 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/86535)
+01. ✅ 🚨 [SIGIOT when running model with conv2d and avgpool2d after `optimize_for_inference` · Issue #86535 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/86535)
 
-02. ✔️ [`optimize_for_inference` leads to wrong results for model with conv2d, max and clip · Issue #86556 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/86556)
+02. ✅ [`optimize_for_inference` leads to wrong results for model with conv2d, max and clip · Issue #86556 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/86556)
 
-03. ✔️ 🚨 [RuntimeError: could not construct a memory descriptor using a format tag · Issue #86664 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/86664)
+03. ✅ 🚨 [RuntimeError: could not construct a memory descriptor using a format tag · Issue #86664 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/86664)
 
-04. ✔️ [[NNPack] Runtime error with padded `Conv1d` and `>=16` batch size · Issue #90142 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/90142)
+04. ✅ [[NNPack] Runtime error with padded `Conv1d` and `>=16` batch size · Issue #90142 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/90142)
 
-05. ✔️ 🚨 [[pt2] `torch.where` gives wrong results with `torch.compile` · Issue #93374 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/93374)
+05. ✅ 🚨 [[pt2] `torch.where` gives wrong results with `torch.compile` · Issue #93374 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/93374)
 
 06. 🚨 [[pt2] compiled function with cat and mul gives wrong results · Issue #93365 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/93365)
 
-07. ✔️ [[pt2] cannot compile model with linear layer when the input has rank 1 · Issue #93372 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/93372)
+07. ✅ [[pt2] cannot compile model with linear layer when the input has rank 1 · Issue #93372 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/93372)
 
-08. ✔️ [[pt2] `torch._inductor.exc.CppCompileError: C++ compile error` when compiling `neg` and `max` · Issue #93380 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/93380)
+08. ✅ [[pt2] `torch._inductor.exc.CppCompileError: C++ compile error` when compiling `neg` and `max` · Issue #93380 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/93380)
 
-09. ✔️ [[pt2] `torch.compile` produces wrong results for function with `neg` on `uint8` tensor · Issue #93829 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/93829)
+09. ✅ [[pt2] `torch.compile` produces wrong results for function with `neg` on `uint8` tensor · Issue #93829 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/93829)
 
-10. ✔️ [[pt2] Cannot compile model with `neg` and `linear` · Issue #93836 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/93836)
+10. ✅ [[pt2] Cannot compile model with `neg` and `linear` · Issue #93836 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/93836)
 
-11. ✔️ [`pad` + `gt` produce wrong results in compile mode · Issue #93351 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/93351)
+11. ✅ [`pad` + `gt` produce wrong results in compile mode · Issue #93351 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/93351)
 
-12. ✔️ [[pt2] `torch._inductor.exc.CppCompileError: C++ compile error` when compiling `argmax` and `min` · Issue #94055 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/94055)
+12. ✅ [[pt2] `torch._inductor.exc.CppCompileError: C++ compile error` when compiling `argmax` and `min` · Issue #94055 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/94055)
 
-13. ✔️ [`torch.compile` fails when using `torch.sub` with python constant · Issue #95181 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/95181)
+13. ✅ [`torch.compile` fails when using `torch.sub` with python constant · Issue #95181 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/95181)
 
-14. ✔️ [`torch.ge` produces wrong results in compile mode when given int tensors · Issue #95695 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/95695)
+14. ✅ [`torch.ge` produces wrong results in compile mode when given int tensors · Issue #95695 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/95695)
 
 15. [[JIT] Zero-channel conv2d cannot be applied with `optimize_for_inference` · Issue #91396 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/91396)
 
@@ -55,41 +55,41 @@
 
 ### PyTorch-ONNX Converter
 
-01. ✔️ [[ONNX] `f64 * LeakyReLU(f64)` mistakingly returns f32 · Issue #85316 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/85316)
+01. ✅ [[ONNX] `f64 * LeakyReLU(f64)` mistakingly returns f32 · Issue #85316 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/85316)
 
-02. ✔️ [[ONNX] Converter did not consider the implicit casting specifically for `Max` · Issue #87609 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/87609)
+02. ✅ [[ONNX] Converter did not consider the implicit casting specifically for `Max` · Issue #87609 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/87609)
 
-03. ✔️ [fix: onnx PReLU unidirectional broadcasting by ganler · Pull Request #70571 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/pull/70571)
+03. ✅ [fix: onnx PReLU unidirectional broadcasting by ganler · Pull Request #70571 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/pull/70571)
 
-04. ✔️ [Clip] [[ONNX] Make Non-Float Op Exportation Compatible to Avoid Invalid ONNX Models by ganler · Pull Request #72401 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/pull/72401)
+04. ✅ [Clip] [[ONNX] Make Non-Float Op Exportation Compatible to Avoid Invalid ONNX Models by ganler · Pull Request #72401 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/pull/72401)
 
-05. ✔️ [Min] [[ONNX] Make Non-Float Op Exportation Compatible to Avoid Invalid ONNX Models by ganler · Pull Request #72401 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/pull/72401)
+05. ✅ [Min] [[ONNX] Make Non-Float Op Exportation Compatible to Avoid Invalid ONNX Models by ganler · Pull Request #72401 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/pull/72401)
 
-06. ✔️ [Max] [[ONNX] Make Non-Float Op Exportation Compatible to Avoid Invalid ONNX Models by ganler · Pull Request #72401 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/pull/72401)
+06. ✅ [Max] [[ONNX] Make Non-Float Op Exportation Compatible to Avoid Invalid ONNX Models by ganler · Pull Request #72401 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/pull/72401)
 
-07. ✔️ [ReLU] [[ONNX] Make Non-Float Op Exportation Compatible to Avoid Invalid ONNX Models by ganler · Pull Request #72401 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/pull/72401)
+07. ✅ [ReLU] [[ONNX] Make Non-Float Op Exportation Compatible to Avoid Invalid ONNX Models by ganler · Pull Request #72401 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/pull/72401)
 
-08. ✔️ [Pad] [[ONNX] Make Non-Float Op Exportation Compatible to Avoid Invalid ONNX Models by ganler · Pull Request #72401 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/pull/72401)
+08. ✅ [Pad] [[ONNX] Make Non-Float Op Exportation Compatible to Avoid Invalid ONNX Models by ganler · Pull Request #72401 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/pull/72401)
 
-09. ✔️ [[onnx export] Add broadcast to matmul shape inference by lazycal · Pull Request #70534 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/pull/70534)
+09. ✅ [[onnx export] Add broadcast to matmul shape inference by lazycal · Pull Request #70534 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/pull/70534)
 
-10. ✔️ [[Bug][ONNX] Specification Inconsistency in Flatten · Issue #74142 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/74142)
+10. ✅ [[Bug][ONNX] Specification Inconsistency in Flatten · Issue #74142 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/74142)
 
-11. ✔️ [[ONNX] Fix shape inconsistency when exporting scalar log2 by lazycal · Pull Request #78701 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/pull/78701)
+11. ✅ [[ONNX] Fix shape inconsistency when exporting scalar log2 by lazycal · Pull Request #78701 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/pull/78701)
 
-12. ✔️ [[ONNX Export] Interpolation likely should be exported with `half_pixel` instead of `pytorch_half_pixel` · Issue #79361 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/79361)
+12. ✅ [[ONNX Export] Interpolation likely should be exported with `half_pixel` instead of `pytorch_half_pixel` · Issue #79361 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/79361)
 
 ### ONNX
 
-01. ✔️ [[Bug] Checker misses data type mismatch for Max · Issue #4619 · onnx/onnx · GitHub](https://github.com/onnx/onnx/issues/4619)
+01. ✅ [[Bug] Checker misses data type mismatch for Max · Issue #4619 · onnx/onnx · GitHub](https://github.com/onnx/onnx/issues/4619)
 
 ### ONNXRuntime
 
-01. ✔️ [Crashes when relu is followed by a clip · Issue #9753 · microsoft/onnxruntime · GitHub](https://github.com/microsoft/onnxruntime/issues/9753)
+01. ✅ [Crashes when relu is followed by a clip · Issue #9753 · microsoft/onnxruntime · GitHub](https://github.com/microsoft/onnxruntime/issues/9753)
 
-02. ✔️ [MatMul fusion failed at scalar input · Issue #10950 · microsoft/onnxruntime · GitHub](https://github.com/microsoft/onnxruntime/issues/10950)
+02. ✅ [MatMul fusion failed at scalar input · Issue #10950 · microsoft/onnxruntime · GitHub](https://github.com/microsoft/onnxruntime/issues/10950)
 
-03. ✔️ [GemmTransposeFusion error when C is transposed (`Gemm(A,B,Transpose(C)`), complained with confusing name `_transformed_transformed_transformed...` · Issue #12071 · microsoft/onnxruntime · GitHub](https://github.com/microsoft/onnxruntime/issues/12071)
+03. ✅ [GemmTransposeFusion error when C is transposed (`Gemm(A,B,Transpose(C)`), complained with confusing name `_transformed_transformed_transformed...` · Issue #12071 · microsoft/onnxruntime · GitHub](https://github.com/microsoft/onnxruntime/issues/12071)
 
 04. [[Bug] Mixing negative and positive paddings causes segfault/uninitialized memory values produced in reflected pad · Issue #11828 · microsoft/onnxruntime · GitHub](https://github.com/microsoft/onnxruntime/issues/11828)
 
@@ -109,75 +109,75 @@
 
 ### TVM
 
-01. ✔️ [[Bug] shape int32-int64 check error in `trilu`'s `te.compute` · Issue #13029 · apache/tvm · GitHub](https://github.com/apache/tvm/issues/13029)
+01. ✅ [[Bug] shape int32-int64 check error in `trilu`'s `te.compute` · Issue #13029 · apache/tvm · GitHub](https://github.com/apache/tvm/issues/13029)
 
-02. ✔️ [[Bug] `trilu` not tagged with `injective` and thus miss reduce schedule · Issue #13030 · apache/tvm · GitHub](https://github.com/apache/tvm/issues/13030)
+02. ✅ [[Bug] `trilu` not tagged with `injective` and thus miss reduce schedule · Issue #13030 · apache/tvm · GitHub](https://github.com/apache/tvm/issues/13030)
 
-03. ✔️ [[Bug] Wrong results of `cast<int32>( cast<bool>(-1i64) )` · Issue #13048 · apache/tvm · GitHub](https://github.com/apache/tvm/issues/13048)
+03. ✅ [[Bug] Wrong results of `cast<int32>( cast<bool>(-1i64) )` · Issue #13048 · apache/tvm · GitHub](https://github.com/apache/tvm/issues/13048)
 
-04. ✔️ [[BugFix] resolve integer 32. ~ 64. mismatch by casting by ganler · Pull Request #9582 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/9582)
+04. ✅ [[BugFix] resolve integer 32. ~ 64. mismatch by casting by ganler · Pull Request #9582 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/9582)
 
-05. ✔️ [[onnx] fix onnx where broadcast by lazycal · Pull Request #10106 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10106)
+05. ✅ [[onnx] fix onnx where broadcast by lazycal · Pull Request #10106 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10106)
 
-06. ✔️ [Fix broadcast InferCorrectLayout by lazycal · Pull Request #10156 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10156)
+06. ✅ [Fix broadcast InferCorrectLayout by lazycal · Pull Request #10156 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10156)
 
-07. ✔️ [[BUGFIX][ARITH] Fix FloorMod Simplifier by lazycal · Pull Request #10336 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10336)
+07. ✅ [[BUGFIX][ARITH] Fix FloorMod Simplifier by lazycal · Pull Request #10336 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10336)
 
-08. ✔️ [[BugFix]: select node type error in NarrowDataType pass by ganler · Pull Request #10519 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10519)
+08. ✅ [[BugFix]: select node type error in NarrowDataType pass by ganler · Pull Request #10519 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10519)
 
 09. [[Bug] GetStoreRule failure at simple Conv2d + Squeeze model · Issue #10528 · apache/tvm · GitHub](https://github.com/apache/tvm/issues/10528)
 
-10. ✔️ [[Relay][ONNX][Fix] Flatten in OnnxConverter by ganler · Pull Request #10593 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10593)
+10. ✅ [[Relay][ONNX][Fix] Flatten in OnnxConverter by ganler · Pull Request #10593 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10593)
 
-11. ✔️ [NarrowDataType] [[TIR] Fix Ramp int32~64 mismatch in VectorizeLoop and NarrowDataType passes by lazycal · Pull Request #10172 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10172)
+11. ✅ [NarrowDataType] [[TIR] Fix Ramp int32~64 mismatch in VectorizeLoop and NarrowDataType passes by lazycal · Pull Request #10172 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10172)
 
-12. ✔️ [VectorizeLoop] [[TIR] Fix Ramp int32~64 mismatch in VectorizeLoop and NarrowDataType passes by lazycal · Pull Request #10172 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10172)
+12. ✅ [VectorizeLoop] [[TIR] Fix Ramp int32~64 mismatch in VectorizeLoop and NarrowDataType passes by lazycal · Pull Request #10172 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10172)
 
-13. ✔️ [[Bug][TE Schedule] Unsupported nested parallel created by Softmax TE schedule · Issue #12001 · apache/tvm · GitHub](https://github.com/apache/tvm/issues/12001)
+13. ✅ [[Bug][TE Schedule] Unsupported nested parallel created by Softmax TE schedule · Issue #12001 · apache/tvm · GitHub](https://github.com/apache/tvm/issues/12001)
 
-14. ✔️ [[fix] vec * mat in matmul in onnx converter by ganler · Pull Request #11174 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/11174)
+14. ✅ [[fix] vec * mat in matmul in onnx converter by ganler · Pull Request #11174 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/11174)
 
-15. ✔️ [fix vec*mat in PyTorch converter by ganler · Pull Request #11347 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/11347)
+15. ✅ [fix vec*mat in PyTorch converter by ganler · Pull Request #11347 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/11347)
 
-16. ✔️ [[TIR] Fix int32 vs int64 mismatch in For construct. by lazycal · Pull Request #10595 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10595)
+16. ✅ [[TIR] Fix int32 vs int64 mismatch in For construct. by lazycal · Pull Request #10595 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10595)
 
-17. ✔️ [Add missing Slice layout fallback check of `stride=1` . by lazycal · Pull Request #10690 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10690)
+17. ✅ [Add missing Slice layout fallback check of `stride=1` . by lazycal · Pull Request #10690 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10690)
 
-18. ✔️ [Onnx squeeze enabled with auto axis handling. by ganler · Pull Request #10742 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10742)
+18. ✅ [Onnx squeeze enabled with auto axis handling. by ganler · Pull Request #10742 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10742)
 
-19. ✔️ [Reduce] [[ONNX] fix reduce crash on scalar inputs by ganler · Pull Request #10780 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10780)
+19. ✅ [Reduce] [[ONNX] fix reduce crash on scalar inputs by ganler · Pull Request #10780 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10780)
 
-20. ✔️ [ReduceSumSquare] [[ONNX] fix reduce crash on scalar inputs by ganler · Pull Request #10780 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10780)
+20. ✅ [ReduceSumSquare] [[ONNX] fix reduce crash on scalar inputs by ganler · Pull Request #10780 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10780)
 
-21. ✔️ [ReduceL1] [[ONNX] fix reduce crash on scalar inputs by ganler · Pull Request #10780 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10780)
+21. ✅ [ReduceL1] [[ONNX] fix reduce crash on scalar inputs by ganler · Pull Request #10780 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10780)
 
-22. ✔️ [ReduceL2] [[ONNX] fix reduce crash on scalar inputs by ganler · Pull Request #10780 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10780)
+22. ✅ [ReduceL2] [[ONNX] fix reduce crash on scalar inputs by ganler · Pull Request #10780 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10780)
 
-23. ✔️ [ReduceLogSum][[ONNX] fix reduce crash on scalar inputs by ganler · Pull Request #10780 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10780)
+23. ✅ [ReduceLogSum][[ONNX] fix reduce crash on scalar inputs by ganler · Pull Request #10780 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10780)
 
-24. ✔️ [[FIX] resolve int64/32 for AttrStmtNode by ganler · Pull Request #10983 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10983)
+24. ✅ [[FIX] resolve int64/32 for AttrStmtNode by ganler · Pull Request #10983 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10983)
 
-25. ✔️ [Fix onnx round import with float64 inputs. by lazycal · Pull Request #11685 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/11685)
+25. ✅ [Fix onnx round import with float64 inputs. by lazycal · Pull Request #11685 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/11685)
 
-26. ✔️ [Fix 1d-softmax schedule. by lazycal · Pull Request #11719 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/11719)
+26. ✅ [Fix 1d-softmax schedule. by lazycal · Pull Request #11719 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/11719)
 
-27. ✔️ [[Fix] int32/64 mismatch of buffer elem_offset at HandleBufferBindScope by ganler · Pull Request #11755 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/11755)
+27. ✅ [[Fix] int32/64 mismatch of buffer elem_offset at HandleBufferBindScope by ganler · Pull Request #11755 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/11755)
 
-28. ✔️ [[Bug] Int64 BroadCast-ArgMax triggers assertion error at graph runtime · Issue #11794 · apache/tvm · GitHub](https://github.com/apache/tvm/issues/11794)
+28. ✅ [[Bug] Int64 BroadCast-ArgMax triggers assertion error at graph runtime · Issue #11794 · apache/tvm · GitHub](https://github.com/apache/tvm/issues/11794)
 
-29. ✔️ [[TE Schedule] Fix broken 2D softmax TE schedules when axis=0 by lazycal · Pull Request #11803 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/11803)
+29. ✅ [[TE Schedule] Fix broken 2D softmax TE schedules when axis=0 by lazycal · Pull Request #11803 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/11803)
 
-30. ✔️ [[Bug] `concat([x], axis=1)` return random results · Issue #11895 · apache/tvm · GitHub](https://github.com/apache/tvm/issues/11895)
+30. ✅ [[Bug] `concat([x], axis=1)` return random results · Issue #11895 · apache/tvm · GitHub](https://github.com/apache/tvm/issues/11895)
 
-31. ✔️ [Fix infercorrect layout in Layoutrewrite and improve naming. by lazycal · Pull Request #12007 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/12007/files)
+31. ✅ [Fix infercorrect layout in Layoutrewrite and improve naming. by lazycal · Pull Request #12007 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/12007/files)
 
-32. ✔️ [Several type mismatch fixes and checks by kparzysz-quic · Pull Request #12041 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/12041)
+32. ✅ [Several type mismatch fixes and checks by kparzysz-quic · Pull Request #12041 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/12041)
 
-33. ✔️ [[FIX][ONNX][Relay] onnx converter on matmul with scalar; bring back nn.matmul check by ganler · Pull Request #13448 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/13448)
+33. ✅ [[FIX][ONNX][Relay] onnx converter on matmul with scalar; bring back nn.matmul check by ganler · Pull Request #13448 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/13448)
 
-34. ✔️ [[Bug] Layout Error when Putting `argmin` after `conv2d` · Issue #9813 · apache/tvm · GitHub](https://github.com/apache/tvm/issues/9813)
+34. ✅ [[Bug] Layout Error when Putting `argmin` after `conv2d` · Issue #9813 · apache/tvm · GitHub](https://github.com/apache/tvm/issues/9813)
 
-35. ✔️ [Fix LayoutRewriter by lazycal · Pull Request #10118 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10118)
+35. ✅ [Fix LayoutRewriter by lazycal · Pull Request #10118 · apache/tvm · GitHub](https://github.com/apache/tvm/pull/10118)
 
 36. [[Bug] concatenating strided slice and negative padding causes wrong buffer binding · Issue #11897 · apache/tvm](https://github.com/apache/tvm/issues/11897)
 
@@ -191,15 +191,15 @@
 
 ### TensorRT
 
-01. ✔️ [Segfault on const+prelu+reduce_mean+comparison_op · Issue #1738 · NVIDIA/TensorRT · GitHub](https://github.com/NVIDIA/TensorRT/issues/1738#issuecomment-1019633288)
+01. ✅ [Segfault on const+prelu+reduce_mean+comparison_op · Issue #1738 · NVIDIA/TensorRT · GitHub](https://github.com/NVIDIA/TensorRT/issues/1738#issuecomment-1019633288)
 
-02. ✔️ [Gemm conversion error, seem to be caused by squeeze · Issue #824 · onnx/onnx-tensorrt · GitHub](https://github.com/onnx/onnx-tensorrt/issues/824)
+02. ✅ [Gemm conversion error, seem to be caused by squeeze · Issue #824 · onnx/onnx-tensorrt · GitHub](https://github.com/onnx/onnx-tensorrt/issues/824)
 
-03. ✔️ [[Bug] --loadInputs not working: input name mismatch when Flatten is the input node · Issue #1990 · NVIDIA/TensorRT · GitHub](https://github.com/NVIDIA/TensorRT/issues/1990)
+03. ✅ [[Bug] --loadInputs not working: input name mismatch when Flatten is the input node · Issue #1990 · NVIDIA/TensorRT · GitHub](https://github.com/NVIDIA/TensorRT/issues/1990)
 
-04. ✔️ [Cuda OutOfMemory when creating tensor with 2^29 (~0.5 G) elements - TensorRT - NVIDIA Developer Forums](https://forums.developer.nvidia.com/t/cuda-outofmemory-when-creating-tensor-with-2-29-0-5-g-elements/203009)
+04. ✅ [Cuda OutOfMemory when creating tensor with 2^29 (~0.5 G) elements - TensorRT - NVIDIA Developer Forums](https://forums.developer.nvidia.com/t/cuda-outofmemory-when-creating-tensor-with-2-29-0-5-g-elements/203009)
 
-05. ✔️ [Myelin error on onnx model: Assertion `i < crds_.size() < failed · Issue #1781 · NVIDIA/TensorRT · GitHub](https://github.com/NVIDIA/TensorRT/issues/1781)
+05. ✅ [Myelin error on onnx model: Assertion `i < crds_.size() < failed · Issue #1781 · NVIDIA/TensorRT · GitHub](https://github.com/NVIDIA/TensorRT/issues/1781)
 
 06. [Segmentation fault when using TensorRT to compile a model - TensorRT - NVIDIA Developer Forums](https://forums.developer.nvidia.com/t/segmentation-fault-when-using-tensorrt-to-compile-a-model/218872)
 
