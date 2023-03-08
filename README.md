@@ -4,13 +4,11 @@
 
 # NNSmith
 
-<p align="center">
-    <a href="https://github.com/ise-uiuc/nnsmith/actions/workflows/ci.yaml"><img src="https://github.com/ise-uiuc/nnsmith/actions/workflows/ci.yaml/badge.svg">
-    <a href="https://pypi.org/project/nnsmith/"><img src="https://img.shields.io/pypi/v/nnsmith?color=g">
-    <a href="https://github.com/ise-uiuc/nnsmith/blob/main/LICENSE"><img src="https://img.shields.io/pypi/l/nnsmith"></a>
-</p>
+[![](https://github.com/ise-uiuc/nnsmith/actions/workflows/ci.yaml/badge.svg)](https://github.com/ise-uiuc/nnsmith/actions/workflows/ci.yaml)
+[![](https://img.shields.io/pypi/v/nnsmith?color=g)](https://pypi.org/project/nnsmith/)
+[![](https://img.shields.io/pypi/l/nnsmith)](https://github.com/ise-uiuc/nnsmith/blob/main/LICENSE)
 
-NNSmith is a random DNN generator and a fuzzing infrastructure, primiarily designed for automatically validating deep-learning frameworks and compilers.
+NNSmith is a random DNN generator and a fuzzing infrastructure, primarily designed for automatically validating deep-learning frameworks and compilers.
 
 ## Support Table
 
@@ -29,13 +27,13 @@ NNSmith is a random DNN generator and a fuzzing infrastructure, primiarily desig
 
 </center>
 
-## Setup
+## Quick Start
 
 **Install latest code (GitHub HEAD):**
 
 ```shell
 pip install "git+https://github.com/ise-uiuc/nnsmith@main#egg=nnsmith[torch,onnx]" --upgrade
-# [optional] add more front- and back-ends such as [tf] and [tvm,ort,xla,...] in "[...]"
+# [optional] add more front- and back-ends such as [tensorflow] and [tvm,onnxruntime,xla,...] in "[...]"
 ```
 
 <details><summary><b>Install latest stable release: </b> <i>[expand]</i></summary>
@@ -47,9 +45,6 @@ pip install "nnsmith[torch,onnx]" --upgrade
 
 </div>
 </details>
-
-
-## Quick Start
 
 <details><summary><b>Setting up graphviz for debugging</b> <i>[expand]</i></summary>
 <div>
@@ -75,11 +70,12 @@ Also see [pygraphviz install guidance](https://pygraphviz.github.io/documentatio
 nnsmith.model_gen model.type=onnx debug.viz=true
 ```
 
-See other commands under [`doc/cli`](doc/cli.md). We use [hydra](https://hydra.cc/) to manage configurations. See `nnsmith/config/main.yaml`.
+## Learning More
 
-## Contributing Guide
-
-Please check [doc/CONTRIBUTING.md](doc/CONTRIBUTING.md).
+- Bugs: [links to reports](doc/bugs.md).
+- Documentation: [CLI](doc/cli.md), [concept](doc/concept.md), [logging](doc/log-and-err.md), and [known issues](doc/known-issues.md).
+- Contributions: [`doc/CONTRIBUTING.md`](doc/CONTRIBUTING.md)
+- We use [hydra](https://hydra.cc/) to manage configurations. See `nnsmith/config/main.yaml`.
 
 ## Papers
 
