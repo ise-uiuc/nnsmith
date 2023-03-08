@@ -73,7 +73,7 @@ nnsmith.model_gen model.type=onnx debug.viz=true
 ## Learning More
 
 - Bugs: [links to reports](doc/bugs.md).
-- Documentation: [CLI](doc/cli.md), [concepts](doc/concepts.md), [logging](doc/log-and-err.md), and [known issues](doc/known-issues.md).
+- Documentation: [CLI](doc/cli.md), [concept](doc/concept.md), [logging](doc/log-and-err.md), and [known issues](doc/known-issues.md).
 - Contributions: [`doc/CONTRIBUTING.md`](doc/CONTRIBUTING.md)
 - We use [hydra](https://hydra.cc/) to manage configurations. See `nnsmith/config/main.yaml`.
 
