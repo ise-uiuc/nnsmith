@@ -1,5 +1,5 @@
 <div align="center">
-    <img src="https://github.com/ganler/nnsmith-logo/raw/master/nnsmith-logo.svg" align="right" height="240"/>
+    <p style="width: 50%;max-width: 240px;"><img src="https://github.com/ganler/nnsmith-logo/raw/master/nnsmith-logo.svg" align="right"/></p>
 </div>
 
 # NNSmith
@@ -12,8 +12,6 @@ NNSmith is a random DNN generator and a fuzzing infrastructure, primarily design
 
 ## Support Table
 
-<center>
-
 | Models | [`tvm`](https://github.com/apache/tvm) | [`onnxruntime`](https://github.com/microsoft/onnxruntime) | [`tensorrt`](https://github.com/NVIDIA/TensorRT) | [`tflite`](https://www.tensorflow.org/lite) | [`xla`](https://www.tensorflow.org/xla) | [`torchjit`](https://pytorch.org/docs/stable/jit.html) |
 | ------------ | ------------------------------------ | ----------------------------------------------- | ---------------------------------------------- | ----------------------------------------- | ------------------------------------- | ----------------------------------------------------- |
 | ONNX         | ✅                                    | ✅                                               | ✅                                              |                                           |                                       |                                                       |
@@ -21,11 +19,8 @@ NNSmith is a random DNN generator and a fuzzing infrastructure, primarily design
 | PyTorch      | 🔨                                    | 🔨                                               |                                                |                                           |                                       | ✅                                                     |
 
 
-
-
 ✅: Supported; ⚠️: Experimental support; 🔨: Coming soon;
 
-</center>
 
 ## Quick Start
 
