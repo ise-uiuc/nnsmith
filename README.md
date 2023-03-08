@@ -1,5 +1,5 @@
 <div align="center">
-    <p style="width: 50%;max-width: 240px;"><img src="https://github.com/ganler/nnsmith-logo/raw/master/nnsmith-logo.svg" align="right"/></p>
+    <img src="https://github.com/ganler/nnsmith-logo/raw/master/nnsmith-logo.svg" align="right" alt="logo" width="220px"/>
 </div>
 
 # NNSmith
@@ -8,9 +8,11 @@
 [![](https://img.shields.io/pypi/v/nnsmith?color=g)](https://pypi.org/project/nnsmith/)
 [![](https://img.shields.io/pypi/l/nnsmith)](https://github.com/ise-uiuc/nnsmith/blob/main/LICENSE)
 
-NNSmith is a random DNN generator and a fuzzing infrastructure, primarily designed for automatically validating deep-learning frameworks and compilers.
+🌟NNSmith🌟 is a random DNN generator and a fuzzing infrastructure, primarily designed for automatically validating deep-learning frameworks and compilers.
 
 ## Support Table
+
+<div align="center">
 
 | Models | [`tvm`](https://github.com/apache/tvm) | [`onnxruntime`](https://github.com/microsoft/onnxruntime) | [`tensorrt`](https://github.com/NVIDIA/TensorRT) | [`tflite`](https://www.tensorflow.org/lite) | [`xla`](https://www.tensorflow.org/xla) | [`torchjit`](https://pytorch.org/docs/stable/jit.html) |
 | ------------ | ------------------------------------ | ----------------------------------------------- | ---------------------------------------------- | ----------------------------------------- | ------------------------------------- | ----------------------------------------------------- |
@@ -18,9 +20,8 @@ NNSmith is a random DNN generator and a fuzzing infrastructure, primarily design
 | TensorFlow   | 🔨                                    |                                                 |                                                | ✅                                         | ✅                                     |                                                       |
 | PyTorch      | 🔨                                    | 🔨                                               |                                                |                                           |                                       | ✅                                                     |
 
-
-✅: Supported; ⚠️: Experimental support; 🔨: Coming soon;
-
+✅: Supported; 🔨: Coming soon;
+</div>
 
 ## Quick Start
 
@@ -31,7 +32,7 @@ pip install "git+https://github.com/ise-uiuc/nnsmith@main#egg=nnsmith[torch,onnx
 # [optional] add more front- and back-ends such as [tensorflow] and [tvm,onnxruntime,xla,...] in "[...]"
 ```
 
-<details><summary><b>Install latest stable release: </b> <i>[expand]</i></summary>
+<details><summary><b>Install latest stable release </b> <i>[click]</i></summary>
 <div>
 
 ```shell
@@ -41,7 +42,17 @@ pip install "nnsmith[torch,onnx]" --upgrade
 </div>
 </details>
 
-<details><summary><b>Setting up graphviz for debugging</b> <i>[expand]</i></summary>
+<details><summary><b>Install latest pre-release </b> <i>[click]</i></summary>
+<div>
+
+```shell
+pip install "nnsmith[torch,onnx]" --upgrade --pre
+```
+
+</div>
+</details>
+
+<details><summary><b>Setting up graphviz for debugging</b> <i>[click]</i></summary>
 <div>
 
 Graphviz provides `dot` for visualizing graphs in nice pictures. But it needs to be installed via the following methods:
@@ -74,7 +85,7 @@ nnsmith.model_gen model.type=onnx debug.viz=true
 
 ## Papers
 
-<details><summary><b>NNSmith: Generating Diverse and Valid Test Cases for Deep Learning Compilers.</b> <i>[expand citation]</i></summary>
+<details><summary><b> 📜 NNSmith: Generating Diverse and Valid Test Cases for Deep Learning Compilers.</b> <i>[click :: citation]</i></summary>
 <div>
 
 ```bibtex
