@@ -2024,7 +2024,6 @@ class CastBool(Cast):
         super().__init__(DType.bool)
 
 
-@mark_materialize("core")
 class MatMul(BinaryOpBase):
     in_dtypes = [(i, i) for i in DTYPE_GEN_NON_BOOL if i not in DTYPE_GEN_COMPLEX]
     out_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL if i not in DTYPE_GEN_COMPLEX]

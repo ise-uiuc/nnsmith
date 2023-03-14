@@ -11,7 +11,13 @@ from nnsmith.abstract.dtype import (
     DTYPE_GEN_NON_BOOL,
     DType,
 )
-from nnsmith.abstract.op import ReduceBase, UnaryOpBase, mark_materialize, rank_from
+from nnsmith.abstract.op import (
+    MatMul,
+    ReduceBase,
+    UnaryOpBase,
+    mark_materialize,
+    rank_from,
+)
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import ConstraintCheck
 
@@ -90,3 +96,8 @@ class TorchReduceSum(ReduceBase):
         if input_shapes[0].dtype in DTYPE_GEN_INTS:  # This is a PyTorch trick...
             output[0].dtype = DType.int64
         return output
+
+
+@mark_materialize("torch")
+class PTMatMul(MatMul):
+    pass

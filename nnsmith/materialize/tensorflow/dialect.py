@@ -273,3 +273,19 @@ class TFMatMul(MatMul):
         super().__init__()
         self.inp_ranks = [(2, 3), (2, 3)]
         self.out_ranks = [(2, 3)]
+
+    def deduct_inp_ranks_and_dtype(
+        self, out_abs_tensor: List[AbsTensor]
+    ) -> List[Tuple[int, DType]]:
+        if out_abs_tensor[0].ndims == 2:
+            return [
+                (2, out_abs_tensor[0].dtype),
+                (2, out_abs_tensor[0].dtype),
+            ]
+        # at least one of them is 3
+        ranks = [3, random.choice([2, 3])]
+        random.shuffle(ranks)
+        return [
+            (ranks[0], out_abs_tensor[0].dtype),
+            (ranks[1], out_abs_tensor[0].dtype),
+        ]
