@@ -282,7 +282,10 @@ class TFMatMul(MatMul):
                 (2, out_abs_tensor[0].dtype),
                 (2, out_abs_tensor[0].dtype),
             ]
+        # at least one of them is 3
+        ranks = [3, random.choice([2, 3])]
+        random.shuffle(ranks)
         return [
-            (random.choice([2, 3]), out_abs_tensor[0].dtype),
-            (random.choice([2, 3]), out_abs_tensor[0].dtype),
+            (ranks[0], out_abs_tensor[0].dtype),
+            (ranks[1], out_abs_tensor[0].dtype),
         ]

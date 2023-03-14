@@ -90,3 +90,8 @@ class TorchReduceSum(ReduceBase):
         if input_shapes[0].dtype in DTYPE_GEN_INTS:  # This is a PyTorch trick...
             output[0].dtype = DType.int64
         return output
+
+
+@mark_materialize("torch")
+class PTMatMul(MatMul):
+    pass
