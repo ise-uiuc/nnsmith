@@ -11,7 +11,13 @@ from nnsmith.abstract.dtype import (
     DTYPE_GEN_NON_BOOL,
     DType,
 )
-from nnsmith.abstract.op import ReduceBase, UnaryOpBase, mark_materialize, rank_from
+from nnsmith.abstract.op import (
+    MatMul,
+    ReduceBase,
+    UnaryOpBase,
+    mark_materialize,
+    rank_from,
+)
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import ConstraintCheck
 
