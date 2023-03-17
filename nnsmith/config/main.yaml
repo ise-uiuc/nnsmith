@@ -6,7 +6,7 @@ mgen: # model gen.
   max_nodes: 5
   timeout_ms: 10000
   vulops: False
-  method: "symbolic"
+  method: "symbolic-cinit"
   save: "nnsmith_output"
   seed: null
   max_elem_per_tensor: 65536 # 2^16
