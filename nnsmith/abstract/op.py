@@ -347,9 +347,6 @@ class AbsOpBase(ABC):
     def n_floats(self, input_shapes: List[AbsTensor]) -> z3.ExprRef:
         return reduce(nnsmith_add, [i.nelement() for i in self.output_like])
 
-    def flops(self, input_shapes):
-        return 0
-
     def __repr__(self) -> str:
         return self.__class__.__name__
 
@@ -933,15 +930,6 @@ class Pool2d(UnaryOpBase):
             ret.append(c)
         return ret
 
-    def flops(self, input_shapes):
-        return nnsmith_mul(
-            nnsmith_mul(
-                self.checked_type_transfer(input_shapes)[0].nelement(),
-                self.kernel_h_size,
-            ),
-            self.kernel_w_size,
-        )
-
     def deduct_inp_ranks_and_dtype(
         self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
@@ -1314,7 +1302,6 @@ class Conv1d(UnaryOpBase):
         return [abs_tensor]
 
     def requires(self, input_shapes):
-        # FIXME: Handling flops.
         cons = []
         cons.append(nnsmith_eq(self.in_channels, input_shapes[0].shape[1]))
         cons.append(nnsmith_ge(self.out_channels, 1))
@@ -1438,26 +1425,6 @@ class NCHWConv2d(UnaryOpBase):
         # not too extream to avoid torch exporter issue
         cons.append(nnsmith_le(self.padding, 255))
         return cons
-
-    def flops(self, input_shapes):
-        w = AbsTensor(
-            [
-                self.out_channels,
-                self.in_channels,
-                self.kernel_h_size,
-                self.kernel_w_size,
-            ],
-            dtype=input_shapes[0].dtype,
-        )
-        return nnsmith_mul(
-            nnsmith_mul(
-                nnsmith_mul(
-                    self.type_transfer(input_shapes)[0].nelement(), self.in_channels
-                ),
-                self.kernel_h_size,
-            ),
-            self.kernel_w_size,
-        )
 
     def n_floats(self, input_shapes):
         # FIXME: maybe need to take dilation into account?

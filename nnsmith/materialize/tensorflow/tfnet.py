@@ -22,7 +22,6 @@ class TFNet(tf.Module):
 
     def __init__(self, ir: GraphIR) -> None:
         """Build a TensorFlow model from GraphIR
-
         Args:
             ir (GraphIR): minimal information for constructing a concrete graph.
         """
@@ -40,15 +39,14 @@ class TFNet(tf.Module):
                     self.mlist.append(fwd_fn)  # Add tf.Module to track its parameters
                 self.instructions.append(Instr(fwd_fn, inst.iexpr.args, inst.retvals()))
 
-    @tf.function
+    @tf.function(autograph=False)  # disabling autograph makes it faster
     def __call__(self, *args, **kwargs) -> Dict[str, tf.Tensor]:
         return self.__forward(*args, **kwargs)
 
-    @tf.function
+    @tf.function(autograph=False)
     def call_by_dict(self, x: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
         return self.__forward(**x)
 
-    @tf.function
     def __forward(self, *args, **kwargs) -> Dict[str, tf.Tensor]:
         mode = "Running Eagerly" if tf.executing_eagerly() else "Tracing"
         TF_LOG.debug(f"{mode} with JIT config: {tf.config.optimizer.get_jit()}")
@@ -61,18 +59,19 @@ class TFNet(tf.Module):
             for i, key in enumerate(self.ir.input_var()):
                 key2tensor[key] = kwargs[key]
         else:
-            raise ValueError("Either user args only or kwargs only")
+            raise ValueError("Use either args or kwargs only")
 
         for instr in self.instructions:
             # get inputs
             inp_tensors = [key2tensor[key] for key in instr.inp_keys]
 
             # forward
-            out_tensors = instr.fwd_fn(
-                *inp_tensors
-            )  # TODO Colin when it can return a list?
-            if not isinstance(out_tensors, list):
+            out_tensors = instr.fwd_fn(*inp_tensors)
+
+            if isinstance(out_tensors, tf.Tensor):
                 out_tensors = [out_tensors]
+            if isinstance(out_tensors, tuple):
+                out_tensors = list(out_tensors)
 
             # store outputs
             for i_out, out_key in enumerate(instr.out_keys):

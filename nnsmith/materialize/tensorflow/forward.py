@@ -8,9 +8,8 @@ from nnsmith.abstract.op import *
 from nnsmith.materialize import framework_operator_impl
 from nnsmith.materialize.tensorflow.dialect import *
 
-# core dialect + some future PyTorch-only Operators.
+# core dialect + some future TensorFlow-only Operators.
 TF_REALIZABLE_OPS = FULL_OPERATOR_SETS["core"] + FULL_OPERATOR_SETS["tensorflow"]
-# TF_REALIZABLE_OPS = [NHWCConv2dSamePad, NHWCConv2dValidPad] # [Add, Dense, LocalRespNorm]
 ALL_TF_OPS: List[Type[AbsOpBase]] = []
 
 operator_impl = partial(framework_operator_impl, TF_REALIZABLE_OPS, ALL_TF_OPS)
@@ -355,3 +354,18 @@ def forward_fn(op: Cast):
 @operator_impl(TFMatMul)
 def forward_fn(op: TFMatMul):
     return tf.matmul
+
+
+@operator_impl(Reverse)
+def forward_fn(op: Reverse):
+    return lambda x: tf.reverse(x, axis=op.extra_attrs["axis"])
+
+
+@operator_impl(Cholesky)
+def forward_fn(op: Cholesky):
+    return tf.linalg.cholesky
+
+
+@operator_impl(Eigh)
+def forward_fn(op: Eigh):
+    return tf.linalg.eigh
