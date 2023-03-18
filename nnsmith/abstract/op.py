@@ -262,6 +262,9 @@ class AbsOpBase(ABC):
     # this op can accept one of float32xfloat32, float64xfloat64, and int32xint32 as input dtypes.
     in_dtypes: List[Tuple[DType, ...]] = None  # Overwrite me!
     out_dtypes: List[Tuple[DType, ...]] = None
+    # lambdas based on the first element.
+    irank_relation = None
+    orank_relation = None
 
     limit_domain = False
 
@@ -1740,9 +1743,9 @@ class ReduceBase(UnaryOpBase, ABC):
         return [
             AbsTensor(
                 svar_list,
-                input_shapes[0].dtype
-                if self._reduce_out_dtype is None
-                else self._reduce_out_dtype,
+                self._reduce_out_dtype
+                if self._reduce_out_dtype
+                else input_shapes[0].dtype,
             )
         ]
 
@@ -1778,14 +1781,14 @@ class ReduceSum(ReduceBase):
 
 @mark_materialize("core")
 class ReduceMin(ReduceBase):
-    in_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL]
-    out_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL]
+    in_dtypes = [(i,) for i in DTYPE_GEN_FLOATS + DTYPE_GEN_INTS]
+    out_dtypes = [(i,) for i in DTYPE_GEN_FLOATS + DTYPE_GEN_INTS]
 
 
 @mark_materialize("core")
 class ReduceMax(ReduceBase):
-    in_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL]
-    out_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL]
+    in_dtypes = [(i,) for i in DTYPE_GEN_FLOATS + DTYPE_GEN_INTS]
+    out_dtypes = [(i,) for i in DTYPE_GEN_FLOATS + DTYPE_GEN_INTS]
 
 
 @mark_materialize("core")
@@ -1802,7 +1805,7 @@ class ReduceProd(ReduceBase):
 
 @mark_materialize("core")
 class ArgMin(ReduceBase):
-    in_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL if i not in DTYPE_GEN_COMPLEX]
+    in_dtypes = [(i,) for i in DTYPE_GEN_FLOATS + DTYPE_GEN_INTS]
     out_dtypes = [(DType.int64,)]
     _reduce_out_dtype = DType.int64
 
@@ -1816,7 +1819,7 @@ class ArgMin(ReduceBase):
 
 @mark_materialize("core")
 class ArgMax(ReduceBase):
-    in_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL if i not in DTYPE_GEN_COMPLEX]
+    in_dtypes = [(i,) for i in DTYPE_GEN_FLOATS + DTYPE_GEN_INTS]
     out_dtypes = [(DType.int64,)]
     _reduce_out_dtype = DType.int64
 
