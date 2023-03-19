@@ -2,8 +2,9 @@ import random
 from typing import List, Tuple, Union
 
 from nnsmith.abstract.arith import *
-from nnsmith.abstract.dtype import DType
+from nnsmith.abstract.dtype import DTYPE_GEN_ALL, DTYPE_GEN_FLOATS, DType
 from nnsmith.abstract.op import (
+    AbsOpBase,
     BcastBinaryOp,
     ElementWiseUnaryOp,
     MatMul,
@@ -180,17 +181,6 @@ class NHWCConv2d(UnaryOpBase):
         )
         return cons
 
-    def flops(self, input_shapes):
-        return nnsmith_mul(
-            nnsmith_mul(
-                nnsmith_mul(
-                    self.type_transfer(input_shapes)[0].nelement(), self.in_channels
-                ),
-                self.kernel_h_size,
-            ),
-            self.kernel_w_size,
-        )
-
     def n_floats(self, input_shapes):
         # FIXME: maybe need to take dilation into account?
         padding = 0
@@ -288,4 +278,103 @@ class TFMatMul(MatMul):
         return [
             (ranks[0], out_abs_tensor[0].dtype),
             (ranks[1], out_abs_tensor[0].dtype),
+        ]
+
+
+@mark_materialize("tensorflow")
+class Reverse(UnaryOpBase):
+    in_dtypes = [(i,) for i in DTYPE_GEN_ALL]
+    out_dtypes = [(i,) for i in DTYPE_GEN_ALL]
+
+    def __init__(self):
+        super().__init__()
+        self.inp_ranks = [rank_from(1)]
+        self.out_ranks = [rank_from(1)]
+
+    def _init_axis(self, input_shape: List[Union[int, z3.ExprRef]]):
+        # axis is a list of integers
+        # |axis| <= rank
+        if "axis" not in self.extra_attrs:
+            axis = []
+            for i in range(len(input_shape)):
+                if random.random() < 0.5:  # prob
+                    axis.append(i)
+            self.extra_attrs["axis"] = axis
+        ConstraintCheck.le(len(self.extra_attrs["axis"]), len(input_shape))
+        if self.extra_attrs["axis"]:
+            ConstraintCheck.lt(max(self.extra_attrs["axis"]), len(input_shape))
+        return self.extra_attrs["axis"]
+
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+        _ = self._init_axis(input_shapes[0].shape)
+        return input_shapes
+
+    def requires(self, input_shapes):
+        _ = self._init_axis(input_shapes[0].shape)
+        return super().requires(input_shapes)
+
+    def deduct_inp_ranks_and_dtype(
+        self, out_abs_tensor: List[AbsTensor]
+    ) -> List[Tuple[int, DType]]:
+        return [
+            (out_abs_tensor[0].ndims, out_abs_tensor[0].dtype),
+        ]
+
+
+@mark_materialize("tensorflow")
+class Cholesky(UnaryOpBase):
+    in_dtypes = [(i,) for i in DTYPE_GEN_FLOATS + [DType.complex64, DType.complex128]]
+    out_dtypes = [(i,) for i in DTYPE_GEN_FLOATS + [DType.complex64, DType.complex128]]
+
+    def __init__(self):
+        super().__init__()
+        self.inp_ranks = [rank_from(2)]
+        self.out_ranks = [rank_from(2)]
+
+    def type_transfer(self, itensors: List[AbsTensor]) -> List[AbsTensor]:
+        return itensors
+
+    def requires(self, itensors: List[AbsTensor]) -> List[Union[z3.ExprRef, bool]]:
+        ConstraintCheck.ge(itensors[0].ndims, 2)
+        # last two dimensions must be equal
+        return [nnsmith_eq(itensors[0].shape[-1], itensors[0].shape[-2])]
+
+    def deduct_inp_ranks_and_dtype(
+        self, out_abs_tensor: List[AbsTensor]
+    ) -> List[Tuple[int, DType]]:
+        return [
+            (out_abs_tensor[0].ndims, out_abs_tensor[0].dtype),
+        ]
+
+
+@mark_materialize("tensorflow")
+class Eigh(AbsOpBase):
+    in_dtypes = [(i,) for i in DTYPE_GEN_FLOATS + [DType.complex64, DType.complex128]]
+    out_dtypes = [
+        (i, i) for i in DTYPE_GEN_FLOATS + [DType.complex64, DType.complex128]
+    ]
+    orank_relation = [
+        None,
+        lambda x: x + 1,
+    ]  # the 2nd output has one more rank than the 1st
+
+    def __init__(self):
+        super().__init__()
+        self.inp_ranks = [rank_from(2)]
+        self.out_ranks = [rank_from(1), rank_from(2)]
+
+    def type_transfer(self, itensors: List[AbsTensor]) -> List[AbsTensor]:
+        # e ~ [..., N], v ~ [..., N, N]
+        return [AbsTensor(itensors[0].shape[:-1], dtype=itensors[0].dtype), itensors[0]]
+
+    def requires(self, itensors: List[AbsTensor]) -> List[Union[z3.ExprRef, bool]]:
+        ConstraintCheck.ge(itensors[0].ndims, 2)
+        # last two dimensions must be equal
+        return [nnsmith_eq(itensors[0].shape[-1], itensors[0].shape[-2])]
+
+    def deduct_inp_ranks_and_dtype(
+        self, out_abs_tensor: List[AbsTensor]
+    ) -> List[Tuple[int, DType]]:
+        return [
+            (out_abs_tensor[1].ndims, out_abs_tensor[1].dtype),
         ]
