@@ -99,13 +99,6 @@ class LocalRespNorm(ElementWiseUnaryOp):
 
 
 class NHWCConv2dBase(BinaryOpBase):
-    in_dtypes = [
-        (DType.float16, DType.float16),
-        (DType.float32, DType.float32),
-        (DType.float64, DType.float64),
-    ]
-    out_dtypes = [(DType.float16,), (DType.float32,), (DType.float64,)]
-
     def __init__(
         self,
         out_channels: Union[int, z3.ExprRef],
@@ -191,35 +184,6 @@ class NHWCConv2dBase(BinaryOpBase):
             )
         )
         return cons
-
-    def flops(self, input_shapes):
-        kh, kw, ci, _ = input_shapes[1].shape
-        return nnsmith_mul(
-            nnsmith_mul(
-                nnsmith_mul(
-                    self.type_transfer(input_shapes)[0].nelement(),
-                    ci,
-                ),
-                kh,
-            ),
-            kw,
-        )
-
-    def n_floats(self, input_shapes):
-        # FIXME: maybe need to take dilation into account?
-        padding = 0
-        padded_data = AbsTensor(input_shapes[0].shape, dtype=input_shapes[0].dtype)
-        padded_data.shape[2] = nnsmith_add(
-            padded_data.shape[2], nnsmith_mul(2, padding)
-        )
-        padded_data.shape[3] = nnsmith_add(
-            padded_data.shape[3], nnsmith_mul(2, padding)
-        )
-        kh, kw, ci, _ = input_shapes[1].shape
-        co = self.out_channels
-        w = AbsTensor(shape=[kh, kw, ci, co], dtype=input_shapes[0].dtype)
-        outs = super().n_floats(input_shapes)
-        return nnsmith_add(nnsmith_add(w.nelement(), padded_data.nelement()), outs)
 
     def deduct_inp_ranks_and_dtype(
         self, out_abs_tensor: List[AbsTensor]
