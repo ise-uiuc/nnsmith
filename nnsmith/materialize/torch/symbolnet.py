@@ -321,7 +321,7 @@ class SymbolNet(nn.Module):
             for ir_key in self.input_map:
                 tensor_map[ir_key] = kwargs[ir_key]
         else:
-            raise ValueError("Either user args only or kwargs only")
+            raise ValueError("Use either args or kwargs only")
 
         self.debug_numeric(tensor_map)
 

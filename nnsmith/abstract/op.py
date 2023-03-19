@@ -1741,6 +1741,39 @@ class Squeeze(ReduceBase):
 
 
 @mark_materialize("core")
+class Unsqueeze(UnaryOpBase):
+    in_dtypes = [(i,) for i in DTYPE_GEN_ALL]
+    out_dtypes = [(i,) for i in DTYPE_GEN_ALL]
+
+    def __init__(self):
+        super().__init__()
+        self.inp_ranks = [rank_range(0, __MAX_RANK__ - 1)]
+        self.out_ranks = [rank_from(1)]
+
+    def __str__(self) -> str:
+        return (
+            self.name()
+            + f'(dim={self.extra_attrs["expand_dim"] if "expand_dim" in self.extra_attrs else None})'
+        )
+
+    def _init_expand_dim(self, input_shapes: List[Union[int, z3.ExprRef]]):
+        if "expand_dim" not in self.extra_attrs:
+            self.extra_attrs["expand_dim"] = random.randint(0, len(input_shapes))
+        return self.extra_attrs["expand_dim"]
+
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+        expand_dim = self._init_expand_dim(input_shapes[0].shape)
+        original_shape = [*input_shapes[0].shape]
+        expanded_shape = original_shape[:expand_dim] + [1] + original_shape[expand_dim:]
+        return [AbsTensor(shape=expanded_shape, dtype=input_shapes[0].dtype)]
+
+    def deduct_inp_ranks_and_dtype(
+        self, out_abs_tensor: List[AbsTensor]
+    ) -> List[Tuple[int, DType]]:
+        return [(out_abs_tensor[0].ndims - 1, out_abs_tensor[0].dtype)]
+
+
+@mark_materialize("core")
 class ReduceSum(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL]
     out_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL]
