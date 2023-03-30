@@ -1,5 +1,5 @@
 <div align="center">
-    <img src="https://github.com/ganler/nnsmith-logo/raw/master/nnsmith-logo.svg" align="right" alt="logo" width="220px"/>
+    <img src="https://github.com/ganler/nnsmith-logo/raw/master/nnsmith-logo.svg" align="right" alt="logo" width="200px"/>
 </div>
 
 # NNSmith
