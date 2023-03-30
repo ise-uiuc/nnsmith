@@ -11,9 +11,10 @@
 * [**TVM**](#tvm)
 * [**TensorRT**](#tensorrt)
 * [**TensorFlow**](#tensorflow)
+* [**Hidet**](#hidet)
 * [**Methodology**](#methodology)
 
-### PyTorch
+### [PyTorch](https://github.com/pytorch/pytorch)
 
 01. ✅ 🚨 [SIGIOT when running model with conv2d and avgpool2d after `optimize_for_inference` · Issue #86535 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/86535)
 
@@ -79,11 +80,11 @@
 
 12. ✅ [[ONNX Export] Interpolation likely should be exported with `half_pixel` instead of `pytorch_half_pixel` · Issue #79361 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/79361)
 
-### ONNX
+### [ONNX](https://github.com/onnx/onnx)
 
 01. ✅ [[Bug] Checker misses data type mismatch for Max · Issue #4619 · onnx/onnx · GitHub](https://github.com/onnx/onnx/issues/4619)
 
-### ONNXRuntime
+### [ONNXRuntime](https://github.com/microsoft/onnxruntime)
 
 01. ✅ [Crashes when relu is followed by a clip · Issue #9753 · microsoft/onnxruntime · GitHub](https://github.com/microsoft/onnxruntime/issues/9753)
 
@@ -107,7 +108,7 @@
 
 11. [Parameters are optimized out even if it is a needed return value · Issue #13425 · microsoft/onnxruntime · GitHub](https://github.com/microsoft/onnxruntime/issues/13425)
 
-### TVM
+### [TVM](https://github.com/apache/tvm)
 
 01. ✅ [[Bug] shape int32-int64 check error in `trilu`'s `te.compute` · Issue #13029 · apache/tvm · GitHub](https://github.com/apache/tvm/issues/13029)
 
@@ -189,7 +190,7 @@
 
 40. [[Bug] Compiled `squeeze-broadcast_to-argmin` fails at graph runtime · Issue #13045 · apache/tvm · GitHub](https://github.com/apache/tvm/issues/13045)
 
-### TensorRT
+### [TensorRT](https://developer.nvidia.com/tensorrt)
 
 01. ✅ [Segfault on const+prelu+reduce_mean+comparison_op · Issue #1738 · NVIDIA/TensorRT · GitHub](https://github.com/NVIDIA/TensorRT/issues/1738#issuecomment-1019633288)
 
@@ -209,7 +210,7 @@
 
 09. [Incorrect slicing of boolean constant tensor with step size > 1 - TensorRT - NVIDIA Developer Forums](https://forums.developer.nvidia.com/t/incorrect-slicing-of-boolean-constant-tensor-with-step-size-1/215793)
 
-### TensorFlow
+### [TensorFlow](https://github.com/tensorflow/tensorflow)
 
 01. [Inconsistent behavior of Conv2D between eager mode and tracing · Issue #57664 · tensorflow/tensorflow · GitHub](https://github.com/tensorflow/tensorflow/issues/57664)
 
@@ -236,6 +237,24 @@
 12. [LRN operator outputs wrong results with `jit_compile=True` · Issue #57746 · tensorflow/tensorflow · GitHub](https://github.com/tensorflow/tensorflow/issues/57746)
 
 13. [Conv2D layer fails to run with XLA on CUDA · Issue #57838 · tensorflow/tensorflow · GitHub](https://github.com/tensorflow/tensorflow/issues/57838)
+
+### [Hidet](https://github.com/hidet-org/hidet)
+
+Based on NNSmith, [@soodoshll](https://github.com/soodoshll) found a number of bugs for Hidet, including:
+
+01. ✅ [[Bug] Use int64 in argmax · Issue #103 · hidet-org/hidet](https://github.com/hidet-org/hidet/issues/103)
+02. ✅ [[Bug] broadcast_shape parameter type error · Issue #85 · hidet-org/hidet](https://github.com/hidet-org/hidet/issues/85)
+03. ✅ [[Bug] Data type casting from onnx · Issue #87 · hidet-org/hidet](https://github.com/hidet-org/hidet/issues/87)
+04. ✅ [[Bug] cuda code compilation error · Issue #89 · hidet-org/hidet](https://github.com/hidet-org/hidet/issues/89)
+05. ✅ [[Bug] MinOp generates max code · Issue #90 · hidet-org/hidet](https://github.com/hidet-org/hidet/issues/90)
+06. [[Bug] FP64 reduce · Issue #91 · hidet-org/hidet](https://github.com/hidet-org/hidet/issues/91)
+07. ✅ [[Bug] Inconsistent definition of the inputs parameter of operators · Issue #93 · hidet-org/hidet](https://github.com/hidet-org/hidet/issues/93)
+08. ✅ [[Bug] Slice indexing in ONNX · Issue #94 · hidet-org/hidet](https://github.com/hidet-org/hidet/issues/94)
+09. ✅ [[Bug] binary arithmetic with CUDA scalar · Issue #95 · hidet-org/hidet](https://github.com/hidet-org/hidet/issues/95)
+10. ✅ [[Bug] Unexpected behavior when inputs and outputs overlap · Issue #96 · hidet-org/hidet](https://github.com/hidet-org/hidet/issues/96)
+11. ✅ [Followup][[Bug] Unexpected behavior when inputs and outputs overlap · Issue #96 · hidet-org/hidet](https://github.com/hidet-org/hidet/issues/96)
+12. ✅ [[Bug] arguments of clip drop after fusion · Issue #97 · hidet-org/hidet](https://github.com/hidet-org/hidet/issues/97)
+13. ✅ [[Bug] fusion rewrite fails · Issue #99 · hidet-org/hidet](https://github.com/hidet-org/hidet/issues/99)
 
 ### Methodology
 
