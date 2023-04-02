@@ -1,5 +1,5 @@
 <div align="center">
-    <img src="https://github.com/ganler/nnsmith-logo/raw/master/nnsmith-logo.svg" align="right" alt="logo" width="200px"/>
+    <img src="https://github.com/ganler/nnsmith-logo/raw/master/nnsmith-logo.png" align="right" alt="logo" width="200px"/>
 </div>
 
 # NNSmith
@@ -18,7 +18,7 @@
 | ------------ | ------------------------------------ | ----------------------------------------------- | ---------------------------------------------- | ----------------------------------------- | ------------------------------------- | ----------------------------------------------------- |
 | ONNX         | ✅                                    | ✅                                               | ✅                                              |                                           |                                       |                                                       |
 | TensorFlow   | 🔨                                    |                                                 |                                                | ✅                                         | ✅                                     |                                                       |
-| PyTorch      | 🔨                                    | 🔨                                               |                                                |                                           |                                       | ✅                                                     |
+| PyTorch      | 🔨                                    |                                                 |                                                |                                           |                                       | ✅                                                     |
 
 ✅: Supported; 🔨: Coming soon;
 </div>
