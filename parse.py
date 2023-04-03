@@ -10,9 +10,10 @@ import torch.utils._pytree as pytree
 from torch.fx.passes.shape_prop import ShapeProp
 
 from nnsmith.abstract.dtype import DType
-from nnsmith.abstract.op import AbsOpBase, Placeholder
+from nnsmith.abstract.op import AbsOpBase, Constant, Input
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.gir import GraphIR, InstExpr, InstIR
+from nnsmith.materialize.torch.forward import forward_fn
 
 
 class PropInterpreter(ShapeProp):
@@ -26,6 +27,7 @@ class ConcreteOp(AbsOpBase):
     def __init__(
         self,
         target: Callable,
+        method_name: str,
         args_flatten: List[Any],
         args_tensor_indices: List[int],
         args_treespec: pytree.TreeSpec,
@@ -37,12 +39,15 @@ class ConcreteOp(AbsOpBase):
     ) -> None:
         # super().__init__()
         self.target = target
+        self.method_name = method_name
         self.target_name = (target_name if target_name else str(target)).strip("<>")
 
         self.args_flatten = args_flatten
         self.kwargs_flatten = kwargs_flatten
+        self.args_tensor_indices = args_tensor_indices
         self.args_treespec = args_treespec
         self.kwargs_treespec = kwargs_treespec
+        self.kwargs_tensor_indices = kwargs_tensor_indices
 
         ts_args_fully_flatten = pytree.tree_flatten(
             [args_flatten[i] for i in args_tensor_indices]
@@ -61,7 +66,6 @@ class ConcreteOp(AbsOpBase):
                 for t in ts_kwargs_fully_flatten
             ]
         )
-        # outputs = [outputs] if isinstance(outputs, torch.Tensor) else outputs
         outputs = pytree.tree_flatten(outputs)[0]
         self.bind_output_like(
             [
@@ -122,15 +126,7 @@ def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:
         node = cast(fx.node.Node, node)
         print(f"{i_node = }, {node = }", flush=True)
         if node.op == "placeholder":
-            iexpr = InstExpr(
-                Placeholder(
-                    ttype=AbsTensor(
-                        shape=list(node.meta["tensor_meta"].shape),
-                        dtype=DType.from_torch(node.meta["tensor_meta"].dtype),
-                    )
-                ),
-                [],
-            )
+            iexpr = InstExpr(Input(dim=len(node.meta["res"].shape)), [])
         else:
             args_flatten, args_treespec = pytree.tree_flatten(node.args)
             kwargs_flatten, kwargs_treespec = pytree.tree_flatten(node.kwargs)
@@ -176,6 +172,7 @@ def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:
             iexpr = InstExpr(
                 ConcreteOp(
                     target,
+                    node.target if node.op == "call_method" else None,
                     args_flatten_loaded,
                     args_nodes_indices,
                     args_treespec,
@@ -192,6 +189,84 @@ def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:
 
     # end for
     return ir
+
+
+def gen_code(gir: GraphIR):
+    fx_graph = fx.graph.Graph()
+    name_2_param: Dict[str, nn.Parameter] = {}
+    name_2_module: Dict[str, nn.Module] = {}
+    valstr_2_node: Dict[str, fx.node.Node] = {}
+
+    def construct_args(inst_expr: InstExpr) -> Tuple[List[Any], Dict[str, Any]]:
+        op = cast(ConcreteOp, inst_expr.op)
+        args_flatten = op.args_flatten[:]
+        kwargs_flatten = op.kwargs_flatten[:]
+        i_ts = 0
+        for i in op.args_tensor_indices:
+            args_flatten[i] = valstr_2_node[inst_expr.args[i_ts]]
+            i_ts += 1
+        for i in op.kwargs_tensor_indices:
+            kwargs_flatten[i] = valstr_2_node[inst_expr.args[i_ts]]
+            i_ts += 1
+        args: List[Any] = pytree.tree_unflatten(args_flatten, op.args_treespec)
+        kwargs: Dict[str, Any] = pytree.tree_unflatten(
+            kwargs_flatten, op.kwargs_treespec
+        )
+        return args, kwargs
+
+    for inst_ir in gir.insts:
+        op = inst_ir.iexpr.op
+        if isinstance(op, Input):
+            node = fx_graph.placeholder(name=inst_ir.retval(0), type_expr=torch.Tensor)
+        else:
+            if isinstance(op, ConcreteOp):
+                target = op.target
+            else:
+                target = forward_fn(op)
+            # if isinstance(op, Constant):
+            #     param_name = inst_ir.retval(0)
+            #     name_2_module[param_name] = target
+            #     node = fx_graph.get_attr(qualified_name=param_name, type_expr=nn.Parameter)
+            args, kwargs = construct_args(inst_ir.iexpr)
+            if isinstance(target, nn.Module):
+                mod_name = f"m_{len(name_2_module)}"
+                name_2_module[mod_name] = target
+                node = fx_graph.call_module(
+                    module_name=mod_name, args=tuple(args), kwargs=kwargs
+                )
+            elif op.method_name:
+                node = fx_graph.call_method(
+                    method_name=op.method_name, args=tuple(args), kwargs=kwargs
+                )
+            elif callable(target):
+                node = fx_graph.call_function(
+                    the_function=target, args=tuple(args), kwargs=kwargs
+                )
+            else:
+                raise ValueError(
+                    f"GraphIR to fx.Graph: Unexpected {op = }, {target = }"
+                )
+
+        retvals = inst_ir.retvals()
+        if len(retvals) == 1:
+            valstr_2_node[retvals[0]] = node
+        else:
+            for i_rv, retval in enumerate(retvals):
+                valstr_2_node[retval] = fx_graph.call_function(
+                    the_function=operator.getitem, args=(node, i_rv)
+                )
+    # end for
+    for leaf_var in gir.leaf_var():
+        fx_graph.output(result=valstr_2_node[leaf_var])
+
+    fx_graph.lint()
+    gm = fx.GraphModule(
+        root={**name_2_param, **name_2_module},
+        graph=fx_graph,
+        class_name="GenedModule",
+    )
+    print(gm.code)
+    gm.to_folder("gened")
 
 
 if __name__ == "__main__":
@@ -219,6 +294,8 @@ if __name__ == "__main__":
 
     ir = parse(model, i0)
     print(ir.pretty())
+
+    gen_code(ir)
 
 
 """
