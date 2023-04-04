@@ -53,7 +53,7 @@ class TorchJITFactory(BackendFactory):
                 k: torch.from_numpy(v).to(self.device) for k, v in inputs.items()
             }
             with torch.no_grad():
-                output: Tuple[torch.Tensor] = exported(*input_ts.values())
+                output: Tuple[torch.Tensor] = exported(**input_ts)
             return {
                 k: v.cpu().detach().resolve_conj().numpy()
                 if v.is_conj()

@@ -23,6 +23,59 @@ __INPUT_FOUND_INF_MSG__ = "[Inf] in model inputs!"
 __ENABLE_RT_CHECK__ = os.getenv("NNSMITH_RT_CHECK", "0") == "1"
 
 
+# Probablistically, sampling at positive domain is beneficial.
+def random_tensor(shape, dtype: torch.dtype, margin=4, base=5, use_cuda=False):
+    # center: -margin ~ 0 ~ +margin
+    dev = torch.device("cuda" if use_cuda else "cpu")
+    if base == "center":
+        base = -margin / 2
+    else:
+        assert isinstance(base, int) or isinstance(base, float)
+
+    fp_tensor = base + (torch.rand(shape, device=dev) - 0.5) * margin
+
+    if dtype.is_floating_point:
+        return fp_tensor.to(dtype)
+    else:
+        return torch.round(fp_tensor).to(dtype)
+
+
+class FxTracing:
+    _tracing = False
+
+    def __enter__(self):
+        FxTracing._tracing = True
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        FxTracing._tracing = False
+
+
+def skip_on_trace(fn):
+    def wrapper(*args, **kwargs):
+        if FxTracing._tracing:
+            return None
+        else:
+            return fn(*args, **kwargs)
+
+    return wrapper
+
+
+@skip_on_trace
+@torch.jit.ignore
+def debug_numeric(tensor_map):
+    with warnings.catch_warnings():  # just shutup.
+        warnings.simplefilter("ignore")
+        ConstraintCheck.true(
+            not any([torch.isinf(op).any() for _, op in tensor_map.items()]),
+            __INPUT_FOUND_INF_MSG__,
+        )
+        ConstraintCheck.true(
+            not any([torch.isnan(op).any() for _, op in tensor_map.items()]),
+            __INPUT_FOUND_NAN_MSG__,
+        )
+
+
+@skip_on_trace
 def check_type(op: AbsOpBase, tensors, is_input=True, msg=""):
     if __ENABLE_RT_CHECK__ and op is not None:
         like = op.input_like if is_input else op.output_like
@@ -39,21 +92,17 @@ def check_type(op: AbsOpBase, tensors, is_input=True, msg=""):
             ), f"{msg} {ioro} abstract type != concrete {ttype} for {op} {op.input_like} -> {op.output_like}"
 
 
-# Probablistically, sampling at positive domain is beneficial.
-def random_tensor(shape, dtype: torch.dtype, margin=4, base=5, use_cuda=False):
-    # center: -margin ~ 0 ~ +margin
-    dev = torch.device("cuda" if use_cuda else "cpu")
-    if base == "center":
-        base = -margin / 2
-    else:
-        assert isinstance(base, int) or isinstance(base, float)
-
-    fp_tensor = base + (torch.rand(shape, device=dev) - 0.5) * margin
-
-    if dtype.is_floating_point:
-        return fp_tensor.to(dtype)
-    else:
-        return torch.round(fp_tensor).to(dtype)
+@skip_on_trace
+@torch.jit.ignore
+def debug_io(stmt_idx, itensors, otensors):
+    if TORCH_LOG.isEnabledFor(logging.DEBUG):
+        TORCH_LOG.debug(f">> statment {stmt_idx}")
+        for inp_i, i in enumerate(itensors):
+            TORCH_LOG.debug(f"  (shape={i.shape} dtype={i.dtype})")
+            TORCH_LOG.debug(f"[inp]@{inp_i} :: {i.min().data:.5f} ~ {i.max().data:.5f}")
+        for out_i, o in enumerate(otensors):
+            TORCH_LOG.debug(f"  (shape={o.shape} dtype={o.dtype})")
+            TORCH_LOG.debug(f"[out]@{out_i} :: {o.min().data:.5f} ~ {o.max().data:.5f}")
 
 
 class SymbolNet(nn.Module):
@@ -260,7 +309,7 @@ class SymbolNet(nn.Module):
             self.iter_num += 1
 
             try:
-                _ = self(**inputs)
+                _ = self.forward_grad(**inputs)
                 if self.invalid_found_last:  # need_to_train
                     self.backward()
                 else:
@@ -296,34 +345,47 @@ class SymbolNet(nn.Module):
     def use_cuda(self):
         self.cuda()
 
-    @torch.jit.ignore
-    def debug_numeric(self, tensor_map):
-        with warnings.catch_warnings():  # just shutup.
-            warnings.simplefilter("ignore")
-            ConstraintCheck.true(
-                not any([torch.isinf(op).any() for _, op in tensor_map.items()]),
-                __INPUT_FOUND_INF_MSG__,
-            )
-            ConstraintCheck.true(
-                not any([torch.isnan(op).any() for _, op in tensor_map.items()]),
-                __INPUT_FOUND_NAN_MSG__,
-            )
-
-    def forward(self, *args, **kwargs):
+    def forward(self, **kwargs):
         self.differentiable = True
 
         tensor_map: Dict[str, torch.Tensor] = {}
+        for key in list(self.input_map.keys()):
+            tensor_map[key] = kwargs[key]
 
-        if len(args) == len(self.input_map):
-            for i, key in enumerate(self.ir.input_var()):
-                tensor_map[key] = args[i]
-        elif len(kwargs) == len(self.input_map):
-            for ir_key in self.input_map:
-                tensor_map[ir_key] = kwargs[ir_key]
-        else:
-            raise ValueError("Either user args only or kwargs only")
+        debug_numeric(tensor_map)
 
-        self.debug_numeric(tensor_map)
+        for stmt_idx, (inst, inps, outs, op) in enumerate(self.instructions):
+            input_tensors = [tensor_map[idx] for idx in inps]
+
+            check_type(op, input_tensors, is_input=True, msg="input")
+
+            # REAL FORWARD.
+            output_tensors = inst(*input_tensors)
+            if not isinstance(output_tensors, list):
+                output_tensors = [output_tensors]
+
+            check_type(op, output_tensors, is_input=False, msg="output")
+
+            for i, out_key in enumerate(outs):
+                # put values back to tensor_map.
+                tensor_map[out_key] = output_tensors[i]
+                # Check differentiability.
+                self.differentiable &= output_tensors[i].grad_fn is not None
+                # TODO(@ganler): optimize: unref tensors that are not going to be used anymore.
+
+            debug_io(stmt_idx, input_tensors, output_tensors)
+
+        self.first_run = False
+        return tuple(tensor_map[key] for key in self.output_map)
+
+    def forward_grad(self, **kwargs):
+        self.differentiable = True
+
+        tensor_map: Dict[str, torch.Tensor] = {}
+        for key in list(self.input_map.keys()):
+            tensor_map[key] = kwargs[key]
+
+        debug_numeric(tensor_map)
 
         self.invalid_found_last = False
 
@@ -358,19 +420,7 @@ class SymbolNet(nn.Module):
                 self.differentiable &= output_tensors[i].grad_fn is not None
                 # TODO(@ganler): optimize: unref tensors that are not going to be used anymore.
 
-            # LOG.
-            if TORCH_LOG.isEnabledFor(logging.DEBUG):
-                TORCH_LOG.debug(f">> statment {stmt_idx}")
-                for inp_i, i in enumerate(input_tensors):
-                    TORCH_LOG.debug(f"  (shape={i.shape} dtype={i.dtype})")
-                    TORCH_LOG.debug(
-                        f"[inp]@{inp_i} :: {i.min().data:.5f} ~ {i.max().data:.5f}"
-                    )
-                for out_i, o in enumerate(output_tensors):
-                    TORCH_LOG.debug(f"  (shape={o.shape} dtype={o.dtype})")
-                    TORCH_LOG.debug(
-                        f"[out]@{out_i} :: {o.min().data:.5f} ~ {o.max().data:.5f}"
-                    )
+            debug_io(stmt_idx, input_tensors, output_tensors)
 
             if self.print_grad >= 2:
                 if output_tensors[0].requires_grad:
