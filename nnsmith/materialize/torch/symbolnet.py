@@ -309,7 +309,7 @@ class SymbolNet(nn.Module):
             self.iter_num += 1
 
             try:
-                _ = self.forward_grad(**inputs)
+                _ = self.forward_grad(*inputs.values())
                 if self.invalid_found_last:  # need_to_train
                     self.backward()
                 else:
@@ -345,12 +345,12 @@ class SymbolNet(nn.Module):
     def use_cuda(self):
         self.cuda()
 
-    def forward(self, **kwargs):
+    def forward(self, *args):
         self.differentiable = True
 
         tensor_map: Dict[str, torch.Tensor] = {}
-        for key in list(self.input_map.keys()):
-            tensor_map[key] = kwargs[key]
+        for i, key in enumerate(self.input_map.keys()):
+            tensor_map[key] = args[i]
 
         debug_numeric(tensor_map)
 
@@ -378,12 +378,12 @@ class SymbolNet(nn.Module):
         self.first_run = False
         return tuple(tensor_map[key] for key in self.output_map)
 
-    def forward_grad(self, **kwargs):
+    def forward_grad(self, *args):
         self.differentiable = True
 
         tensor_map: Dict[str, torch.Tensor] = {}
-        for key in list(self.input_map.keys()):
-            tensor_map[key] = kwargs[key]
+        for i, key in enumerate(self.input_map.keys()):
+            tensor_map[key] = args[i]
 
         debug_numeric(tensor_map)
 
