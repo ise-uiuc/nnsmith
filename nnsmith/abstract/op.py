@@ -262,6 +262,9 @@ class AbsOpBase(ABC):
     # this op can accept one of float32xfloat32, float64xfloat64, and int32xint32 as input dtypes.
     in_dtypes: List[Tuple[DType, ...]] = None  # Overwrite me!
     out_dtypes: List[Tuple[DType, ...]] = None
+    # lambdas based on the first element.
+    irank_relation = None
+    orank_relation = None
 
     limit_domain = False
 
@@ -343,9 +346,6 @@ class AbsOpBase(ABC):
 
     def n_floats(self, input_shapes: List[AbsTensor]) -> z3.ExprRef:
         return reduce(nnsmith_add, [i.nelement() for i in self.output_like])
-
-    def flops(self, input_shapes):
-        return 0
 
     def __repr__(self) -> str:
         return self.__class__.__name__
@@ -930,15 +930,6 @@ class Pool2d(UnaryOpBase):
             ret.append(c)
         return ret
 
-    def flops(self, input_shapes):
-        return nnsmith_mul(
-            nnsmith_mul(
-                self.checked_type_transfer(input_shapes)[0].nelement(),
-                self.kernel_h_size,
-            ),
-            self.kernel_w_size,
-        )
-
     def deduct_inp_ranks_and_dtype(
         self, out_abs_tensor: List[AbsTensor]
     ) -> List[Tuple[int, DType]]:
@@ -1311,7 +1302,6 @@ class Conv1d(UnaryOpBase):
         return [abs_tensor]
 
     def requires(self, input_shapes):
-        # FIXME: Handling flops.
         cons = []
         cons.append(nnsmith_eq(self.in_channels, input_shapes[0].shape[1]))
         cons.append(nnsmith_ge(self.out_channels, 1))
@@ -1435,26 +1425,6 @@ class NCHWConv2d(UnaryOpBase):
         # not too extream to avoid torch exporter issue
         cons.append(nnsmith_le(self.padding, 255))
         return cons
-
-    def flops(self, input_shapes):
-        w = AbsTensor(
-            [
-                self.out_channels,
-                self.in_channels,
-                self.kernel_h_size,
-                self.kernel_w_size,
-            ],
-            dtype=input_shapes[0].dtype,
-        )
-        return nnsmith_mul(
-            nnsmith_mul(
-                nnsmith_mul(
-                    self.type_transfer(input_shapes)[0].nelement(), self.in_channels
-                ),
-                self.kernel_h_size,
-            ),
-            self.kernel_w_size,
-        )
 
     def n_floats(self, input_shapes):
         # FIXME: maybe need to take dilation into account?
@@ -1740,9 +1710,9 @@ class ReduceBase(UnaryOpBase, ABC):
         return [
             AbsTensor(
                 svar_list,
-                input_shapes[0].dtype
-                if self._reduce_out_dtype is None
-                else self._reduce_out_dtype,
+                self._reduce_out_dtype
+                if self._reduce_out_dtype
+                else input_shapes[0].dtype,
             )
         ]
 
@@ -1771,6 +1741,39 @@ class Squeeze(ReduceBase):
 
 
 @mark_materialize("core")
+class Unsqueeze(UnaryOpBase):
+    in_dtypes = [(i,) for i in DTYPE_GEN_ALL]
+    out_dtypes = [(i,) for i in DTYPE_GEN_ALL]
+
+    def __init__(self):
+        super().__init__()
+        self.inp_ranks = [rank_range(0, __MAX_RANK__ - 1)]
+        self.out_ranks = [rank_from(1)]
+
+    def __str__(self) -> str:
+        return (
+            self.name()
+            + f'(dim={self.extra_attrs["expand_dim"] if "expand_dim" in self.extra_attrs else None})'
+        )
+
+    def _init_expand_dim(self, input_shapes: List[Union[int, z3.ExprRef]]):
+        if "expand_dim" not in self.extra_attrs:
+            self.extra_attrs["expand_dim"] = random.randint(0, len(input_shapes))
+        return self.extra_attrs["expand_dim"]
+
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+        expand_dim = self._init_expand_dim(input_shapes[0].shape)
+        original_shape = [*input_shapes[0].shape]
+        expanded_shape = original_shape[:expand_dim] + [1] + original_shape[expand_dim:]
+        return [AbsTensor(shape=expanded_shape, dtype=input_shapes[0].dtype)]
+
+    def deduct_inp_ranks_and_dtype(
+        self, out_abs_tensor: List[AbsTensor]
+    ) -> List[Tuple[int, DType]]:
+        return [(out_abs_tensor[0].ndims - 1, out_abs_tensor[0].dtype)]
+
+
+@mark_materialize("core")
 class ReduceSum(ReduceBase):
     in_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL]
     out_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL]
@@ -1778,14 +1781,14 @@ class ReduceSum(ReduceBase):
 
 @mark_materialize("core")
 class ReduceMin(ReduceBase):
-    in_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL]
-    out_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL]
+    in_dtypes = [(i,) for i in DTYPE_GEN_FLOATS + DTYPE_GEN_INTS]
+    out_dtypes = [(i,) for i in DTYPE_GEN_FLOATS + DTYPE_GEN_INTS]
 
 
 @mark_materialize("core")
 class ReduceMax(ReduceBase):
-    in_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL]
-    out_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL]
+    in_dtypes = [(i,) for i in DTYPE_GEN_FLOATS + DTYPE_GEN_INTS]
+    out_dtypes = [(i,) for i in DTYPE_GEN_FLOATS + DTYPE_GEN_INTS]
 
 
 @mark_materialize("core")
@@ -1802,7 +1805,7 @@ class ReduceProd(ReduceBase):
 
 @mark_materialize("core")
 class ArgMin(ReduceBase):
-    in_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL if i not in DTYPE_GEN_COMPLEX]
+    in_dtypes = [(i,) for i in DTYPE_GEN_FLOATS + DTYPE_GEN_INTS]
     out_dtypes = [(DType.int64,)]
     _reduce_out_dtype = DType.int64
 
@@ -1816,7 +1819,7 @@ class ArgMin(ReduceBase):
 
 @mark_materialize("core")
 class ArgMax(ReduceBase):
-    in_dtypes = [(i,) for i in DTYPE_GEN_NON_BOOL if i not in DTYPE_GEN_COMPLEX]
+    in_dtypes = [(i,) for i in DTYPE_GEN_FLOATS + DTYPE_GEN_INTS]
     out_dtypes = [(DType.int64,)]
     _reduce_out_dtype = DType.int64
 

@@ -8,9 +8,8 @@ from nnsmith.abstract.op import *
 from nnsmith.materialize import framework_operator_impl
 from nnsmith.materialize.tensorflow.dialect import *
 
-# core dialect + some future PyTorch-only Operators.
+# core dialect + some future TensorFlow-only Operators.
 TF_REALIZABLE_OPS = FULL_OPERATOR_SETS["core"] + FULL_OPERATOR_SETS["tensorflow"]
-# TF_REALIZABLE_OPS = [NHWCConv2dSamePad, NHWCConv2dValidPad] # [Add, Dense, LocalRespNorm]
 ALL_TF_OPS: List[Type[AbsOpBase]] = []
 
 operator_impl = partial(framework_operator_impl, TF_REALIZABLE_OPS, ALL_TF_OPS)
@@ -263,16 +262,85 @@ def forward_fn(op: LocalRespNorm):
 
 @operator_impl(NHWCConv2d)
 def forward_fn(op: NHWCConv2d):
-    return layers.Conv2D(
-        filters=op.out_channels,
-        kernel_size=(op.kernel_h_size, op.kernel_w_size),
-        strides=(op.stride, op.stride),
-        data_format="channels_last",
-        dilation_rate=(op.dilation_h, op.dilation_w),
+    return lambda input, filters: tf.nn.conv2d(
+        input=input,
+        filters=filters,
+        strides=op.stride,
         padding=op.extra_attrs["padding"],
-        dtype=op.input_like[0].dtype.tensorflow(),
-        autocast=False,
+        dilations=(op.dilation_h, op.dilation_w),
     )
+
+
+@operator_impl(NHWCAtrousConv2d)
+def forward_fn(op: NHWCAtrousConv2d):
+    return lambda value, filters: tf.nn.atrous_conv2d(
+        value=value,
+        filters=filters,
+        rate=op.rate,
+        padding=op.extra_attrs["padding"],
+    )
+
+
+@operator_impl(NHWCDepthwiseConv2d)
+def forward_fn(op: NHWCDepthwiseConv2d):
+    return lambda input, filter: tf.nn.depthwise_conv2d(
+        input=input,
+        filter=filter,
+        strides=(1, op.stride, op.stride, 1),
+        padding=op.extra_attrs["padding"],
+        dilations=(op.dilation_h, op.dilation_w),
+    )
+
+
+@operator_impl(NHWCSeparableConv2d)
+def forward_fn(op: NHWCSeparableConv2d):
+    return lambda input, depthwise_filter, pointwise_filter: tf.nn.separable_conv2d(
+        input=input,
+        depthwise_filter=depthwise_filter,
+        pointwise_filter=pointwise_filter,
+        strides=(1, op.stride, op.stride, 1),
+        padding=op.extra_attrs["padding"],
+        dilations=(op.dilation_h, op.dilation_w),
+    )
+
+
+@operator_impl(NHWCConv2dTranspose)
+def forward_fn(op: NHWCConv2dTranspose):
+    return lambda input, filters: tf.nn.conv2d_transpose(
+        input=input,
+        filters=filters,
+        output_shape=op.output_like[0].shape,
+        strides=op.stride,
+        padding=op.extra_attrs["padding"],
+    )
+
+
+@operator_impl(NHWCDepthToSpace)
+def forward_fn(op: NHWCDepthToSpace):
+    return lambda input: tf.nn.depth_to_space(
+        input=input,
+        block_size=op.block_size,
+    )
+
+
+@operator_impl(NHWCSpaceToDepth)
+def forward_fn(op: NHWCSpaceToDepth):
+    return lambda input: tf.nn.space_to_depth(
+        input=input,
+        block_size=op.block_size,
+    )
+
+
+@operator_impl(Gather)
+def forward_fn(op: Gather):
+    axis = op.extra_attrs["axis"]
+    clip_value_min, clip_value_max = 0, op.input_like[0].shape[axis] - 1
+
+    def _gather(params, indices):
+        indices = tf.clip_by_value(indices, clip_value_min, clip_value_max)
+        return tf.gather(params, indices, axis=axis)
+
+    return _gather
 
 
 @operator_impl(Squeeze)
@@ -280,6 +348,12 @@ def forward_fn(op: Squeeze):
     if op.extra_attrs["reduce_dim"] is not None:
         return lambda x: tf.squeeze(x, axis=op.extra_attrs["reduce_dim"])
     return lambda x: tf.squeeze(x)
+
+
+@operator_impl(Unsqueeze)
+def forward_fn(op: Unsqueeze):
+    SanityCheck.true(op.extra_attrs["expand_dim"] != None)
+    return lambda x: tf.expand_dims(x, axis=op.extra_attrs["expand_dim"])
 
 
 @operator_impl(ReduceSum)
@@ -355,3 +429,18 @@ def forward_fn(op: Cast):
 @operator_impl(TFMatMul)
 def forward_fn(op: TFMatMul):
     return tf.matmul
+
+
+@operator_impl(Reverse)
+def forward_fn(op: Reverse):
+    return lambda x: tf.reverse(x, axis=op.extra_attrs["axis"])
+
+
+@operator_impl(Cholesky)
+def forward_fn(op: Cholesky):
+    return tf.linalg.cholesky
+
+
+@operator_impl(Eigh)
+def forward_fn(op: Eigh):
+    return tf.linalg.eigh

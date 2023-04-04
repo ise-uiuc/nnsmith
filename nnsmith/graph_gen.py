@@ -23,10 +23,6 @@ from nnsmith.logging import MGEN_LOG, SMT_LOG
 from nnsmith.util import HAS_PYGRAPHVIZ, set_seed, viz_dot
 
 
-class RequiredDimNotFound(Exception):
-    pass
-
-
 def concretize_graph(ir: GraphIR, model: z3.ModelRef) -> GraphIR:
     return ir.concretize(model)
 
@@ -34,11 +30,11 @@ def concretize_graph(ir: GraphIR, model: z3.ModelRef) -> GraphIR:
 class BaseGen:
     def __init__(
         self,
-        opset,
-        seed=None,
-        forward_prob=None,
-        concr_ph_dim_rng=(1, 64),
-        max_elem_per_tensor=2**16,
+        opset: List[AbsOpBase],
+        seed: Optional[int] = None,
+        forward_prob: Optional[float] = None,
+        concr_ph_dim_rng: Tuple[int, int] = (1, 64),
+        max_elem_per_tensor: int = 2**16,
         rank_choices=None,
         dtype_choices=None,
     ):
@@ -134,9 +130,6 @@ class BaseGen:
         for dt in DTYPE_GEN_FLOATS:
             if dt in dtypes:
                 wts[dtypes.index(dt)] = 4
-        for dt in DTYPE_GEN_INTS:
-            if dt in dtypes:
-                wts[dtypes.index(dt)] = 1
         return random.choices(dtypes, weights=wts)[0]
 
     def new_sym(self, name):
@@ -258,8 +251,7 @@ class BaseGen:
             dim_spec_list = op.inp_ranks
 
         varnames = self.pick_var_group(
-            dim_spec_list,
-            op.in_dtypes,
+            dim_spec_list, op.in_dtypes, ndim_relation=op.irank_relation
         )
 
         if self.try_forward_insert_at(op, varnames):
@@ -279,6 +271,7 @@ class BaseGen:
                 if not isinstance(op, Expand)
                 or self.ir.vars[name].ndims < op.expand_last_dim
             ],
+            ndim_relation=op.orank_relation,
         )
 
         if self.try_occupy_placeholder(op, phvars):
@@ -310,10 +303,6 @@ class BaseGen:
                 else:
                     if self.try_backward_insert(op):
                         return True
-        except RequiredDimNotFound:
-            if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
-                MGEN_LOG.debug(traceback.format_exc())
-            return False
         except ConstraintError:
             if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
                 MGEN_LOG.debug(traceback.format_exc())
@@ -321,7 +310,7 @@ class BaseGen:
 
         return False
 
-    def filter_rank_dtype(self, ndims, dtype, candidates: List[str]):
+    def filter_rank_dtype(self, ndims, dtype, candidates: List[str]) -> List[str]:
         cans = candidates
 
         cans = list(
@@ -330,7 +319,7 @@ class BaseGen:
             )
         )
         if len(cans) == 0:
-            raise RequiredDimNotFound(f"Cannot find candidate to sat rank of {ndims}.")
+            raise ConstraintError(f"Cannot find candidate to sat rank of {ndims}.")
 
         if dtype is not None:
             cans = list(
@@ -339,7 +328,7 @@ class BaseGen:
                 )
             )
             if len(cans) == 0:
-                raise RequiredDimNotFound(
+                raise ConstraintError(
                     f"Cannot find candidate to sat rank of {ndims} and dtype {dtype}."
                 )
 
@@ -348,10 +337,11 @@ class BaseGen:
     def pick_var_group(
         self,
         ndim_list: List[Set[int]],
-        dtype_combs_spec: List[Tuple[DType, ...]],
+        dtype_combs: List[Tuple[DType, ...]],
         var_candidates: Optional[List[str]] = None,
+        ndim_relation=None,
     ) -> List[str]:
-        """Randomly pick a group of variables that satisfy one of the `dtype_combs_spec` and `ndim_list`.
+        """Randomly pick a group of variables that satisfy one of the `dtype_combs` and `ndim_list`.
         Returns:
             List[str]: Satisfiable group of variable names.
         """
@@ -359,25 +349,17 @@ class BaseGen:
         if var_candidates is None:
             var_candidates = list(self.ir.vars.keys())
 
-        # check if can gen var group data types:
-        dtypes_in_ir = set([self.ir.vars[vname].dtype for vname in var_candidates])
-        if dtypes_in_ir.isdisjoint(set(DTYPE_GEN_ALL)):
-            raise RequiredDimNotFound(
-                f"DType unsat in IR (possibly due to complex64/128 dtypes)."
-            )
-
-        abs_tensor_candidates = []
         if MGEN_LOG.getEffectiveLevel() <= logging.DEBUG:
             for cand in var_candidates:
                 MGEN_LOG.debug(
                     f"Candidate: {cand}: {self.ir.vars[cand].dtype} ~ {self.ir.vars[cand].ndims}"
                 )
             MGEN_LOG.debug(f"Input data ranks candidates: {ndim_list}")
-            MGEN_LOG.debug(f"Input data types candidates: {dtype_combs_spec}")
+            MGEN_LOG.debug(f"Input data types candidates: {dtype_combs}")
 
-        viable_dtypes = []
+        ir_dtypes = []
         for i, ndims in enumerate(ndim_list):
-            viable_dtypes.extend(
+            ir_dtypes.extend(
                 [
                     self.ir.vars[vname].dtype
                     for vname in self.filter_rank_dtype(
@@ -385,22 +367,50 @@ class BaseGen:
                     )
                 ]
             )
-        # only use dtypes currently available after ndim filtering
-        dtype_combs = [
-            comb for comb in dtype_combs_spec if all(dt in viable_dtypes for dt in comb)
-        ]
-        if len(dtype_combs) == 0:
-            raise RequiredDimNotFound(
-                f"No viable candidates: rank within {ndim_list} and dtype within {dtype_combs_spec}."
-            )
-        dtype_comb = random.choice(dtype_combs)
-        for i, ndims in enumerate(ndim_list):
-            candidates = self.filter_rank_dtype(
-                ndims=ndims, dtype=dtype_comb[i], candidates=var_candidates
-            )
-            abs_tensor_candidates.append(random.choice(candidates))
 
-        return abs_tensor_candidates
+        # possibility check: must be generatable dtypes.
+        if set(ir_dtypes).isdisjoint(set(DTYPE_GEN_ALL)):
+            raise ConstraintError(f"Unsupported dtypes: {ir_dtypes}")
+
+        # only use dtypes currently available after ndim filtering
+        dcombs = [c for c in dtype_combs if all(dt in ir_dtypes for dt in c)]
+        if len(dcombs) == 0:
+            raise ConstraintError(
+                f"No candidate w/ rank@{ndim_list} & dtype@{dtype_combs}"
+            )
+
+        # randomized enumeration over dtype_combs
+        random.shuffle(dcombs)
+        for dcomb in dcombs:
+            if ndim_relation is None:
+                ret = []
+                for i, ndims in enumerate(ndim_list):
+                    candidates = self.filter_rank_dtype(
+                        ndims=ndims, dtype=dcomb[i], candidates=var_candidates
+                    )
+                    ret.append(random.choice(candidates))
+                return ret
+            else:
+                # candidates for 0-indexed tensor
+                topcands = self.filter_rank_dtype(
+                    ndims=ndim_list[0], dtype=dcomb[0], candidates=var_candidates
+                )
+                random.shuffle(topcands)
+                for tcand in topcands:
+                    ret = [tcand]
+                    for i, ndims in enumerate(ndim_list[1:]):
+                        required_ndim = ndim_relation[i + 1](self.ir.vars[tcand].ndims)
+                        if required_ndim not in ndim_list[i + 1]:
+                            break
+                        self.filter_rank_dtype(
+                            ndims=[required_ndim],
+                            dtype=dcomb[i + 1],
+                            candidates=var_candidates,
+                        )
+                    if len(ret) == len(ndim_list):
+                        return ret
+
+        raise ConstraintError("Cannot find desired combinations of tensor variables.")
 
 
 def check_sat(solver: z3.Solver, *assumptions) -> z3.CheckSatResult:
