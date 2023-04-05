@@ -23,6 +23,7 @@ class PT2(BackendFactory):
 
         # get backend from kwargs or inductor by default
         self.backend = kwargs.get("backend", "inductor")
+        self.mode = kwargs.get("mode")
 
     @property
     def system_name(self) -> str:
@@ -34,7 +35,9 @@ class PT2(BackendFactory):
         with torch.no_grad():
             with FxTracing():
                 traced = torch.fx.symbolic_trace(torch_net)
-                compiled = torch.compile(traced, fullgraph=True, backend=self.backend)
+                compiled = torch.compile(
+                    traced, fullgraph=True, backend=self.backend, mode=self.mode
+                )
 
         def closure(inputs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
             input_ts = [torch.from_numpy(v).to(self.device) for _, v in inputs.items()]
