@@ -132,6 +132,11 @@ class SymbolNet(nn.Module):
         for inst in self.ir.insts:
             if not isinstance(inst.iexpr.op, Input):
                 torch_fn = forward_fn(inst.iexpr.op)
+                if len(torch_fn) == 2:
+                    if isinstance(torch_fn[1], nn.Module):
+                        torch_fn = torch_fn[1]
+                    else:
+                        torch_fn = torch_fn[0]
                 SanityCheck.true(torch_fn is not None, f"Bad impl for {inst.iexpr.op}")
                 if isinstance(torch_fn, nn.Module):
                     self.mlist.append(torch_fn)
@@ -365,7 +370,6 @@ class SymbolNet(nn.Module):
                 output_tensors = [output_tensors]
 
             check_type(op, output_tensors, is_input=False, msg="output")
-
             for i, out_key in enumerate(outs):
                 # put values back to tensor_map.
                 tensor_map[out_key] = output_tensors[i]

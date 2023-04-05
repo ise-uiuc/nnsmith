@@ -13,7 +13,6 @@ from nnsmith.abstract.dtype import DType
 from nnsmith.abstract.op import AbsOpBase, Constant, Input
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.gir import GraphIR, InstExpr, InstIR
-from nnsmith.materialize.torch.forward import forward_fn
 
 
 class PropInterpreter(ShapeProp):
@@ -23,38 +22,7 @@ class PropInterpreter(ShapeProp):
         return result
 
 
-class ConcreteOp(AbsOpBase):
-    def __init__(
-        self,
-        target_str: str,
-        args: List[Any],
-        kwargs: Dict[str, Any],
-        input_like: List[AbsTensor],
-        output_like: List[AbsTensor],
-    ) -> None:
-        # super().__init__()
-        self.target_str = target_str
-        self.args = args
-        self.kwargs = kwargs
-        self.bind_input_like(input_like)
-        self.bind_output_like(output_like)
-
-    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
-        return self._output_like
-
-    def deduct_inp_ranks_and_dtype(
-        self, out_abs_tensor: List[AbsTensor]
-    ) -> List[Tuple[int, DType]]:
-        return [(o.ndims, o.dtype) for o in self._input_like]
-
-    def n_input(self):
-        return len(self._input_like)
-
-    def n_output(self):
-        return len(self._output_like)
-
-    def __str__(self):
-        return f"{super().__str__()}<{self.target_str}>"
+from nnsmith.abstract.op import ConcreteOp
 
 
 def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:
@@ -241,8 +209,9 @@ if __name__ == "__main__":
         def forward(self, i0):
             v0 = i0 + 3.14 + i0[0, 0]
             v1 = self.linear(v0)
-            v1_0, v1_1 = torch.split(v1, [1, 3], dim=-1)
-            v2 = torch.mul(input=v1_0, other=v1_1)
+            # v1_0, v1_1 = torch.split(v1, [1, 3], dim=-1)
+            # v2 = torch.mul(input=v1_0, other=v1_1)
+            v2 = torch.mul(input=v1, other=v1)
             v3 = torch.cat([v2, v2], dim=-1)
             v4 = v3.flatten()
             return v4
@@ -255,8 +224,16 @@ if __name__ == "__main__":
     ir = parse(model, i0)
     print(ir.pretty())
 
-    # gen_code(ir)
+    from nnsmith.materialize.torch import TorchModelCPU
+    from nnsmith.materialize.torch.symbolnet import SymbolNet
 
+    net = SymbolNet(ir)
+
+    from nnsmith.materialize.torch.symbolnet import FxTracing
+
+    with FxTracing():
+        traced = torch.fx.symbolic_trace(net)
+        traced.to_folder("gened")
 
 """
 opcode         name         target                                                  args                   kwargs

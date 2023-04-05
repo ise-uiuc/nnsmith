@@ -1,7 +1,9 @@
+import operator
 from functools import partial
-from typing import Type
+from typing import Callable, Type
 
 import torch
+import torch.nn as nn
 
 from nnsmith.abstract.dtype import DTYPE_GEN_INTS
 from nnsmith.abstract.op import *
@@ -17,6 +19,41 @@ ALL_TORCH_OPS: List[Type[AbsOpBase]] = []
 operator_impl = partial(framework_operator_impl, TORCH_REALIZABLE_OPS, ALL_TORCH_OPS)
 
 # forward_fn:  forward
+
+import torch.utils._pytree as pytree
+
+from nnsmith.materialize.torch.parse import ConcreteOp
+
+
+@operator_impl(ConcreteOp)
+def forward_fn(op: ConcreteOp):
+    target: Callable = eval(op.target_str)
+
+    def inner(*tensors: List[torch.Tensor]):
+        i_ts = 0
+        op_args = op.args[:]
+        if op.target_str.startswith("torch.Tensor."):
+            i_ts = 1
+            op_args = op_args[1:]
+        args_flatten, args_treespec = pytree.tree_flatten(op_args)
+        kwargs_flatten, kwargs_treespec = pytree.tree_flatten(op.kwargs)
+        for i, a in enumerate(args_flatten):
+            if a is None:
+                args_flatten[i] = tensors[i_ts]
+                i_ts += 1
+        for i, a in enumerate(kwargs_flatten):
+            if a is None:
+                kwargs_flatten[i] = tensors[i_ts]
+                i_ts += 1
+        args = pytree.tree_unflatten(args_flatten, args_treespec)
+        kwargs = pytree.tree_unflatten(kwargs_flatten, kwargs_treespec)
+        if op.target_str.startswith("torch.Tensor."):
+            method_str = op.target_str[len("torch.Tensor.") :]
+            return eval(f"tensors[0].{method_str}")(*args, **kwargs)
+        else:
+            return target(*args, **kwargs)
+
+    return inner, target
 
 
 @operator_impl(Constant)
