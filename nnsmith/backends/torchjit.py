@@ -42,18 +42,19 @@ class TorchJITFactory(BackendFactory):
                     "ignore",
                     category=torch.jit.TracerWarning,
                 )
-                exported = torch.jit.trace(torch_net, trace_inp)
+                exported = torch.jit.trace(
+                    torch_net,
+                    trace_inp,
+                )
                 exported = torch.jit.freeze(exported)  # Fronzen graph.
                 exported = torch.jit.optimize_for_inference(exported)
                 if self.target == "cpu" and NNSMITH_PTJIT_OPT_MOBILE:
                     exported = optimize_for_mobile(exported)
 
         def closure(inputs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
-            input_ts = {
-                k: torch.from_numpy(v).to(self.device) for k, v in inputs.items()
-            }
+            input_ts = [torch.from_numpy(v).to(self.device) for _, v in inputs.items()]
             with torch.no_grad():
-                output: Tuple[torch.Tensor] = exported(*input_ts.values())
+                output: Tuple[torch.Tensor] = exported(*input_ts)
             return {
                 k: v.cpu().detach().resolve_conj().numpy()
                 if v.is_conj()

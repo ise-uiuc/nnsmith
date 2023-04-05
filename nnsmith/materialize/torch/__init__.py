@@ -60,8 +60,9 @@ class TorchModel(Model, ABC):
                 inputs = self.torch_model.get_random_inps()
             else:
                 inputs = self.sat_inputs
-            inputs = {k: v.to(self.device()) for k, v in inputs.items()}
-            outputs = self.torch_model.forward(**inputs)
+            outputs = self.torch_model.forward(
+                *[v.to(self.device()) for _, v in inputs.items()]
+            )
 
         # numpyify
         input_dict = {k: v.cpu().detach().numpy() for k, v in inputs.items()}

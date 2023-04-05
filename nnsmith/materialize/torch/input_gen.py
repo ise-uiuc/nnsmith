@@ -67,7 +67,7 @@ class SamplingSearch(InputSearchBase):
     def search_one(self, start_inp, timeout_ms: int = None) -> Dict[str, torch.Tensor]:
         with torch.no_grad():
             self.net.check_intermediate_numeric = True
-            _ = self.net(**start_inp)
+            _ = self.net(*start_inp.values())
             if not self.net.invalid_found_last:
                 return start_inp
 
@@ -94,7 +94,7 @@ class PracticalHybridSearch(InputSearchBase):
             diff_test_inp = self.net.get_random_inps(use_cuda=self.use_cuda)
             for _, item in diff_test_inp.items():
                 item.requires_grad_()
-            self.net.forward(**diff_test_inp)
+            self.net.forward(*diff_test_inp.values())
             self.differentiable = self.net.differentiable
         else:
             self.differentiable = False
