@@ -14,6 +14,7 @@ def main(cfg: DictConfig):
             name=backend_cfg["type"],
             target=backend_cfg["target"],
             optmax=backend_cfg["optmax"],
+            parse_name=True,
         )
     else:
         factory = None

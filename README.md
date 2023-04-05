@@ -14,13 +14,14 @@
 
 <div align="center">
 
-| Models | [`tvm`](https://github.com/apache/tvm) | [`onnxruntime`](https://github.com/microsoft/onnxruntime) | [`tensorrt`](https://github.com/NVIDIA/TensorRT) | [`tflite`](https://www.tensorflow.org/lite) | [`xla`](https://www.tensorflow.org/xla) | [`torchjit`](https://pytorch.org/docs/stable/jit.html) |
-| ------------ | ------------------------------------ | ----------------------------------------------- | ---------------------------------------------- | ----------------------------------------- | ------------------------------------- | ----------------------------------------------------- |
-| ONNX         | ✅                                    | ✅                                               | ✅                                              |                                           |                                       |                                                       |
-| TensorFlow   | 🔨                                    |                                                 |                                                | ✅                                         | ✅                                     |                                                       |
-| PyTorch      | 🔨                                    |                                                 |                                                |                                           |                                       | ✅                                                     |
+| Models | [`tvm`](https://github.com/apache/tvm) | [`pt2`](https://pytorch.org/get-started/pytorch-2.0/) | [`torchjit`](https://pytorch.org/docs/stable/jit.html) | [`tensorrt`](https://github.com/NVIDIA/TensorRT) | [`onnxruntime`](https://github.com/microsoft/onnxruntime) | [`xla`](https://www.tensorflow.org/xla) | [`tflite`](https://www.tensorflow.org/lite) |
+| ------------ | ------------------------------------ | ----------------------------------------------- | ---------------------------------------------- | ----------------------------------------- | ------------------------------------- | ----------------------------------------------------- | ------------ |
+| ONNX         | ✅                                    |                                                |                                               | ✅ | ✅ |                                                       |  |
+| PyTorch | 🔨                                    | ✅ | ✅ |                                          |                                      |                                         |                                             |
+| TensorFlow | 🔨                                    |                                                       |                                                        |                                           |                                       | ✅                                                    | ✅ |
 
 ✅: Supported; 🔨: Coming soon;
+
 </div>
 
 ## Quick Start

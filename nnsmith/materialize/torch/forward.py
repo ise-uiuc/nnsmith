@@ -304,7 +304,7 @@ def forward_fn(op: Reshape):
 
 @operator_impl(Flatten)
 def forward_fn(op: Flatten):
-    return torch.Tensor.flatten
+    return lambda x: x.flatten()
 
 
 @operator_impl(Transpose)
@@ -344,16 +344,17 @@ def forward_fn(op: TrilinearInterp):
 
 @operator_impl(Squeeze)
 def forward_fn(op: Squeeze):
-    if op.extra_attrs["reduce_dim"] is not None:
-        return lambda x: x.squeeze(op.extra_attrs["reduce_dim"])
-    return torch.Tensor.squeeze
+    v = op.extra_attrs["reduce_dim"]
+    args = [v] if v is not None else []
+    # API like `torch.Tensor.squeeze` is not supported by torch.fx for now.
+    return lambda x: x.squeeze(*args)
 
 
 @operator_impl(TorchReduceSum)
 def forward_fn(op: TorchReduceSum):
-    if op.extra_attrs["reduce_dim"] is not None:
-        return lambda x: x.sum(op.extra_attrs["reduce_dim"])
-    return torch.Tensor.sum
+    v = op.extra_attrs["reduce_dim"]
+    args = [v] if v is not None else []
+    return lambda x: x.sum(*args)
 
 
 # ReduceMin
@@ -361,7 +362,7 @@ def forward_fn(op: TorchReduceSum):
 def forward_fn(op: ReduceMin):
     if op.extra_attrs["reduce_dim"] is not None:
         return lambda x: x.min(op.extra_attrs["reduce_dim"]).values
-    return torch.Tensor.min
+    return lambda x: x.min()
 
 
 # ReduceMax
@@ -369,31 +370,31 @@ def forward_fn(op: ReduceMin):
 def forward_fn(op: ReduceMax):
     if op.extra_attrs["reduce_dim"] is not None:
         return lambda x: x.max(op.extra_attrs["reduce_dim"]).values
-    return torch.Tensor.max
+    return lambda x: x.max()
 
 
 # ReduceMean
 @operator_impl(ReduceMean)
 def forward_fn(op: ReduceMean):
-    if op.extra_attrs["reduce_dim"] is not None:
-        return lambda x: x.mean(op.extra_attrs["reduce_dim"])
-    return torch.Tensor.mean
+    v = op.extra_attrs["reduce_dim"]
+    args = [v] if v is not None else []
+    return lambda x: x.mean(*args)
 
 
 # ArgMin
 @operator_impl(ArgMin)
 def forward_fn(op: ArgMin):
-    if op.extra_attrs["reduce_dim"] is not None:
-        return lambda x: x.argmin(op.extra_attrs["reduce_dim"])
-    return torch.Tensor.argmin
+    v = op.extra_attrs["reduce_dim"]
+    args = [v] if v is not None else []
+    return lambda x: x.argmin(*args)
 
 
 # ArgMax
 @operator_impl(ArgMax)
 def forward_fn(op: ArgMax):
-    if op.extra_attrs["reduce_dim"] is not None:
-        return lambda x: x.argmax(op.extra_attrs["reduce_dim"])
-    return torch.Tensor.argmax
+    v = op.extra_attrs["reduce_dim"]
+    args = [v] if v is not None else []
+    return lambda x: x.argmax(*args)
 
 
 # Tril

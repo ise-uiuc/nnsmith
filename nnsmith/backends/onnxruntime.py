@@ -15,7 +15,7 @@ OPT_LEVELS = [
 ]
 
 
-class ORTFactory(BackendFactory):
+class ORT(BackendFactory):
     def __init__(self, target, optmax, **kwargs):
         """opt_level ranges from 0 to 3, stands for ORT_DISABLE_ALL, ORT_ENABLE_BASIC, ORT_ENABLE_EXTENDED and ORT_ENABLE_ALL.
         See https://onnxruntime.ai/docs/performance/graph-optimizations.html for detail"""

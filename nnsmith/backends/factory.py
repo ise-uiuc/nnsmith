@@ -1,4 +1,5 @@
 import multiprocessing as mp
+import re
 import sys
 import traceback
 from abc import ABC, abstractmethod
@@ -14,6 +15,38 @@ from nnsmith.logging import CORE_LOG
 from nnsmith.materialize import BugReport, Model, Oracle, Stage, Symptom, TestCase
 
 BackendCallable = Callable[[Dict[str, np.ndarray]], Dict[str, np.ndarray]]
+
+
+def parse_name_kwargs(text):
+    # with parse_name, we will extract kwargs from parts that guarded by "[" and "]" in `name`.
+    # the grammar is:
+    fmt = r"<NAME> <key1>@<value1> <key2>@<value2> ..."
+    # where:
+    #    <NAME> is the name of the backend.
+    #    <key?> is the key of the kwargs.
+    #    <value?> is the value corresponding to <key?> in the kwargs.
+    # Those must comply with the regex pattern of r"[a-zA-Z0-9_]+".
+    tokens = text.strip().split()
+    if len(tokens) == 0:
+        raise ValueError(f"Invalid backend: {text}. Expected format: {fmt}")
+
+    pattern = re.compile(r"^[a-zA-Z0-9_]+$")
+
+    name = tokens[0]
+    if not pattern.match(name):
+        raise ValueError(f"Invalid backend: {text}. Expected format: {fmt}")
+
+    kvs = {}
+    for token in tokens[1:]:
+        kv = token.split("@")
+        if len(kv) == 2:
+            k, v = kv
+            if pattern.match(k) and pattern.match(v):
+                kvs[k] = v
+                continue
+        raise ValueError(f"Invalid backend: {text}. Expected format: {fmt}")
+
+    return name, kvs
 
 
 class BackendFactory(ABC):
@@ -307,60 +340,70 @@ class BackendFactory(ABC):
         )
 
     @staticmethod
-    def init(name, target="cpu", optmax=True, **kwargs):
+    def init(
+        name: str, target: str = "cpu", optmax: bool = True, parse_name=False, **kwargs
+    ):
         if name is None:
             raise ValueError(
-                "Backend type cannot be None. Specify via `backend.type=[onnxruntime | tvm | tensorrt | tflite | xla ]`"
+                "Backend type cannot be None. Use `backend.type=[onnxruntime|tvm|tensorrt|xla|tflite|pt2|torchjit]`"
             )
 
         if target == "gpu":
             target = "cuda"  # `gpu` means `cuda` by default.
 
-        if name == "onnxruntime":
-            from nnsmith.backends.onnxruntime import ORTFactory
+        if parse_name:
+            name, kw_dict = parse_name_kwargs(name)
+            kwargs.update(kw_dict)
 
-            return ORTFactory(
+        if name == "onnxruntime":
+            from nnsmith.backends.onnxruntime import ORT
+
+            return ORT(
                 target=target,
                 optmax=optmax,
                 **kwargs,
             )
         elif name == "tvm":
-            from nnsmith.backends.tvm import TVMFactory
+            from nnsmith.backends.tvm import TVM
 
             # default executor is graph
             kwargs["executor"] = kwargs.get("executor", "graph")
-            return TVMFactory(
+            return TVM(
                 target=target,
                 optmax=optmax,
                 **kwargs,
             )
         elif name == "tensorrt":
-            from nnsmith.backends.tensorrt import TRTFactory
+            from nnsmith.backends.tensorrt import TRT
 
-            return TRTFactory(
+            return TRT(
                 target=target,
                 optmax=optmax,
                 **kwargs,
             )
         elif name == "tflite":
-            from nnsmith.backends.tflite import TFLiteFactory
+            from nnsmith.backends.tflite import TFLite
 
-            return TFLiteFactory(
+            return TFLite(
                 target=target,
                 optmax=optmax,
                 **kwargs,
             )
         elif name == "xla":
-            from nnsmith.backends.xla import XLAFactory
+            from nnsmith.backends.xla import XLA
 
-            return XLAFactory(
+            return XLA(
                 target=target,
                 optmax=optmax,
                 **kwargs,
             )
         elif name == "torchjit":
-            from nnsmith.backends.torchjit import TorchJITFactory
+            from nnsmith.backends.torchjit import TorchJIT
 
-            return TorchJITFactory(target=target, optmax=optmax, **kwargs)
+            return TorchJIT(target=target, optmax=optmax, **kwargs)
+        elif name == "pt2":
+            from nnsmith.backends.pt2 import PT2
+
+            return PT2(target=target, optmax=optmax, **kwargs)
         else:
             raise ValueError(f"unknown backend: {name}")

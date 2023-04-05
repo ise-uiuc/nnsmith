@@ -20,7 +20,7 @@ def list_eq(a, b):
     return True
 
 
-class TVMFactory(BackendFactory):
+class TVM(BackendFactory):
     def __init__(self, target="cpu", optmax=True, executor="graph", **kwargs) -> None:
         super().__init__(target, optmax, **kwargs)
         # WARNING: setting opt_level 4 sometimes causes false alarms

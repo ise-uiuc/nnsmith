@@ -12,7 +12,7 @@ from nnsmith.materialize.tensorflow import (
 )
 
 
-class XLAFactory(BackendFactory):
+class XLA(BackendFactory):
     def __init__(self, target="cpu", optmax: bool = False):
         super().__init__(target, optmax)
 
