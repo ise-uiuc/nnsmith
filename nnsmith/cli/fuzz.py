@@ -130,6 +130,7 @@ class FuzzingLoop:
             cfg["backend"]["type"],
             target=cfg["backend"]["target"],
             optmax=cfg["backend"]["optmax"],
+            parse_name=True,
         )
 
         model_cfg = self.cfg["model"]

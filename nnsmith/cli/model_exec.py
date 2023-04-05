@@ -94,6 +94,7 @@ def verify_testcase(
             cmp_cfg["with"]["type"],
             target=cmp_cfg["with"]["target"],
             optmax=cmp_cfg["with"]["optmax"],
+            parse_name=True,
         )
         cmp_testcase = cmp_fac.make_testcase(
             testcase.model,
@@ -196,6 +197,7 @@ def main(cfg: DictConfig):
             cfg["backend"]["type"],
             target=cfg["backend"]["target"],
             optmax=cfg["backend"]["optmax"],
+            parse_name=True,
         )
 
         output_dir = None if output_dirs is None else output_dirs[i]
