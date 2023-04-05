@@ -15,7 +15,7 @@ from nnsmith.materialize.torch import TorchModel
 NNSMITH_PTJIT_OPT_MOBILE = os.getenv("NNSMITH_PTJIT_OPT_MOBILE", "0") == "1"
 
 
-class TorchJITFactory(BackendFactory):
+class TorchJIT(BackendFactory):
     def __init__(self, target="cpu", optmax: bool = False, **kwargs):
         super().__init__(target, optmax)
         if self.target == "cpu":

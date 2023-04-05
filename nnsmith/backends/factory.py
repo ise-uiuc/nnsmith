@@ -356,51 +356,51 @@ class BackendFactory(ABC):
             kwargs.update(kw_dict)
 
         if name == "onnxruntime":
-            from nnsmith.backends.onnxruntime import ORTFactory
+            from nnsmith.backends.onnxruntime import ORT
 
-            return ORTFactory(
+            return ORT(
                 target=target,
                 optmax=optmax,
                 **kwargs,
             )
         elif name == "tvm":
-            from nnsmith.backends.tvm import TVMFactory
+            from nnsmith.backends.tvm import TVM
 
             # default executor is graph
             kwargs["executor"] = kwargs.get("executor", "graph")
-            return TVMFactory(
+            return TVM(
                 target=target,
                 optmax=optmax,
                 **kwargs,
             )
         elif name == "tensorrt":
-            from nnsmith.backends.tensorrt import TRTFactory
+            from nnsmith.backends.tensorrt import TRT
 
-            return TRTFactory(
+            return TRT(
                 target=target,
                 optmax=optmax,
                 **kwargs,
             )
         elif name == "tflite":
-            from nnsmith.backends.tflite import TFLiteFactory
+            from nnsmith.backends.tflite import TFLite
 
-            return TFLiteFactory(
+            return TFLite(
                 target=target,
                 optmax=optmax,
                 **kwargs,
             )
         elif name == "xla":
-            from nnsmith.backends.xla import XLAFactory
+            from nnsmith.backends.xla import XLA
 
-            return XLAFactory(
+            return XLA(
                 target=target,
                 optmax=optmax,
                 **kwargs,
             )
         elif name == "torchjit":
-            from nnsmith.backends.torchjit import TorchJITFactory
+            from nnsmith.backends.torchjit import TorchJIT
 
-            return TorchJITFactory(target=target, optmax=optmax, **kwargs)
+            return TorchJIT(target=target, optmax=optmax, **kwargs)
         elif name == "pt2":
             from nnsmith.backends.pt2 import PT2
 

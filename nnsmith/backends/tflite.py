@@ -18,7 +18,7 @@ class TFLiteRunner:
         return {k: np.array(v) for k, v in self.tfnet_callable(**input).items()}
 
 
-class TFLiteFactory(BackendFactory):
+class TFLite(BackendFactory):
     """Factory to build TFLite backend.
     Convertion Graph:
         TFModel & one concrete function

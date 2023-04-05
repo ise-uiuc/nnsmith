@@ -23,7 +23,7 @@ class HostDeviceMem:
     device: DeviceAllocation
 
 
-class TRTFactory(BackendFactory):
+class TRT(BackendFactory):
     def __init__(self, target="cuda", optmax=True, **kwargs):
         super().__init__(target, optmax, **kwargs)
 
@@ -148,6 +148,6 @@ class TRTFactory(BackendFactory):
         return [DType.float64, DType.int64]
 
 
-@patch_requires(TRTFactory.system_name, "core.Pool2d")
+@patch_requires(TRT.system_name, "core.Pool2d")
 def RulePool2d(self: AbsOpBase, _: List[AbsTensor]) -> List[Union[z3.BoolRef, bool]]:
     return [nnsmith_lt(nnsmith_mul(self.kernel_h_size, self.kernel_w_size), 10000)]
