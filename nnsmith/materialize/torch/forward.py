@@ -1,12 +1,14 @@
-import operator
+# operator will be used in `eval` later.
+import operator  # noqa: F401
 from functools import partial
 from typing import Callable, Type
 
 import torch
-import torch.nn as nn
+import torch.utils._pytree as pytree
 
 from nnsmith.abstract.dtype import DTYPE_GEN_INTS
 from nnsmith.abstract.op import *
+from nnsmith.abstract.op import ConcreteOp
 from nnsmith.materialize import framework_operator_impl
 from nnsmith.materialize.torch.dialect import Flatten, Linear, TorchReduceSum
 
@@ -20,40 +22,35 @@ operator_impl = partial(framework_operator_impl, TORCH_REALIZABLE_OPS, ALL_TORCH
 
 # forward_fn:  forward
 
-import torch.utils._pytree as pytree
-
-from nnsmith.materialize.torch.parse import ConcreteOp
-
 
 @operator_impl(ConcreteOp)
 def forward_fn(op: ConcreteOp):
-    target: Callable = eval(op.target_str)
+    expr = op.target_str
+
+    if expr.startswith("nn."):
+        return eval("torch." + expr)
+    elif expr.startswith("torch.Tensor."):
+        expr = expr.replace("torch.Tensor", "tensors[0]")
+
+    offset = 1 if op.target_str.startswith("torch.Tensor.") else 0
+    args_flatten, args_treespec = pytree.tree_flatten(op.args[offset:])
+    kwargs_flatten, kwargs_treespec = pytree.tree_flatten(op.kwargs)
 
     def inner(*tensors: List[torch.Tensor]):
-        i_ts = 0
-        op_args = op.args[:]
-        if op.target_str.startswith("torch.Tensor."):
-            i_ts = 1
-            op_args = op_args[1:]
-        args_flatten, args_treespec = pytree.tree_flatten(op_args)
-        kwargs_flatten, kwargs_treespec = pytree.tree_flatten(op.kwargs)
-        for i, a in enumerate(args_flatten):
-            if a is None:
+        i_ts = offset
+        for i, v in enumerate(args_flatten):
+            if v is None:
                 args_flatten[i] = tensors[i_ts]
                 i_ts += 1
-        for i, a in enumerate(kwargs_flatten):
-            if a is None:
+        for i, v in enumerate(kwargs_flatten):
+            if v is None:
                 kwargs_flatten[i] = tensors[i_ts]
                 i_ts += 1
         args = pytree.tree_unflatten(args_flatten, args_treespec)
         kwargs = pytree.tree_unflatten(kwargs_flatten, kwargs_treespec)
-        if op.target_str.startswith("torch.Tensor."):
-            method_str = op.target_str[len("torch.Tensor.") :]
-            return eval(f"tensors[0].{method_str}")(*args, **kwargs)
-        else:
-            return target(*args, **kwargs)
+        return eval(expr)(*args, **kwargs)
 
-    return inner, target
+    return inner
 
 
 @operator_impl(Constant)

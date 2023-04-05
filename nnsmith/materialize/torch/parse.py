@@ -1,6 +1,5 @@
-import inspect
 import operator
-from typing import Any, Callable, Dict, List, Tuple, Union, cast
+from typing import Any, Dict, List, Tuple, Union, cast
 
 import torch
 import torch._dynamo as dynamo
@@ -10,9 +9,10 @@ import torch.utils._pytree as pytree
 from torch.fx.passes.shape_prop import ShapeProp
 
 from nnsmith.abstract.dtype import DType
-from nnsmith.abstract.op import AbsOpBase, Constant, Input
+from nnsmith.abstract.op import ConcreteOp, Input
 from nnsmith.abstract.tensor import AbsTensor
-from nnsmith.gir import GraphIR, InstExpr, InstIR
+from nnsmith.gir import GraphIR, InstExpr
+from nnsmith.materialize.torch.forward import forward_fn
 
 
 class PropInterpreter(ShapeProp):
@@ -20,9 +20,6 @@ class PropInterpreter(ShapeProp):
         result = super().run_node(n)
         n.meta["res"] = result
         return result
-
-
-from nnsmith.abstract.op import ConcreteOp
 
 
 def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:

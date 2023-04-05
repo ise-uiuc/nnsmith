@@ -132,11 +132,6 @@ class SymbolNet(nn.Module):
         for inst in self.ir.insts:
             if not isinstance(inst.iexpr.op, Input):
                 torch_fn = forward_fn(inst.iexpr.op)
-                if len(torch_fn) == 2:
-                    if isinstance(torch_fn[1], nn.Module):
-                        torch_fn = torch_fn[1]
-                    else:
-                        torch_fn = torch_fn[0]
                 SanityCheck.true(torch_fn is not None, f"Bad impl for {inst.iexpr.op}")
                 if isinstance(torch_fn, nn.Module):
                     if self.mlist is None:
@@ -369,6 +364,7 @@ class SymbolNet(nn.Module):
             # REAL FORWARD.
             output_tensors = inst(*input_tensors)
             if isinstance(output_tensors, torch.fx.proxy.Proxy):
+                # TODO(@ganler, @co1lin): can we do systematic check through the output type?
                 if output_tensors.node.target not in [torch.split, torch.chunk]:
                     output_tensors = [output_tensors]
             elif not isinstance(output_tensors, list):
