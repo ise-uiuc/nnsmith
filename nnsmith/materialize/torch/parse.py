@@ -209,9 +209,8 @@ if __name__ == "__main__":
         def forward(self, i0):
             v0 = i0 + 3.14 + i0[0, 0]
             v1 = self.linear(v0)
-            # v1_0, v1_1 = torch.split(v1, [1, 3], dim=-1)
-            # v2 = torch.mul(input=v1_0, other=v1_1)
-            v2 = torch.mul(input=v1, other=v1)
+            v1_0, v1_1 = torch.split(v1, [1, 3], dim=-1)
+            v2 = torch.mul(input=v1_0, other=v1_1)
             v3 = torch.cat([v2, v2], dim=-1)
             v4 = v3.flatten()
             return v4
@@ -233,6 +232,7 @@ if __name__ == "__main__":
 
     with FxTracing():
         traced = torch.fx.symbolic_trace(net)
+        print(traced.graph)
         traced.to_folder("gened")
 
 """
