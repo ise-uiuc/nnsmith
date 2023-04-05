@@ -122,7 +122,7 @@ class SymbolNet(nn.Module):
         self.proxy_enabled_ = False
 
         # keep track of layers and weights so that the tracing can work properly
-        self.mlist = nn.ModuleList()
+        self.mlist = None
         # whether or not to register intermediate tensors as output tensors. Useful (at least) for checking nan
         self.record_intermediate = record_intermediate
         self._device = None
@@ -132,13 +132,10 @@ class SymbolNet(nn.Module):
         for inst in self.ir.insts:
             if not isinstance(inst.iexpr.op, Input):
                 torch_fn = forward_fn(inst.iexpr.op)
-                if len(torch_fn) == 2:
-                    if isinstance(torch_fn[1], nn.Module):
-                        torch_fn = torch_fn[1]
-                    else:
-                        torch_fn = torch_fn[0]
                 SanityCheck.true(torch_fn is not None, f"Bad impl for {inst.iexpr.op}")
                 if isinstance(torch_fn, nn.Module):
+                    if self.mlist is None:
+                        self.mlist = nn.ModuleList()
                     self.mlist.append(torch_fn)
                 self.instructions.append(
                     (torch_fn, inst.iexpr.args, inst.retvals(), inst.iexpr.op)
@@ -366,7 +363,11 @@ class SymbolNet(nn.Module):
 
             # REAL FORWARD.
             output_tensors = inst(*input_tensors)
-            if not isinstance(output_tensors, list):
+            if isinstance(output_tensors, torch.fx.proxy.Proxy):
+                # TODO(@ganler, @co1lin): can we do systematic check through the output type?
+                if output_tensors.node.target not in [torch.split, torch.chunk]:
+                    output_tensors = [output_tensors]
+            elif not isinstance(output_tensors, list):
                 output_tensors = [output_tensors]
 
             check_type(op, output_tensors, is_input=False, msg="output")

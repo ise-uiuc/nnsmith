@@ -1,6 +1,5 @@
-import inspect
 import operator
-from typing import Any, Callable, Dict, List, Tuple, Union, cast
+from typing import Any, Dict, List, Tuple, Union, cast
 
 import torch
 import torch._dynamo as dynamo
@@ -10,9 +9,10 @@ import torch.utils._pytree as pytree
 from torch.fx.passes.shape_prop import ShapeProp
 
 from nnsmith.abstract.dtype import DType
-from nnsmith.abstract.op import AbsOpBase, Constant, Input
+from nnsmith.abstract.op import ConcreteOp, Input
 from nnsmith.abstract.tensor import AbsTensor
-from nnsmith.gir import GraphIR, InstExpr, InstIR
+from nnsmith.gir import GraphIR, InstExpr
+from nnsmith.materialize.torch.forward import forward_fn
 
 
 class PropInterpreter(ShapeProp):
@@ -20,9 +20,6 @@ class PropInterpreter(ShapeProp):
         result = super().run_node(n)
         n.meta["res"] = result
         return result
-
-
-from nnsmith.abstract.op import ConcreteOp
 
 
 def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:
@@ -209,9 +206,8 @@ if __name__ == "__main__":
         def forward(self, i0):
             v0 = i0 + 3.14 + i0[0, 0]
             v1 = self.linear(v0)
-            # v1_0, v1_1 = torch.split(v1, [1, 3], dim=-1)
-            # v2 = torch.mul(input=v1_0, other=v1_1)
-            v2 = torch.mul(input=v1, other=v1)
+            v1_0, v1_1 = torch.split(v1, [1, 3], dim=-1)
+            v2 = torch.mul(input=v1_0, other=v1_1)
             v3 = torch.cat([v2, v2], dim=-1)
             v4 = v3.flatten()
             return v4
@@ -224,7 +220,8 @@ if __name__ == "__main__":
     ir = parse(model, i0)
     print(ir.pretty())
 
-    from nnsmith.materialize.torch import TorchModelCPU
+    ir.remove_unused(ir.insts[-1])  # remove the last flatten op.
+
     from nnsmith.materialize.torch.symbolnet import SymbolNet
 
     net = SymbolNet(ir)
@@ -233,6 +230,8 @@ if __name__ == "__main__":
 
     with FxTracing():
         traced = torch.fx.symbolic_trace(net)
+        print(traced.graph)
+        print(traced.code)
         traced.to_folder("gened")
 
 """
