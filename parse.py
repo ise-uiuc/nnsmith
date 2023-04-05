@@ -26,65 +26,18 @@ class PropInterpreter(ShapeProp):
 class ConcreteOp(AbsOpBase):
     def __init__(
         self,
-        target: Callable,
-        method_name: str,
-        args_flatten: List[Any],
-        args_tensor_indices: List[int],
-        args_treespec: pytree.TreeSpec,
-        kwargs_flatten: List[Any],
-        kwargs_tensor_indices: List[int],
-        kwargs_treespec: pytree.TreeSpec,
-        outputs: List[Any],
-        target_name: str = None,
+        target_str: str,
+        args: List[Any],
+        kwargs: Dict[str, Any],
+        input_like: List[AbsTensor],
+        output_like: List[AbsTensor],
     ) -> None:
         # super().__init__()
-        self.target = target
-        self.method_name = method_name
-        self.target_name = (target_name if target_name else str(target)).strip("<>")
-
-        self.args_flatten = args_flatten
-        self.kwargs_flatten = kwargs_flatten
-        self.args_tensor_indices = args_tensor_indices
-        self.args_treespec = args_treespec
-        self.kwargs_treespec = kwargs_treespec
-        self.kwargs_tensor_indices = kwargs_tensor_indices
-
-        ts_args_fully_flatten = pytree.tree_flatten(
-            [args_flatten[i] for i in args_tensor_indices]
-        )[0]
-        ts_kwargs_fully_flatten = pytree.tree_flatten(
-            [kwargs_flatten[i] for i in kwargs_tensor_indices]
-        )[0]
-
-        self.bind_input_like(
-            [
-                AbsTensor(shape=t.shape, dtype=DType.from_torch(t.dtype))
-                for t in ts_args_fully_flatten
-            ]
-            + [
-                AbsTensor(shape=t.shape, dtype=DType.from_torch(t.dtype))
-                for t in ts_kwargs_fully_flatten
-            ]
-        )
-        outputs = pytree.tree_flatten(outputs)[0]
-        self.bind_output_like(
-            [
-                AbsTensor(shape=o.shape, dtype=DType.from_torch(o.dtype))
-                for o in outputs  # if isinstance(o, torch.Tensor)
-            ]
-        )
-        # self.in_dtypes = [(
-        #     i.dtype for i in self._input_like
-        # )]
-        # self.out_dtypes = [(
-        #     o.dtype for o in self._output_like
-        # )]
-        # self.inp_ranks = [
-        #     (i.ndims,) for i in self._input_like
-        # ]
-        # self.out_ranks = [
-        #     (o.ndims,) for o in self._output_like
-        # ]
+        self.target_str = target_str
+        self.args = args
+        self.kwargs = kwargs
+        self.bind_input_like(input_like)
+        self.bind_output_like(output_like)
 
     def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
         return self._output_like
@@ -101,7 +54,7 @@ class ConcreteOp(AbsOpBase):
         return len(self._output_like)
 
     def __str__(self):
-        return f"{super().__str__()}<{self.target_name}>"
+        return f"{super().__str__()}<{self.target_str}>"
 
 
 def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:
@@ -124,29 +77,44 @@ def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:
     name_2_retvals: Dict[str, List[str]] = {}
     for i_node, node in enumerate(gm.graph.nodes):
         node = cast(fx.node.Node, node)
-        print(f"{i_node = }, {node = }", flush=True)
         if node.op == "placeholder":
             iexpr = InstExpr(Input(dim=len(node.meta["res"].shape)), [])
         else:
             args_flatten, args_treespec = pytree.tree_flatten(node.args)
             kwargs_flatten, kwargs_treespec = pytree.tree_flatten(node.kwargs)
-            args_nodes_indices = [
-                i for i, a in enumerate(args_flatten) if isinstance(a, fx.node.Node)
+            input_nodes = [
+                a
+                for a in (args_flatten + kwargs_flatten)
+                if isinstance(a, fx.node.Node)
             ]
-            kwargs_nodes_indices = [
-                i for i, a in enumerate(kwargs_flatten) if isinstance(a, fx.node.Node)
-            ]
-            args_flatten_loaded = load_args(args_flatten)
-            kwargs_flatten_loaded = load_args(kwargs_flatten)
-            input_valstrs = [
-                name_2_retvals[args_flatten[i].name][0] for i in args_nodes_indices
-            ] + [
-                name_2_retvals[kwargs_flatten[i].name][0] for i in kwargs_nodes_indices
-            ]
+            input_valstrs = list(map(lambda n: name_2_retvals[n.name][0], input_nodes))
+            input_like = list(
+                map(
+                    lambda ts: AbsTensor(
+                        shape=ts.shape, dtype=DType.from_torch(ts.dtype)
+                    ),
+                    pytree.tree_flatten(
+                        list(map(lambda n: n.meta["res"], input_nodes))
+                    )[0],
+                )
+            )
+            output_like = list(
+                map(
+                    lambda ts: AbsTensor(
+                        shape=ts.shape, dtype=DType.from_torch(ts.dtype)
+                    ),
+                    pytree.tree_flatten(node.meta["res"])[0],
+                )
+            )
+            args_wo_nodes = pytree.tree_map(
+                lambda n: None if isinstance(n, fx.node.Node) else n, node.args
+            )
+            kwargs_wo_nodes = pytree.tree_map(
+                lambda n: None if isinstance(n, fx.node.Node) else n, node.kwargs
+            )
             if node.op == "call_function":
-                target = node.target
                 if (
-                    target is operator.getitem
+                    node.target is operator.getitem
                     and isinstance(node.args[0], fx.node.Node)
                     and not isinstance(node.args[0].meta["res"], torch.Tensor)
                 ):
@@ -154,33 +122,25 @@ def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:
                         name_2_retvals[node.args[0].name][node.args[1]]
                     ]
                     continue
+                else:
+                    target_str = node._pretty_print_target(node.target)
             elif node.op == "call_method":
-                target = getattr(torch.Tensor, node.target)
+                target_str = f"torch.Tensor.{node.target}"
             elif node.op == "call_module":
                 target = named_modules[node.target]
+                target_str = repr(target)
+                if target.__module__.startswith("torch.nn.modules"):
+                    target_str = f"nn.{target_str}"
             elif node.op == "get_attr":
-                raise NotImplementedError(f"{node.name}")
+                raise NotImplementedError(f"{node.op = }, {node.name = }")
             elif node.op == "output":
                 continue
             else:
                 raise ValueError(f"Unexpected {node.op = }")
 
-            try:
-                target_name = node._pretty_print_target(target)
-            except:
-                target_name = None
             iexpr = InstExpr(
                 ConcreteOp(
-                    target,
-                    node.target if node.op == "call_method" else None,
-                    args_flatten_loaded,
-                    args_nodes_indices,
-                    args_treespec,
-                    kwargs_flatten_loaded,
-                    kwargs_nodes_indices,
-                    kwargs_treespec,
-                    node.meta["res"],
-                    target_name=target_name,
+                    target_str, args_wo_nodes, kwargs_wo_nodes, input_like, output_like
                 ),
                 input_valstrs,
             )
@@ -295,7 +255,7 @@ if __name__ == "__main__":
     ir = parse(model, i0)
     print(ir.pretty())
 
-    gen_code(ir)
+    # gen_code(ir)
 
 
 """
