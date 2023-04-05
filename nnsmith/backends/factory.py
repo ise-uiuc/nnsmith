@@ -30,7 +30,7 @@ def parse_name_kwargs(text):
     if len(tokens) == 0:
         raise ValueError(f"Invalid backend: {text}. Expected format: {fmt}")
 
-    pattern = re.compile(r"[a-zA-Z0-9_]+")
+    pattern = re.compile(r"^[a-zA-Z0-9_]+$")
 
     name = tokens[0]
     if not pattern.match(name):
