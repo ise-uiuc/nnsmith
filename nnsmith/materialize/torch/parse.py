@@ -220,7 +220,8 @@ if __name__ == "__main__":
     ir = parse(model, i0)
     print(ir.pretty())
 
-    from nnsmith.materialize.torch import TorchModelCPU
+    ir.remove_unused(ir.insts[-1])  # remove the last flatten op.
+
     from nnsmith.materialize.torch.symbolnet import SymbolNet
 
     net = SymbolNet(ir)
@@ -230,6 +231,7 @@ if __name__ == "__main__":
     with FxTracing():
         traced = torch.fx.symbolic_trace(net)
         print(traced.graph)
+        print(traced.code)
         traced.to_folder("gened")
 
 """
