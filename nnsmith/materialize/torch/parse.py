@@ -28,17 +28,15 @@ def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:
     sp = PropInterpreter(gm)
     sp.run(*example_args)
 
-    def load_args(
-        args: Union[List[Any], Dict[str, Any]]
-    ) -> Union[List[Any], Dict[str, Any]]:
+    def load_args(args: Union[List, Dict[str, Any]]) -> Union[List, Dict[str, Any]]:
         """
-        map nodes to their outputs while keeping structures and other values the same
+        Map nodes to their outputs while keeping structures and other values the same.
         """
         return torch.fx.graph.map_arg(args, lambda n: n.meta["res"])
 
     named_modules = dict(gm.named_modules())
     ir = GraphIR()
-    name_2_retvals: Dict[str, List[str]] = {}
+    name2retvals: Dict[str, List[str]] = {}
     for i_node, node in enumerate(gm.graph.nodes):
         node = cast(fx.node.Node, node)
         if node.op == "placeholder":
@@ -51,7 +49,7 @@ def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:
                 for a in (args_flatten + kwargs_flatten)
                 if isinstance(a, fx.node.Node)
             ]
-            input_valstrs = list(map(lambda n: name_2_retvals[n.name][0], input_nodes))
+            input_valstrs = list(map(lambda n: name2retvals[n.name][0], input_nodes))
             input_like = list(
                 map(
                     lambda ts: AbsTensor(
@@ -70,22 +68,19 @@ def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:
                     pytree.tree_flatten(node.meta["res"])[0],
                 )
             )
-            args_wo_nodes = pytree.tree_map(
-                lambda n: ConcreteOp.empty if isinstance(n, fx.node.Node) else n,
-                node.args,
+            nodes2empty = (
+                lambda n: ConcreteOp.empty if isinstance(n, fx.node.Node) else n
             )
-            kwargs_wo_nodes = pytree.tree_map(
-                lambda n: ConcreteOp.empty if isinstance(n, fx.node.Node) else n,
-                node.kwargs,
-            )
+            args_wo_nodes = pytree.tree_map(nodes2empty, node.args)
+            kwargs_wo_nodes = pytree.tree_map(nodes2empty, node.kwargs)
             if node.op == "call_function":
                 if (
                     node.target is operator.getitem
                     and isinstance(node.args[0], fx.node.Node)
                     and not isinstance(node.args[0].meta["res"], torch.Tensor)
                 ):
-                    name_2_retvals[node.name] = [
-                        name_2_retvals[node.args[0].name][node.args[1]]
+                    name2retvals[node.name] = [
+                        name2retvals[node.args[0].name][node.args[1]]
                     ]
                     continue
                 else:
@@ -111,7 +106,7 @@ def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:
                 input_valstrs,
             )
 
-        name_2_retvals[node.name] = ir.add_inst(iexpr).retvals()
+        name2retvals[node.name] = ir.add_inst(iexpr).retvals()
     # end for
     return ir
 
