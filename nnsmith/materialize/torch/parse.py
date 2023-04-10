@@ -23,7 +23,6 @@ class PropInterpreter(ShapeProp):
 
 
 def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:
-    dynamo.reset()
     gm: fx.GraphModule = dynamo.export(model, *example_args)[0]
     # store shape info on nodes
     sp = PropInterpreter(gm)
@@ -111,87 +110,8 @@ def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:
             )
 
         name_2_retvals[node.name] = ir.add_inst(iexpr).retvals()
-
     # end for
     return ir
-
-
-def gen_code(gir: GraphIR):
-    fx_graph = fx.graph.Graph()
-    name_2_param: Dict[str, nn.Parameter] = {}
-    name_2_module: Dict[str, nn.Module] = {}
-    valstr_2_node: Dict[str, fx.node.Node] = {}
-
-    def construct_args(inst_expr: InstExpr) -> Tuple[List[Any], Dict[str, Any]]:
-        op = cast(ConcreteOp, inst_expr.op)
-        args_flatten = op.args_flatten[:]
-        kwargs_flatten = op.kwargs_flatten[:]
-        i_ts = 0
-        for i in op.args_tensor_indices:
-            args_flatten[i] = valstr_2_node[inst_expr.args[i_ts]]
-            i_ts += 1
-        for i in op.kwargs_tensor_indices:
-            kwargs_flatten[i] = valstr_2_node[inst_expr.args[i_ts]]
-            i_ts += 1
-        args: List[Any] = pytree.tree_unflatten(args_flatten, op.args_treespec)
-        kwargs: Dict[str, Any] = pytree.tree_unflatten(
-            kwargs_flatten, op.kwargs_treespec
-        )
-        return args, kwargs
-
-    for inst_ir in gir.insts:
-        op = inst_ir.iexpr.op
-        if isinstance(op, Input):
-            node = fx_graph.placeholder(name=inst_ir.retval(0), type_expr=torch.Tensor)
-        else:
-            if isinstance(op, ConcreteOp):
-                target = op.target
-            else:
-                target = forward_fn(op)
-            # if isinstance(op, Constant):
-            #     param_name = inst_ir.retval(0)
-            #     name_2_module[param_name] = target
-            #     node = fx_graph.get_attr(qualified_name=param_name, type_expr=nn.Parameter)
-            args, kwargs = construct_args(inst_ir.iexpr)
-            if isinstance(target, nn.Module):
-                mod_name = f"m_{len(name_2_module)}"
-                name_2_module[mod_name] = target
-                node = fx_graph.call_module(
-                    module_name=mod_name, args=tuple(args), kwargs=kwargs
-                )
-            elif op.method_name:
-                node = fx_graph.call_method(
-                    method_name=op.method_name, args=tuple(args), kwargs=kwargs
-                )
-            elif callable(target):
-                node = fx_graph.call_function(
-                    the_function=target, args=tuple(args), kwargs=kwargs
-                )
-            else:
-                raise ValueError(
-                    f"GraphIR to fx.Graph: Unexpected {op = }, {target = }"
-                )
-
-        retvals = inst_ir.retvals()
-        if len(retvals) == 1:
-            valstr_2_node[retvals[0]] = node
-        else:
-            for i_rv, retval in enumerate(retvals):
-                valstr_2_node[retval] = fx_graph.call_function(
-                    the_function=operator.getitem, args=(node, i_rv)
-                )
-    # end for
-    for leaf_var in gir.leaf_var():
-        fx_graph.output(result=valstr_2_node[leaf_var])
-
-    fx_graph.lint()
-    gm = fx.GraphModule(
-        root={**name_2_param, **name_2_module},
-        graph=fx_graph,
-        class_name="GenedModule",
-    )
-    print(gm.code)
-    gm.to_folder("gened")
 
 
 if __name__ == "__main__":
@@ -222,12 +142,9 @@ if __name__ == "__main__":
 
     ir.remove_unused(ir.insts[-1])  # remove the last flatten op.
 
-    from nnsmith.materialize.torch.symbolnet import SymbolNet
+    from nnsmith.materialize.torch.symbolnet import FxTracing, SymbolNet
 
     net = SymbolNet(ir)
-
-    from nnsmith.materialize.torch.symbolnet import FxTracing
-
     with FxTracing():
         traced = torch.fx.symbolic_trace(net)
         print(traced.graph)
