@@ -71,10 +71,12 @@ def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:
                 )
             )
             args_wo_nodes = pytree.tree_map(
-                lambda n: None if isinstance(n, fx.node.Node) else n, node.args
+                lambda n: ConcreteOp.empty if isinstance(n, fx.node.Node) else n,
+                node.args,
             )
             kwargs_wo_nodes = pytree.tree_map(
-                lambda n: None if isinstance(n, fx.node.Node) else n, node.kwargs
+                lambda n: ConcreteOp.empty if isinstance(n, fx.node.Node) else n,
+                node.kwargs,
             )
             if node.op == "call_function":
                 if (

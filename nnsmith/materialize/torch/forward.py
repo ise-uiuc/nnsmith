@@ -37,11 +37,11 @@ def forward_fn(op: ConcreteOp):
     def inner(*tensors: List[torch.Tensor]):
         i_ts = offset
         for i, v in enumerate(args_flatten):
-            if v is None:
+            if v is ConcreteOp.empty:
                 args_flatten[i] = tensors[i_ts]
                 i_ts += 1
         for i, v in enumerate(kwargs_flatten):
-            if v is None:
+            if v is ConcreteOp.empty:
                 kwargs_flatten[i] = tensors[i_ts]
                 i_ts += 1
         args = pytree.tree_unflatten(args_flatten, args_treespec)

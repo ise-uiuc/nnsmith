@@ -363,6 +363,9 @@ class AbsOpBase(ABC):
 
 @mark_materialize("core")
 class ConcreteOp(AbsOpBase):
+    class empty:
+        """placeholder"""
+
     def __init__(
         self,
         target_str: str,
