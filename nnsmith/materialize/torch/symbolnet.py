@@ -121,20 +121,18 @@ class SymbolNet(nn.Module):
 
         self.proxy_enabled_ = False
 
-        # keep track of layers and weights so that the tracing can work properly
-        self.mlist = nn.ModuleList()
         # whether or not to register intermediate tensors as output tensors. Useful (at least) for checking nan
         self.record_intermediate = record_intermediate
         self._device = None
 
         self.ir = ir
 
-        for inst in self.ir.insts:
+        for i, inst in enumerate(self.ir.insts):
             if not isinstance(inst.iexpr.op, Input):
                 torch_fn = forward_fn(inst.iexpr.op)
                 SanityCheck.true(torch_fn is not None, f"Bad impl for {inst.iexpr.op}")
                 if isinstance(torch_fn, nn.Module):
-                    self.mlist.append(torch_fn)
+                    self.add_module(f"m{i}", torch_fn)
                 self.instructions.append(
                     (torch_fn, inst.iexpr.args, inst.retvals(), inst.iexpr.op)
                 )
