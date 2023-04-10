@@ -33,17 +33,15 @@ def forward_fn(op: ConcreteOp):
     target = eval(expr)
     args_flatten, args_treespec = pytree.tree_flatten(op.args[offset:])
     kwargs_flatten, kwargs_treespec = pytree.tree_flatten(op.kwargs)
+    
+    args_idx = [i for i, v in enumerate(args_flatten) if v is ConcreteOp.Placeholder]
+    kwargs_idx = [i for i, v in enumerate(kwargs_flatten) if v is ConcreteOp.Placeholder]
 
     def inner(*tensors: List[torch.Tensor]):
-        i_ts = offset
-        for i, v in enumerate(args_flatten):
-            if v is ConcreteOp.empty:
-                args_flatten[i] = tensors[i_ts]
-                i_ts += 1
-        for i, v in enumerate(kwargs_flatten):
-            if v is ConcreteOp.empty:
-                kwargs_flatten[i] = tensors[i_ts]
-                i_ts += 1
+        for i, t in zip(args_idx, tensors[offset:len(args_idx)+offset]):
+            args_flatten[i] = t
+        for i, t in zip(kwargs_idx, tensors[len(args_idx)+offset:]):
+            kwargs_flatten[i] = t
         args = pytree.tree_unflatten(args_flatten, args_treespec)
         kwargs = pytree.tree_unflatten(kwargs_flatten, kwargs_treespec)
         return target(*args, **kwargs)
