@@ -48,7 +48,7 @@ def forward_fn(op: ConcreteOp):
 
     setattr(inner, "_target", target)
 
-    return inner
+    return inner, target
 
 
 @operator_impl(Constant)

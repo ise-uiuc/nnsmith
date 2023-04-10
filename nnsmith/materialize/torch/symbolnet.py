@@ -131,13 +131,11 @@ class SymbolNet(nn.Module):
 
         for inst in self.ir.insts:
             if not isinstance(inst.iexpr.op, Input):
-                torch_fn = forward_fn(inst.iexpr.op)
+                if isinstance(inst.iexpr.op, ConcreteOp):
+                    torch_fn, target = forward_fn(inst.iexpr.op)
+                else:
+                    torch_fn = target = forward_fn(inst.iexpr.op)
                 SanityCheck.true(torch_fn is not None, f"Bad impl for {inst.iexpr.op}")
-                target = (
-                    getattr(torch_fn, "_target")
-                    if isinstance(inst.iexpr.op, ConcreteOp)
-                    else torch_fn
-                )
                 if isinstance(target, nn.Module):
                     if self.mlist is None:
                         self.mlist = nn.ModuleList()
