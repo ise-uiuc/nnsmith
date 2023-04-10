@@ -8,7 +8,7 @@ import torch
 from torch import nn
 
 from nnsmith.abstract.dtype import DType
-from nnsmith.abstract.op import AbsOpBase, Input
+from nnsmith.abstract.op import AbsOpBase, ConcreteOp, Input
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import ConstraintCheck, ConstraintError, SanityCheck
 from nnsmith.gir import GraphIR
@@ -133,10 +133,15 @@ class SymbolNet(nn.Module):
             if not isinstance(inst.iexpr.op, Input):
                 torch_fn = forward_fn(inst.iexpr.op)
                 SanityCheck.true(torch_fn is not None, f"Bad impl for {inst.iexpr.op}")
-                if isinstance(torch_fn, nn.Module):
+                target = (
+                    getattr(torch_fn, "_target")
+                    if isinstance(inst.iexpr.op, ConcreteOp)
+                    else torch_fn
+                )
+                if isinstance(target, nn.Module):
                     if self.mlist is None:
                         self.mlist = nn.ModuleList()
-                    self.mlist.append(torch_fn)
+                    self.mlist.append(target)
                 self.instructions.append(
                     (torch_fn, inst.iexpr.args, inst.retvals(), inst.iexpr.op)
                 )

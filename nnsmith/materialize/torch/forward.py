@@ -25,14 +25,12 @@ operator_impl = partial(framework_operator_impl, TORCH_REALIZABLE_OPS, ALL_TORCH
 
 @operator_impl(ConcreteOp)
 def forward_fn(op: ConcreteOp):
-    expr = op.target_str
-
-    if expr.startswith("nn."):
-        return eval("torch." + expr)
-    elif expr.startswith("torch.Tensor."):
-        expr = expr.replace("torch.Tensor", "tensors[0]")
-
-    offset = 1 if op.target_str.startswith("torch.Tensor.") else 0
+    expr: str = op.target_str
+    offset = 0
+    if expr.startswith("torch.Tensor."):
+        expr = f'tensors[0].{expr[len("torch.Tensor."):]}'
+        offset = 1
+    target = eval(expr)
     args_flatten, args_treespec = pytree.tree_flatten(op.args[offset:])
     kwargs_flatten, kwargs_treespec = pytree.tree_flatten(op.kwargs)
 
@@ -48,7 +46,9 @@ def forward_fn(op: ConcreteOp):
                 i_ts += 1
         args = pytree.tree_unflatten(args_flatten, args_treespec)
         kwargs = pytree.tree_unflatten(kwargs_flatten, kwargs_treespec)
-        return eval(expr)(*args, **kwargs)
+        return target(*args, **kwargs)
+
+    setattr(inner, "_target", target)
 
     return inner
 

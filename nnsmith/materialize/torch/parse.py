@@ -95,7 +95,7 @@ def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:
                 target = named_modules[node.target]
                 target_str = repr(target)
                 if target.__module__.startswith("torch.nn.modules"):
-                    target_str = f"nn.{target_str}"
+                    target_str = f"torch.nn.{target_str}"
             elif node.op == "get_attr":
                 raise NotImplementedError(f"{node.op = }, {node.name = }")
             elif node.op == "output":

@@ -372,7 +372,7 @@ class ConcreteOp(AbsOpBase):
         output_like: List[AbsTensor],
     ) -> None:
         # super().__init__()
-        self.target_str = target_str
+        self.target_str: str = target_str
         self.args = args
         self.kwargs = kwargs
         self.bind_input_like(input_like)
