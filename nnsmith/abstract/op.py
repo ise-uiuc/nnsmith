@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from copy import deepcopy
 from functools import reduce
 from inspect import signature
-from typing import Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import z3
 
@@ -359,6 +359,44 @@ class AbsOpBase(ABC):
         if hasattr(cls, "dialect"):
             return cls.dialect + "." + cls.__name__.split(".")[-1]
         return cls.__name__.split(".")[-1]
+
+
+@mark_materialize("core")
+class ConcreteOp(AbsOpBase):
+    class empty:
+        """placeholder"""
+
+    def __init__(
+        self,
+        target_str: str,
+        args: List[Any],
+        kwargs: Dict[str, Any],
+        input_like: List[AbsTensor],
+        output_like: List[AbsTensor],
+    ) -> None:
+        # super().__init__()
+        self.target_str: str = target_str
+        self.args = args
+        self.kwargs = kwargs
+        self.bind_input_like(input_like)
+        self.bind_output_like(output_like)
+
+    def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
+        return self._output_like
+
+    def deduct_inp_ranks_and_dtype(
+        self, out_abs_tensor: List[AbsTensor]
+    ) -> List[Tuple[int, DType]]:
+        return [(o.ndims, o.dtype) for o in self._input_like]
+
+    def n_input(self):
+        return len(self._input_like)
+
+    def n_output(self):
+        return len(self._output_like)
+
+    def __str__(self):
+        return f"{super().__str__()}<{self.target_str}>"
 
 
 class UnaryOpBase(AbsOpBase):

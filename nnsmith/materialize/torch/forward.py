@@ -1,10 +1,14 @@
+# operator will be used in `eval` later.
+import operator  # noqa: F401
 from functools import partial
-from typing import Type
+from typing import Callable, Type
 
 import torch
+import torch.utils._pytree as pytree
 
 from nnsmith.abstract.dtype import DTYPE_GEN_INTS
 from nnsmith.abstract.op import *
+from nnsmith.abstract.op import ConcreteOp
 from nnsmith.materialize import framework_operator_impl
 from nnsmith.materialize.torch.dialect import Flatten, Linear, TorchReduceSum
 
@@ -17,6 +21,34 @@ ALL_TORCH_OPS: List[Type[AbsOpBase]] = []
 operator_impl = partial(framework_operator_impl, TORCH_REALIZABLE_OPS, ALL_TORCH_OPS)
 
 # forward_fn:  forward
+
+
+@operator_impl(ConcreteOp)
+def forward_fn(op: ConcreteOp):
+    expr: str = op.target_str
+    offset = 0
+    if expr.startswith("torch.Tensor."):
+        expr = f'tensors[0].{expr[len("torch.Tensor."):]}'
+        offset = 1
+    target = eval(expr)
+    args_flatten, args_treespec = pytree.tree_flatten(op.args[offset:])
+    kwargs_flatten, kwargs_treespec = pytree.tree_flatten(op.kwargs)
+
+    args_idx = [i for i, v in enumerate(args_flatten) if v is ConcreteOp.empty]
+    kwargs_idx = [i for i, v in enumerate(kwargs_flatten) if v is ConcreteOp.empty]
+
+    def inner(*tensors: List[torch.Tensor]):
+        for i, t in zip(args_idx, tensors[offset : len(args_idx) + offset]):
+            args_flatten[i] = t
+        for i, t in zip(kwargs_idx, tensors[len(args_idx) + offset :]):
+            kwargs_flatten[i] = t
+        args = pytree.tree_unflatten(args_flatten, args_treespec)
+        kwargs = pytree.tree_unflatten(kwargs_flatten, kwargs_treespec)
+        return target(*args, **kwargs)
+
+    setattr(inner, "_target", target)
+
+    return inner, target
 
 
 @operator_impl(Constant)
