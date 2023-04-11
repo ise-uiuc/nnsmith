@@ -99,7 +99,7 @@ def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:
             elif node.op == "output":
                 continue
             else:
-                raise ValueError(f"Unexpected {node.op = }")
+                raise ValueError(f"Unexpected node.op = {node.op}")
 
             iexpr = InstExpr(
                 ConcreteOp(
