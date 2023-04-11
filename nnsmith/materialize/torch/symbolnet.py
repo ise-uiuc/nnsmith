@@ -8,7 +8,7 @@ import torch
 from torch import nn
 
 from nnsmith.abstract.dtype import DType
-from nnsmith.abstract.op import AbsOpBase, Input
+from nnsmith.abstract.op import AbsOpBase, ConcreteOp, Input
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import ConstraintCheck, ConstraintError, SanityCheck
 from nnsmith.gir import GraphIR
@@ -129,7 +129,10 @@ class SymbolNet(nn.Module):
 
         for i, inst in enumerate(self.ir.insts):
             if not isinstance(inst.iexpr.op, Input):
-                torch_fn = forward_fn(inst.iexpr.op)
+                if isinstance(inst.iexpr.op, ConcreteOp):
+                    torch_fn, target = forward_fn(inst.iexpr.op)
+                else:
+                    torch_fn = target = forward_fn(inst.iexpr.op)
                 SanityCheck.true(torch_fn is not None, f"Bad impl for {inst.iexpr.op}")
                 if isinstance(torch_fn, nn.Module):
                     self.add_module(f"m{i}", torch_fn)
@@ -359,11 +362,14 @@ class SymbolNet(nn.Module):
 
             # REAL FORWARD.
             output_tensors = inst(*input_tensors)
-            if not isinstance(output_tensors, list):
+            if isinstance(output_tensors, torch.fx.proxy.Proxy):
+                # TODO(@ganler, @co1lin): can we do systematic check through the output type?
+                if output_tensors.node.target not in [torch.split, torch.chunk]:
+                    output_tensors = [output_tensors]
+            elif not isinstance(output_tensors, list):
                 output_tensors = [output_tensors]
 
             check_type(op, output_tensors, is_input=False, msg="output")
-
             for i, out_key in enumerate(outs):
                 # put values back to tensor_map.
                 tensor_map[out_key] = output_tensors[i]
