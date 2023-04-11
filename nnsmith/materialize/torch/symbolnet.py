@@ -459,7 +459,7 @@ class SymbolNet(nn.Module):
 
                     ConstraintCheck.true(
                         vul_op_loss is not None,
-                        f"op={op} has no `torch_loss` but produces NaN or INF!",
+                        f"{op=} has no `torch_loss` but produces NaN or INF!",
                     )
                     # TODO: some less vulnerable ops (like Mul) may also trigger Inf and will crash the process.
                     # Given its low chance of happening, ignore it for now.
