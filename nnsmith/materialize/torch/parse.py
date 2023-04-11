@@ -93,7 +93,9 @@ def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:
                 if target.__module__.startswith("torch.nn.modules"):
                     target_str = f"torch.nn.{target_str}"
             elif node.op == "get_attr":
-                raise NotImplementedError(f"{node.op = }, {node.name = }")
+                raise NotImplementedError(
+                    f"node.op = {node.op}, node.name = {node.name}"
+                )
             elif node.op == "output":
                 continue
             else:
@@ -109,58 +111,3 @@ def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:
         name2retvals[node.name] = ir.add_inst(iexpr).retvals()
     # end for
     return ir
-
-
-if __name__ == "__main__":
-
-    class MyModel(nn.Module):
-        def __init__(
-            self,
-        ):
-            super().__init__()
-            self.linear = nn.Linear(3, 4)
-
-        def forward(self, i0):
-            v0 = i0 + 3.14 + i0[0, 0]
-            v1 = self.linear(v0)
-            v1_0, v1_1 = torch.split(v1, [1, 3], dim=-1)
-            v2 = torch.mul(input=v1_0, other=v1_1)
-            v3 = torch.cat([v2, v2], dim=-1)
-            v4 = v3.flatten()
-            return v4
-
-    model = MyModel()
-    i0 = torch.rand(2, 3)
-    i1 = 4.3
-    print(f"eager: {model(i0)}")
-
-    ir = parse(model, i0)
-    print(ir.pretty())
-
-    ir.remove_unused(ir.insts[-1])  # remove the last flatten op.
-
-    from nnsmith.materialize.torch.symbolnet import FxTracing, SymbolNet
-
-    net = SymbolNet(ir)
-    with FxTracing():
-        traced = torch.fx.symbolic_trace(net)
-        print(traced.graph)
-        print(traced.code)
-        traced.to_folder("gened")
-
-"""
-opcode         name         target                                                  args                   kwargs
--------------  -----------  ------------------------------------------------------  ---------------------  ----------------------------------------
-placeholder    arg0         arg0                                                    ()                     {}
-call_function  add          <built-in function add>                                 (arg0, 3.14)           {}
-call_function  getitem      <built-in function getitem>                             (arg0, (0, 0))         {}
-call_function  add_1        <built-in function add>                                 (add, getitem)         {}
-call_module    self_linear  self_linear                                             (add_1,)               {}
-call_function  split        <function split at 0x7f44c3b02440>                      (self_linear, [1, 3])  {'dim': -1}
-call_function  getitem_1    <built-in function getitem>                             (split, 0)             {}
-call_function  getitem_2    <built-in function getitem>                             (split, 1)             {}
-call_function  mul          <built-in method mul of type object at 0x7f4547b83400>  ()                     {'input': getitem_1, 'other': getitem_2}
-call_function  cat          <built-in method cat of type object at 0x7f4547b83400>  ([mul, mul],)          {'dim': -1}
-call_method    flatten      flatten                                                 (cat,)                 {}
-output         output       output                                                  ([flatten],)           {}
-"""
