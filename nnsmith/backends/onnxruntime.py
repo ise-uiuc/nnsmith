@@ -1,3 +1,5 @@
+from typing import List
+
 import onnx
 import onnxruntime as ort
 from multipledispatch import dispatch
@@ -18,7 +20,8 @@ OPT_LEVELS = [
 class ORT(BackendFactory):
     def __init__(self, target, optmax, **kwargs):
         """opt_level ranges from 0 to 3, stands for ORT_DISABLE_ALL, ORT_ENABLE_BASIC, ORT_ENABLE_EXTENDED and ORT_ENABLE_ALL.
-        See https://onnxruntime.ai/docs/performance/graph-optimizations.html for detail"""
+        See https://onnxruntime.ai/docs/performance/graph-optimizations.html for detail
+        """
         super().__init__(target, optmax, **kwargs)
         self.opt_level = OPT_LEVELS[-1 if optmax else 0]
 
@@ -41,6 +44,10 @@ class ORT(BackendFactory):
     @property
     def version(self) -> str:
         return ort.__version__
+
+    @property
+    def import_libs(self) -> List[str]:
+        return ["import onnxruntime as ort"]
 
     @dispatch(ONNXModel)
     def make_backend(

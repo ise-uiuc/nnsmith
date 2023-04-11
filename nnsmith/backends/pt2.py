@@ -1,4 +1,4 @@
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
@@ -28,6 +28,10 @@ class PT2(BackendFactory):
     @property
     def system_name(self) -> str:
         return "pt2"
+
+    @property
+    def import_libs(self) -> List[str]:
+        return ["import torch"]
 
     @dispatch(TorchModel)
     def make_backend(self, model: TorchModel) -> BackendCallable:

@@ -142,6 +142,10 @@ class TRT(BackendFactory):
         # Return only the host outputs.
         return [out.host for out in outputs]
 
+    @property
+    def import_libs(self) -> List[str]:
+        return ["import tensorrt as trt"]
+
     @classmethod
     def skip_dtypes(cls) -> List[DType]:
         # TRT will truncate f64 -> f32 and i64 -> i32

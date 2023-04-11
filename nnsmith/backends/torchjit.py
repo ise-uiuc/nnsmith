@@ -1,6 +1,6 @@
 import os
 import warnings
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
@@ -63,3 +63,7 @@ class TorchJIT(BackendFactory):
             }
 
         return closure
+
+    @property
+    def import_libs(self) -> List[str]:
+        return ["import torch"]

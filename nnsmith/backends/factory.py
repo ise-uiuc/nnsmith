@@ -339,6 +339,17 @@ class BackendFactory(ABC):
             model, Oracle(input=input, output=output, provider=self.system_name)
         )
 
+    @property
+    @abstractmethod
+    def import_libs(self) -> List[str]:
+        pass
+
+    def emit_compile(self, opt_name: str, mod_name: str) -> str:
+        raise NotImplementedError
+
+    def emit_run(self, out_name: str, opt_name: str, inp_name: str) -> str:
+        raise NotImplementedError
+
     @staticmethod
     def init(
         name: str, target: str = "cpu", optmax: bool = True, parse_name=False, **kwargs

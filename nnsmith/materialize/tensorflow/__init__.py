@@ -199,6 +199,10 @@ class TFModel(Model, ABC):  # Don't directly instantiate this class
     def operators() -> List[Type[AbsOpBase]]:
         return list(ALL_TF_OPS)
 
+    @property
+    def import_libs(self) -> List[str]:
+        return ["import tensorflow as tf"]
+
     @staticmethod
     def add_seed_setter() -> None:
         register_seed_setter("tensorflow", tf.random.set_seed, overwrite=True)

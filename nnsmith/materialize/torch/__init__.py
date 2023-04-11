@@ -115,6 +115,10 @@ class TorchModel(Model, ABC):
     def operators() -> List[Type[AbsOpBase]]:
         return ALL_TORCH_OPS
 
+    @property
+    def import_libs(self) -> List[str]:
+        return ["import torch"]
+
     @staticmethod
     def add_seed_setter() -> None:
         register_seed_setter("torch", torch.manual_seed, overwrite=True)

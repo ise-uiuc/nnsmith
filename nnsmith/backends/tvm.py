@@ -1,4 +1,5 @@
 import logging
+from typing import List
 
 import tvm
 from multipledispatch import dispatch
@@ -84,6 +85,10 @@ class TVM(BackendFactory):
             return dict(zip(model.output_like.keys(), output))
 
         return closure
+
+    @property
+    def import_libs(self) -> List[str]:
+        return ["import tvm"]
 
     @property
     def version(self) -> str:
