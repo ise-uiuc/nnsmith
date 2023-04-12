@@ -17,7 +17,6 @@ from nnsmith.materialize.torch.forward import forward_fn
 from nnsmith.materialize.torch.numeric import loss_fn, numeric_valid
 from nnsmith.materialize.torch.proxy_grad import proxy_fn
 
-__MB_LIM__ = 6 * 1024
 __INPUT_FOUND_NAN_MSG__ = "[NaN] in model inputs!"
 __INPUT_FOUND_INF_MSG__ = "[Inf] in model inputs!"
 __ENABLE_RT_CHECK__ = os.getenv("NNSMITH_RT_CHECK", "0") == "1"
@@ -134,14 +133,18 @@ class SymbolNet(nn.Module):
                 else:
                     torch_fn = target = forward_fn(inst.iexpr.op)
                 SanityCheck.true(torch_fn is not None, f"Bad impl for {inst.iexpr.op}")
-                if isinstance(torch_fn, nn.Module):
+                if isinstance(target, nn.Module):
                     self.add_module(f"m{i}", torch_fn)
-                self.instructions.append(
-                    (torch_fn, inst.iexpr.args, inst.retvals(), inst.iexpr.op)
-                )
 
-                if loss_fn.dispatch(type(inst.iexpr.op)):
-                    self.n_vulnerable_op += 1
+                if isinstance(target, nn.Parameter):
+                    self.register_parameter(inst.retval(), target)
+                else:
+                    self.instructions.append(
+                        (torch_fn, inst.iexpr.args, inst.retvals(), inst.iexpr.op)
+                    )
+
+                    if loss_fn.dispatch(type(inst.iexpr.op)):
+                        self.n_vulnerable_op += 1
 
         # the order follows `input_keys`
 
@@ -287,7 +290,7 @@ class SymbolNet(nn.Module):
         inputs: Dict[str, torch.Tensor] = {}
         for key, tensor in init_tensors.items():
             if tensor.data.dtype.is_floating_point:
-                inputs[key] = torch.nn.parameter.Parameter(tensor.data.clone())
+                inputs[key] = torch.nn.Parameter(tensor.data.clone())
             else:
                 inputs[key] = tensor.data
 
@@ -349,7 +352,9 @@ class SymbolNet(nn.Module):
     def forward(self, *args):
         self.differentiable = True
 
-        tensor_map: Dict[str, torch.Tensor] = {}
+        tensor_map: Dict[str, torch.Tensor] = {
+            k: v for k, v in self._parameters.items()
+        }
         for i, key in enumerate(self.input_map.keys()):
             tensor_map[key] = args[i]
 
@@ -385,7 +390,9 @@ class SymbolNet(nn.Module):
     def forward_grad(self, *args):
         self.differentiable = True
 
-        tensor_map: Dict[str, torch.Tensor] = {}
+        tensor_map: Dict[str, torch.Tensor] = {
+            k: v for k, v in self._parameters.items()
+        }
         for i, key in enumerate(self.input_map.keys()):
             tensor_map[key] = args[i]
 

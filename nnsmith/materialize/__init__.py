@@ -470,7 +470,7 @@ class Render:
 
     def render(self) -> str:
         text = self.template
-        dedup_imports = list(set(self.imports))
+        deduplicate_imports = list(set(self.imports))
 
         def wrap(text, dependencies=None):
             if text is None:
@@ -479,7 +479,7 @@ class Render:
                 raise ValueError("Render failure: some dependencies are missing")
             return text
 
-        text = text.replace(self._IMPORTS, "\n".join(dedup_imports))
+        text = text.replace(self._IMPORTS, "\n".join(deduplicate_imports))
         text = text.replace(self._DEF, self.def_code)  # Mandatory
         text = text.replace(self._MAKE_WEIGHT, wrap(self.weight_code))
         text = text.replace(self._COMPILE, wrap(self.compile_code))
