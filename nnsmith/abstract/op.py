@@ -703,12 +703,12 @@ class Placeholder:
     def __repr__(self):
         return f"Placeholder({self.ttype})"
 
-    def as_input(self):
+    def const(self):
         const_node = Constant(self.ttype.ndims)
         const_node.abs_tensor = self.ttype
         return const_node
 
-    def as_input(self):
+    def input(self):
         input_node = Input(self.ttype.ndims)
         input_node.abs_tensor = self.ttype
         return input_node

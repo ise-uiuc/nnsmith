@@ -197,9 +197,9 @@ class BaseGen:
             ph_inst_id, _ = InstIR.var_inst_idx(ph)
             ph_inst = self.ir.find_inst_by_id(ph_inst_id)
             if to_input:
-                ph_inst.iexpr.op = ph_inst.iexpr.op.as_input()
+                ph_inst.iexpr.op = ph_inst.iexpr.op.input()
             else:
-                ph_inst.iexpr.op = ph_inst.iexpr.op.as_input()
+                ph_inst.iexpr.op = ph_inst.iexpr.op.const()
 
         determine_ph_type(self.placeholders[0], True)  # At lease make one input.
         for ph in self.placeholders[1:]:

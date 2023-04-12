@@ -199,8 +199,8 @@ def test_model_def_nnsmith():
                 ir.add_inst(
                     InstExpr(
                         Placeholder(
-                            ttype=AbsTensor(shape=[1, 3, 64, 64], dtype=DType.float32)
-                        ).as_input(),
+                            ttype=AbsTensor([1, 3, 64, 64], DType.float32)
+                        ).input(),
                         [],
                     )
                 ).retval()
