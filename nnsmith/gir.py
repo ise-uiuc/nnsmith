@@ -247,8 +247,8 @@ class GraphIR:
 
     def replace_alluse(self, oldvar: str, newvar: str, type_check=True) -> None:
         # Change one variable to another new variable.
-        assert oldvar in self.vars, "oldvar not defined: " + oldvar
-        assert newvar in self.vars, "newvar not defined: " + newvar
+        assert oldvar in self.vars, "Old var undefined: " + oldvar
+        assert newvar in self.vars, "New var undefined: " + newvar
         # check type
         if (
             type_check
@@ -261,7 +261,7 @@ class GraphIR:
         # 1. replace all user site of oldvar to newvar.
         old_inst_id, old_ret_idx = InstIR.var_inst_idx(oldvar)
         old_inst = self.find_inst_by_id(old_inst_id)
-        assert old_inst is not None, "oldvar not defined: " + oldvar
+        assert old_inst is not None, "Old var undefined: " + oldvar
         for ouser in old_inst.users[old_ret_idx]:
             # change all use of oldvar to newvar
             ouser.iexpr.args = [newvar if a == oldvar else a for a in ouser.iexpr.args]
@@ -273,7 +273,7 @@ class GraphIR:
 
     def replace_arg(self, inst: InstIR, arg_idx: int, newvar: str, type_check=True):
         # Change one variable to another new variable.
-        assert newvar in self.vars, "newvar not defined: " + newvar
+        assert newvar in self.vars, "New var undefined: " + newvar
         assert (
             0 <= arg_idx < len(inst.iexpr.args)
         ), f"Invalid argument index {arg_idx} for {inst}"
@@ -332,7 +332,7 @@ class GraphIR:
 
             for rv in inst.retvals():
                 assert rv in self.vars, f"Return var not in self.vars: {rv}"
-                assert rv not in defined, f"Variable defined twice: {rv}"
+                assert rv not in defined, f"Variable re-defined: {rv}"
 
             # check user.
             for ret_idx, users in enumerate(inst.users):
