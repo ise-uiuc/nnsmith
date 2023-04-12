@@ -327,7 +327,7 @@ if __name__ == "__main__":
                 label = to_name
                 valid_cnt += 1
             except Exception as e:
-                print(f"Fail when {seed=}")
+                print(f"Fail when {seed = }")
                 print(e)
                 label = "FAILURE"
 

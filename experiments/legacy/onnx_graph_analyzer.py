@@ -52,11 +52,11 @@ def relay_op_cluster(mod, ignore_arg=False, verbose=False, use_counter=False):
 
             hash_str = f"{arg_type_str}@{attr_str}"
             if verbose:
-                print(f"[DEBUG] {statement=}")
-                print(f"[DEBUG] {op_str=}")
-                print(f"[DEBUG] {arg_type_str=}")
-                print(f"[DEBUG] {attr_str=}")
-                print(f"[DEBUG] {hash_str=}")
+                print(f"[DEBUG] {statement = }")
+                print(f"[DEBUG] {op_str = }")
+                print(f"[DEBUG] {arg_type_str = }")
+                print(f"[DEBUG] {attr_str = }")
+                print(f"[DEBUG] {hash_str = }")
 
             if use_counter:
                 op2type.setdefault(op_str, Counter()).update({hash_str: 1})

@@ -143,7 +143,7 @@ if __name__ == "__main__":
                     )
                     os.unlink(os.path.join(args.onnx_dir, to_name))
             except Exception as e:
-                print(f"Fail when {seed=}")
+                print(f"Fail when {seed = }")
                 print(e)  # Skip a few errors.
                 label = "FAILURE"
 

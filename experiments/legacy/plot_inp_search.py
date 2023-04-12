@@ -56,7 +56,7 @@ if __name__ == "__main__":
         elif f == "model_info.csv":
             data = pd.read_csv(os.path.join(args.root, f))
             gentime = data["gen_time"]
-            print(f"{gentime.mean()=}, {gentime.min()=}, {gentime.max()=}")
+            print(f"{gentime.mean() = }, {gentime.min() = }, {gentime.max() = }")
 
     def sort_by_time(time, succ_rate):
         time = np.array(time)

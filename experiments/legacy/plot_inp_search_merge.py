@@ -84,7 +84,7 @@ if __name__ == "__main__":
             elif f == "model_info.csv":
                 data = pd.read_csv(os.path.join(nsize_folder, f))
                 gentime = data["gen_time"]
-                print(f"{gentime.mean()=}, {gentime.min()=}, {gentime.max()=}")
+                print(f"{gentime.mean() = }, {gentime.min() = }, {gentime.max() = }")
 
         # sort succ rate by time
         sampling_res.append(sort_by_time(sampling_time, sampling_succ_rate))

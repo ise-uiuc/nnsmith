@@ -343,7 +343,7 @@ if __name__ == "__main__":
 
     for idx, (tag, single_res) in enumerate(zip(args.tags, results)):
         param_map = single_res["param_map"]
-        print(f"{single_res['nfiles']=}")
+        print(f"{single_res['nfiles'] = }")
         padding = int((10 - len(tag)) * 1.2)
         blank = r"\ "
         legends.append(

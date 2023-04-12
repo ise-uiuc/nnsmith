@@ -93,13 +93,11 @@ def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:
                 if target.__module__.startswith("torch.nn.modules"):
                     target_str = f"torch.nn.{target_str}"
             elif node.op == "get_attr":
-                raise NotImplementedError(
-                    f"node.op = {node.op}, node.name = {node.name}"
-                )
+                raise NotImplementedError(f"{node.op = }, {node.name = }")
             elif node.op == "output":
                 continue
             else:
-                raise ValueError(f"Unexpected node.op = {node.op}")
+                raise ValueError(f"Unexpected {node.op = }")
 
             iexpr = InstExpr(
                 ConcreteOp(
