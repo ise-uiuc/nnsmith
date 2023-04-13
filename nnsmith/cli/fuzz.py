@@ -128,6 +128,7 @@ class FuzzingLoop:
 
         self.factory = BackendFactory.init(
             cfg["backend"]["type"],
+            ad=cfg["ad"]["type"],
             target=cfg["backend"]["target"],
             optmax=cfg["backend"]["optmax"],
             parse_name=True,
@@ -138,11 +139,33 @@ class FuzzingLoop:
             model_cfg["type"], backend_target=cfg["backend"]["target"]
         )
         self.ModelType.add_seed_setter()
+
+        dtype_choices = set()
+        if cfg["mgen"]["dtype_choices"] is not None:
+            dtype_choices = set(cfg["mgen"]["dtype_choices"])
+            if (cfg["backend"]["type"] in ["torchjitAD_forward", "torchjitAD_backward"]):
+                from nnsmith.abstract.dtype import DTYPE_GEN_FLOATS
+                float_set = set()
+                for type in DTYPE_GEN_FLOATS:
+                    float_set.add(type.value)
+                dtype_choices = float_set.intersection(dtype_choices)
+        else:
+            if (cfg["backend"]["type"] in ["torchjitAD_forward", "torchjitAD_backward"]):
+                from nnsmith.abstract.dtype import DTYPE_GEN_FLOATS
+                float_set = set()
+                for type in DTYPE_GEN_FLOATS:
+                    float_set.add(type.value)
+                dtype_choices = float_set
+
+
+
+        self.cfg["mgen"]["dtype_choices"] = list(dtype_choices)
         self.opset = op_filter(
-            auto_opset(self.ModelType, self.factory, vulops=cfg["mgen"]["vulops"]),
+            auto_opset(self.ModelType, self.factory, vulops=cfg["mgen"]["vulops"], ad=cfg["ad"]["type"]),
             cfg["mgen"]["include"],
             cfg["mgen"]["exclude"],
         )
+        
 
         hijack_patch_requires(cfg["mgen"]["patch_requires"])
         activate_ext(opset=self.opset, factory=self.factory)
@@ -186,7 +209,8 @@ class FuzzingLoop:
             model.attach_viz(ir)
 
         model.refine_weights()  # either random generated or gradient-based.
-        oracle = model.make_oracle()
+        ad_type = self.cfg["ad"]["type"]
+        oracle = model.make_oracle(ad_type)
         return TestCase(model, oracle)
 
     def validate_and_report(self, testcase: TestCase) -> bool:

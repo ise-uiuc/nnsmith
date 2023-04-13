@@ -14,7 +14,9 @@ from nnsmith.error import InternalError
 from nnsmith.logging import CORE_LOG
 from nnsmith.materialize import BugReport, Model, Oracle, Stage, Symptom, TestCase
 
-BackendCallable = Callable[[Dict[str, np.ndarray]], Dict[str, np.ndarray]]
+BackendInput = np.ndarray
+BackendOutput = np.ndarray
+BackendCallable = Callable[[Dict[str, BackendInput]], Dict[str, BackendOutput]]
 
 
 def parse_name_kwargs(text):
@@ -70,7 +72,7 @@ class BackendFactory(ABC):
     @staticmethod
     def make_random_input(
         input_like: Dict[str, AbsTensor], low=1, high=2
-    ) -> Dict[str, np.ndarray]:
+    ) -> Dict[str, BackendInput]:
         return {
             name: np.random.uniform(low=low, high=high, size=aten.shape).astype(
                 aten.dtype.numpy()
@@ -111,7 +113,7 @@ class BackendFactory(ABC):
                 stage=Stage.COMPILATION,
                 log=traceback.format_exc(),
                 version=self.version,
-            )
+            )        
 
     def checked_exec(
         self, executable: BackendCallable, testcase: TestCase
@@ -124,7 +126,7 @@ class BackendFactory(ABC):
             )
 
         try:  # execution
-            return executable(input)
+            return executable(input)    # the executable is the closure return by the make_backend
         except InternalError as e:
             raise e
         except Exception:
@@ -145,7 +147,7 @@ class BackendFactory(ABC):
         if (
             not crash_safe and timeout is None
         ):  # not crash safe, compile & exec natively in current process.
-            bug_or_exec = self.checked_compile(testcase)
+            bug_or_exec = self.checked_compile(testcase)    # try to make_backend, return Union[BackendCallable, BugReport]
             if isinstance(bug_or_exec, BugReport):
                 return bug_or_exec
             return self.checked_exec(bug_or_exec, testcase)
@@ -289,6 +291,9 @@ class BackendFactory(ABC):
         crash_safe=False,
         timeout=None,
     ) -> Union[BugReport, TestCase]:
+        """
+        TODO (@FatPigeorz): to add support to infer the opset for torchjitAD
+        """
         if input is None:
             input = self.make_random_input(model.input_like)
 
@@ -351,14 +356,15 @@ class BackendFactory(ABC):
 
     def emit_run(self, out_name: str, opt_name: str, inp_name: str) -> str:
         raise NotImplementedError
+    
 
     @staticmethod
     def init(
-        name: str, target: str = "cpu", optmax: bool = True, parse_name=False, **kwargs
+        name: str, target: str = "cpu", ad: str = "", optmax: bool = True, parse_name=False, **kwargs
     ):
         if name is None:
             raise ValueError(
-                "Backend type cannot be None. Use `backend.type=[onnxruntime|tvm|tensorrt|xla|tflite|pt2|torchjit]`"
+                "Backend type cannot be None. Use `backend.type=[onnxruntime|tvm|tensorrt|xla|tflite|pt2|torchjit|torchjitAD]`"
             )
 
         if target == "gpu":
@@ -414,9 +420,14 @@ class BackendFactory(ABC):
             from nnsmith.backends.torchjit import TorchJIT
 
             return TorchJIT(target=target, optmax=optmax, **kwargs)
+        elif name == "torchjitAD":
+            from nnsmith.backends.torchjitAD import TorchJITAD
+            
+            return TorchJITAD(target = target, optmax=optmax, ad=ad, **kwargs)
         elif name == "pt2":
             from nnsmith.backends.pt2 import PT2
 
             return PT2(target=target, optmax=optmax, **kwargs)
         else:
             raise ValueError(f"unknown backend: {name}")
+    

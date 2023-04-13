@@ -16,6 +16,8 @@ class PT2(BackendFactory):
             self.device = torch.device("cpu")
         elif self.target == "cuda":
             self.device = torch.device("cuda")
+        elif self.target == "mps":
+            self.device = torch.device("mps")
         else:
             raise ValueError(
                 f"Unknown target: {self.target}. Only `cpu` and `cuda` are supported."

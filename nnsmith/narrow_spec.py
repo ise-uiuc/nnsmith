@@ -46,12 +46,13 @@ from nnsmith.materialize import Model, TestCase
 NNSMITH_CACHE_DIR = user_cache_dir(f"nnsmith-{__version__}")
 
 
-def get_cache_name(model_cls: Type[Model], factory: BackendFactory) -> str:
+def get_cache_name(model_cls: Type[Model], factory: BackendFactory, ad : str) -> str:
     if factory is None:
         return f"{model_cls.__name__}_exportable"
-    return (
-        f"{model_cls.__name__}_{factory.system_name}_{factory.version}_{factory.target}"
-    )
+    cache_name = f"{model_cls.__name__}_{factory.system_name}_{factory.version}_{factory.target}"
+    if not ad == "":
+        return f"{cache_name}_{ad}"
+    return cache_name
 
 
 @dataclass
@@ -87,7 +88,7 @@ def _make_single_op_irs(
 
 
 def infer_topset_from_scratch(
-    model_cls: Model, factory: Optional[BackendFactory], op_types=None
+    model_cls: Model, factory: Optional[BackendFactory], op_types=None, ad=""
 ) -> Dict[str, OpConfig]:
     if op_types is None:
         op_types = model_cls.operators()
@@ -103,6 +104,12 @@ def infer_topset_from_scratch(
 
         available_idtypes = node_t.in_dtypes
 
+        if not available_idtypes:
+            continue
+
+        if not ad == "":
+            available_idtypes = [t for t in available_idtypes if all(DType.is_float(x) for x in t)]
+        
         if not available_idtypes:
             continue
 
@@ -164,7 +171,6 @@ def infer_topset_from_scratch(
 
         for itypes, otypes, sched in single_op_irs:
             model = model_cls.from_gir(sched)
-
             if factory:
                 # Test compilation + simple inference;
                 out = factory.make_testcase(model)
@@ -225,10 +231,10 @@ def dump_topset(topset: Dict[str, OpConfig], path: PathLike):
 
 
 def auto_opconfig(
-    model_cls: Model, factory: Optional[BackendFactory]
+    model_cls: Model, factory: Optional[BackendFactory], ad : str = ""
 ) -> Dict[str, OpConfig]:
     cache_path = os.path.join(
-        NNSMITH_CACHE_DIR, get_cache_name(model_cls, factory) + ".yaml"
+        NNSMITH_CACHE_DIR, get_cache_name(model_cls, factory, ad) + ".yaml"
     )
     # mkdir -p NNSMITH_CACHE_DIR
     if not os.path.exists(NNSMITH_CACHE_DIR):
@@ -241,7 +247,7 @@ def auto_opconfig(
         return load_topset(cache_path)
     else:
         DTEST_LOG.info(f"Inferring topset from scratch and cache it to {cache_path}.")
-        opset = infer_topset_from_scratch(model_cls, factory)
+        opset = infer_topset_from_scratch(model_cls, factory, ad=ad)
         dump_topset(opset, cache_path)
         return opset
 
@@ -250,9 +256,10 @@ def auto_opset(
     model_cls: Type[Model],
     factory: Optional[BackendFactory] = None,
     vulops: bool = False,
+    ad: str = ""
 ) -> List[Type[AbsOpBase]]:
     # None means only test model exportation.
-    topset_config = auto_opconfig(model_cls, factory)
+    topset_config = auto_opconfig(model_cls, factory, ad=ad)
     opset = []
     for op in model_cls.operators():
         if op.name() not in topset_config or (vulops == False and op.limit_domain):
