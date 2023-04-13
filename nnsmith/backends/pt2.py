@@ -1,4 +1,4 @@
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -56,7 +56,9 @@ class PT2(BackendFactory):
 
         return closure
 
-    def emit_compile(self, opt_name: str, mod_name: str) -> str:
+    def emit_compile(
+        self, opt_name: str, mod_name: str, inp_name: Optional[str] = None
+    ) -> str:
         mode = f"'{self.mode}'" if self.mode else "None"
         return f"{opt_name} = torch.compile({mod_name}, fullgraph=True, backend='{self.backend}', mode={mode})"
 

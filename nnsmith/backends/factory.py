@@ -344,7 +344,9 @@ class BackendFactory(ABC):
     def import_libs(self) -> List[str]:
         pass
 
-    def emit_compile(self, opt_name: str, mod_name: str) -> str:
+    def emit_compile(
+        self, opt_name: str, mod_name: str, inp_name: Optional[str] = None
+    ) -> str:
         raise NotImplementedError
 
     def emit_run(self, out_name: str, opt_name: str, inp_name: str) -> str:
