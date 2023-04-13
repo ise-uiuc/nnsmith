@@ -22,7 +22,13 @@ def list_eq(a, b):
 
 
 class TVM(BackendFactory):
-    def __init__(self, target="cpu", optmax=True, executor="graph", **kwargs) -> None:
+    def __init__(
+        self,
+        target: str = "cpu",
+        optmax: bool = True,
+        executor: str = "graph",
+        **kwargs,
+    ) -> None:
         super().__init__(target, optmax, **kwargs)
         # WARNING: setting opt_level 4 sometimes causes false alarms
         # as in this level fast_math is enabled where slight numerical

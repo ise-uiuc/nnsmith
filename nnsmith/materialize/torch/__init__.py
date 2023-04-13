@@ -164,7 +164,7 @@ class TorchModel(Model, ABC):
         # Path is None. Generate inputs from scratch.
         tensor_text = []
         for at in self.input_like.values():
-            tensor_text.append(f"np.zeros({at.shape}, dtype={at.dtype})")
+            tensor_text.append(f"np.zeros({at.shape}, dtype='{at.dtype}')")
 
         return f"{inp_name} = [{', '.join(tensor_text)}]"
 
@@ -212,7 +212,9 @@ class TorchModel(Model, ABC):
 """
 
     def emit_run(self, out_name: str, inp_name: str, mod_name: str) -> str:
-        return f"{out_name} = {mod_name}(*{inp_name})"
+        return f"""{out_name} = {mod_name}(*[torch.from_numpy(v).to('{self.device().type}') for v in {inp_name}])
+{out_name} = [v.cpu().detach() for v in {out_name}] # torch2numpy
+{out_name} = [v.resolve_conj().numpy() if v.is_conj() else v.numpy() for v in {out_name}] # torch2numpy"""
 
     @staticmethod
     def add_seed_setter() -> None:

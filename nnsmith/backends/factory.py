@@ -50,7 +50,7 @@ def parse_name_kwargs(text):
 
 
 class BackendFactory(ABC):
-    def __init__(self, target="cpu", optmax: bool = False):
+    def __init__(self, target="cpu", optmax: bool = True):
         super().__init__()
         self.target = target
         self.optmax = optmax

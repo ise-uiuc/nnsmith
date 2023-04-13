@@ -500,8 +500,7 @@ class Render:
 
         check_text = (
             f"""for i, (l, r) in enumerate(zip({self.eager_result_name}, {self.compile_result_name})):
-    np.testing.assert_allclose(l, r, rtol=1e-2, atol=1e-3, err_msg=f"Result mismatch @ index {{i}}")
-"""
+    np.testing.assert_allclose(l, r, rtol=1e-2, atol=1e-3, err_msg=f"Result mismatch @ index {{i}}")"""
             if self.eager_run_code and self.compile_run_code
             else None
         )

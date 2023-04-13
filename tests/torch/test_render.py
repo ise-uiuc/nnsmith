@@ -1,8 +1,11 @@
+import subprocess
+
 import pytest
 import torch
 from torch import nn
 
 from nnsmith.abstract import AbsTensor, AvgPool2d, DType
+from nnsmith.backends.pt2 import PT2
 from nnsmith.gir import GraphIR, InstExpr, Placeholder
 from nnsmith.materialize import Render
 from nnsmith.materialize.torch import TorchModelCPU
@@ -12,13 +15,13 @@ class CNN(nn.Module):
     def __init__(self):
         super().__init__()
         self.conv = nn.Conv2d(3, 3, 3)
-        self.linear = nn.Linear(3, 3)
         self.bn = nn.BatchNorm2d(3)
+        self.linear = nn.Linear(62, 3)
 
     def forward(self, x):
         x = self.conv(x)
-        x = self.linear(x)
         x = self.bn(x)
+        x = self.linear(x)
         return x
 
 
@@ -32,14 +35,14 @@ def test_model_def_clean0():
     def __init__(self):
         super().__init__()
         self.conv = torch.nn.Conv2d(3, 3, kernel_size=(3, 3), stride=(1, 1))
-        self.linear = torch.nn.Linear(in_features=3, out_features=3, bias=True)
         self.bn = torch.nn.BatchNorm2d(3, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        self.linear = torch.nn.Linear(in_features=62, out_features=3, bias=True)
 
     def forward(self, x):
         conv = self.conv(x);  x = None
-        linear = self.linear(conv);  conv = None
-        bn = self.bn(linear);  linear = None
-        return bn
+        bn = self.bn(conv);  conv = None
+        linear = self.linear(bn);  bn = None
+        return linear
 
 m = M()
 """
@@ -229,7 +232,7 @@ m = M()
     )
 
 
-def test_render_model_only_no_pickle():
+def test_render_model_only():
     model = TorchModelCPU()
     model.torch_model = CNN()
 
@@ -253,14 +256,14 @@ class M(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.conv = torch.nn.Conv2d(3, 3, kernel_size=(3, 3), stride=(1, 1))
-        self.linear = torch.nn.Linear(in_features=3, out_features=3, bias=True)
         self.bn = torch.nn.BatchNorm2d(3, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        self.linear = torch.nn.Linear(in_features=62, out_features=3, bias=True)
 
     def forward(self, x):
         conv = self.conv(x);  x = None
-        linear = self.linear(conv);  conv = None
-        bn = self.bn(linear);  linear = None
-        return bn
+        bn = self.bn(conv);  conv = None
+        linear = self.linear(bn);  bn = None
+        return linear
 
 m = M()
 
@@ -272,10 +275,12 @@ m = M()
 # None
 
 # Initialize input
-inp = [np.zeros([1, 3, 64, 64], dtype=float32)]
+inp = [np.zeros([1, 3, 64, 64], dtype='float32')]
 
 # Eager run
-m_out = m(*inp)
+m_out = m(*[torch.from_numpy(v).to('cpu') for v in inp])
+m_out = [v.cpu().detach() for v in m_out] # torch2numpy
+m_out = [v.resolve_conj().numpy() if v.is_conj() else v.numpy() for v in m_out] # torch2numpy
 
 # Compiled run
 # None
@@ -283,4 +288,77 @@ m_out = m(*inp)
 # Differential testing
 # None
 """
+    )
+
+
+def test_render_e2e_pt2():
+    model = TorchModelCPU()
+    model.torch_model = CNN()
+
+    model.torch_model.input_like = {"x": AbsTensor([1, 3, 64, 64], DType.float32)}
+
+    render = Render()
+    render.emit_model(model)
+    render.emit_input(model)
+    render.emit_backend(PT2(target="cpu", optmax=True))
+
+    rendered = render.render()
+
+    # pickle is not used (no `ModuleList` in the code)
+    # so no need to import pickle
+    assert (
+        rendered
+        == R"""
+import numpy as np
+import torch
+import pickle
+
+# Model definition
+class M(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 3, kernel_size=(3, 3), stride=(1, 1))
+        self.bn = torch.nn.BatchNorm2d(3, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        self.linear = torch.nn.Linear(in_features=62, out_features=3, bias=True)
+
+    def forward(self, x):
+        conv = self.conv(x);  x = None
+        bn = self.bn(conv);  conv = None
+        linear = self.linear(bn);  bn = None
+        return linear
+
+m = M()
+
+
+# Initialize weight
+# None
+
+# Compile the model
+opt = torch.compile(m, fullgraph=True, backend='inductor', mode=None)
+
+# Initialize input
+inp = [np.zeros([1, 3, 64, 64], dtype='float32')]
+
+# Eager run
+m_out = m(*[torch.from_numpy(v).to('cpu') for v in inp])
+m_out = [v.cpu().detach() for v in m_out] # torch2numpy
+m_out = [v.resolve_conj().numpy() if v.is_conj() else v.numpy() for v in m_out] # torch2numpy
+
+# Compiled run
+opt_out = opt(*[torch.from_numpy(v).to('cpu') for v in inp])
+opt_out = [v.cpu().detach() for v in opt_out] # torch2numpy
+opt_out = [v.resolve_conj().numpy() if v.is_conj() else v.numpy() for v in opt_out] # torch2numpy
+
+# Differential testing
+for i, (l, r) in enumerate(zip(m_out, opt_out)):
+    np.testing.assert_allclose(l, r, rtol=1e-2, atol=1e-3, err_msg=f"Result mismatch @ index {i}")
+"""
+    )
+
+    # Run rendered code in a subprocess as a smoke test
+    subprocess.run(
+        ["python", "-c", rendered],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
