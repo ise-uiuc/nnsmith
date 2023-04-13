@@ -393,11 +393,11 @@ class Render:
 # Initialize weight
 {Render._MAKE_WEIGHT}
 
-# Compile the model
-{Render._COMPILE}
-
 # Initialize input
 {Render._MAKE_INPUT}
+
+# Compile the model
+{Render._COMPILE}
 
 # Eager run
 {Render._EAGER_RUN}
@@ -462,7 +462,7 @@ class Render:
 
         # Compile the ${self.mod_name} to ${self.opt_name}
         self.compile_code = backend.emit_compile(
-            opt_name=self.opt_name, mod_name=self.mod_name
+            opt_name=self.opt_name, mod_name=self.mod_name, inp_name=self.inp_name
         )
         # Run the compiled ${self.opt_name} over ${self.inp_name}
         # and store the result in ${self.compile_result_name}
@@ -485,8 +485,9 @@ class Render:
         text = text.replace(self._IMPORTS, "\n".join(self.imports))
         text = text.replace(self._DEF, self.def_code)  # Mandatory
         text = text.replace(self._MAKE_WEIGHT, wrap(self.weight_code))
-        text = text.replace(self._COMPILE, wrap(self.compile_code))
         text = text.replace(self._MAKE_INPUT, wrap(self.input_code))
+        # TODO(@ganler): compile optionally depends "make_input" (e.g., torchjit requires trace input)
+        text = text.replace(self._COMPILE, wrap(self.compile_code))
         # To run a model eagerly we need the input data (`input_code`) to be available.
         text = text.replace(
             self._EAGER_RUN, wrap(self.eager_run_code, [self.input_code])
