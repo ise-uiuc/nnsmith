@@ -108,22 +108,16 @@ class SymbolNet(nn.Module):
     def __init__(
         self,
         ir: GraphIR,
-        record_intermediate=False,
         use_gradient=False,
-        print_grad=0,
     ):
         super(SymbolNet, self).__init__()
-        self.print_grad = print_grad
         # <TorchFunc, <keys -> inputs>, <keys -> outputs>, original op>
         self.instructions = []
         self.n_vulnerable_op = 0
 
         self.proxy_enabled_ = False
 
-        # whether or not to register intermediate tensors as output tensors. Useful (at least) for checking nan
-        self.record_intermediate = record_intermediate
         self._device = None
-
         self.ir = ir
 
         for i, inst in enumerate(self.ir.insts):
@@ -147,7 +141,6 @@ class SymbolNet(nn.Module):
                         self.n_vulnerable_op += 1
 
         # the order follows `input_keys`
-
         self.input_map = {iname: self.ir.vars[iname] for iname in self.ir.input_var()}
         self.output_map = {oname: self.ir.vars[oname] for oname in self.ir.leaf_var()}
 
@@ -221,7 +214,7 @@ class SymbolNet(nn.Module):
                         )
                     )
 
-            if self.print_grad >= 2:
+            if TORCH_LOG.isEnabledFor(logging.DEBUG):
                 for name, i in self.interm_grad:
                     msg = (
                         f"{i.grad.min()} ~ {i.grad.max()} ~ {i.grad.mean()}"
@@ -229,7 +222,7 @@ class SymbolNet(nn.Module):
                         else "None"
                     )
                     TORCH_LOG.info(
-                        f"Iter {self.iter_num} [{loss_name}] {name} grad: {msg}"
+                        f"Iter {self.n_iter} [{loss_name}] {name} grad: {msg}"
                     )
 
             nonzero = False
@@ -306,11 +299,11 @@ class SymbolNet(nn.Module):
 
         sat_inputs = None
         st = time.time()
-        self.iter_num = 0
+        self.n_iter = 0
         self.cur_loss_name = None
         while time.time() - st < max_time:
             self.training_reset()
-            self.iter_num += 1
+            self.n_iter += 1
 
             try:
                 _ = self.forward_grad(*inputs.values())
@@ -380,7 +373,6 @@ class SymbolNet(nn.Module):
                 tensor_map[out_key] = output_tensors[i]
                 # Check differentiability.
                 self.differentiable &= output_tensors[i].grad_fn is not None
-                # TODO(@ganler): optimize: unref tensors that are not going to be used anymore.
 
             debug_io(stmt_idx, input_tensors, output_tensors)
 
@@ -403,7 +395,7 @@ class SymbolNet(nn.Module):
         self.interm_grad = []
 
         # LOG.
-        if self.print_grad >= 2:
+        if TORCH_LOG.isEnabledFor(logging.DEBUG):
             for k, v in tensor_map.items():
                 if v.requires_grad:
                     self.interm_grad.append((k, v))
@@ -433,7 +425,7 @@ class SymbolNet(nn.Module):
 
             debug_io(stmt_idx, input_tensors, output_tensors)
 
-            if self.print_grad >= 2:
+            if TORCH_LOG.isEnabledFor(logging.DEBUG):
                 if output_tensors[0].requires_grad:
                     for i in range(len(output_tensors)):
                         output_tensors[i].retain_grad()
@@ -454,7 +446,7 @@ class SymbolNet(nn.Module):
                 if self.invalid_found_last and (
                     self.use_gradient and not self.stop_updating_loss
                 ):
-                    if self.print_grad >= 1:
+                    if TORCH_LOG.isEnabledFor(logging.DEBUG):
                         for inp_i, inp in enumerate(input_tensors):
                             TORCH_LOG.info(
                                 f"[inp]@{inp_i} :: {inp.min().data:.5f} ~ {inp.max().data:.5f}"
@@ -468,10 +460,7 @@ class SymbolNet(nn.Module):
                     # Given its low chance of happening, ignore it for now.
                     loss_suf, l = vul_op_loss
                     msg = f"loss_{loss_suf}: {l.min().data:.3f} ~ {l.max().data:.3f} ~ {torch.sum((l > 0) * l).item()}"
-                    if self.print_grad >= 1:
-                        TORCH_LOG.info(
-                            f"Iter #{self.iter_num} [NaN/Inf] in outputs ~ {op} :: {msg}"
-                        )
+                    TORCH_LOG.debug(f"#{self.n_iter} [NaN/Inf] in output: {op} ~ {msg}")
 
                     ConstraintCheck.true(
                         torch.all(l > 0),

@@ -31,7 +31,8 @@ def _render_constructor(name: str, mod: nn.Module):
     if _safe_repr(mod):
         return f"torch.nn.{mod.__repr__()}"
 
-    # Hacks
+    # TODO(@ganler): Report them to PyTorch
+    # Dealing exceptional cases
     if isinstance(mod, nn.MultiheadAttention):
         kvs = {
             "embed_dim": mod.embed_dim,
@@ -165,7 +166,7 @@ class TorchModel(Model, ABC):
         for at in self.input_like.values():
             tensor_text.append(f"np.zeros({at.shape}, dtype={at.dtype})")
 
-        return f"inp_name = [{', '.join(tensor_text)}]"
+        return f"{inp_name} = [{', '.join(tensor_text)}]"
 
     def emit_weight(self, mod_name: str, path: Optional[PathLike] = None):
         if path is None:
@@ -175,7 +176,18 @@ class TorchModel(Model, ABC):
 
     def emit_def(self, mod_name: str, mod_cls: str) -> str:
         with FxTracing():
-            traced = fx.symbolic_trace(self.native_model)
+            if isinstance(self.native_model, SymbolNet):
+                fn_args = f"self, {', '.join(self.native_model.input_map.keys())}"
+                fn_kwargs = ", ".join([f"{k}={k}" for k in self.native_model.input_map])
+
+                tmp = self.native_model.forward
+                self.native_model.forward = (
+                    f"lambda {fn_args}: SymbolNet.forward(self, {fn_kwargs})"
+                )
+                traced = fx.symbolic_trace(self.native_model)
+                self.native_model.forward = tmp
+            else:
+                traced = fx.symbolic_trace(self.native_model)
 
         tab = " " * 4
         mod_text = ""
@@ -198,6 +210,9 @@ class TorchModel(Model, ABC):
 
 {mod_name} = {mod_cls}()
 """
+
+    def emit_run(self, out_name: str, inp_name: str, mod_name: str) -> str:
+        return f"{out_name} = {mod_name}(*{inp_name})"
 
     @staticmethod
     def add_seed_setter() -> None:

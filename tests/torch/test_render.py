@@ -4,26 +4,27 @@ from torch import nn
 
 from nnsmith.abstract import AbsTensor, AvgPool2d, DType
 from nnsmith.gir import GraphIR, InstExpr, Placeholder
+from nnsmith.materialize import Render
 from nnsmith.materialize.torch import TorchModelCPU
 
 
-# CV model
+class CNN(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = nn.Conv2d(3, 3, 3)
+        self.linear = nn.Linear(3, 3)
+        self.bn = nn.BatchNorm2d(3)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.linear(x)
+        x = self.bn(x)
+        return x
+
+
 def test_model_def_clean0():
-    class M(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.conv = nn.Conv2d(3, 3, 3)
-            self.linear = nn.Linear(3, 3)
-            self.bn = nn.BatchNorm2d(3)
-
-        def forward(self, x):
-            x = self.conv(x)
-            x = self.linear(x)
-            x = self.bn(x)
-            return x
-
     model = TorchModelCPU()
-    model.torch_model = M()
+    model.torch_model = CNN()
 
     assert (
         model.emit_def(mod_name="m", mod_cls="M")
@@ -224,5 +225,62 @@ def test_model_def_nnsmith():
         return (m1,)
 
 m = M()
+"""
+    )
+
+
+def test_render_model_only_no_pickle():
+    model = TorchModelCPU()
+    model.torch_model = CNN()
+
+    model.torch_model.input_like = {"x": AbsTensor([1, 3, 64, 64], DType.float32)}
+
+    render = Render()
+    render.emit_model(model)
+    render.emit_input(model)
+
+    # pickle is not used (no `ModuleList` in the code)
+    # so no need to import pickle
+    assert (
+        render.render()
+        == R"""
+import numpy as np
+import torch
+import pickle
+
+# Model definition
+class M(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 3, kernel_size=(3, 3), stride=(1, 1))
+        self.linear = torch.nn.Linear(in_features=3, out_features=3, bias=True)
+        self.bn = torch.nn.BatchNorm2d(3, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+
+    def forward(self, x):
+        conv = self.conv(x);  x = None
+        linear = self.linear(conv);  conv = None
+        bn = self.bn(linear);  linear = None
+        return bn
+
+m = M()
+
+
+# Initialize weight
+# None
+
+# Compile the model
+# None
+
+# Initialize input
+inp = [np.zeros([1, 3, 64, 64], dtype=float32)]
+
+# Eager run
+m_out = m(*inp)
+
+# Compiled run
+# None
+
+# Differential testing
+# None
 """
     )

@@ -429,7 +429,9 @@ class Render:
         self.check_code: Optional[str] = None
 
     def emit_model(self, model: Model):
-        self.imports.extend(model.import_libs)
+        for imp in model.import_libs:
+            if imp not in self.imports:
+                self.imports.append(imp)
 
         # Define the model like:
         #    class M(nn.Module): ...
@@ -454,7 +456,9 @@ class Render:
         self.input_code = model.emit_input(inp_name=self.inp_name, path=path)
 
     def emit_backend(self, backend: BackendFactory):
-        self.imports.extend(backend.import_libs)
+        for imp in backend.import_libs:
+            if imp not in self.imports:
+                self.imports.append(imp)
 
         # Compile the ${self.mod_name} to ${self.opt_name}
         self.compile_code = backend.emit_compile(
@@ -470,7 +474,6 @@ class Render:
 
     def render(self) -> str:
         text = self.template
-        deduplicate_imports = list(set(self.imports))
 
         def wrap(text, dependencies=None):
             if text is None:
@@ -479,7 +482,7 @@ class Render:
                 raise ValueError("Render failure: some dependencies are missing")
             return text
 
-        text = text.replace(self._IMPORTS, "\n".join(deduplicate_imports))
+        text = text.replace(self._IMPORTS, "\n".join(self.imports))
         text = text.replace(self._DEF, self.def_code)  # Mandatory
         text = text.replace(self._MAKE_WEIGHT, wrap(self.weight_code))
         text = text.replace(self._COMPILE, wrap(self.compile_code))
@@ -494,10 +497,15 @@ class Render:
             self._COMPILE_RUN,
             wrap(self.compile_run_code, [self.input_code, self.compile_code]),
         )
-        check_text = f"""for i, (l, r) in enumerate(zip({self.eager_result_name}, {self.compile_result_name})):
+
+        check_text = (
+            f"""for i, (l, r) in enumerate(zip({self.eager_result_name}, {self.compile_result_name})):
     np.testing.assert_allclose(l, r, rtol=1e-2, atol=1e-3, err_msg=f"Result mismatch @ index {{i}}")
 """
-        text = text.replace(
-            self._CHECK, wrap(check_text, [self.eager_run_code, self.compile_run_code])
+            if self.eager_run_code and self.compile_run_code
+            else None
         )
+
+        text = text.replace(self._CHECK, wrap(check_text))
+
         return text
