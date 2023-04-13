@@ -128,7 +128,7 @@ class SymbolNet(nn.Module):
                     torch_fn = target = forward_fn(inst.iexpr.op)
                 SanityCheck.true(torch_fn is not None, f"Bad impl for {inst.iexpr.op}")
                 if isinstance(target, nn.Module):
-                    self.add_module(f"m{i}", torch_fn)
+                    self.add_module(f"m{i}", target)
 
                 if isinstance(target, nn.Parameter):
                     self.register_parameter(inst.retval(), target)
