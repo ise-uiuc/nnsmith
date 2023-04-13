@@ -238,7 +238,7 @@ def forward_fn(op: Softmax):
 @operator_impl(MaxPool2d)
 def forward_fn(op: MaxPool2d):
     return torch.nn.MaxPool2d(
-        kernel_size=(op.kernel_h_size, op.kernel_w_size),
+        kernel_size=(op.kh, op.kw),
         stride=op.stride,
         padding=op.padding,
     )

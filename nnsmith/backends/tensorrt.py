@@ -154,4 +154,4 @@ class TRT(BackendFactory):
 
 @patch_requires(TRT.system_name, "core.Pool2d")
 def RulePool2d(self: AbsOpBase, _: List[AbsTensor]) -> List[Union[z3.BoolRef, bool]]:
-    return [nnsmith_lt(nnsmith_mul(self.kernel_h_size, self.kernel_w_size), 10000)]
+    return [nnsmith_lt(nnsmith_mul(self.kh, self.kw), 10000)]
