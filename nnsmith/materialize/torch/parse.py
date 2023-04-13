@@ -1,5 +1,5 @@
 import operator
-from typing import Any, Dict, List, Tuple, Union, cast
+from typing import Any, Dict, List, Union, cast
 
 import torch
 import torch._dynamo as dynamo
@@ -12,7 +12,6 @@ from nnsmith.abstract.dtype import DType
 from nnsmith.abstract.op import ConcreteOp, Input
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.gir import GraphIR, InstExpr
-from nnsmith.materialize.torch.forward import forward_fn
 
 
 class PropInterpreter(ShapeProp):
