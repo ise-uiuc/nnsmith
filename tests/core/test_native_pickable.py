@@ -24,7 +24,7 @@ def test_abstensor_picklable():
 
 
 def test_absop_picklable():
-    maxpool = MaxPool2d(kernel_h_size=2, kernel_w_size=2, stride=1, padding=0)
+    maxpool = MaxPool2d(kh=2, kw=2, stride=1, padding=0)
     maxpool2 = pickle.loads(pickle.dumps(maxpool))
     # TODO(@ganler): make AbsOp comparable.
     # assert maxpool == maxpool2

@@ -156,6 +156,10 @@ class TFLite(BackendFactory):
     def load_backend(self, path: PathLike) -> BackendCallable:
         return self.make_backend_from_content(self.load_content(path))
 
+    @property
+    def import_libs(self) -> List[str]:
+        return ["import tensorflow as tf"]
+
     @classmethod
     def skip_dtypes(cls) -> List[DType]:
         # PyTorch-ONNX current does not support fully complex (e.g., scalar).

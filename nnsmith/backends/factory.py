@@ -50,7 +50,7 @@ def parse_name_kwargs(text):
 
 
 class BackendFactory(ABC):
-    def __init__(self, target="cpu", optmax: bool = False):
+    def __init__(self, target="cpu", optmax: bool = True):
         super().__init__()
         self.target = target
         self.optmax = optmax
@@ -338,6 +338,19 @@ class BackendFactory(ABC):
         return TestCase(
             model, Oracle(input=input, output=output, provider=self.system_name)
         )
+
+    @property
+    @abstractmethod
+    def import_libs(self) -> List[str]:
+        pass
+
+    def emit_compile(
+        self, opt_name: str, mod_name: str, inp_name: Optional[str] = None
+    ) -> str:
+        raise NotImplementedError
+
+    def emit_run(self, out_name: str, opt_name: str, inp_name: str) -> str:
+        raise NotImplementedError
 
     @staticmethod
     def init(

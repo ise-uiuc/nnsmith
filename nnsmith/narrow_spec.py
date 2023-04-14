@@ -70,7 +70,7 @@ def _make_single_op_irs(
         inputs = []
 
         for ishape, idtype in zip(ishapes, idtype_group):
-            input_op = Placeholder(AbsTensor(ishape, idtype)).to_input()
+            input_op = Placeholder(AbsTensor(ishape, idtype)).input()
             inst = ir.add_inst(InstExpr(op=input_op, args=[]))
             inputs.append(inst.retval())
 

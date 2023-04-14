@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, List
 
 import tensorflow as tf  # type: ignore
 from multipledispatch import dispatch
@@ -13,7 +13,7 @@ from nnsmith.materialize.tensorflow import (
 
 
 class XLA(BackendFactory):
-    def __init__(self, target="cpu", optmax: bool = False):
+    def __init__(self, target="cpu", optmax: bool = True):
         super().__init__(target, optmax)
 
         if self.target == "cpu":
@@ -35,6 +35,10 @@ class XLA(BackendFactory):
     @property
     def version(self) -> str:
         return tf.__version__
+
+    @property
+    def import_libs(self) -> List[str]:
+        return ["import tensorflow as tf"]
 
     @dispatch(TFModel)
     def make_backend(self, model: TFModel) -> BackendCallable:

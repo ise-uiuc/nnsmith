@@ -1,10 +1,16 @@
+from __future__ import annotations
+
 import json
 import os
 import pickle
 from abc import ABC, abstractmethod
 from enum import Enum
 from os import PathLike
-from typing import Any, Dict, List, Type, TypeVar
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Type, TypeVar
+
+# Enables type checking while avoiding circular imports.
+if TYPE_CHECKING:
+    from nnsmith.backends import BackendFactory
 
 import numpy as np
 from multipledispatch import dispatch
@@ -177,6 +183,23 @@ class Model(ABC):
     def skip_dtypes() -> List[DType]:
         return []
 
+    @property
+    @abstractmethod
+    def import_libs(self) -> List[str]:
+        pass
+
+    def emit_def(self, mod_name: str, mod_cls: str) -> str:
+        raise NotImplementedError
+
+    def emit_run(self, out_name: str, inp_name: str, mod_name: str) -> str:
+        raise NotImplementedError
+
+    def emit_weight(self, mod_name: str, path: Optional[PathLike] = None):
+        raise NotImplementedError
+
+    def emit_input(self, inp_name: str, path: Optional[PathLike] = None):
+        raise NotImplementedError
+
     @staticmethod
     def init(name, backend_target=None) -> Type["Model"]:
         if name is None:
@@ -287,7 +310,7 @@ class BugReport(ABC):
     def __repr__(self) -> str:
         return f"{self.system} {self.symptom.value} in {self.stage.value}\n{self.log}"
 
-    def dump(self, root_folder: str):
+    def dump(self, root_folder: PathLike):
         # create folder if not exists
         if not os.path.exists(root_folder):
             os.makedirs(root_folder)
@@ -313,7 +336,6 @@ class BugReport(ABC):
 
     @staticmethod
     def load(model_type, root_folder: str, allow_partial=False) -> "BugReport":
-
         symptom = None
         stage = None
         version = None
@@ -342,3 +364,148 @@ class BugReport(ABC):
                 log = f.read()
 
         return BugReport(testcase, symptom, stage, system, version, version_id, log)
+
+
+class Render:
+    _IMPORTS = r"${{IMPORTS}}$"
+    _DEF = r"${{DEF}}$"
+    _MAKE_WEIGHT = r"${{MAKE_WEIGHT}}$"
+    _EAGER_RUN = r"${{EAGER_RUN}}$"
+    _COMPILE = r"${{COMPILE}}$"
+    _MAKE_INPUT = r"${{MAKE_INPUT}}$"
+    _COMPILE_RUN = r"${{COMPILE_RUN}}$"
+    _CHECK = r"${{CHECK}}$"
+
+    def __init__(
+        self,
+        template: Optional[str] = None,
+        mod_name="m",
+        mod_cls="M",
+        opt_name="opt",
+    ) -> None:
+        self.template = (
+            f"""
+{Render._IMPORTS}
+
+# Model definition
+{Render._DEF}
+
+# Initialize weight
+{Render._MAKE_WEIGHT}
+
+# Initialize input
+{Render._MAKE_INPUT}
+
+# Compile the model
+{Render._COMPILE}
+
+# Eager run
+{Render._EAGER_RUN}
+
+# Compiled run
+{Render._COMPILE_RUN}
+
+# Differential testing
+{Render._CHECK}
+"""
+            if template is None
+            else template
+        )
+        self.mod_name = mod_name
+        self.mod_cls = mod_cls
+        self.opt_name = opt_name
+
+        self.inp_name = "inp"
+        self.eager_result_name = f"{self.mod_name}_out"
+        self.compile_result_name = f"{self.opt_name}_out"
+
+        self.imports = ["import numpy as np"]
+        self.def_code: Optional[str] = None
+        self.weight_code: Optional[str] = None
+        self.compile_code: Optional[str] = None
+        self.input_code: Optional[str] = None
+        self.eager_run_code: Optional[str] = None
+        self.compile_run_code: Optional[str] = None
+        self.check_code: Optional[str] = None
+
+    def emit_model(self, model: Model):
+        for imp in model.import_libs:
+            if imp not in self.imports:
+                self.imports.append(imp)
+
+        # Define the model like:
+        #    class M(nn.Module): ...
+        # Initialize an instance:
+        #    m = M()
+        self.def_code = model.emit_def(mod_name=self.mod_name, mod_cls=self.mod_cls)
+
+        # Compute ${self.mod_name} eagerly over ${self.inp_name}
+        # and store the result in ${self.eager_result_name}
+        self.eager_run_code = model.emit_run(
+            out_name=self.eager_result_name,
+            mod_name=self.mod_name,
+            inp_name=self.inp_name,
+        )
+
+    def emit_weight(self, model: Model, path: Optional[PathLike] = None):
+        # Load the model weights from ${path}
+        self.weight_code = model.emit_weight(mod_name=self.mod_name, path=path)
+
+    def emit_input(self, model: Model, path: Optional[PathLike] = None):
+        # Load the model weights from ${path}
+        self.input_code = model.emit_input(inp_name=self.inp_name, path=path)
+
+    def emit_backend(self, backend: BackendFactory):
+        for imp in backend.import_libs:
+            if imp not in self.imports:
+                self.imports.append(imp)
+
+        # Compile the ${self.mod_name} to ${self.opt_name}
+        self.compile_code = backend.emit_compile(
+            opt_name=self.opt_name, mod_name=self.mod_name, inp_name=self.inp_name
+        )
+        # Run the compiled ${self.opt_name} over ${self.inp_name}
+        # and store the result in ${self.compile_result_name}
+        self.compile_run_code = backend.emit_run(
+            out_name=self.compile_result_name,
+            opt_name=self.opt_name,
+            inp_name=self.inp_name,
+        )
+
+    def render(self) -> str:
+        text = self.template
+
+        def wrap(text, dependencies=None):
+            if text is None:
+                return "# None"
+            if dependencies is not None and not all(dependencies):
+                raise ValueError("Render failure: some dependencies are missing")
+            return text
+
+        text = text.replace(self._IMPORTS, "\n".join(self.imports))
+        text = text.replace(self._DEF, self.def_code)  # Mandatory
+        text = text.replace(self._MAKE_WEIGHT, wrap(self.weight_code))
+        text = text.replace(self._MAKE_INPUT, wrap(self.input_code))
+        # TODO(@ganler): compile optionally depends "make_input" (e.g., torchjit requires trace input)
+        text = text.replace(self._COMPILE, wrap(self.compile_code))
+        # To run a model eagerly we need the input data (`input_code`) to be available.
+        text = text.replace(
+            self._EAGER_RUN, wrap(self.eager_run_code, [self.input_code])
+        )
+        # To run a compiled model we need the model compiled (`compile_code`) and
+        # the input data (`input_code`) to be available.
+        text = text.replace(
+            self._COMPILE_RUN,
+            wrap(self.compile_run_code, [self.input_code, self.compile_code]),
+        )
+
+        check_text = (
+            f"""for i, (l, r) in enumerate(zip({self.eager_result_name}, {self.compile_result_name})):
+    np.testing.assert_allclose(l, r, rtol=1e-2, atol=1e-3, err_msg=f"Result mismatch @ index {{i}}")"""
+            if self.eager_run_code and self.compile_run_code
+            else None
+        )
+
+        text = text.replace(self._CHECK, wrap(check_text))
+
+        return text

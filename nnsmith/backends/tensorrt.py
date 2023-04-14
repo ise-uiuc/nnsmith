@@ -142,6 +142,10 @@ class TRT(BackendFactory):
         # Return only the host outputs.
         return [out.host for out in outputs]
 
+    @property
+    def import_libs(self) -> List[str]:
+        return ["import tensorrt as trt"]
+
     @classmethod
     def skip_dtypes(cls) -> List[DType]:
         # TRT will truncate f64 -> f32 and i64 -> i32
@@ -150,4 +154,4 @@ class TRT(BackendFactory):
 
 @patch_requires(TRT.system_name, "core.Pool2d")
 def RulePool2d(self: AbsOpBase, _: List[AbsTensor]) -> List[Union[z3.BoolRef, bool]]:
-    return [nnsmith_lt(nnsmith_mul(self.kernel_h_size, self.kernel_w_size), 10000)]
+    return [nnsmith_lt(nnsmith_mul(self.kh, self.kw), 10000)]

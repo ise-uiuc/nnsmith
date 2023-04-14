@@ -1,6 +1,6 @@
 import os
 import warnings
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
@@ -63,3 +63,15 @@ class TorchJIT(BackendFactory):
             }
 
         return closure
+
+    @property
+    def import_libs(self) -> List[str]:
+        return ["import torch"]
+
+    def emit_compile(self, opt_name: str, mod_name: str, inp_name: str) -> str:
+        return f"{opt_name} = torch.jit.trace({mod_name}, [torch.from_numpy(v).to('{self.device.type}') for v in {inp_name}])"
+
+    def emit_run(self, out_name: str, opt_name: str, inp_name: str) -> str:
+        return f"""{out_name} = {opt_name}(*[torch.from_numpy(v).to('{self.device.type}') for v in {inp_name}])
+{out_name} = [v.cpu().detach() for v in {out_name}] # torch2numpy
+{out_name} = [v.resolve_conj().numpy() if v.is_conj() else v.numpy() for v in {out_name}] # torch2numpy"""

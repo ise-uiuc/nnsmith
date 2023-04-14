@@ -1,7 +1,7 @@
 # operator will be used in `eval` later.
 import operator  # noqa: F401
 from functools import partial
-from typing import Callable, Type
+from typing import Type
 
 import torch
 import torch.utils._pytree as pytree
@@ -53,17 +53,8 @@ def forward_fn(op: ConcreteOp):
 
 @operator_impl(Constant)
 def forward_fn(op: Constant):
-    class ConstFn(torch.nn.Module):
-        def __init__(self, data: torch.Tensor) -> None:
-            super().__init__()
-            self.data = torch.nn.parameter.Parameter(
-                data, requires_grad=data.is_floating_point()
-            )
-
-        def forward(self):
-            return self.data
-
-    return ConstFn(torch.randn(op.abs_tensor.shape).to(op.abs_tensor.dtype.torch()))
+    data = torch.randn(op.abs_tensor.shape).to(op.abs_tensor.dtype.torch())
+    return torch.nn.Parameter(data, requires_grad=data.is_floating_point())
 
 
 @operator_impl(ReLU)
@@ -78,7 +69,7 @@ def forward_fn(op: GELU):
 
 @operator_impl(LeakyReLU)
 def forward_fn(op: LeakyReLU):
-    return torch.nn.LeakyReLU(0.01)
+    return torch.nn.functional.leaky_relu
 
 
 @operator_impl(PReLU)
@@ -241,13 +232,13 @@ def forward_fn(op: Neg):
 
 @operator_impl(Softmax)
 def forward_fn(op: Softmax):
-    return torch.nn.Softmax(dim=op.dim)
+    return lambda x: torch.softmax(x, dim=op.dim)
 
 
 @operator_impl(MaxPool2d)
 def forward_fn(op: MaxPool2d):
     return torch.nn.MaxPool2d(
-        kernel_size=(op.kernel_h_size, op.kernel_w_size),
+        kernel_size=(op.kh, op.kw),
         stride=op.stride,
         padding=op.padding,
     )
@@ -256,7 +247,7 @@ def forward_fn(op: MaxPool2d):
 @operator_impl(AvgPool2d)
 def forward_fn(op: AvgPool2d):
     return torch.nn.AvgPool2d(
-        kernel_size=(op.kernel_h_size, op.kernel_w_size),
+        kernel_size=(op.kh, op.kw),
         stride=op.stride,
         padding=op.padding,
     )

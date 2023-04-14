@@ -21,12 +21,6 @@ from nnsmith.abstract.extension import ACTIVATED_PATCH
 from nnsmith.abstract.tensor import AbsTensor
 from nnsmith.error import ConstraintCheck, SanityCheck
 
-# There are following types of constraints at this point:
-# 1. Shape variables must be greater than 0;
-# 2. Shape variables must avoid devision by 0;
-# 3. Extra constraints introduced by individual operators;
-
-
 __MIN_RANK__ = 0
 __MAX_RANK__ = 5
 
@@ -709,12 +703,12 @@ class Placeholder:
     def __repr__(self):
         return f"Placeholder({self.ttype})"
 
-    def to_const(self):
+    def const(self):
         const_node = Constant(self.ttype.ndims)
         const_node.abs_tensor = self.ttype
         return const_node
 
-    def to_input(self):
+    def input(self):
         input_node = Input(self.ttype.ndims)
         input_node.abs_tensor = self.ttype
         return input_node
@@ -890,14 +884,14 @@ class Pool2d(UnaryOpBase):
 
     def __init__(
         self,
-        kernel_h_size: Union[int, z3.ExprRef],
-        kernel_w_size: Union[int, z3.ExprRef],
+        kh: Union[int, z3.ExprRef],
+        kw: Union[int, z3.ExprRef],
         stride: Union[int, z3.ExprRef],
         padding: Union[int, z3.ExprRef],
     ):
         super().__init__()
-        self.kernel_h_size = kernel_h_size
-        self.kernel_w_size = kernel_w_size
+        self.kh = kh
+        self.kw = kw
         self.stride = stride
         self.padding = padding
 
@@ -905,7 +899,6 @@ class Pool2d(UnaryOpBase):
         self.out_ranks = [(4,)]  # NCHW
 
     def type_transfer(self, input_shapes: List[AbsTensor]) -> List[AbsTensor]:
-
         abs_tensor = AbsTensor([], dtype=input_shapes[0].dtype)
         # Batch dim: just copy
         abs_tensor.shape.append(input_shapes[0].shape[0])
@@ -915,7 +908,7 @@ class Pool2d(UnaryOpBase):
             (
                 nnsmith_div(
                     nnsmith_add(
-                        nnsmith_sub(input_shapes[0].shape[2], self.kernel_h_size),
+                        nnsmith_sub(input_shapes[0].shape[2], self.kh),
                         2 * self.padding,
                     ),
                     self.stride,
@@ -927,7 +920,7 @@ class Pool2d(UnaryOpBase):
             (
                 nnsmith_div(
                     nnsmith_add(
-                        nnsmith_sub(input_shapes[0].shape[3], self.kernel_w_size),
+                        nnsmith_sub(input_shapes[0].shape[3], self.kw),
                         2 * self.padding,
                     ),
                     self.stride,
@@ -940,29 +933,29 @@ class Pool2d(UnaryOpBase):
     def requires(self, input_shapes):
         cons = []
         ret = []
-        cons.append(nnsmith_ge(self.kernel_h_size, 1))
-        cons.append(nnsmith_ge(self.kernel_w_size, 1))
+        cons.append(nnsmith_ge(self.kh, 1))
+        cons.append(nnsmith_ge(self.kw, 1))
         cons.append(
             nnsmith_le(
-                self.kernel_h_size,
+                self.kh,
                 nnsmith_add(input_shapes[0].shape[2], 2 * self.padding),
             )
         )
         cons.append(
             nnsmith_le(
-                self.kernel_w_size,
+                self.kw,
                 nnsmith_add(input_shapes[0].shape[3], 2 * self.padding),
             )
         )
         cons.append(nnsmith_ge(self.stride, 1))
         cons.append(nnsmith_ge(self.padding, 0))
-        # not too extream to avoid torch exporter issue
+        # Not too extreme to avoid torch exporter issue
         cons.append(nnsmith_le(self.padding, 255))
-        cons.append(nnsmith_le(self.padding, nnsmith_div(self.kernel_h_size, 2)))
-        cons.append(nnsmith_le(self.padding, nnsmith_div(self.kernel_w_size, 2)))
+        cons.append(nnsmith_le(self.padding, nnsmith_div(self.kh, 2)))
+        cons.append(nnsmith_le(self.padding, nnsmith_div(self.kw, 2)))
         cons.extend(
             [nnsmith_gt(v, 0) for v in input_shapes[0].shape]
-        )  # dim cannot be 0 for maxpool
+        )  # Dims cannot be 0 for MaxPool
 
         for c in cons:
             ret.append(c)

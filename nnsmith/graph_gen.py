@@ -197,9 +197,9 @@ class BaseGen:
             ph_inst_id, _ = InstIR.var_inst_idx(ph)
             ph_inst = self.ir.find_inst_by_id(ph_inst_id)
             if to_input:
-                ph_inst.iexpr.op = ph_inst.iexpr.op.to_input()
+                ph_inst.iexpr.op = ph_inst.iexpr.op.input()
             else:
-                ph_inst.iexpr.op = ph_inst.iexpr.op.to_const()
+                ph_inst.iexpr.op = ph_inst.iexpr.op.const()
 
         determine_ph_type(self.placeholders[0], True)  # At lease make one input.
         for ph in self.placeholders[1:]:
@@ -606,7 +606,8 @@ class SymbolicGen(BaseGen):
 
 class ConcolicGen(BaseGen):
     """Different from SymbolicGen, the graph after an insertion is `concrete` in ConcolicGen.
-    However, each step when inserting a node, we symbolically find a satisfiable solution for it."""
+    However, each step when inserting a node, we symbolically find a satisfiable solution for it.
+    """
 
     def __init__(
         self,
