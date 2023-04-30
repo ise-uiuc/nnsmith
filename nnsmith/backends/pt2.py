@@ -10,7 +10,7 @@ from nnsmith.materialize.torch.symbolnet import FxTracing
 
 
 class PT2(BackendFactory):
-    def __init__(self, target: str = "cpu", optmax: bool = True, **kwargs):
+    def __init__(self, target: str = "cpu", optmax: bool = True, ad : str = None, **kwargs):
         super().__init__(target, optmax)
         if self.target == "cpu":
             self.device = torch.device("cpu")
@@ -27,6 +27,8 @@ class PT2(BackendFactory):
         self.backend = kwargs.get("backend", "inductor")
         self.mode = kwargs.get("mode")
 
+        self.ad = ad
+
     @property
     def system_name(self) -> str:
         return "pt2"
@@ -34,6 +36,15 @@ class PT2(BackendFactory):
     @property
     def import_libs(self) -> List[str]:
         return ["import torch"]
+    
+
+    def make_forward_backend(self, model: TorchModel) -> BackendCallable:
+        torch_net = model.torch_model.to(self.device).eval()
+        with FxTracing():
+            traced = torch.fx.symbolic_trace(torch_net)
+            compiled = torch.compile(
+                traced, fullgraph=True, backend=self.backend, mode=self.mode
+            )
 
     @dispatch(TorchModel)
     def make_backend(self, model: TorchModel) -> BackendCallable:

@@ -360,7 +360,7 @@ class BackendFactory(ABC):
 
     @staticmethod
     def init(
-        name: str, target: str = "cpu", ad: str = "", optmax: bool = True, parse_name=False, **kwargs
+        name: str, target: str = "cpu", ad: str = None, optmax: bool = True, parse_name=False, **kwargs
     ):
         if name is None:
             raise ValueError(
@@ -427,7 +427,7 @@ class BackendFactory(ABC):
         elif name == "pt2":
             from nnsmith.backends.pt2 import PT2
 
-            return PT2(target=target, optmax=optmax, **kwargs)
+            return PT2(target=target, optmax=optmax, ad=ad, **kwargs)
         else:
             raise ValueError(f"unknown backend: {name}")
     

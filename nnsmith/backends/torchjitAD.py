@@ -21,7 +21,7 @@ NNSMITH_PTJIT_OPT_MOBILE = os.getenv("NNSMITH_PTJIT_OPT_MOBILE", "0") == "1"
 
 
 class TorchJITAD(BackendFactory):
-    def __init__(self, target="cpu", optmax: bool = False, ad="", **kwargs):
+    def __init__(self, target="cpu", optmax: bool = False, ad: str = None, **kwargs):
         super().__init__(target, optmax)
         if self.target == "cpu":
             self.device = torch.device("cpu")
