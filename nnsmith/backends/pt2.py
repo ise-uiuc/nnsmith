@@ -2,6 +2,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
+import torch.autograd.forward_ad as fwAD
 from multipledispatch import dispatch
 
 from nnsmith.backends.factory import BackendCallable, BackendFactory
@@ -10,7 +11,9 @@ from nnsmith.materialize.torch.symbolnet import FxTracing
 
 
 class PT2(BackendFactory):
-    def __init__(self, target: str = "cpu", optmax: bool = True, ad : str = None, **kwargs):
+    def __init__(
+        self, target: str = "cpu", optmax: bool = True, ad: str = None, **kwargs
+    ):
         super().__init__(target, optmax)
         if self.target == "cpu":
             self.device = torch.device("cpu")
@@ -36,18 +39,57 @@ class PT2(BackendFactory):
     @property
     def import_libs(self) -> List[str]:
         return ["import torch"]
-    
 
-    def make_forward_backend(self, model: TorchModel) -> BackendCallable:
-        torch_net = model.torch_model.to(self.device).eval()
-        with FxTracing():
+    def make_backend_forward(self, model: TorchModel) -> BackendCallable:
+        torch_net = model.torch_model.to(self.device).train()
+        with fwAD.dual_level(), FxTracing():
+            with torch.no_grad():
+                for _, param in torch_net.named_parameters():
+                    dual = fwAD.make_dual(
+                        param.to(self.device), torch.ones_like(param).to(self.device)
+                    )
+                    param.copy_(dual)
             traced = torch.fx.symbolic_trace(torch_net)
             compiled = torch.compile(
                 traced, fullgraph=True, backend=self.backend, mode=self.mode
             )
 
-    @dispatch(TorchModel)
-    def make_backend(self, model: TorchModel) -> BackendCallable:
+        def closure(inputs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+            with fwAD.dual_level():
+                with torch.no_grad():
+                    for _, param in torch_net.named_parameters():
+                        dual = fwAD.make_dual(
+                            param.to(self.device),
+                            torch.ones_like(param).to(self.device),
+                        )
+                        param.copy_(dual)
+                input_ts = [
+                    torch.from_numpy(v).to(self.device) for _, v in inputs.items()
+                ]
+                dual_output = compiled(*input_ts)
+                output_dict = {}
+                for k, v in zip(torch_net.output_like.keys(), dual_output):
+                    primal, tangent = fwAD.unpack_dual(v)
+                    primal = (
+                        primal.cpu().detach().resolve_conj().numpy()
+                        if primal.is_conj()
+                        else primal.cpu().detach().numpy()
+                    )
+                    # get the Jacobian-vector product
+                    if tangent is not None:
+                        tangent = (
+                            tangent.cpu().detach().resolve_conj().numpy()
+                            if tangent.is_conj()
+                            else tangent.cpu().detach().numpy()
+                        )
+                    output_dict[k] = primal
+                    output_dict[k + "_jvp"] = tangent
+
+                return output_dict
+
+        return closure
+
+    def make_backend_infer(self, model: TorchModel) -> BackendCallable:
         torch_net = model.torch_model.to(self.device).eval()
         with torch.no_grad():
             with FxTracing():
@@ -68,6 +110,13 @@ class PT2(BackendFactory):
             }
 
         return closure
+
+    @dispatch(TorchModel)
+    def make_backend(self, model: TorchModel) -> BackendCallable:
+        if self.ad == None:
+            return self.make_backend_infer(model)
+        elif self.ad == "forward":
+            return self.make_backend_forward(model)
 
     def emit_compile(
         self, opt_name: str, mod_name: str, inp_name: Optional[str] = None
