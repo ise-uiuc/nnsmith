@@ -101,6 +101,9 @@ MT = TypeVar("MT", bound="Model")
 
 
 class Model(ABC):
+    def __init__(self):
+        self.dotstring: Optional[str] = None
+
     @property
     @abstractmethod
     def input_like(self) -> Dict[str, AbsTensor]:
@@ -259,7 +262,7 @@ class TestCase:
         return TestCase(model, oracle)
 
     def dump(self, root_folder: str):
-        if self.model and hasattr(self.model, "dotstring"):
+        if self.model and self.model.dotstring:
             self.model.dump_viz(os.path.join(root_folder, "graph.png"))
 
         self.model.dump(
