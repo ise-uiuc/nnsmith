@@ -73,15 +73,18 @@ python -c "import torch;print(torch.mul(1, 1))"
 ls default.profraw # This is the coverage file. You should be able to see it.
 ```
 
-> **Note** **Dealing with ``libstdc++.so.6: version `GLIBCXX_3.4.30' not found`` issue**
-> 
-> You may encounter such an error when executing `import torch` after installing the pytorch compiled from source code into conda environment.
-> 
-> First, you can try something like `strings /usr/lib/x86_64-linux-gnu/libstdc++.so.6 | grep GLIBCXX_3.4.30` and see if there is any output. If there is, you can substitute the library in conda environment with the one in the OS, like below.
-> 
+> **Note** **``libstdc++.so.6: version `GLIBCXX_3.4.30' not found``**
+>
+> You may encounter such an error when running `import torch` at this step. The is because the `libstdc++` in your local system
+> is more advanced/recent than the one in the conda environment.
+>
+> To address this, you can try `strings /usr/lib/x86_64-linux-gnu/libstdc++.so.6 | grep GLIBCXX_3.4.30` and see if there is any output.
+> If so, you can substitute the `libstdc++` in conda environment with the one in the OS, like below.
+>
 > ```shell
-> mv /path/to/conda/envs/conda_env_name/lib/libstdc++.so.6 /path/to/conda/envs/conda_env_name/lib/libstdc++.so.6.old # backup
-> ln -s /usr/lib/x86_64-linux-gnu/libstdc++.so.6 /path/to/conda/envs/conda_env_name/lib/libstdc++.so.6
+> export CONDA_LIB_PATH=$(python3 -c "import site, pathlib; print(pathlib.Path(site.getsitepackages()[0]).parent.parent)")
+> mv ${CONDA_LIB_PATH}/libstdc++.so.6 ${CONDA_LIB_PATH}/libstdc++.so.6.bk # backup
+> ln -s /usr/lib/x86_64-linux-gnu/libstdc++.so.6 ${CONDA_LIB_PATH}/libstdc++.so.6
 > ```
 
 ### Step 2: Run NNSmith over instrumented SUT
