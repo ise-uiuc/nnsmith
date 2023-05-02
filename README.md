@@ -30,7 +30,7 @@
 
 ```shell
 pip install "git+https://github.com/ise-uiuc/nnsmith@main#egg=nnsmith[torch,onnx]" --upgrade
-# [optional] add more front- and back-ends such as [tensorflow] and [tvm,onnxruntime,xla,...] in "[...]"
+# [optional] add more front- and back-ends such as [tensorflow] and [tvm,onnxruntime,...] in "[...]"
 ```
 
 <details><summary><b>Install latest stable release </b> <i>[click]</i></summary>
