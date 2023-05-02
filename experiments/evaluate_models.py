@@ -55,7 +55,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--root", type=str, required=True, help="Folder to all the tests."
     )
-    parser.add_argument("--batch_size", type=int, default=100, help="")
+    parser.add_argument("--batch-size", type=int, default=100, help="")
     parser.add_argument("--model_type", type=str, required=True, help="Model type.")
     parser.add_argument("--backend_type", type=str, required=True, help="Backend type.")
     parser.add_argument(
