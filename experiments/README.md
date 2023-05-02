@@ -3,8 +3,9 @@
 ## Evaluating source-level coverage of NNSmith-generated tests
 
 > **Note** **Developer note**
-> TODO(@ganler): we need to simplify the evaluation by memorizing some internal parameters.
-> TODO(@Kristoff-starling): tutorials for TensorFlow.
+>
+> - TODO(@ganler): we need to simplify the evaluation by memorizing some internal parameters.
+> - TODO(@Kristoff-starling): tutorials for TensorFlow.
 
 ### Step 1: Compile the System Under Test (SUT) with coverage instrumentation
 
