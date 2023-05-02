@@ -73,6 +73,17 @@ python -c "import torch;print(torch.mul(1, 1))"
 ls default.profraw # This is the coverage file. You should be able to see it.
 ```
 
+> **Note** **Dealing with ``libstdc++.so.6: version `GLIBCXX_3.4.30' not found`` issue**
+> 
+> You may encounter such an error when executing `import torch` after installing the pytorch compiled from source code into conda environment.
+> 
+> First, you can try something like `strings /usr/lib/x86_64-linux-gnu/libstdc++.so.6 | grep GLIBCXX_3.4.30` and see if there is any output. If there is, you can substitute the library in conda environment with the one in the OS, like below.
+> 
+> ```shell
+> mv /path/to/conda/envs/conda_env_name/lib/libstdc++.so.6 /path/to/conda/envs/conda_env_name/lib/libstdc++.so.6.old # backup
+> ln -s /usr/lib/x86_64-linux-gnu/libstdc++.so.6 /path/to/conda/envs/conda_env_name/lib/libstdc++.so.6
+> ```
+
 ### Step 2: Run NNSmith over instrumented SUT
 
 Next, we will run NNSmith to dump a bunch of random test-cases for an SUT (say PyTorch 2).
