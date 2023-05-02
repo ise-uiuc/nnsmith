@@ -28,11 +28,13 @@ git apply torch_cov.patch
 ```
 
 > **Warning** **Compatibility of the patch**
+>
 > Nonetheless, you can manually curate the original patch file from [here](https://gist.github.com/ganler/986078a929f08962d966dcc0b8ec0ebe)
 > The patch might not be compatible with the latest commit of PyTorch where you may need some edits to make it work.
 > Nonetheless x 2, `git checkout 0692bdd95fc1a448c69a484cf34203b937a9eadc` is verified to work.
 
 > **Warning** **Functionality of the patch**
+>
 > The patch by default only instrument a subset of PyTorch files:
 > + It starts with `${Caffe2_CPU_SRCS}`
 > - But removes kernel functions files such as `"aten/src/ATen/native/*"`
@@ -45,6 +47,7 @@ git apply torch_cov.patch
 **Compile PyTorch**
 
 > **Warning** **Create a new Conda environments**
+>
 > The commands below will install some new packages (including `torch`) to your current Python/Conda environment.
 > You may want to use a new Conda environment to avoid messing up your current environment.
 
@@ -58,6 +61,7 @@ python setup.py develop
 ```
 
 > **Note** **Modify the commands based on your needs**
+>
 > - You may change the `CC` and `CXX` to other versions of Clang (but it cannot be GCC!)
 > - The script above compiles almost the minimalist version of PyTorch (CPU-only). You may enable more flags to compile more components of PyTorch (thought it could break the compilation!)
 
@@ -73,6 +77,7 @@ ls default.profraw # This is the coverage file. You should be able to see it.
 Next, we will run NNSmith to dump a bunch of random test-cases for an SUT (say PyTorch 2).
 
 > **Warning** **Use the non-instrumented SUT to run NNSmith first**
+>
 > We will run NNSmith to generate and validate each test-case -- by validating the test-cases,
 > we need to execute the **SUT** (i.e., the compiler) as well. Notably, the **SUT** to run here
 > is **NOT** the instrumented version we talked about in Step 1. Instead, we need to use the
@@ -124,6 +129,7 @@ python experiments/evaluate_models.py --root ${PATH_TO_SAVE_TESTS}        \
 ```
 
 > **Note** **Parallelization**
+>
 > The replay will be much faster as it can be parallelized (configurable via `--parallel`).
 > It also uses an optional argument `--batch-size` which refers the number of test-cases to
 > be executed in each thread/process as a batch. The default value is 100 (This is important for future steps).
@@ -144,6 +150,7 @@ python experiments/process_profraws.py --root ${PATH_TO_SAVE_TESTS}       \
 - `--instrumented-libs`: this must be set to the `.so` library being instrumented in Step 2. For PyTorch, the part should be `${TORCH_ROOT}/build/lib/libtorch.so ${TORCH_ROOT}/build/lib/libtorch_cpu.so`. For TVM, it is `${TVM_ROOT}/build/libtvm.so ${TVM_ROOT}/build/libtvm_runtime.so`.
 
 > **Note** **Parallelization**
+>
 > `--parallel` is also available.
 
 After this, we can visualize the coverage via:
