@@ -41,51 +41,57 @@ class PT2(BackendFactory):
         return ["import torch"]
 
     def make_backend_forward(self, model: TorchModel) -> BackendCallable:
+        raise "Not Implementd"
+
+    def make_backend_backward(self, model: TorchModel) -> BackendCallable:
         torch_net = model.torch_model.to(self.device).train()
-        with fwAD.dual_level(), FxTracing():
-            with torch.no_grad():
-                for _, param in torch_net.named_parameters():
-                    dual = fwAD.make_dual(
-                        param.to(self.device), torch.ones_like(param).to(self.device)
-                    )
-                    param.copy_(dual)
+        params_name = [k for k, _ in torch_net.named_parameters()]
+        with FxTracing():
             traced = torch.fx.symbolic_trace(torch_net)
             compiled = torch.compile(
                 traced, fullgraph=True, backend=self.backend, mode=self.mode
             )
 
-        def closure(inputs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
-            with fwAD.dual_level():
-                with torch.no_grad():
-                    for _, param in torch_net.named_parameters():
-                        dual = fwAD.make_dual(
-                            param.to(self.device),
-                            torch.ones_like(param).to(self.device),
-                        )
-                        param.copy_(dual)
-                input_ts = [
-                    torch.from_numpy(v).to(self.device) for _, v in inputs.items()
-                ]
-                dual_output = compiled(*input_ts)
-                output_dict = {}
-                for k, v in zip(torch_net.output_like.keys(), dual_output):
-                    primal, tangent = fwAD.unpack_dual(v)
-                    primal = (
-                        primal.cpu().detach().resolve_conj().numpy()
-                        if primal.is_conj()
-                        else primal.cpu().detach().numpy()
+        def closure(inputs: Dict[str, np.ndarray]) -> Dict[str, Tuple[np.ndarray, ...]]:
+            input_ts = [torch.from_numpy(v).to(self.device) for _, v in inputs.items()]
+            outputs = compiled(*input_ts)
+            params = {k: v for k, v in torch_net.named_parameters()}
+            output_dict = {}
+            for name, output in zip(torch_net.output_like.keys(), outputs):
+                if output.requires_grad is False:
+                    output = (
+                        output.cpu().detach().resolve_conj().numpy()
+                        if output.is_conj()
+                        else output.cpu().detach().numpy()
                     )
-                    # get the Jacobian-vector product
-                    if tangent is not None:
-                        tangent = (
-                            tangent.cpu().detach().resolve_conj().numpy()
-                            if tangent.is_conj()
-                            else tangent.cpu().detach().numpy()
+                    output_dict[name] = output
+                    continue
+                # if the output is differentiate
+                # get Vector-Jacobian product
+                out_grad = torch.autograd.grad(
+                    outputs=output,
+                    inputs=params.values(),
+                    grad_outputs=torch.ones_like(output),
+                    retain_graph=True,
+                    allow_unused=True,
+                )
+                for k, v in zip(params_name, out_grad):
+                    if v is None:
+                        output_dict[name + "_vjp_" + k] = None
+                    else:
+                        output_dict[name + "_vjp_" + k] = (
+                            v.cpu().detach().resolve_conj().numpy()
+                            if v.is_conj()
+                            else v.cpu().detach().numpy()
                         )
-                    output_dict[k] = primal
-                    output_dict[k + "_jvp"] = tangent
+                output = (
+                    output.cpu().detach().resolve_conj().numpy()
+                    if output.is_conj()
+                    else output.cpu().detach().numpy()
+                )
+                output_dict[name] = output
 
-                return output_dict
+            return output_dict
 
         return closure
 
@@ -117,6 +123,10 @@ class PT2(BackendFactory):
             return self.make_backend_infer(model)
         elif self.ad == "forward":
             return self.make_backend_forward(model)
+        elif self.ad == "backward":
+            return self.make_backend_backward(model)
+        else:
+            raise f"unknown ad mode: {self.ad}"
 
     def emit_compile(
         self, opt_name: str, mod_name: str, inp_name: Optional[str] = None
