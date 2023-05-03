@@ -139,7 +139,7 @@ Step 2.
 python experiments/evaluate_models.py --root ${PATH_TO_SAVE_TESTS}        \
                                                --model_type ${MODEL}      \
                                                --backend_type ${BACKEND}  \
-                                               --backend_target ${DEVICE} \
+                                               --backend_target ${DEVICE}
 ```
 
 > **Note** **Parallelization**
