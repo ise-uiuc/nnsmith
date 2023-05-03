@@ -140,7 +140,6 @@ python experiments/evaluate_models.py --root ${PATH_TO_SAVE_TESTS}        \
                                                --model_type ${MODEL}      \
                                                --backend_type ${BACKEND}  \
                                                --backend_target ${DEVICE} \
-                                               --llvm-config-path ${PATH_TO_LLVM_CONFIG}
 ```
 
 > **Note** **Parallelization**
