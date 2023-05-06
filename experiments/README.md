@@ -139,8 +139,7 @@ Step 2.
 python experiments/evaluate_models.py --root ${PATH_TO_SAVE_TESTS}        \
                                                --model_type ${MODEL}      \
                                                --backend_type ${BACKEND}  \
-                                               --backend_target ${DEVICE} \
-                                               --llvm-config-path ${PATH_TO_LLVM_CONFIG}
+                                               --backend_target ${DEVICE}
 ```
 
 > **Note** **Parallelization**
@@ -171,14 +170,16 @@ python experiments/process_profraws.py --root ${PATH_TO_SAVE_TESTS}       \
 After this, we can visualize the coverage via:
 
 ```shell
-python experiments/viz_merged_cov.py --folders \
+python experiments/viz_merged_cov.py -o results --folders \
 ${PATH_TO_SAVE_TESTS}/coverage --tags "NNSmith" --pdf
 ```
+
+Figures will be stored in where the `-o` option specifies.
 
 If you have multiple experiments to show together:
 
 ```shell
-python experiments/viz_merged_cov.py --folders \
+python experiments/viz_merged_cov.py -o results --folders \
                                          ${PATH_TO_SAVE_TESTS_1}/coverage \
                                          ${PATH_TO_SAVE_TESTS_2}/coverage \
                                      --tags "Exp 1" "Exp 2" --pdf
