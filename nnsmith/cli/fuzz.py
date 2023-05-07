@@ -143,29 +143,33 @@ class FuzzingLoop:
         dtype_choices = set()
         if cfg["mgen"]["dtype_choices"] is not None:
             dtype_choices = set(cfg["mgen"]["dtype_choices"])
-            if (cfg["backend"]["type"] in ["torchjitAD_forward", "torchjitAD_backward"]):
+            if cfg["backend"]["type"] in ["torchjitAD_forward", "torchjitAD_backward"]:
                 from nnsmith.abstract.dtype import DTYPE_GEN_FLOATS
+
                 float_set = set()
                 for type in DTYPE_GEN_FLOATS:
                     float_set.add(type.value)
                 dtype_choices = float_set.intersection(dtype_choices)
         else:
-            if (cfg["backend"]["type"] in ["torchjitAD_forward", "torchjitAD_backward"]):
+            if cfg["backend"]["type"] in ["torchjitAD_forward", "torchjitAD_backward"]:
                 from nnsmith.abstract.dtype import DTYPE_GEN_FLOATS
+
                 float_set = set()
                 for type in DTYPE_GEN_FLOATS:
                     float_set.add(type.value)
                 dtype_choices = float_set
 
-
-
         self.cfg["mgen"]["dtype_choices"] = list(dtype_choices)
         self.opset = op_filter(
-            auto_opset(self.ModelType, self.factory, vulops=cfg["mgen"]["vulops"], ad=cfg["ad"]["type"]),
+            auto_opset(
+                self.ModelType,
+                self.factory,
+                vulops=cfg["mgen"]["vulops"],
+                ad=cfg["ad"]["type"],
+            ),
             cfg["mgen"]["include"],
             cfg["mgen"]["exclude"],
         )
-        
 
         hijack_patch_requires(cfg["mgen"]["patch_requires"])
         activate_ext(opset=self.opset, factory=self.factory)

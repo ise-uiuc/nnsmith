@@ -6,7 +6,7 @@ import pickle
 from abc import ABC, abstractmethod
 from enum import Enum
 from os import PathLike
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Type, TypeVar, Union, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Type, TypeVar, Union
 
 # Enables type checking while avoiding circular imports.
 if TYPE_CHECKING:
@@ -58,8 +58,10 @@ def framework_operator_impl(
         )
     return dispatch(op_type, *args, **kwargs)
 
+
 OracleInput = Dict[str, np.ndarray]
 OracleOutput = Dict[str, np.ndarray]
+
 
 class Oracle:
     def __init__(

@@ -5,9 +5,8 @@ from os import PathLike
 from typing import Dict, List, Optional, Type
 
 import torch
-from torch import fx, nn
 import torch.autograd.forward_ad as fwAD
-
+from torch import fx, nn
 
 from nnsmith.abstract.op import AbsOpBase, AbsTensor
 from nnsmith.gir import GraphIR
@@ -98,8 +97,11 @@ class TorchModel(Model, ABC):
             with fwAD.dual_level():
                 with torch.no_grad():
                     for _, param in torch_net.named_parameters():
-                            dual = fwAD.make_dual(param.to(self.device()), torch.ones_like(param).to(self.device()))
-                            param.copy_(dual)
+                        dual = fwAD.make_dual(
+                            param.to(self.device()),
+                            torch.ones_like(param).to(self.device()),
+                        )
+                        param.copy_(dual)
                 self.torch_model.train()
                 # set train for model
                 if self.sat_inputs is None:
@@ -119,8 +121,10 @@ class TorchModel(Model, ABC):
                 for name, val in zip(self.output_like.keys(), outputs):
                     primal, tangent = fwAD.unpack_dual(val)
                     output_dict[name] = primal.cpu().detach().numpy()
-                    output_dict[name + "_jvp"] = tangent.cpu().detach().numpy() if tangent is not None else None
-        
+                    output_dict[name + "_jvp"] = (
+                        tangent.cpu().detach().numpy() if tangent is not None else None
+                    )
+
         elif ad == "backward":
             self.torch_model.train()
             # fall back to random inputs if no solution is found.
@@ -128,7 +132,7 @@ class TorchModel(Model, ABC):
                 inputs = self.torch_model.get_random_inps()
             else:
                 inputs = self.sat_inputs
-            params = {k : v for k, v in self.torch_model.named_parameters()}
+            params = {k: v for k, v in self.torch_model.named_parameters()}
             outputs = self.torch_model.forward(
                 *[v.to(self.device()) for _, v in inputs.items()]
             )
@@ -137,18 +141,36 @@ class TorchModel(Model, ABC):
             output_dict = {}
             for name, output in zip(self.output_like.keys(), outputs):
                 if output.requires_grad is False:
-                    output = output.cpu().detach().resolve_conj().numpy() if output.is_conj() else output.cpu().detach().numpy()
+                    output = (
+                        output.cpu().detach().resolve_conj().numpy()
+                        if output.is_conj()
+                        else output.cpu().detach().numpy()
+                    )
                     output_dict[name] = output
                     continue
-                # get Vector-Jacobian product 
-                out_grad = torch.autograd.grad(outputs=output, inputs=params.values(), grad_outputs=torch.ones_like(output),retain_graph=True, allow_unused=True)
-                output_dict[name] = output.cpu().detach().resolve_conj().numpy() if output.is_conj() else output.cpu().detach().numpy()
+                # get Vector-Jacobian product
+                out_grad = torch.autograd.grad(
+                    outputs=output,
+                    inputs=params.values(),
+                    grad_outputs=torch.ones_like(output),
+                    retain_graph=True,
+                    allow_unused=True,
+                )
+                output_dict[name] = (
+                    output.cpu().detach().resolve_conj().numpy()
+                    if output.is_conj()
+                    else output.cpu().detach().numpy()
+                )
                 for k, v in zip(params.keys(), out_grad):
                     if v is None:
                         output_dict[name + "_vjp_" + k] = None
                     else:
-                        output_dict[name + "_vjp_" + k]  = v.cpu().detach().resolve_conj().numpy() if v.is_conj() else v.cpu().detach().numpy()
-                    
+                        output_dict[name + "_vjp_" + k] = (
+                            v.cpu().detach().resolve_conj().numpy()
+                            if v.is_conj()
+                            else v.cpu().detach().numpy()
+                        )
+
         else:
             with torch.no_grad():
                 self.torch_model.eval()
@@ -166,7 +188,7 @@ class TorchModel(Model, ABC):
                 output_dict = {}
                 for oname, val in zip(self.output_like.keys(), outputs):
                     output_dict[oname] = val.cpu().detach().numpy()
-                    
+
         return Oracle(input_dict, output_dict, provider="torch[cpu] eager")
 
     def dump(self, path: PathLike):

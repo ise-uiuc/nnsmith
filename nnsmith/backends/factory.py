@@ -113,7 +113,7 @@ class BackendFactory(ABC):
                 stage=Stage.COMPILATION,
                 log=traceback.format_exc(),
                 version=self.version,
-            )        
+            )
 
     def checked_exec(
         self, executable: BackendCallable, testcase: TestCase
@@ -126,7 +126,9 @@ class BackendFactory(ABC):
             )
 
         try:  # execution
-            return executable(input)    # the executable is the closure return by the make_backend
+            return executable(
+                input
+            )  # the executable is the closure return by the make_backend
         except InternalError as e:
             raise e
         except Exception:
@@ -147,7 +149,9 @@ class BackendFactory(ABC):
         if (
             not crash_safe and timeout is None
         ):  # not crash safe, compile & exec natively in current process.
-            bug_or_exec = self.checked_compile(testcase)    # try to make_backend, return Union[BackendCallable, BugReport]
+            bug_or_exec = self.checked_compile(
+                testcase
+            )  # try to make_backend, return Union[BackendCallable, BugReport]
             if isinstance(bug_or_exec, BugReport):
                 return bug_or_exec
             return self.checked_exec(bug_or_exec, testcase)
@@ -356,11 +360,15 @@ class BackendFactory(ABC):
 
     def emit_run(self, out_name: str, opt_name: str, inp_name: str) -> str:
         raise NotImplementedError
-    
 
     @staticmethod
     def init(
-        name: str, target: str = "cpu", ad: str = None, optmax: bool = True, parse_name=False, **kwargs
+        name: str,
+        target: str = "cpu",
+        ad: str = None,
+        optmax: bool = True,
+        parse_name=False,
+        **kwargs,
     ):
         if name is None:
             raise ValueError(
@@ -422,12 +430,11 @@ class BackendFactory(ABC):
             return TorchJIT(target=target, optmax=optmax, **kwargs)
         elif name == "torchjitAD":
             from nnsmith.backends.torchjitAD import TorchJITAD
-            
-            return TorchJITAD(target = target, optmax=optmax, ad=ad, **kwargs)
+
+            return TorchJITAD(target=target, optmax=optmax, ad=ad, **kwargs)
         elif name == "pt2":
             from nnsmith.backends.pt2 import PT2
 
             return PT2(target=target, optmax=optmax, ad=ad, **kwargs)
         else:
             raise ValueError(f"unknown backend: {name}")
-    

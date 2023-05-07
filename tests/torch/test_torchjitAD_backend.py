@@ -1,4 +1,5 @@
 import os
+
 import pytest
 import torch
 
@@ -39,7 +40,9 @@ def test_synthesized_tf_model_forward(tmp_path):
         targets.append("cuda")
 
     for target in targets:
-        factory = BackendFactory.init("torchjitAD", ad="forward", target=target, optmax=False)
+        factory = BackendFactory.init(
+            "torchjitAD", ad="forward", target=target, optmax=False
+        )
 
         ModelType = Model.init("torch", backend_target=target)
 
@@ -55,9 +58,8 @@ def test_synthesized_tf_model_forward(tmp_path):
 
         testcase = TestCase(model, oracle)
         assert factory.verify_testcase(testcase) is None
-        
-        testcase.dump(root_folder=d)
 
+        testcase.dump(root_folder=d)
 
 
 def test_synthesized_tf_model_backward():
@@ -67,7 +69,9 @@ def test_synthesized_tf_model_backward():
         targets.append("cuda")
 
     for target in targets:
-        factory = BackendFactory.init("torchjitAD", ad="backward", target=target, optmax=False)
+        factory = BackendFactory.init(
+            "torchjitAD", ad="backward", target=target, optmax=False
+        )
 
         ModelType = Model.init("torch", backend_target=target)
 
@@ -83,5 +87,3 @@ def test_synthesized_tf_model_backward():
 
         testcase = TestCase(model, oracle)
         assert factory.verify_testcase(testcase) is None
-        
-
