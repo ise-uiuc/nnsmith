@@ -8,15 +8,8 @@ import torch.autograd.forward_ad as fwAD
 from multipledispatch import dispatch
 from torch.utils.mobile_optimizer import optimize_for_mobile
 
-from nnsmith.abstract.op import AbsTensor
-from nnsmith.backends.factory import (
-    BackendCallable,
-    BackendFactory,
-    BackendInput,
-    BackendOutput,
-)
+from nnsmith.backends.factory import BackendCallable, BackendFactory
 from nnsmith.materialize.torch import TorchModel
-from nnsmith.materialize.torch.symbolnet import random_tensor
 
 # Check https://pytorch.org/tutorials/recipes/recipes/tuning_guide.html
 # for more PyTorch-internal options.

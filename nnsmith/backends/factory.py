@@ -14,9 +14,7 @@ from nnsmith.error import InternalError
 from nnsmith.logging import CORE_LOG
 from nnsmith.materialize import BugReport, Model, Oracle, Stage, Symptom, TestCase
 
-BackendInput = np.ndarray
-BackendOutput = np.ndarray
-BackendCallable = Callable[[Dict[str, BackendInput]], Dict[str, BackendOutput]]
+BackendCallable = Callable[[Dict[str, np.ndarray]], Dict[str, np.ndarray]]
 
 
 def parse_name_kwargs(text):
@@ -72,7 +70,7 @@ class BackendFactory(ABC):
     @staticmethod
     def make_random_input(
         input_like: Dict[str, AbsTensor], low=1, high=2
-    ) -> Dict[str, BackendInput]:
+    ) -> Dict[str, np.ndarray]:
         return {
             name: np.random.uniform(low=low, high=high, size=aten.shape).astype(
                 aten.dtype.numpy()
@@ -126,9 +124,7 @@ class BackendFactory(ABC):
             )
 
         try:  # execution
-            return executable(
-                input
-            )  # the executable is the closure return by the make_backend
+            return executable(input)
         except InternalError as e:
             raise e
         except Exception:
@@ -144,14 +140,12 @@ class BackendFactory(ABC):
     def checked_compile_and_exec(
         self, testcase: TestCase, crash_safe=False, timeout=None
     ) -> Union[Dict[str, np.ndarray], BugReport]:
-        # pre-check model dispatchability
+        # pre-check if model is dispatchable
         self.critical_assert_dispatchable(testcase.model)
         if (
             not crash_safe and timeout is None
         ):  # not crash safe, compile & exec natively in current process.
-            bug_or_exec = self.checked_compile(
-                testcase
-            )  # try to make_backend, return Union[BackendCallable, BugReport]
+            bug_or_exec = self.checked_compile(testcase)
             if isinstance(bug_or_exec, BugReport):
                 return bug_or_exec
             return self.checked_exec(bug_or_exec, testcase)
@@ -295,9 +289,6 @@ class BackendFactory(ABC):
         crash_safe=False,
         timeout=None,
     ) -> Union[BugReport, TestCase]:
-        """
-        TODO (@FatPigeorz): to add support to infer the opset for torchjitAD
-        """
         if input is None:
             input = self.make_random_input(model.input_like)
 
@@ -372,7 +363,7 @@ class BackendFactory(ABC):
     ):
         if name is None:
             raise ValueError(
-                "Backend type cannot be None. Use `backend.type=[onnxruntime|tvm|tensorrt|xla|tflite|pt2|torchjit|torchjitAD]`"
+                "Backend type cannot be None. Use `backend.type=[onnxruntime|tvm|tensorrt|xla|tflite|pt2|torchjit]`"
             )
 
         if target == "gpu":
