@@ -264,7 +264,9 @@ class FuzzingLoop:
                     self.save_test, f"{time.time() - start_time:.3f}"
                 )
                 mkdir(testcase_dir)
+                tmp, testcase.model.dotstring = testcase.model.dotstring, None
                 testcase.dump(testcase_dir)
+                testcase.model.dotstring = tmp
                 time_stat["save"] = time.time() - save_start
 
             FUZZ_LOG.info(
