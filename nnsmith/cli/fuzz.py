@@ -128,6 +128,7 @@ class FuzzingLoop:
 
         self.factory = BackendFactory.init(
             cfg["backend"]["type"],
+            ad=cfg["ad"]["type"],
             target=cfg["backend"]["target"],
             optmax=cfg["backend"]["optmax"],
             parse_name=True,
@@ -138,8 +139,14 @@ class FuzzingLoop:
             model_cfg["type"], backend_target=cfg["backend"]["target"]
         )
         self.ModelType.add_seed_setter()
+
         self.opset = op_filter(
-            auto_opset(self.ModelType, self.factory, vulops=cfg["mgen"]["vulops"]),
+            auto_opset(
+                self.ModelType,
+                self.factory,
+                vulops=cfg["mgen"]["vulops"],
+                grad=cfg["mgen"]["grad_check"],
+            ),
             cfg["mgen"]["include"],
             cfg["mgen"]["exclude"],
         )
@@ -186,6 +193,7 @@ class FuzzingLoop:
             model.attach_viz(ir)
 
         model.refine_weights()  # either random generated or gradient-based.
+        model.set_grad_check(self.cfg["mgen"]["grad_check"])
         oracle = model.make_oracle()
         return TestCase(model, oracle)
 

@@ -29,7 +29,7 @@ def test_narrow_spec_cache_make_and_reload():
     )
 
 
-def test_synthesized_tf_model(tmp_path):
+def test_synthesized_model(tmp_path):
     d = tmp_path / "test_torchjit"
     d.mkdir()
 
@@ -38,20 +38,22 @@ def test_synthesized_tf_model(tmp_path):
         targets.append("cuda")
 
     for target in targets:
-        factory = BackendFactory.init("torchjit", target=target, optmax=False)
+        for grad in [True, False]:
+            factory = BackendFactory.init("torchjit", target=target, optmax=False)
 
-        ModelType = Model.init("torch", backend_target=target)
+            ModelType = Model.init("torch", backend_target=target)
 
-        gen = model_gen(
-            opset=auto_opset(ModelType, factory),
-            seed=23132,
-            max_nodes=1,
-        )  # One op should not be easily wrong... I guess.
+            gen = model_gen(
+                opset=auto_opset(ModelType, factory, grad=grad),
+                seed=23132,
+                max_nodes=1,
+            )  # One op should not be easily wrong... I guess.
 
-        model = ModelType.from_gir(gen.make_concrete())
+            model = ModelType.from_gir(gen.make_concrete())
 
-        oracle = model.make_oracle()
+            model.set_grad_check(grad)
+            oracle = model.make_oracle()
 
-        testcase = TestCase(model, oracle)
-        assert factory.verify_testcase(testcase) is None
-        testcase.dump(root_folder=d)
+            testcase = TestCase(model, oracle)
+            assert factory.verify_testcase(testcase) is None
+            testcase.dump(root_folder=d)

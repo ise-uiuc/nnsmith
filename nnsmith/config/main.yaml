@@ -15,12 +15,16 @@ mgen: # model gen.
   include: null # ops to include; example mgen.include="[core.NCHWConv2d, core.ReLU]"
   exclude: null # ops to exclude;
   patch_requires: [] # files that with @patch_requires
+  grad_check: false # additionally check gradients
 
 # backend config
 backend:
   type: null
   optmax: true
   target: "cpu"
+
+ad:
+  type: null
 
 cache:
   topset: true # Run dtype test with automatically maintained cache

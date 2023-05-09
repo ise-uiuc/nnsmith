@@ -113,6 +113,8 @@ class TFModel(Model, ABC):  # Don't directly instantiate this class
     def make_oracle(
         self, inputs: Dict[str, tf.Tensor | tf.TensorSpec] = None
     ) -> Oracle:
+        assert not self.needs_grad_check(), "grad_check is not supported in TF"
+
         if inputs is None or isinstance(list(inputs.values())[0], tf.TensorSpec):
             input_dict = self.random_inputs()
         else:

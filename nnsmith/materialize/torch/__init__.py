@@ -52,6 +52,16 @@ def _render_constructor(name: str, mod: nn.Module):
     return f"torch.load('{name}.pth') # {type(mod).__name__}"
 
 
+def numpify(v: Optional[torch.Tensor]):
+    if v is None:
+        return None
+    return (
+        v.cpu().detach().resolve_conj().numpy()
+        if v.is_conj()
+        else v.cpu().detach().numpy()
+    )
+
+
 class TorchModel(Model, ABC):
     def __init__(self) -> None:
         super().__init__()
@@ -91,22 +101,43 @@ class TorchModel(Model, ABC):
         self.torch_model.disable_proxy_grad()
 
     def make_oracle(self) -> Oracle:
-        with torch.no_grad():
-            self.torch_model.eval()
-            # fall back to random inputs if no solution is found.
-            if self.sat_inputs is None:
-                inputs = self.torch_model.get_random_inps()
-            else:
-                inputs = self.sat_inputs
+        inputs = self.sat_inputs or self.torch_model.get_random_inps()
+
+        # Return NumPy array as outputs
+        input_dict = {k: v.cpu().detach().numpy() for k, v in inputs.items()}
+        output_dict = {}
+
+        # TODO(@ganler, @FatPigeorz): can we make sure of determinism?
+        if self.needs_grad_check():
+            self.torch_model.train()
+            params = {k: v for k, v in self.torch_model.named_parameters()}
             outputs = self.torch_model.forward(
                 *[v.to(self.device()) for _, v in inputs.items()]
             )
+            for name, output in zip(self.output_like.keys(), outputs):
+                output_dict[name] = numpify(output)
+                if output.requires_grad:
+                    # get Vector-Jacobian Product (VJP)
+                    out_grad = torch.autograd.grad(
+                        outputs=output,
+                        inputs=params.values(),
+                        grad_outputs=torch.ones_like(output),
+                        retain_graph=True,
+                        allow_unused=True,
+                    )
 
-        # numpyify
-        input_dict = {k: v.cpu().detach().numpy() for k, v in inputs.items()}
-        output_dict = {}
-        for oname, val in zip(self.output_like.keys(), outputs):
-            output_dict[oname] = val.cpu().detach().numpy()
+                    for k, v in zip(params.keys(), out_grad):
+                        output_dict[name + "_vjp_" + k] = numpify(v)
+
+        else:  # No gradient required.
+            with torch.no_grad():
+                self.torch_model.eval()
+                outputs = self.torch_model.forward(
+                    *[v.to(self.device()) for _, v in inputs.items()]
+                )
+
+                for oname, val in zip(self.output_like.keys(), outputs):
+                    output_dict[oname] = numpify(val)
 
         return Oracle(input_dict, output_dict, provider="torch[cpu] eager")
 

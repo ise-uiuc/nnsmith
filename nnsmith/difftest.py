@@ -22,19 +22,26 @@ def assert_allclose(
         lhs = actual[key]
         rhs = desired[key]
 
-        # check if lhs is np.ndarray
-        if not isinstance(lhs, np.ndarray):
-            raise TypeError(f"{actual_name}[{key}] is not np.ndarray but {type(lhs)}")
+        if lhs is not None and rhs is not None:
+            # check if lhs is np.ndarray
+            if lhs is not None and not isinstance(lhs, np.ndarray):
+                raise TypeError(
+                    f"{actual_name}[{key}] is not np.ndarray but {type(lhs)}"
+                )
 
-        # check if rhs is np.ndarray
-        if not isinstance(rhs, np.ndarray):
-            raise TypeError(f"{oracle_name}[{key}] is not np.ndarray but {type(rhs)}")
+            # check if rhs is np.ndarray
+            if rhs is not None and not isinstance(rhs, np.ndarray):
+                raise TypeError(
+                    f"{oracle_name}[{key}] is not np.ndarray but {type(rhs)}"
+                )
 
-        testing.assert_allclose(
-            lhs,
-            rhs,
-            equal_nan=equal_nan,
-            rtol=rtol,
-            atol=atol,
-            err_msg=f"{actual_name} != {oracle_name} at {key}",
-        )
+            testing.assert_allclose(
+                lhs,
+                rhs,
+                equal_nan=equal_nan,
+                rtol=rtol,
+                atol=atol,
+                err_msg=f"{actual_name} != {oracle_name} at {key}",
+            )
+        else:
+            return lhs is None and rhs is None

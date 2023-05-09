@@ -140,7 +140,7 @@ class BackendFactory(ABC):
     def checked_compile_and_exec(
         self, testcase: TestCase, crash_safe=False, timeout=None
     ) -> Union[Dict[str, np.ndarray], BugReport]:
-        # pre-check model dispatchability
+        # pre-check if model is dispatchable
         self.critical_assert_dispatchable(testcase.model)
         if (
             not crash_safe and timeout is None
@@ -354,7 +354,12 @@ class BackendFactory(ABC):
 
     @staticmethod
     def init(
-        name: str, target: str = "cpu", optmax: bool = True, parse_name=False, **kwargs
+        name: str,
+        target: str = "cpu",
+        ad: str = None,
+        optmax: bool = True,
+        parse_name=False,
+        **kwargs,
     ):
         if name is None:
             raise ValueError(
@@ -414,9 +419,13 @@ class BackendFactory(ABC):
             from nnsmith.backends.torchjit import TorchJIT
 
             return TorchJIT(target=target, optmax=optmax, **kwargs)
+        elif name == "torchjitAD":
+            from nnsmith.backends.torchjitAD import TorchJITAD
+
+            return TorchJITAD(target=target, optmax=optmax, ad=ad, **kwargs)
         elif name == "pt2":
             from nnsmith.backends.pt2 import PT2
 
-            return PT2(target=target, optmax=optmax, **kwargs)
+            return PT2(target=target, optmax=optmax, ad=ad, **kwargs)
         else:
             raise ValueError(f"unknown backend: {name}")

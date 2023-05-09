@@ -46,10 +46,8 @@ class DType(Enum):
             DType.bool: "b",
         }[self]
 
-    @staticmethod
-    def is_float(dtype):  # Don't use string. Make it well-formed.
-        assert isinstance(dtype, DType)
-        return dtype in [DType.float32, DType.float64]
+    def is_float(self):
+        return self in [DType.float16, DType.float32, DType.float64]
 
     @staticmethod
     def from_str(s):

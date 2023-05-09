@@ -6,7 +6,7 @@ import pickle
 from abc import ABC, abstractmethod
 from enum import Enum
 from os import PathLike
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Type, TypeVar
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Type, TypeVar, Union
 
 # Enables type checking while avoiding circular imports.
 if TYPE_CHECKING:
@@ -66,8 +66,8 @@ class Oracle:
         output: Dict[str, np.ndarray],
         provider: str = "unknown",
     ) -> None:
-        self.input: Dict[str, np.ndarray] = input
-        self.output: Dict[str, np.ndarray] = output
+        self.input = input
+        self.output = output
         self._provider = provider
 
     def __repr__(self) -> str:
@@ -103,6 +103,13 @@ MT = TypeVar("MT", bound="Model")
 class Model(ABC):
     def __init__(self):
         self.dotstring: Optional[str] = None
+        self._grad_check: bool = False
+
+    def needs_grad_check(self) -> bool:
+        return self._grad_check
+
+    def set_grad_check(self, grad: bool) -> None:
+        self._grad_check = grad
 
     @property
     @abstractmethod
