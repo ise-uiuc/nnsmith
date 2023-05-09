@@ -8,7 +8,7 @@ from multipledispatch import dispatch
 from torch.utils.mobile_optimizer import optimize_for_mobile
 
 from nnsmith.backends.factory import BackendCallable, BackendFactory
-from nnsmith.materialize.torch import TorchModel
+from nnsmith.materialize.torch import TorchModel, numpify
 
 # Check https://pytorch.org/tutorials/recipes/recipes/tuning_guide.html
 # for more PyTorch-internal options.
@@ -24,9 +24,7 @@ class TorchJIT(BackendFactory):
             self.device = torch.device("cuda")
             torch.backends.cudnn.benchmark = True
         else:
-            raise ValueError(
-                f"Unknown target: {self.target}. Only `cpu` and `cuda` are supported."
-            )
+            raise ValueError(f"Unknown {target=}. Only `cpu` and `cuda` are supported.")
 
     @property
     def system_name(self) -> str:
@@ -34,33 +32,52 @@ class TorchJIT(BackendFactory):
 
     @dispatch(TorchModel)
     def make_backend(self, model: TorchModel) -> BackendCallable:
-        torch_net = model.torch_model.to(self.device).eval()
+        torch_net = model.torch_model.to(self.device)
         trace_inp = [ts.to(self.device) for ts in torch_net.get_random_inps().values()]
-        with torch.no_grad():
-            with warnings.catch_warnings():
-                warnings.simplefilter(
-                    "ignore",
-                    category=torch.jit.TracerWarning,
-                )
-                exported = torch.jit.trace(
-                    torch_net,
-                    trace_inp,
-                )
-                exported = torch.jit.freeze(exported)  # Fronzen graph.
-                exported = torch.jit.optimize_for_inference(exported)
-                if self.target == "cpu" and NNSMITH_PTJIT_OPT_MOBILE:
-                    exported = optimize_for_mobile(exported)
+
+        do_grad_check = model.needs_grad_check()
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=torch.jit.TracerWarning)
+            if do_grad_check:
+                torch_net = torch_net.train()
+                exported = torch.jit.trace(torch_net, trace_inp)
+            else:
+                torch_net = torch_net.eval()
+                with torch.no_grad():
+                    exported = torch.jit.trace(torch_net, trace_inp)
+                    exported = torch.jit.freeze(exported)  # Frozen graph
+                    exported = torch.jit.optimize_for_inference(exported)
+
+                    if self.target == "cpu" and NNSMITH_PTJIT_OPT_MOBILE:
+                        exported = optimize_for_mobile(exported)
 
         def closure(inputs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+            nonlocal do_grad_check
             input_ts = [torch.from_numpy(v).to(self.device) for _, v in inputs.items()]
-            with torch.no_grad():
-                output: Tuple[torch.Tensor] = exported(*input_ts)
-            return {
-                k: v.cpu().detach().resolve_conj().numpy()
-                if v.is_conj()
-                else v.cpu().detach().numpy()
-                for k, v in zip(torch_net.output_like.keys(), output)
-            }
+            if do_grad_check:
+                outputs: List[torch.Tensor] = exported(*input_ts)
+                params = {k: v for k, v in exported.named_parameters()}
+                ret = {}
+
+                for name, output in zip(torch_net.output_like.keys(), outputs):
+                    ret[name] = numpify(output)
+                    if output.requires_grad:
+                        # get Vector-Jacobian product
+                        out_grad = torch.autograd.grad(
+                            outputs=output,
+                            inputs=params.values(),
+                            grad_outputs=torch.ones_like(output),
+                            retain_graph=True,
+                            allow_unused=True,
+                        )
+                        for k, v in zip(params.keys(), out_grad):
+                            ret[name + "_vjp_" + k] = numpify(v)
+            else:
+                with torch.no_grad():
+                    outputs: Tuple[torch.Tensor] = exported(*input_ts)
+                ret = {k: numpify(v) for k, v in zip(torch_net.output_like, outputs)}
+            return ret
 
         return closure
 

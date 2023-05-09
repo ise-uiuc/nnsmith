@@ -140,32 +140,12 @@ class FuzzingLoop:
         )
         self.ModelType.add_seed_setter()
 
-        dtype_choices = set()
-        if cfg["mgen"]["dtype_choices"] is not None:
-            dtype_choices = set(cfg["mgen"]["dtype_choices"])
-            if cfg["backend"]["type"] in ["torchjitAD_forward", "torchjitAD_backward"]:
-                from nnsmith.abstract.dtype import DTYPE_GEN_FLOATS
-
-                float_set = set()
-                for type in DTYPE_GEN_FLOATS:
-                    float_set.add(type.value)
-                dtype_choices = float_set.intersection(dtype_choices)
-        else:
-            if cfg["backend"]["type"] in ["torchjitAD_forward", "torchjitAD_backward"]:
-                from nnsmith.abstract.dtype import DTYPE_GEN_FLOATS
-
-                float_set = set()
-                for type in DTYPE_GEN_FLOATS:
-                    float_set.add(type.value)
-                dtype_choices = float_set
-
-        self.cfg["mgen"]["dtype_choices"] = list(dtype_choices)
         self.opset = op_filter(
             auto_opset(
                 self.ModelType,
                 self.factory,
                 vulops=cfg["mgen"]["vulops"],
-                ad=cfg["ad"]["type"],
+                grad=cfg["mgen"]["grad"],
             ),
             cfg["mgen"]["include"],
             cfg["mgen"]["exclude"],
@@ -213,8 +193,8 @@ class FuzzingLoop:
             model.attach_viz(ir)
 
         model.refine_weights()  # either random generated or gradient-based.
-        ad_type = self.cfg["ad"]["type"]
-        oracle = model.make_oracle(ad_type)
+        model.set_grad_check(self.cfg["mgen"]["grad"])
+        oracle = model.make_oracle()
         return TestCase(model, oracle)
 
     def validate_and_report(self, testcase: TestCase) -> bool:

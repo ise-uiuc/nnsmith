@@ -5,7 +5,6 @@ from os import PathLike
 from typing import Dict, List, Optional, Type
 
 import torch
-import torch.autograd.forward_ad as fwAD
 from torch import fx, nn
 
 from nnsmith.abstract.op import AbsOpBase, AbsTensor
@@ -13,7 +12,7 @@ from nnsmith.gir import GraphIR
 from nnsmith.materialize import Model, Oracle
 from nnsmith.materialize.torch.forward import ALL_TORCH_OPS
 from nnsmith.materialize.torch.input_gen import PracticalHybridSearch
-from nnsmith.materialize.torch.symbolnet import FxTracing, SymbolNet, random_tensor
+from nnsmith.materialize.torch.symbolnet import FxTracing, SymbolNet
 from nnsmith.util import register_seed_setter
 
 
@@ -51,6 +50,16 @@ def _render_constructor(name: str, mod: nn.Module):
         return f"torch.nn.MultiheadAttention({ ', '.join(f'{k}={v}' for k, v in kvs.items()) })"
 
     return f"torch.load('{name}.pth') # {type(mod).__name__}"
+
+
+def numpify(v: Optional[torch.Tensor]):
+    if v is None:
+        return None
+    return (
+        v.cpu().detach().resolve_conj().numpy()
+        if v.is_conj()
+        else v.cpu().detach().numpy()
+    )
 
 
 class TorchModel(Model, ABC):
@@ -91,103 +100,44 @@ class TorchModel(Model, ABC):
             self.sat_inputs = inputs
         self.torch_model.disable_proxy_grad()
 
-    def make_oracle(self, ad="") -> Oracle:
-        if ad == "forward":
-            torch_net = self.torch_model.train()
-            with fwAD.dual_level():
-                with torch.no_grad():
-                    for _, param in torch_net.named_parameters():
-                        dual = fwAD.make_dual(
-                            param.to(self.device()),
-                            torch.ones_like(param).to(self.device()),
-                        )
-                        param.copy_(dual)
-                self.torch_model.train()
-                # set train for model
-                if self.sat_inputs is None:
-                    inputs = self.torch_model.get_random_inps()
-                else:
-                    inputs = self.sat_inputs
-                outputs = self.torch_model.forward(
-                    *[v.to(self.device()) for _, v in inputs.items()]
-                )
-                # collect grads
-                # numpyify
-                input_dict = {k: v.cpu().detach().numpy() for k, v in inputs.items()}
-                # outputs = self.torch_model.forward(
-                #     *[v.to(self.device()) for _, v in inputs.items()]
-                # )
-                output_dict = {}
-                for name, val in zip(self.output_like.keys(), outputs):
-                    primal, tangent = fwAD.unpack_dual(val)
-                    output_dict[name] = primal.cpu().detach().numpy()
-                    output_dict[name + "_jvp"] = (
-                        tangent.cpu().detach().numpy() if tangent is not None else None
-                    )
+    def make_oracle(self) -> Oracle:
+        inputs = self.sat_inputs or self.torch_model.get_random_inps()
 
-        elif ad == "backward":
+        # Return NumPy array as outputs
+        input_dict = {k: v.cpu().detach().numpy() for k, v in inputs.items()}
+        output_dict = {}
+
+        # TODO(@ganler, @FatPigeorz): can we make sure of determinism?
+        if self.needs_grad_check():
             self.torch_model.train()
-            # fall back to random inputs if no solution is found.
-            if self.sat_inputs is None:
-                inputs = self.torch_model.get_random_inps()
-            else:
-                inputs = self.sat_inputs
             params = {k: v for k, v in self.torch_model.named_parameters()}
             outputs = self.torch_model.forward(
                 *[v.to(self.device()) for _, v in inputs.items()]
             )
-            # numpyify
-            input_dict = {k: v.cpu().detach().numpy() for k, v in inputs.items()}
-            output_dict = {}
             for name, output in zip(self.output_like.keys(), outputs):
-                if output.requires_grad is False:
-                    output = (
-                        output.cpu().detach().resolve_conj().numpy()
-                        if output.is_conj()
-                        else output.cpu().detach().numpy()
+                output_dict[name] = numpify(output)
+                if output.requires_grad:
+                    # get Vector-Jacobian Product (VJP)
+                    out_grad = torch.autograd.grad(
+                        outputs=output,
+                        inputs=params.values(),
+                        grad_outputs=torch.ones_like(output),
+                        retain_graph=True,
+                        allow_unused=True,
                     )
-                    output_dict[name] = output
-                    continue
-                # get Vector-Jacobian product
-                out_grad = torch.autograd.grad(
-                    outputs=output,
-                    inputs=params.values(),
-                    grad_outputs=torch.ones_like(output),
-                    retain_graph=True,
-                    allow_unused=True,
-                )
-                output_dict[name] = (
-                    output.cpu().detach().resolve_conj().numpy()
-                    if output.is_conj()
-                    else output.cpu().detach().numpy()
-                )
-                for k, v in zip(params.keys(), out_grad):
-                    if v is None:
-                        output_dict[name + "_vjp_" + k] = None
-                    else:
-                        output_dict[name + "_vjp_" + k] = (
-                            v.cpu().detach().resolve_conj().numpy()
-                            if v.is_conj()
-                            else v.cpu().detach().numpy()
-                        )
 
-        else:
+                    for k, v in zip(params.keys(), out_grad):
+                        output_dict[name + "_vjp_" + k] = numpify(v)
+
+        else:  # No gradient required.
             with torch.no_grad():
                 self.torch_model.eval()
-                # fall back to random inputs if no solution is found.
-                if self.sat_inputs is None:
-                    inputs = self.torch_model.get_random_inps()
-                else:
-                    inputs = self.sat_inputs
                 outputs = self.torch_model.forward(
                     *[v.to(self.device()) for _, v in inputs.items()]
                 )
 
-                # numpyify
-                input_dict = {k: v.cpu().detach().numpy() for k, v in inputs.items()}
-                output_dict = {}
                 for oname, val in zip(self.output_like.keys(), outputs):
-                    output_dict[oname] = val.cpu().detach().numpy()
+                    output_dict[oname] = numpify(val)
 
         return Oracle(input_dict, output_dict, provider="torch[cpu] eager")
 

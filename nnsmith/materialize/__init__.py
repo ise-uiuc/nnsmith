@@ -59,19 +59,15 @@ def framework_operator_impl(
     return dispatch(op_type, *args, **kwargs)
 
 
-OracleInput = Dict[str, np.ndarray]
-OracleOutput = Dict[str, np.ndarray]
-
-
 class Oracle:
     def __init__(
         self,
-        input: OracleInput,
-        output: OracleOutput,
+        input: Dict[str, np.ndarray],
+        output: Dict[str, np.ndarray],
         provider: str = "unknown",
     ) -> None:
-        self.input: OracleInput = input
-        self.output: OracleOutput = output
+        self.input = input
+        self.output = output
         self._provider = provider
 
     def __repr__(self) -> str:
@@ -107,6 +103,13 @@ MT = TypeVar("MT", bound="Model")
 class Model(ABC):
     def __init__(self):
         self.dotstring: Optional[str] = None
+        self._grad_check: bool = False
+
+    def needs_grad_check(self) -> bool:
+        return self._grad_check
+
+    def set_grad_check(self, grad: bool) -> None:
+        self._grad_check = grad
 
     @property
     @abstractmethod
