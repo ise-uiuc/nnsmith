@@ -29,7 +29,7 @@ def test_narrow_spec_cache_make_and_reload():
     )
 
 
-def test_synthesized_tf_model(tmp_path):
+def test_synthesized_model(tmp_path):
     d = tmp_path / "test_pt2"
     d.mkdir()
 
