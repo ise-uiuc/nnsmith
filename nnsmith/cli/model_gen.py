@@ -45,7 +45,7 @@ def main(cfg: DictConfig):
         ModelType,
         factory,
         vulops=mgen_cfg["vulops"],
-        grad=mgen_cfg["grad"],
+        grad=mgen_cfg["grad_check"],
     )
     opset = op_filter(opset, mgen_cfg["include"], mgen_cfg["exclude"])
     hijack_patch_requires(mgen_cfg["patch_requires"])
@@ -87,7 +87,7 @@ def main(cfg: DictConfig):
 
     model = ModelType.from_gir(ir)
     model.refine_weights()  # either random generated or gradient-based.
-    model.set_grad_check(mgen_cfg["grad"])
+    model.set_grad_check(mgen_cfg["grad_check"])
     oracle = model.make_oracle()
     tmat = time.time() - tmat_begin
 

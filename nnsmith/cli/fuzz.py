@@ -145,7 +145,7 @@ class FuzzingLoop:
                 self.ModelType,
                 self.factory,
                 vulops=cfg["mgen"]["vulops"],
-                grad=cfg["mgen"]["grad"],
+                grad=cfg["mgen"]["grad_check"],
             ),
             cfg["mgen"]["include"],
             cfg["mgen"]["exclude"],
@@ -193,7 +193,7 @@ class FuzzingLoop:
             model.attach_viz(ir)
 
         model.refine_weights()  # either random generated or gradient-based.
-        model.set_grad_check(self.cfg["mgen"]["grad"])
+        model.set_grad_check(self.cfg["mgen"]["grad_check"])
         oracle = model.make_oracle()
         return TestCase(model, oracle)
 

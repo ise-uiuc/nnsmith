@@ -61,6 +61,12 @@ nnsmith.model_exec  model.type=onnx                        \
                     cmp.with='{type:tvm, optmax:true, target:cpu}'
 ```
 
+## Experimental: Gradient checking
+
+For `pt2` and `torchjit`, we have initial supports for examining the gradients.
+
+To enable that, just need to append `mgen.grad_check=true` to the examples illustrated above.
+
 ## Data type testing
 
 Many compilers do not support a full set of operators (in ONNX and TensorFlow). Thus, we infer the support set by doing single operator testing.
