@@ -41,23 +41,23 @@ class TorchJIT(BackendFactory):
             warnings.simplefilter("ignore", category=torch.jit.TracerWarning)
             if do_grad_check:
                 torch_net = torch_net.train()
-                exported = torch.jit.trace(torch_net, trace_inp)
+                compiled = torch.jit.trace(torch_net, trace_inp)
             else:
                 torch_net = torch_net.eval()
                 with torch.no_grad():
-                    exported = torch.jit.trace(torch_net, trace_inp)
-                    exported = torch.jit.freeze(exported)  # Frozen graph
-                    exported = torch.jit.optimize_for_inference(exported)
+                    compiled = torch.jit.trace(torch_net, trace_inp)
+                    compiled = torch.jit.freeze(compiled)  # Frozen graph
+                    compiled = torch.jit.optimize_for_inference(compiled)
 
                     if self.target == "cpu" and NNSMITH_PTJIT_OPT_MOBILE:
-                        exported = optimize_for_mobile(exported)
+                        compiled = optimize_for_mobile(compiled)
 
         def closure(inputs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
             nonlocal do_grad_check
             input_ts = [torch.from_numpy(v).to(self.device) for _, v in inputs.items()]
             if do_grad_check:
-                outputs: List[torch.Tensor] = exported(*input_ts)
-                params = {k: v for k, v in exported.named_parameters()}
+                outputs: List[torch.Tensor] = compiled(*input_ts)
+                params = {k: v for k, v in compiled.named_parameters()}
                 ret = {}
 
                 for name, output in zip(torch_net.output_like.keys(), outputs):
@@ -75,7 +75,7 @@ class TorchJIT(BackendFactory):
                             ret[name + "_vjp_" + k] = numpify(v)
             else:
                 with torch.no_grad():
-                    outputs: Tuple[torch.Tensor] = exported(*input_ts)
+                    outputs: Tuple[torch.Tensor] = compiled(*input_ts)
                 ret = {k: numpify(v) for k, v in zip(torch_net.output_like, outputs)}
             return ret
 
