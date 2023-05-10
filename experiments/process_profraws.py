@@ -206,6 +206,7 @@ if __name__ == "__main__":
             llvmcov_cmd = f"{llvm_cov} export -instr-profile={profdata_path} -format=lcov {lib_expr}"
             print(llvmcov_cmd)
             lcov_data = get_cmd_output(llvmcov_cmd.split(" "))
+            os.remove(profdata_path)
             return analyze_lcov(lcov_data)
 
         merged_cov = {
