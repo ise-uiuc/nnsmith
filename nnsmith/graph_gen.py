@@ -623,14 +623,15 @@ class SymboliSingleIOGen(SymbolicGen):
 
     def eliminate_extra_outputs(self):
         """Find the minimal cut to make the graph has only one output tensor."""
-        # FIXME(@ganler): deal with multi-output case.
-        cuts = self.ir.leaf_cut_chains()
-        cuts = sorted(cuts, key=lambda x: len(x))
-        for cut in cuts[:-1]:
-            for inst in cut:
-                self.ir.remove_unused(inst)
-        self.ir.assert_wellform()
-
+        prev_size = None
+        while prev_size != self.ir.n_inst():
+            prev_size = self.ir.n_inst()
+            cuts = self.ir.leaf_cut_chains()
+            cuts = sorted(cuts, key=lambda x: len(x))
+            for cut in cuts[:-1]:
+                for inst in cut:
+                    self.ir.remove_unused(inst)
+            self.ir.assert_wellform()
         SanityCheck.eq(len(self.ir.leaf_var()), 1, "Failed to eliminate extra outputs!")
 
     def abstract_gen(self, **kwargs):
