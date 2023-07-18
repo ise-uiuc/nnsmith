@@ -616,7 +616,7 @@ class SymboliSingleIOGen(SymbolicGen):
                 warnings.simplefilter("once")
                 warnings.warn(
                     "`forward_prob` is not supported in SymboliSingleIOGen which is always 1."
-                    "Why: the implementation first just generate forward graph and then cut."
+                    "Why: the implementation first just generates forward graph and then cuts backward."
                 )
         kwargs["forward_prob"] = 1.0
         super().__init__(*args, **kwargs)
