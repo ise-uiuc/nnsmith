@@ -190,7 +190,7 @@ class GraphIR:
     def n_var(self) -> int:
         return len(self.vars)
 
-    def leaf_inst(self) -> List[str]:
+    def leaf_inst(self) -> List[InstIR]:
         return [inst for inst in self.insts if inst.no_users()]
 
     def leaf_var(self) -> List[str]:
@@ -457,3 +457,22 @@ class GraphIR:
 
         text += "}\n"
         return text
+
+    def leaf_cut_chains(self) -> List[List[InstIR]]:
+        cuts = []
+        for leaf in self.leaf_inst():
+            assert (
+                len(leaf.retvals()) == 1
+            ), "find_leaf_cut_chains only support single-output operators"
+            pivot = 0
+            removed = [leaf]
+            while pivot < len(removed):
+                inst = removed[pivot]
+                pivot += 1
+                for arg in inst.iexpr.args:
+                    inst_id, _ = InstIR.var_inst_idx(arg)
+                    arg_inst = self.find_inst_by_id(inst_id)
+                    if arg_inst.users[0].issubset(removed) and arg_inst not in removed:
+                        removed.append(arg_inst)
+            cuts.append(removed)
+        return cuts
