@@ -2,6 +2,7 @@ import logging
 import random
 import time
 import traceback
+import warnings
 from abc import abstractmethod
 from typing import List, Optional, Set, Tuple, Type
 
@@ -604,6 +605,40 @@ class SymbolicGen(BaseGen):
         return self.ir
 
 
+class SymboliSingleIOGen(SymbolicGen):
+    """Generate a model which has only one input and one output tensor"""
+
+    def __init__(self, *args, **kwargs):
+        forward_prob = kwargs.pop("forward_prob", None)
+        if forward_prob is not None:
+            # only warn once
+            with warnings.catch_warnings():
+                warnings.simplefilter("once")
+                warnings.warn(
+                    "`forward_prob` is not supported in SymboliSingleIOGen which is always 1."
+                    "Why: the implementation first just generates forward graph and then cuts backward."
+                )
+        kwargs["forward_prob"] = 1.0
+        super().__init__(*args, **kwargs)
+
+    def eliminate_extra_outputs(self):
+        """Find the minimal cut to make the graph has only one output tensor."""
+        prev_size = None
+        while prev_size != self.ir.n_inst():
+            prev_size = self.ir.n_inst()
+            cuts = self.ir.leaf_cut_chains()
+            cuts = sorted(cuts, key=lambda x: len(x))
+            for cut in cuts[:-1]:
+                for inst in cut:
+                    self.ir.remove_unused(inst)
+            self.ir.assert_wellform()
+        SanityCheck.eq(len(self.ir.leaf_var()), 1, "Failed to eliminate extra outputs!")
+
+    def abstract_gen(self, **kwargs):
+        SymbolicGen.abstract_gen(self, **kwargs)
+        self.eliminate_extra_outputs()
+
+
 class ConcolicGen(BaseGen):
     """Different from SymbolicGen, the graph after an insertion is `concrete` in ConcolicGen.
     However, each step when inserting a node, we symbolically find a satisfiable solution for it.
@@ -756,12 +791,13 @@ def model_gen(
 ):
     assert max_nodes > 0, "max_nodes must >= 1"
 
-    if "symbolic" == method or "symbolic-sinit" == method:
-        gen = SymbolicGen(opset, seed, symbolic_init=True, **kwargs)
-    elif "symbolic-cinit" == method:
-        gen = SymbolicGen(opset, seed, symbolic_init=False, **kwargs)
+    symbolic_init = not method.endswith("-cinit")
+    if method.startswith("symbolic"):
+        gen = SymbolicGen(opset, seed, symbolic_init=symbolic_init, **kwargs)
     elif "concolic" == method:
         gen = ConcolicGen(opset, seed, **kwargs)
+    elif method.startswith("single-io"):
+        gen = SymboliSingleIOGen(opset, seed, symbolic_init=symbolic_init, **kwargs)
     else:
         raise ValueError(f"Unknown method {method}. Try `symbolic` or `concolic`.")
 

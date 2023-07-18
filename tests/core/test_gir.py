@@ -211,6 +211,42 @@ def test_gir_repair():
     assert ir.insts[1] == swap
 
 
+def test_gir_leaf_cut_chains():
+    """
+        x
+       / \
+      a   b
+      |   |\
+      c   | e
+       \ /
+        d
+    # oracle:
+    # d chain: [d, c, a]
+    # e chain: [e]
+    """
+    ir = GraphIR()
+    ph = ir.add_inst(
+        InstExpr(Placeholder(ttype=AbsTensor(shape=[2, 3, 3], dtype=DType.float32)), [])
+    )
+    a = ir.add_inst(InstExpr(ReLU(), [ph.retval()]))
+    b = ir.add_inst(InstExpr(ReLU(), [ph.retval()]))
+    c = ir.add_inst(InstExpr(ReLU(), [a.retval()]))
+    d = ir.add_inst(InstExpr(Add(), [c.retval(), b.retval()]))
+    e = ir.add_inst(InstExpr(Add(), [b.retval(), b.retval()]))
+
+    assert ir.n_inst() == 6
+    assert ir.n_var() == 6
+    assert set(ir.leaf_var()) == {d.retval(), e.retval()}
+
+    cuts = ir.leaf_cut_chains()
+    assert len(cuts) == 2
+    cuts = sorted(
+        cuts, key=lambda x: len(x)
+    )  # make sure the order is from smaller cut to larger cut.
+    assert set(cuts[0]) == {e}
+    assert set(cuts[1]) == {d, c, a}
+
+
 def test_gir_dot():
     ir = GraphIR()
 
