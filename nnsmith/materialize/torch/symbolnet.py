@@ -132,7 +132,7 @@ class SymbolNet(nn.Module):
                     self.add_module(f"m{i}", target)
 
                 if isinstance(target, nn.Parameter):
-                    self.register_parameter(inst.retval(), target)
+                    setattr(self, inst.retval(), target)
                 else:
                     self.instructions.append(
                         (torch_fn, inst.iexpr.args, inst.retvals(), inst.iexpr.op)
@@ -343,10 +343,24 @@ class SymbolNet(nn.Module):
     def use_cuda(self):
         self.cuda()
 
+    def make_param_map(self) -> Dict[str, torch.Tensor]:
+        tensor_map: Dict[str, torch.Tensor] = {}
+
+        for k, v in self.named_parameters():
+            # Workaround: https://github.com/ise-uiuc/nnsmith/pull/122
+            if hasattr(self, k):
+                attr = getattr(self, k)
+                if isinstance(attr, (nn.Parameter, fx.Proxy)):
+                    tensor_map[k] = attr
+                    continue
+            tensor_map[k] = v
+
+        return tensor_map
+
     def forward(self, *args):
         self.differentiable = True
 
-        tensor_map: Dict[str, torch.Tensor] = {k: v for k, v in self.named_parameters()}
+        tensor_map: Dict[str, torch.Tensor] = self.make_param_map()
         for i, key in enumerate(self.input_map.keys()):
             tensor_map[key] = args[i]
 
@@ -358,7 +372,6 @@ class SymbolNet(nn.Module):
             check_type(op, input_tensors, is_input=True, msg="input")
 
             # REAL FORWARD.
-            print(inst, input_tensors)
             output_tensors = inst(*input_tensors)
             if isinstance(output_tensors, fx.proxy.Proxy):
                 # TODO(@ganler, @co1lin): can we do systematic check through the output type?
@@ -382,7 +395,7 @@ class SymbolNet(nn.Module):
     def forward_grad(self, *args):
         self.differentiable = True
 
-        tensor_map: Dict[str, torch.Tensor] = {k: v for k, v in self.named_parameters()}
+        tensor_map: Dict[str, torch.Tensor] = self.make_param_map()
         for i, key in enumerate(self.input_map.keys()):
             tensor_map[key] = args[i]
 
