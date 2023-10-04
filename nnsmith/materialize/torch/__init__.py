@@ -222,8 +222,11 @@ class TorchModel(Model, ABC):
 
         tab = " " * 4
         mod_text = ""
-        for name, param in self.native_model._parameters.items():
-            mod_text += f"{2*tab}self.{name} = torch.nn.Parameter(torch.empty({list(param.shape)}, dtype={param.dtype})))"
+        for name, param in self.native_model.named_parameters():
+            mod_text += (
+                f"{2*tab}self.{name} = torch.nn.Parameter"
+                + f"(torch.empty({list(param.shape)}, dtype={param.dtype}), requires_grad={param.requires_grad})"
+            )
 
         for name, mod in self.native_model.named_children():
             if name == "":
