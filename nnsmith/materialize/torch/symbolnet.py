@@ -346,7 +346,7 @@ class SymbolNet(nn.Module):
     def make_param_map(self) -> Dict[str, torch.Tensor]:
         tensor_map: Dict[str, torch.Tensor] = {}
 
-        for k, v in self.named_parameters():
+        for k, v in self._parameters.items():
             # Workaround: https://github.com/ise-uiuc/nnsmith/pull/122
             if hasattr(self, k):
                 attr = getattr(self, k)

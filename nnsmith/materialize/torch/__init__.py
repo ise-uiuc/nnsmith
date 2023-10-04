@@ -222,10 +222,13 @@ class TorchModel(Model, ABC):
 
         tab = " " * 4
         mod_text = ""
-        for name, param in self.native_model.named_parameters():
+        # _parameters only shows the upper-level parameters
+        # while
+        # named_parameters() shows all parameters recursively
+        for name, param in self.native_model._parameters.items():
             mod_text += (
                 f"{2*tab}self.{name} = torch.nn.Parameter"
-                + f"(torch.empty({list(param.shape)}, dtype={param.dtype}), requires_grad={param.requires_grad})"
+                + f"(torch.empty({list(param.shape)}, dtype={param.dtype}), requires_grad={param.requires_grad})\n"
             )
 
         for name, mod in self.native_model.named_children():
