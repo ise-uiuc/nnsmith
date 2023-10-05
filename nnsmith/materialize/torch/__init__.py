@@ -117,10 +117,10 @@ class TorchModel(Model, ABC):
             for name, output in zip(self.output_like.keys(), outputs):
                 output_dict[name] = numpify(output)
                 if output.requires_grad:
-                    # get Vector-Jacobian Product (VJP)
+                    # Get Vector-Jacobian Product (VJP)
                     out_grad = torch.autograd.grad(
                         outputs=output,
-                        inputs=params.values(),
+                        inputs=self.torch_model.parameters(),
                         grad_outputs=torch.ones_like(output),
                         retain_graph=True,
                         allow_unused=True,

@@ -39,6 +39,9 @@ class PT2(BackendFactory):
     @dispatch(TorchModel)
     def make_backend(self, model: TorchModel) -> BackendCallable:
         torch_net = model.torch_model.to(self.device)
+        # Names for parameters can be changed implicitly after compilation
+        # We keep the original names to align with names in eager mode
+        param_names = [k for k, _ in model.torch_model.named_parameters()]
 
         do_grad_check = model.needs_grad_check()
 
@@ -59,21 +62,20 @@ class PT2(BackendFactory):
             input_ts = [torch.from_numpy(v).to(self.device) for _, v in inputs.items()]
             if do_grad_check:
                 outputs: List[torch.Tensor] = compiled(*input_ts)
-                params = {k: v for k, v in compiled.named_parameters()}
                 ret = {}
 
                 for name, output in zip(torch_net.output_like.keys(), outputs):
                     ret[name] = numpify(output)
                     if output.requires_grad:
-                        # get Vector-Jacobian product
+                        # Get Vector-Jacobian product
                         out_grad = torch.autograd.grad(
                             outputs=output,
-                            inputs=params.values(),
+                            inputs=compiled.parameters(),
                             grad_outputs=torch.ones_like(output),
                             retain_graph=True,
                             allow_unused=True,
                         )
-                        for k, v in zip(params.keys(), out_grad):
+                        for k, v in zip(param_names, out_grad):
                             ret[name + "_vjp_" + k] = numpify(v)
             else:
                 with torch.no_grad():
