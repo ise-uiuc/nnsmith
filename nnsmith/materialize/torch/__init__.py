@@ -117,10 +117,10 @@ class TorchModel(Model, ABC):
             for name, output in zip(self.output_like.keys(), outputs):
                 output_dict[name] = numpify(output)
                 if output.requires_grad:
-                    # get Vector-Jacobian Product (VJP)
+                    # Get Vector-Jacobian Product (VJP)
                     out_grad = torch.autograd.grad(
                         outputs=output,
-                        inputs=params.values(),
+                        inputs=self.torch_model.parameters(),
                         grad_outputs=torch.ones_like(output),
                         retain_graph=True,
                         allow_unused=True,
@@ -222,8 +222,14 @@ class TorchModel(Model, ABC):
 
         tab = " " * 4
         mod_text = ""
+        # _parameters only shows the upper-level parameters
+        # while
+        # named_parameters() shows all parameters recursively
         for name, param in self.native_model._parameters.items():
-            mod_text += f"{2*tab}self.{name} = torch.nn.Parameter(torch.empty({list(param.shape)}, dtype={param.dtype})))"
+            mod_text += (
+                f"{2*tab}self.{name} = torch.nn.Parameter"
+                + f"(torch.empty({list(param.shape)}, dtype={param.dtype}), requires_grad={param.requires_grad})\n"
+            )
 
         for name, mod in self.native_model.named_children():
             if name == "":

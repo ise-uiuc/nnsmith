@@ -245,7 +245,6 @@ def test_render_model_only():
 
     # pickle is not used (no `ModuleList` in the code)
     # so no need to import pickle
-    print(render.render())
     assert (
         render.render()
         == R"""
@@ -293,7 +292,97 @@ m_out = [v.resolve_conj().numpy() if v.is_conj() else v.numpy() for v in m_out] 
     )
 
 
-def test_render_e2e_pt2():
+def test_render_e2e_param_pt2():
+    model = TorchModelCPU()
+
+    class M(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.const = torch.nn.Parameter(
+                torch.empty([1], dtype=torch.int16), requires_grad=False
+            )
+
+        def forward(self, x):
+            squeeze = self.const.squeeze(0)
+            mul = torch.mul(squeeze, x)
+            expand = mul.expand(1)
+            expand_1 = mul.expand(1, 1, 1, 1)
+            max_1 = torch.max(expand_1, x)
+            return (expand, max_1)
+
+    model.torch_model = M()
+
+    model.torch_model.input_like = {"x": AbsTensor([], DType.int16)}
+
+    render = Render()
+    render.emit_model(model)
+    render.emit_input(model)
+    render.emit_backend(PT2(target="cpu", optmax=True))
+
+    rendered = render.render()
+
+    # pickle is not used (no `ModuleList` in the code)
+    # so no need to import pickle
+    assert (
+        rendered
+        == R"""
+import numpy as np
+import torch
+import pickle
+
+# Model definition
+class M(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.const = torch.nn.Parameter(torch.empty([1], dtype=torch.int16), requires_grad=False)
+
+    def forward(self, x):
+        const = self.const
+        squeeze = const.squeeze(0);  const = None
+        mul = torch.mul(squeeze, x);  squeeze = None
+        expand = mul.expand(1)
+        expand_1 = mul.expand(1, 1, 1, 1);  mul = None
+        max_1 = torch.max(expand_1, x);  expand_1 = x = None
+        return (expand, max_1)
+
+m = M()
+
+
+# Initialize weight
+# None
+
+# Initialize input
+inp = [np.zeros([], dtype='int16')]
+
+# Compile the model
+opt = torch.compile(m, fullgraph=True, backend='inductor', mode=None)
+
+# Eager run
+m_out = m(*[torch.from_numpy(v).to('cpu') for v in inp])
+m_out = [v.cpu().detach() for v in m_out] # torch2numpy
+m_out = [v.resolve_conj().numpy() if v.is_conj() else v.numpy() for v in m_out] # torch2numpy
+
+# Compiled run
+opt_out = opt(*[torch.from_numpy(v).to('cpu') for v in inp])
+opt_out = [v.cpu().detach() for v in opt_out] # torch2numpy
+opt_out = [v.resolve_conj().numpy() if v.is_conj() else v.numpy() for v in opt_out] # torch2numpy
+
+# Differential testing
+for i, (l, r) in enumerate(zip(m_out, opt_out)):
+    np.testing.assert_allclose(l, r, rtol=1e-2, atol=1e-3, err_msg=f"Result mismatch @ index {i}")
+"""
+    )
+
+    # Run rendered code in a subprocess as a smoke test
+    subprocess.run(
+        ["python", "-c", rendered],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
+def test_render_e2e_cnn_pt2():
     model = TorchModelCPU()
     model.torch_model = CNN()
 
@@ -366,7 +455,7 @@ for i, (l, r) in enumerate(zip(m_out, opt_out)):
     )
 
 
-def test_render_e2e_torchjit():
+def test_render_e2e_cnn_torchjit():
     model = TorchModelCPU()
     model.torch_model = CNN()
 

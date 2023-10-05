@@ -5,6 +5,7 @@ import warnings
 from typing import Dict, Optional
 
 import torch
+import torch.fx as fx
 from torch import nn
 
 from nnsmith.abstract.dtype import DType
@@ -22,7 +23,7 @@ __INPUT_FOUND_INF_MSG__ = "[Inf] in model inputs!"
 __ENABLE_RT_CHECK__ = os.getenv("NNSMITH_RT_CHECK", "0") == "1"
 
 
-# Probablistically, sampling at positive domain is beneficial.
+# Probabilistically, sampling at positive domain is beneficial.
 def random_tensor(shape, dtype: torch.dtype, margin=4, base=5, use_cuda=False):
     # center: -margin ~ 0 ~ +margin
     dev = torch.device("cuda" if use_cuda else "cpu")
@@ -131,7 +132,7 @@ class SymbolNet(nn.Module):
                     self.add_module(f"m{i}", target)
 
                 if isinstance(target, nn.Parameter):
-                    self.register_parameter(inst.retval(), target)
+                    setattr(self, inst.retval(), target)
                 else:
                     self.instructions.append(
                         (torch_fn, inst.iexpr.args, inst.retvals(), inst.iexpr.op)
@@ -342,12 +343,24 @@ class SymbolNet(nn.Module):
     def use_cuda(self):
         self.cuda()
 
+    def make_param_map(self) -> Dict[str, torch.Tensor]:
+        tensor_map: Dict[str, torch.Tensor] = {}
+
+        for k, v in self._parameters.items():
+            # Workaround: https://github.com/ise-uiuc/nnsmith/pull/122
+            if hasattr(self, k):
+                attr = getattr(self, k)
+                if isinstance(attr, (nn.Parameter, fx.Proxy)):
+                    tensor_map[k] = attr
+                    continue
+            tensor_map[k] = v
+
+        return tensor_map
+
     def forward(self, *args):
         self.differentiable = True
 
-        tensor_map: Dict[str, torch.Tensor] = {
-            k: v for k, v in self._parameters.items()
-        }
+        tensor_map: Dict[str, torch.Tensor] = self.make_param_map()
         for i, key in enumerate(self.input_map.keys()):
             tensor_map[key] = args[i]
 
@@ -360,7 +373,7 @@ class SymbolNet(nn.Module):
 
             # REAL FORWARD.
             output_tensors = inst(*input_tensors)
-            if isinstance(output_tensors, torch.fx.proxy.Proxy):
+            if isinstance(output_tensors, fx.proxy.Proxy):
                 # TODO(@ganler, @co1lin): can we do systematic check through the output type?
                 if output_tensors.node.target not in [torch.split, torch.chunk]:
                     output_tensors = [output_tensors]
@@ -382,9 +395,7 @@ class SymbolNet(nn.Module):
     def forward_grad(self, *args):
         self.differentiable = True
 
-        tensor_map: Dict[str, torch.Tensor] = {
-            k: v for k, v in self._parameters.items()
-        }
+        tensor_map: Dict[str, torch.Tensor] = self.make_param_map()
         for i, key in enumerate(self.input_map.keys()):
             tensor_map[key] = args[i]
 
