@@ -6,6 +6,7 @@
 
 [![](https://github.com/ise-uiuc/nnsmith/actions/workflows/ci.yaml/badge.svg)](https://github.com/ise-uiuc/nnsmith/actions/workflows/ci.yaml)
 [![](https://img.shields.io/pypi/v/nnsmith?color=g)](https://pypi.org/project/nnsmith/)
+[![](https://static.pepy.tech/badge/nnsmith)](https://pepy.tech/project/nnsmith)
 [![](https://img.shields.io/pypi/l/nnsmith)](https://github.com/ise-uiuc/nnsmith/blob/main/LICENSE)
 
 🌟NNSmith🌟 is a random DNN generator and a fuzzing infrastructure, primarily designed for automatically validating deep-learning frameworks and compilers.
@@ -17,10 +18,10 @@
 | Models | [`tvm`](https://github.com/apache/tvm) | [`pt2`](https://pytorch.org/get-started/pytorch-2.0/) | [`torchjit`](https://pytorch.org/docs/stable/jit.html) | [`tensorrt`](https://github.com/NVIDIA/TensorRT) | [`onnxruntime`](https://github.com/microsoft/onnxruntime) | [`xla`](https://www.tensorflow.org/xla) | [`tflite`](https://www.tensorflow.org/lite) |
 | ------------ | ------------------------------------ | ----------------------------------------------- | ---------------------------------------------- | ----------------------------------------- | ------------------------------------- | ----------------------------------------------------- | ------------ |
 | ONNX         | ✅                                    |                                                |                                               | ✅ | ✅ |                                                       |  |
-| PyTorch | 🔨                                    | ✅📈 | ✅📈 |                                          |                                      |                                         |                                             |
-| TensorFlow | 🔨                                    |                                                       |                                                        |                                           |                                       | ✅                                                    | ✅ |
+| PyTorch |                                      | ✅📈 | ✅📈 |                                          |                                      |                                         |                                             |
+| TensorFlow |                                      |                                                       |                                                        |                                           |                                       | ✅                                                    | ✅ |
 
-✅: Supported; 📈: Supports gradient check; 🔨: Coming soon;
+✅: Supported; 📈: Supports gradient check;
 
 </div>
 
@@ -79,14 +80,36 @@ nnsmith.model_gen model.type=onnx debug.viz=true
 
 ## Learning More
 
-- Bugs: [links to reports](doc/bugs.md).
-- Documentation: [CLI](doc/cli.md), [concept](doc/concept.md), [logging](doc/log-and-err.md), and [known issues](doc/known-issues.md).
-- Contributions: [`doc/CONTRIBUTING.md`](doc/CONTRIBUTING.md)
-- We use [hydra](https://hydra.cc/) to manage configurations. See `nnsmith/config/main.yaml`.
+- 🐛 [**Uncovered bugs**](doc/bugs.md).
+- 📚 [**Documentation**](doc/): [CLI](doc/cli.md), [concept](doc/concept.md), [logging](doc/log-and-err.md), and [known issues](doc/known-issues.md).
+- 🤗 [**Contributing to NNSmith**](doc/CONTRIBUTING.md)
+- 📝 We use [hydra](https://hydra.cc/) to manage configurations. See `nnsmith/config/main.yaml`.
 
 ## Papers
 
-<details><summary><b> 📜 NNSmith: Generating Diverse and Valid Test Cases for Deep Learning Compilers.</b> <i>[click :: citation]</i></summary>
+<details><summary><b> 📜 NeuRI: Diversifying DNN Generation via Inductive Rule Inference </b> <i>[click :: citation]</i></summary>
+<div>
+
+```bibtex
+@article{liu2023neuri,
+  title = {NeuRI: Diversifying DNN Generation via Inductive Rule Inference},
+  author = {Liu, Jiawei and Peng, Jinjun and Wang, Yuyao and Zhang, Lingming},
+  journal = {arXiv preprint arXiv:2302.02261},
+  year = {2023},
+}
+```
+
+</div>
+</details>
+
+<p align="center">
+    <a href="https://arxiv.org/abs/2302.02261"><img src="https://img.shields.io/badge/Paper-FSE'23-a55fed.svg"></a>
+    <a href="https://arxiv.org/abs/2302.02261"><img src="https://img.shields.io/badge/arXiv-2302.02261-b31b1b.svg"></a>
+    <a href="https://github.com/ise-uiuc/neuri-artifact"><img src="https://img.shields.io/badge/artifact-git-black.svg"></a>
+    <a href="https://doi.org/10.5281/zenodo.8319975"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.8319975.svg"></a>
+</p>
+
+<details><summary><b> 📜 NNSmith: Generating Diverse and Valid Test Cases for Deep Learning Compilers </b> <i>[click :: citation]</i></summary>
 <div>
 
 ```bibtex

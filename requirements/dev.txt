@@ -4,3 +4,6 @@ black
 wget
 gputil
 pygraphviz
+marko
+rich
+tomark
