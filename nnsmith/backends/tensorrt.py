@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from typing import List
 
 import numpy as np
-import onnx
 import pycuda.driver as cuda
 import tensorrt as trt
 from multipledispatch import dispatch
@@ -94,7 +93,7 @@ class TRT(BackendFactory):
         config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 2 << 30)
         parser = trt.OnnxParser(network, trt.Logger(trt.Logger.WARNING))
         # Load the Onnx model and parse it in order to populate the TensorRT network.
-        if not parser.parse(onnx._serialize(onnx_model)):
+        if not parser.parse(onnx_model.SerializeToString()):
             error_msg = ""
             for error in range(parser.num_errors):
                 error_msg += str(parser.get_error(error))

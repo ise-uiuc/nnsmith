@@ -674,6 +674,9 @@ class Reverse(UnaryOpBase):
             for i in range(len(input_shape)):
                 if random.random() < 0.5:  # prob
                     axis.append(i)
+            # TODO(@ganler): tflite crashes when axis is empty
+            # remove this when tf fixes https://github.com/tensorflow/tensorflow/issues/62679
+            axis = axis or [0]
             self.extra_attrs["axis"] = axis
         ConstraintCheck.le(len(self.extra_attrs["axis"]), len(input_shape))
         if self.extra_attrs["axis"]:

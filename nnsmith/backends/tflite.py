@@ -132,6 +132,7 @@ class TFLite(BackendFactory):
         converter configuarations: https://www.tensorflow.org/api_docs/python/tf/lite/TFLiteConverter#attributes_1
         """
         # Ref: https://www.tensorflow.org/api_docs/python/tf/lite/TargetSpec
+        converter.experimental_new_converter = True
         converter.target_spec.supported_ops = [
             tf.lite.OpsSet.TFLITE_BUILTINS,  # enable TensorFlow Lite ops.
             tf.lite.OpsSet.SELECT_TF_OPS,  # enable TensorFlow ops.
