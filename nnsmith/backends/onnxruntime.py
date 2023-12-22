@@ -1,6 +1,5 @@
 from typing import List
 
-import onnx
 import onnxruntime as ort
 from multipledispatch import dispatch
 
@@ -60,7 +59,7 @@ class ORT(BackendFactory):
         sess_options.intra_op_num_threads = NNSMITH_ORT_INTRA_OP_THREAD
 
         sess = ort.InferenceSession(
-            onnx._serialize(model.native_model),
+            model.native_model.SerializeToString(),
             providers=self.providers,
             sess_options=sess_options,
         )
