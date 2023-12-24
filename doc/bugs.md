@@ -1,6 +1,6 @@
 # Bugs uncovered by the NNSmith project
 
-> **Important**
+> [!IMPORTANT]
 >
 > **Summary of Bugs**
 >
@@ -16,12 +16,12 @@
 > | Hidet | 12 | 0 | 1 | 13 |
 > | Sum | 119 | 37 | 29 | 185 |
 
-> **Note**
+> [!NOTE]
 >
 > - **Status**: ✅ means fixed; 🔵 means confirmed; 🚨 means this bug has been marked with a `high-priority` label (PyTorch)
 > - **Symptom**: 💥 Crash or exception; 🧮 Result inconsistency (silent semantic bug); 🧴 Sanitizers
 
-> **Note**
+> [!NOTE]
 >
 > **Table of Content**
 >
@@ -246,7 +246,7 @@ Based on NNSmith, [@soodoshll](https://github.com/soodoshll) found a number of b
 * ✅ [[Bug] arguments of clip drop after fusion · Issue #97 · hidet-org/hidet](https://github.com/hidet-org/hidet/issues/97)
 * ✅ [[Bug] fusion rewrite fails · Issue #99 · hidet-org/hidet](https://github.com/hidet-org/hidet/issues/99)
 
-> **Note**
+> [!NOTE]
 >
 > **Methodology**
 >
