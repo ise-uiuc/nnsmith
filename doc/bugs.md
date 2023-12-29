@@ -6,15 +6,15 @@
 >
 > | System | #Fixed | #Confirmed | #Pending | #Total |
 > |-----|-----|-----|-----|-----|
-> | PyTorch | 51 | 17 | 16 | 84 |
+> | PyTorch | 57 | 11 | 16 | 84 |
 > | PyTorch-ONNX Converter | 12 | 0 | 0 | 12 |
 > | ONNX | 1 | 0 | 0 | 1 |
 > | ONNXRuntime | 3 | 4 | 4 | 11 |
 > | TVM | 34 | 0 | 6 | 40 |
 > | TensorRT | 6 | 2 | 2 | 10 |
 > | TensorFlow | 0 | 14 | 0 | 14 |
-> | Hidet | 12 | 0 | 1 | 13 |
-> | Sum | 119 | 37 | 29 | 185 |
+> | Hidet | 13 | 0 | 0 | 13 |
+> | Sum | 126 | 31 | 28 | 185 |
 
 > [!NOTE]
 >
@@ -88,16 +88,16 @@
 * ✅🧴 [`torch.nn.functional.interpolate` Trigger heap-buffer-overflow with AddressSanitizer  · Issue #88939 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/88939)
 * ✅🧴 [`torch.fft.hfft` Trigger RuntimeError under UndefinedBehaviorSanitizer · Issue #88985 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/88985)
 * ✅🧴 [`torch.nn.functional.interpolate` Trigger RuntimeError under UndefinedBehaviorSanitizer · Issue #88951 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/88951)
+* ✅💥🚨 [`torch.compile` failed on `torch.bitwise_xor` with a constant python number · Issue #93224 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/93224)
+* ✅💥 [[CPU Inductor] Compile error when passing float16 tensors to `vector_norm` + `remainder` · Issue #97758 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/97758)
+* ✅💥 [[pt2] `movedim` + `add_` + `cat` triggers exception · Issue #98122 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/98122)
+* ✅🧮 [`dstack` + `reciprocal` produce wrong result in compile mode · Issue #93078 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/93078)
+* ✅💥 [`min` reduction on float16 tensor failed on certain shapes · Issue #93249 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/93249)
+* ✅💥 [`argmin` + `view` Trigger Exception in compile mode · Issue #95370 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/95370)
 * 🔵💥 [[JIT] Zero-channel conv2d cannot be applied with `optimize_for_inference` · Issue #91396 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/91396)
 * 🔵💥 [[JIT] Applying `conv2d` over Constants Leads to Exception · Issue #92740 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/92740)
-* 🔵💥🚨 [`torch.compile` failed on `torch.bitwise_xor` with a constant python number · Issue #93224 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/93224)
-* 🔵🧮 [`dstack` + `reciprocal` produce wrong result in compile mode · Issue #93078 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/93078)
-* 🔵💥 [`min` reduction on float16 tensor failed on certain shapes · Issue #93249 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/93249)
-* 🔵🧮 [`torch.compile` produce wrong result in `interpolate` when `mode=bilinear` · Issue #93262 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/93262)
-* 🔵💥 [`argmin` + `view` Trigger Exception in compile mode · Issue #95370 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/95370)
+* 🔵🧮🚨 [`torch.compile` produce wrong result in `interpolate` when `mode=bilinear` · Issue #93262 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/93262)
 * 🔵🧮 [`torch.fmod` produces inconsistent results in eager and compile mode · Issue #97333 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/97333)
-* 🔵💥 [[CPU Inductor] Compile error when passing float16 tensors to `vector_norm` + `remainder` · Issue #97758 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/97758)
-* 🔵💥 [[pt2] `movedim` + `add_` + `cat` triggers exception · Issue #98122 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/98122)
 * 🔵💥 [`torch.Tensor.flatten` Trigger Segmentation Fault when trying to provide and output named dim · Issue #89718 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/89718)
 * 🔵🧴 [`nn.functional.embedding_bag` Trigger out-of-bound Read under Compute Sanitizer · Issue #88563 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/88563)
 * 🔵🧴 [`torch.nn.CTCLoss` Trigger heap-buffer-overflow under AddressSanitizer · Issue #88047 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/88047)
@@ -237,7 +237,7 @@ Based on NNSmith, [@soodoshll](https://github.com/soodoshll) found a number of b
 * ✅ [[Bug] Data type casting from onnx · Issue #87 · hidet-org/hidet](https://github.com/hidet-org/hidet/issues/87)
 * ✅ [[Bug] cuda code compilation error · Issue #89 · hidet-org/hidet](https://github.com/hidet-org/hidet/issues/89)
 * ✅ [[Bug] MinOp generates max code · Issue #90 · hidet-org/hidet](https://github.com/hidet-org/hidet/issues/90)
-* [[Bug] FP64 reduce · Issue #91 · hidet-org/hidet](https://github.com/hidet-org/hidet/issues/91)
+* ✅ [[Bug] FP64 reduce · Issue #91 · hidet-org/hidet](https://github.com/hidet-org/hidet/issues/91)
 * ✅ [[Bug] Inconsistent definition of the inputs parameter of operators · Issue #93 · hidet-org/hidet](https://github.com/hidet-org/hidet/issues/93)
 * ✅ [[Bug] Slice indexing in ONNX · Issue #94 · hidet-org/hidet](https://github.com/hidet-org/hidet/issues/94)
 * ✅ [[Bug] binary arithmetic with CUDA scalar · Issue #95 · hidet-org/hidet](https://github.com/hidet-org/hidet/issues/95)
