@@ -30,7 +30,8 @@
 **Install latest code (GitHub HEAD):**
 
 ```shell
-pip install "git+https://github.com/ise-uiuc/nnsmith@main#egg=nnsmith[torch,onnx]" --upgrade
+pip install pip --upgrade
+pip install "nnsmith[torch,onnx] @ git+https://github.com/ise-uiuc/nnsmith@main" --upgrade
 # [optional] add more front- and back-ends such as [tensorflow] and [tvm,onnxruntime,...] in "[...]"
 ```
 
