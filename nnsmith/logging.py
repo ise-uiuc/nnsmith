@@ -6,6 +6,7 @@ MGEN_LOG = logging.getLogger("mgen")
 SMT_LOG = logging.getLogger("smt")
 EXEC_LOG = logging.getLogger("exec")
 DTEST_LOG = logging.getLogger("dtest")
+RENDER_LOG = logging.getLogger("render")
 CORE_LOG = logging.getLogger("core")
 
 TF_LOG = logging.getLogger("gen|tf")

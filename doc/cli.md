@@ -121,6 +121,26 @@ yes | nnsmith.model_gen model.type=torch mgen.method=symbolic-cinit \
                                          debug.viz=true
 ```
 
+## Synthesize bug reports
+
+`nnsmith.report_syn` can synthesize bug reports given a model (read from filesystem) and a backend target (user provided).
+It prints a self-contained Python script:
+
+1. For most of the cases, it should be able to directly reproduce the bug.
+2. If not, it should serve as a good starting point and developers can modify it a bit to reproduce the bug.
+
+> **Note**
+>
+> This is an experimental feature and only works for PyTorch models.
+
+> **Warning**
+>
+> `nnsmith.report_syn` is not guaranteed to reproduce the bug. For strict bug reproduction, please use `nnsmith.model_exec` instead.
+
+```shell
+nnsmith.report_syn backend.type="pt2 backend@inductor" model.type=torch model.path=nnsmith_output/model.pth
+```
+
 ## Misc
 
 TensorFlow logging can be very noisy. Use `TF_CPP_MIN_LOG_LEVEL=3` as environmental variable to depress that.

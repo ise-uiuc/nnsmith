@@ -190,7 +190,7 @@ class TorchModel(Model, ABC):
 
     def emit_input(self, inp_name: str, path: Optional[PathLike] = None):
         if path is not None:  # Assume NumPy tensors as inputs
-            return f"{inp_name} = [v for _, v in pickle.load(open('{path}', 'rb'))['input']]"
+            return f"{inp_name} = [v for _, v in pickle.load(open('{path}', 'rb'))['input'].items()]"
 
         # Path is None. Generate inputs from scratch.
         tensor_text = []
