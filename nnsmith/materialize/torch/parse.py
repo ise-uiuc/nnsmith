@@ -2,7 +2,6 @@ import operator
 from typing import Any, Dict, List, Union, cast
 
 import torch
-import torch._dynamo as dynamo
 import torch.fx as fx
 import torch.nn as nn
 import torch.utils._pytree as pytree
@@ -22,7 +21,7 @@ class PropInterpreter(ShapeProp):
 
 
 def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:
-    gm: fx.GraphModule = dynamo.export(model, *example_args)[0]
+    gm: fx.GraphModule = torch.export(model, *example_args)[0]
     # store shape info on nodes
     sp = PropInterpreter(gm)
     sp.run(*example_args)
@@ -67,8 +66,8 @@ def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:
                     pytree.tree_flatten(node.meta["res"])[0],
                 )
             )
-            nodes2empty = (
-                lambda n: ConcreteOp.empty if isinstance(n, fx.node.Node) else n
+            nodes2empty = lambda n: (
+                ConcreteOp.empty if isinstance(n, fx.node.Node) else n
             )
             args_wo_nodes = pytree.tree_map(nodes2empty, node.args)
             kwargs_wo_nodes = pytree.tree_map(nodes2empty, node.kwargs)
