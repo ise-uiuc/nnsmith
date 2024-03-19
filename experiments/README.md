@@ -107,7 +107,7 @@ Next, we will run NNSmith to dump a bunch of random test-cases for an SUT (say P
 >
 > ```shell
 > # PyTorch
-> pip install --extra-index-url https://download.pytorch.org/whl/nightly/cpu --pre torch
+> pip install --index-url https://download.pytorch.org/whl/nightly/cpu --pre torch
 > # TensorFlow
 > pip install tf-nightly
 > ```
