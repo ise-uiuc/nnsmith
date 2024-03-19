@@ -1,8 +1,7 @@
 import operator
-from typing import Any, Dict, List, Union, cast
+from typing import Any, Dict, List, cast
 
 import torch
-import torch._dynamo as dynamo
 import torch.fx as fx
 import torch.nn as nn
 import torch.utils._pytree as pytree
@@ -22,27 +21,26 @@ class PropInterpreter(ShapeProp):
 
 
 def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:
-    gm: fx.GraphModule = dynamo.export(model, *example_args)[0]
+    gm: fx.GraphModule = fx.symbolic_trace(model)
     # store shape info on nodes
     sp = PropInterpreter(gm)
     sp.run(*example_args)
 
-    def load_args(args: Union[List, Dict[str, Any]]) -> Union[List, Dict[str, Any]]:
-        """
-        Map nodes to their outputs while keeping structures and other values the same.
-        """
-        return torch.fx.graph.map_arg(args, lambda n: n.meta["res"])
-
     named_modules = dict(gm.named_modules())
     ir = GraphIR()
     name2retvals: Dict[str, List[str]] = {}
-    for i_node, node in enumerate(gm.graph.nodes):
+    for node in gm.graph.nodes:
         node = cast(fx.node.Node, node)
         if node.op == "placeholder":
-            iexpr = InstExpr(Input(dim=len(node.meta["res"].shape)), [])
+            input_node = Input(dim=len(node.meta["res"].shape))
+            input_node.abs_tensor = AbsTensor(
+                shape=list(node.meta["res"].shape),
+                dtype=DType.from_torch(node.meta["res"].dtype),
+            )
+            iexpr = InstExpr(input_node, [])
         else:
-            args_flatten, args_treespec = pytree.tree_flatten(node.args)
-            kwargs_flatten, kwargs_treespec = pytree.tree_flatten(node.kwargs)
+            args_flatten, _ = pytree.tree_flatten(node.args)
+            kwargs_flatten, _ = pytree.tree_flatten(node.kwargs)
             input_nodes = [
                 a
                 for a in (args_flatten + kwargs_flatten)
@@ -67,8 +65,8 @@ def parse(model: nn.Module, *example_args: List[torch.Tensor]) -> GraphIR:
                     pytree.tree_flatten(node.meta["res"])[0],
                 )
             )
-            nodes2empty = (
-                lambda n: ConcreteOp.empty if isinstance(n, fx.node.Node) else n
+            nodes2empty = lambda n: (
+                ConcreteOp.empty if isinstance(n, fx.node.Node) else n
             )
             args_wo_nodes = pytree.tree_map(nodes2empty, node.args)
             kwargs_wo_nodes = pytree.tree_map(nodes2empty, node.kwargs)
