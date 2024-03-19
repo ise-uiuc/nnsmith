@@ -260,7 +260,7 @@ class ONNXModel(TorchModel):
         # FIXME: missing key(s) in state_dict: "mlist.0.data", "mlist.1.data".
         if os.path.exists(torch_path):
             ret.with_torch = True
-            ret.torch_model = cls.PTType.load(torch_path)
+            ret.torch_model = cls.PTType.load(torch_path).torch_model
             ret.full_input_like = ret.torch_model.input_like
             ret.full_output_like = ret.torch_model.output_like
 
