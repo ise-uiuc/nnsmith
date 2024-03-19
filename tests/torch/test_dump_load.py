@@ -45,7 +45,7 @@ def test_onnx_load_dump(tmp_path):
     # check oracle
     compare_two_oracle(oracle, loaded_testcase.oracle)
 
-    loaded_model = loaded_testcase.model.torch_model
+    loaded_model = loaded_testcase.model
     loaded_model.sat_inputs = {k: torch.from_numpy(v) for k, v in oracle.input.items()}
     rerun_oracle = loaded_model.make_oracle()
     compare_two_oracle(oracle, rerun_oracle)
@@ -77,7 +77,7 @@ def test_bug_report_load_dump(tmp_path):
     # check oracle
     compare_two_oracle(oracle, loaded_testcase.oracle)
 
-    loaded_model = loaded_testcase.model.torch_model
+    loaded_model = loaded_testcase.model
     loaded_model.sat_inputs = {k: torch.from_numpy(v) for k, v in oracle.input.items()}
     rerun_oracle = loaded_model.make_oracle()
     compare_two_oracle(oracle, rerun_oracle)
