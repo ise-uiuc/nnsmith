@@ -6,15 +6,15 @@
 >
 > | System | #Fixed | #Confirmed | #Pending | #Total |
 > |-----|-----|-----|-----|-----|
-> | PyTorch | 57 | 11 | 16 | 84 |
+> | PyTorch | 60 | 9 | 15 | 84 |
 > | PyTorch-ONNX Converter | 12 | 0 | 0 | 12 |
 > | ONNX | 1 | 0 | 0 | 1 |
 > | ONNXRuntime | 3 | 4 | 4 | 11 |
 > | TVM | 34 | 0 | 6 | 40 |
 > | TensorRT | 6 | 2 | 2 | 10 |
-> | TensorFlow | 0 | 14 | 0 | 14 |
+> | TensorFlow | 1 | 13 | 0 | 14 |
 > | Hidet | 13 | 0 | 0 | 13 |
-> | Sum | 126 | 31 | 28 | 185 |
+> | Sum | 130 | 28 | 27 | 185 |
 
 > [!NOTE]
 >
@@ -96,11 +96,11 @@
 * ✅💥 [`argmin` + `view` Trigger Exception in compile mode · Issue #95370 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/95370)
 * 🔵💥 [[JIT] Zero-channel conv2d cannot be applied with `optimize_for_inference` · Issue #91396 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/91396)
 * 🔵💥 [[JIT] Applying `conv2d` over Constants Leads to Exception · Issue #92740 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/92740)
-* 🔵🧮🚨 [`torch.compile` produce wrong result in `interpolate` when `mode=bilinear` · Issue #93262 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/93262)
+* ✅🧮🚨 [`torch.compile` produce wrong result in `interpolate` when `mode=bilinear` · Issue #93262 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/93262)
 * 🔵🧮 [`torch.fmod` produces inconsistent results in eager and compile mode · Issue #97333 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/97333)
 * 🔵💥 [`torch.Tensor.flatten` Trigger Segmentation Fault when trying to provide and output named dim · Issue #89718 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/89718)
 * 🔵🧴 [`nn.functional.embedding_bag` Trigger out-of-bound Read under Compute Sanitizer · Issue #88563 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/88563)
-* 🔵🧴 [`torch.nn.CTCLoss` Trigger heap-buffer-overflow under AddressSanitizer · Issue #88047 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/88047)
+* ✅🔵🧴 [`torch.nn.CTCLoss` Trigger heap-buffer-overflow under AddressSanitizer · Issue #88047 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/88047)
 * 🔵🧴 [`torch.nn.ReplicationPad2D` Report &quot;invalid configuration argument&quot; Error under Compute Sanitizer · Issue #89254 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/89254)
 * 🔵🧴 [`torch.nn.LayerNorm` Abort with &quot;invalid device ordinal&quot; Error · Issue #89218 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/89218)
 * 🔵🧴 [`torch.svd_lowrank` Trigger RuntimeError under UndefinedBehaviorSanitizer · Issue #88942 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/88942)
@@ -116,7 +116,7 @@
 * 💥 [[JIT] Consecutive use of `addmm` Leads to Exception · Issue #92742 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/92742)
 * 🧴 [`torch.topk` Trigger RuntimError under UndefinedBehaviorSanitizer · Issue #88944 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/88944)
 * 🧴 [`torch.vander` Trigger RuntimeError with UndefinedBehaviorSanitizer · Issue #88943 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/88943)
-* 🧴 [`torch.nn.CTCLoss` Trigger out-of-bound Read under Compute Sanitizer · Issue #89208 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/89208)
+* ✅🧴 [`torch.nn.CTCLoss` Trigger out-of-bound Read under Compute Sanitizer · Issue #89208 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/89208)
 * 🧴 [`torch.nn.functional.embedding_bag` Trigger RuntimeError under UndefinedBehaviorSanitizer · Issue #88950 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/88950)
 * 🧴 [`torch.set_rng_state` Trigger RuntimeError under UndefinedBehaviorSanitizer · Issue #88949 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/88949)
 * 🧴 [`torch.Tensor.msort` Trigger RuntimeError under UndefinedBehaviorSanitizer · Issue #88947 · pytorch/pytorch · GitHub](https://github.com/pytorch/pytorch/issues/88947)
@@ -221,7 +221,7 @@
 * 🔵🧮 [pow operation gives valid output even the input is invalid · Issue #57757 · tensorflow/tensorflow · GitHub](https://github.com/tensorflow/tensorflow/issues/57757)
 * 🔵🧮 [TFLite produce wrong results when add follows a leakyrelu · Issue #57818 · tensorflow/tensorflow · GitHub](https://github.com/tensorflow/tensorflow/issues/57818)
 * 🔵💥 [TFLite runner crashes with XOR and squeeze in the model · Issue #57882 · tensorflow/tensorflow · GitHub](https://github.com/tensorflow/tensorflow/issues/57882)
-* 🔵💥 [ Conv2D with XLA jit_compile=True fails to run · Issue #57748 · tensorflow/tensorflow · GitHub](https://github.com/tensorflow/tensorflow/issues/57748)
+* ✅💥 [ Conv2D with XLA jit_compile=True fails to run · Issue #57748 · tensorflow/tensorflow · GitHub](https://github.com/tensorflow/tensorflow/issues/57748)
 * 🔵🧮 [log operator outputs wrong results with XLA compilation · Issue #57744 · tensorflow/tensorflow · GitHub](https://github.com/tensorflow/tensorflow/issues/57744)
 * 🔵🧮 [pow operator output nan for valid inputs · Issue #57747 · tensorflow/tensorflow · GitHub](https://github.com/tensorflow/tensorflow/issues/57747)
 * 🔵🧮 [LRN operator outputs wrong results with `jit_compile=True` · Issue #57746 · tensorflow/tensorflow · GitHub](https://github.com/tensorflow/tensorflow/issues/57746)
